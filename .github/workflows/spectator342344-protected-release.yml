@@ -1,0 +1,54 @@
+name: Spectator342344 protected release controls
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/spectator342344-protected-release.yml'
+      - 'VinPoker/scripts/ops/spectator342344-*'
+permissions: {contents: read}
+jobs:
+  exact-controller:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {path: controls}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: 71d20fcefaf2c104b0a4cf9e35011b527c1a6882, path: candidate}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Exact package and uncertain-outcome rejection tests
+        working-directory: controls
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/candidate/VinPoker
+        run: node --test VinPoker/scripts/ops/spectator342344-release-plan.test.mjs VinPoker/scripts/ops/spectator342344-protected-apply.test.mjs
+  atomic-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vinpoker_hud_test_release_${{ github.run_id }}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PUBLIC_HUD_LOCAL_DATABASE: vinpoker_hud_test_release_${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {path: controls}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: 71d20fcefaf2c104b0a4cf9e35011b527c1a6882, path: candidate}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Real PostgreSQL atomic rollback, exact receipt, duplicate and ACL checks
+        working-directory: controls
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/candidate/VinPoker
+        run: node VinPoker/scripts/ops/spectator342344-atomic-postgres.mjs
