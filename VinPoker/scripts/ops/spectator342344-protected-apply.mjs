@@ -54,6 +54,7 @@ export function executePackage(sourceRoot,transport,report=()=>{}){
    const receipt=transport.json(receiptSql(item));
    assert.ok(receipt.count===1&&receipt.exact===true,'Receipt drift');
    classifyPostcheck(transport.json(postcheckSql(pkg,Number(entry.version.slice(-3)))));
+   if(entry===pkg.entries.at(-1))classifyPaused(transport.json(pausedSql()));
   }catch{
    const observed=[];
    for(const candidate of pkg.entries){
@@ -75,6 +76,5 @@ export function executePackage(sourceRoot,transport,report=()=>{}){
   }
   report({kind:'COMMITTED_EXACT_OBJECTS_VERIFIED',version:entry.version,sha256:entry.sha256});
  }
- classifyPaused(transport.json(pausedSql()));
  return {kind:'SPECTATOR342344_DATABASE_VERIFIED',dispatcherStillPaused:true};
 }

@@ -54,6 +54,14 @@ test('dispatcher activation between migrations prevents next write and reports s
  const f=fixture({lostPauseAt:1});assert.throws(f.run,/partial-outcome/);
  assert.equal(f.writes.length,1);assert.equal(f.events.at(-1).failedAt,pkg.entries[1].version);
 });
+test('failed final paused observation reports all committed receipts without retry',()=>{
+ const f=fixture({lostPauseAt:3});assert.throws(f.run,/partial-outcome/);
+ assert.equal(f.writes.length,3);
+ const event=f.events.at(-1);
+ assert.equal(event.kind,'STOP_NO_RETRY_NO_RESUME');
+ assert.deepEqual(event.observed.map(e=>e.receipt),['committed-exact','committed-exact','committed-exact']);
+ assert.equal(event.currentObjectPhase,344);
+});
 test('paused, lease, unrelated HUD dispatcher and all object checks are mandatory',()=>{
  for(const key of ['paused','hudPreserved','leasesDrained']){
   assert.throws(()=>classifyPaused({paused:true,hudPreserved:true,leasesDrained:true,[key]:false}));
