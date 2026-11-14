@@ -1,5 +1,15 @@
 import {describe,it,expect} from 'vitest';
-import {classifyHudReadFailure,sanitizeWriterNestedPlans,writerCaptureFailureKind} from './scale.failures.mjs';
+import {classifyHudReadFailure,sanitizeWriterNestedPlans,writerCaptureFailureKind,sanitizeHudAttemptTrace} from './scale.failures.mjs';
+it('retains only eight sanitized attempt snapshots including an unfinished request',()=>{
+ const attempts=Array.from({length:12},(_,i)=>({attempt:i+1,launchedAt:1000+i,state:'unavailable',url:'PRIVATE',body:'PRIVATE'}));
+ const rows=sanitizeHudAttemptTrace(attempts);
+ expect(rows).toHaveLength(8);expect(rows[0].attempt).toBe(5);
+ expect(rows[7]).toEqual({attempt:12,launchedAt:1011,state:'unavailable'});
+ attempts[11].state='current';expect(rows[7].state).toBe('unavailable');
+ expect(JSON.stringify(rows)).not.toContain('PRIVATE');
+ expect(sanitizeHudAttemptTrace([{headersAt:NaN,elapsedMs:-1,state:'PRIVATE',httpStatus:200,completedAt:1234}])).toEqual([{httpStatus:200,completedAt:1234}]);
+ expect(sanitizeHudAttemptTrace(null)).toEqual([]);
+});
 describe('safe HUD read failure diagnosis',()=>{
  it('separates preparation expiry, actual deadlines and caller cancellation',()=>{
   expect(classifyHudReadFailure({publicHudRevalidationExpired:true})).toBe('revalidation_budget_expired_in_wait');

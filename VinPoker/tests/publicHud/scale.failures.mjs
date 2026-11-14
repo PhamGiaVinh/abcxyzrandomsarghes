@@ -10,6 +10,17 @@ export function classifyEdgeFailure(body){
  return 'unknown';
 }
 // Allowlisted diagnostics only. The caller retains every original failure gate.
+export function sanitizeHudAttemptTrace(attempts){
+ if(!Array.isArray(attempts))return [];
+ return attempts.slice(-8).map(value=>{
+  const row={};
+  for(const key of ['attempt','launchedAt','headersAt','completedAt','httpStatus','upstreamMs','proxyMs','elapsedMs']){
+   const n=value?.[key];if(typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=Number.MAX_SAFE_INTEGER)row[key]=n;
+  }
+  if(['current','updating','warming','unavailable','revoked','unknown'].includes(value?.state))row.state=value.state;
+  return row;
+ });
+}
 export function classifyHudReadFailure(error){
  if(error?.publicHudRevalidationExpired===true)return 'revalidation_budget_expired_in_wait';
  if(error?.publicHudDeadline===true)return error.publicHudRevalidationPhase==='rpc'?'revalidation_budget_expired_in_rpc':'physical_rpc_deadline';

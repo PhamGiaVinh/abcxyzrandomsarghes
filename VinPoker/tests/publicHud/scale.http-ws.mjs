@@ -13,7 +13,7 @@ import {maximumSample,summaryApiReport} from './scale.summary.mjs';
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
 import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,sourceBatchProfile,sourceBatchProbeEnabled} from './scale.write.protocol.mjs';
 import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure,committedHistoryWithdrawalDenial} from './scale.restoration.mjs';
-import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure} from './scale.failures.mjs';
+import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure,sanitizeHudAttemptTrace} from './scale.failures.mjs';
 import {tableFailureSample,overviewGenerationSample} from './scale.table-trace.mjs';
 import {audienceSocketDiagnostic} from '../../scripts/ops/operations-audience-scope.mjs';
 import {registerPublicTournamentRead,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_OVERVIEW_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
@@ -127,7 +127,7 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing,onAt
   // Bounded failure-only provenance. No player IDs, snapshots or response bodies.
   // Preserve the existing deadline/error grade; this only locates contention
   // versus preparation waits on the generator/resource-sample wall clock.
-  const diagnostic={phase:phase??'unspecified',mode,startedAt:Date.now(),attempts:0,completed:0,lastState:null,lastRpcMs:null,rpcStartedAt:null};
+  const diagnostic={phase:phase??'unspecified',mode,startedAt:Date.now(),attempts:0,completed:0,lastState:null,lastRpcMs:null,rpcStartedAt:null,attemptTrace:[]};
   try{
   const caller=signal??new AbortController().signal;
   const request=owned=>readPublicHudRequest(status.API_URL,status.ANON_KEY,
@@ -136,12 +136,14 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing,onAt
     const target=new URL(url);assert.equal(target.origin,status.API_URL);
     assert.equal(target.pathname,'/rest/v1/rpc/'+(mode==='summary'?'get_public_player_hud_summary_v1':'get_public_player_hud_history_v1'));
     assert.equal(init.headers.apikey,status.ANON_KEY);assert.equal(init.headers.Authorization,`Bearer ${status.ANON_KEY}`);
-    let data;const rpcStart=performance.now();diagnostic.attempts++;diagnostic.rpcStartedAt=Date.now();diagnostic.lastRpcTrace={};
+    let data;const rpcStart=performance.now();diagnostic.attempts++;diagnostic.rpcStartedAt=Date.now();diagnostic.lastRpcTrace={attempt:diagnostic.attempts};
+    diagnostic.attemptTrace.push(diagnostic.lastRpcTrace);if(diagnostic.attemptTrace.length>8)diagnostic.attemptTrace.shift();
     try{data=await post(hudTransport==='edge'?'/functions/v1/public-player-hud':target.pathname,
      hudTransport==='edge'?{tournament_id:tour,player_id:player,mode,access_snapshot:accessSnapshot}:JSON.parse(init.body),false,phase,init.signal,diagnostic.lastRpcTrace);}
     catch(error){if(error?.intentionalHudCancellation)throw new DOMException('aborted','AbortError');throw error;}
     diagnostic.completed++;diagnostic.lastRpcMs=performance.now()-rpcStart;diagnostic.rpcStartedAt=null;
     diagnostic.lastState=data?.access==='revoked'?'revoked':['current','updating','warming','unavailable'].includes(data?.state)?data.state:'unknown';
+    diagnostic.lastRpcTrace.state=diagnostic.lastState;diagnostic.lastRpcTrace.elapsedMs=diagnostic.lastRpcMs;
     if(mode==='summary')recordSummaryApi(performance.now()-rpcStart,phase,data);
     onAttempt?.(data);
     return new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json'}});
@@ -155,7 +157,7 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing,onAt
    const cancelled=signal?.aborted===true&&error?.publicHudCallerCancelled===true&&error?.publicHudDeadline!==true;
    const outcome=phase+':'+(cancelled?'caller_cancelled':'failed');rpcOutcomes[outcome]=(rpcOutcomes[outcome]??0)+1;
    if(!cancelled){const kind=phase+':'+classifyHudReadFailure(error);hudFailureKinds[kind]=(hudFailureKinds[kind]??0)+1;
-    const sample={...diagnostic,kind,failedAt:Date.now(),elapsedMs:performance.now()-start,callerAborted:signal?.aborted===true};
+    const sample={...diagnostic,attemptTrace:sanitizeHudAttemptTrace(diagnostic.attemptTrace),kind,failedAt:Date.now(),elapsedMs:performance.now()-start,callerAborted:signal?.aborted===true};
     if(hudFailureSamples.length<64)hudFailureSamples.push(sample);
     if(phase==='restoration-readiness'&&hudReadinessFailureSamples.length<4)hudReadinessFailureSamples.push(sample);
    }
