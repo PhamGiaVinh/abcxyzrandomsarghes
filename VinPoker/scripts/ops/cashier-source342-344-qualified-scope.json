@@ -6,8 +6,8 @@
     {
       "path": "VinPoker/supabase/migration-archive/floor-v3-catalog-reconciliation.manifest.json",
       "status": "M",
-      "headSha256": "bb99bed40fac9d8579537dbe1d94fe29d95e5d80a7b7f3869ed709a0bb5c4ef8",
-      "baseSha256": "9cbe8466f6d37d5fecb96208fb11f6603043fdcd5317b6a18f5f40d89e5c69af"
+      "headSha256": "7e20ea03d90390fbc004b106ef78ffcc1dd8beb2d0fe5ff95919394a6aec174f",
+      "baseSha256": "313031e0e1d366923e35247659e48556a30845e8cea7eeb5a70fcc2b5eaabe5f"
     },
     {
       "path": "VinPoker/supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql",
