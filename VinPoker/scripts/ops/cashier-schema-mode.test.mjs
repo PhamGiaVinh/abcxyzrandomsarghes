@@ -15,6 +15,232 @@ import {configureIsolatedPostgrestPool} from './isolated-postgrest-pool.mjs';
 const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
 const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
 
+test('targeted diagnostics refuse invalid scope before any service operation',()=>{
+ const bash=process.platform==='win32'?'D:/Git/bin/bash.exe':'bash';
+ const entry=fileURLToPath(new URL('./cashier-tour-real-e2e.sh',import.meta.url));
+ for(const patch of [
+  {LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:'other'},
+  {LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:'cashier-payment',CASHIER_SCHEMA_MODE:'pre03'},
+  {LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:'dealer-checkin',CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_AUDIENCE:'0'},
+ ]){
+  const r=spawnSync(bash,[entry],{env:{...process.env,...patch},encoding:'utf8',timeout:5000});
+  assert.notEqual(r.status,0);assert.match(r.stderr,/Unknown targeted diagnostic|Targeted diagnostics require/);
+ }
+});
+
+test('targeted observer shutdown preserves browser failure and rejects observer failure',()=>{
+ const bash=process.platform==='win32'?'D:/Git/bin/bash.exe':'bash';
+ const start=script.indexOf('    targeted_observer_stop_status=0');
+ const end=script.indexOf('\n    docker exec',start);
+ assert.ok(start>0&&end>start);
+ const stop=script.slice(start,end);
+ for(const [browser,killCode,waitCode,expected] of [[7,1,0,7],[0,1,0,1],[0,0,1,1],[0,0,0,0]]){
+  const setup=`set -e; kill(){ return ${killCode}; }; wait(){ return ${waitCode}; }; targeted_browser_status=${browser}; payment_lock_sampler_pid=999;\n`;
+  const result=spawnSync(bash,['-c',setup+stop],{encoding:'utf8',timeout:5000});
+  assert.equal(result.status,expected,JSON.stringify({browser,killCode,waitCode}));
+ }
+});
+
+test('targeted source generation candidate refuses unsafe modes and applies only before admission',()=>{
+ const bash=process.platform==='win32'?'D:/Git/bin/bash.exe':'bash';
+ const entry=fileURLToPath(new URL('./cashier-tour-real-e2e.sh',import.meta.url));
+ for(const patch of [{LOCAL_SOURCE_GENERATION_PROBE:'bad'},{LOCAL_SOURCE_GENERATION_PROBE:'1'},
+  {LOCAL_SOURCE_GENERATION_PROBE:'1',CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_AUDIENCE:'10'}]){
+  const r=spawnSync(bash,[entry],{env:{...process.env,...patch},encoding:'utf8',timeout:5000});
+  assert.notEqual(r.status,0);assert.match(r.stderr,/Source generation candidate requires/);
+ }
+ const apply=script.indexOf('<"$repo_root/supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql"');
+ assert.ok(apply>script.indexOf('operations_schema_freeze_fixture.sql'));
+ assert.ok(apply<script.indexOf("UPDATE ops_load_fixture_v1.schema_fence SET frozen=true"));
+ assert.match(script,/generation342_requires_owned_unadmitted_fixture/);
+ assert.match(script,/sourceGenerationCandidate,fullAudiencePhase/);
+});
+
+test('pending source candidate refuses partial scopes before services and precedes schema freeze',()=>{
+ const bash=process.platform==='win32'?'D:/Git/bin/bash.exe':'bash';
+ const entry=fileURLToPath(new URL('./cashier-tour-real-e2e.sh',import.meta.url));
+ for(const patch of [{LOCAL_PENDING_SOURCE_PROBE:'invalid'},{LOCAL_PENDING_SOURCE_PROBE:'1'},
+  {LOCAL_PENDING_SOURCE_PROBE:'1',LOCAL_SOURCE_GENERATION_PROBE:'1',LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:'cashier-payment'}]){
+  const result=spawnSync(bash,[entry],{env:{...process.env,...patch},encoding:'utf8',timeout:5000});
+  assert.notEqual(result.status,0);assert.match(result.stderr,/Pending source candidate requires/);
+ }
+ const apply=script.indexOf('<"$repo_root/supabase/migrations/20270128000343_spectator_pending_source_outcome.sql"');
+ assert.ok(apply>script.indexOf('<"$repo_root/supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql"'));
+ assert.ok(apply<script.indexOf('UPDATE ops_load_fixture_v1.schema_fence SET frozen=true'));
+ assert.match(workflow,/LOCAL_PENDING_SOURCE_PROBE:.*inputs.pending_source_probe/);
+});
+
+test('batch source candidate rejects partial scopes and installs before catalog admission',()=>{
+ const bash=process.platform==='win32'?'D:/Git/bin/bash.exe':'bash';
+ const entry=fileURLToPath(new URL('./cashier-tour-real-e2e.sh',import.meta.url));
+ for(const patch of [{LOCAL_SOURCE_BATCH_PROBE:'invalid'},{LOCAL_SOURCE_BATCH_PROBE:'1'},
+  {LOCAL_SOURCE_BATCH_PROBE:'1',LOCAL_PENDING_SOURCE_PROBE:'1',LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:'cashier-payment'}]){
+  const result=spawnSync(bash,[entry],{env:{...process.env,...patch},encoding:'utf8',timeout:5000});
+  assert.notEqual(result.status,0);assert.match(result.stderr,/Source batch candidate requires/);
+ }
+ const apply=script.indexOf('<"$repo_root/supabase/migrations/20270128000344_spectator_bounded_source_batch.sql"');
+ assert.ok(apply>script.indexOf('<"$repo_root/supabase/migrations/20270128000343_spectator_pending_source_outcome.sql"'));
+ assert.ok(apply<script.indexOf('UPDATE ops_load_fixture_v1.schema_fence SET frozen=true'));
+ assert.match(workflow,/LOCAL_SOURCE_BATCH_PROBE:.*github\.event_name == 'workflow_dispatch'.*inputs.source_batch_probe/);
+ assert.match(script,/assert\.equal\(actual.bodyMd5,sourceBatchProfile.bodyMd5\)/);
+ assert.match(script,/assert\.equal\(audience.checks.sourceBatchModeAndServingUsage,true/);
+});
+
+test('operational worker forwards selected source mode and rejects a mismatched runtime mode',async()=>{
+ const preparation=readFileSync(new URL('./prepare-operations-public-hud.mjs',import.meta.url),'utf8');
+ const start=preparation.indexOf('const spectatorWork=async()=>{');
+ const end=preparation.indexOf('\ntry{',start);
+ assert.ok(start>0&&end>start);
+ const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+ const run=new AsyncFunction('processPublicSpectatorJobs','client','assert','report','spectatorSourceMode','stopping',preparation.slice(start,end)+'\nawait spectatorWork();return report;');
+ for(const mode of ['single','batch']){
+  const calls=[];
+  const client={rpc:(name,args)=>({abortSignal:signal=>{calls.push({name,args,signal});return Promise.resolve({data:[],error:null});}})};
+  const worker=async(wrapper,deadline,actualMode)=>{
+   assert.equal(actualMode,mode);assert.ok(deadline>Date.now());
+   await wrapper.rpc(mode==='batch'?'get_public_spectator_projection_sources_v2':'get_public_spectator_projection_source_v2',{p_jobs:[]});
+   return {sourceMode:mode,processed:1,results:[{}]};
+  };
+  const report=await run(worker,client,assert,{phase:'serving',spectatorProcessed:0,spectatorFailed:0},mode,false);
+  assert.equal(report.spectatorSourceMode,mode);assert.equal(report.sourceBatchModeVerified,true);
+  assert.equal(report.sourceBatchRpcCalls,mode==='batch'?1:0);assert.equal(calls.length,1);
+  assert.equal(report.servingSourceBatchRpcCalls,mode==='batch'?1:0);
+  assert.ok(calls[0].signal instanceof AbortSignal);
+  for(const [phase,stopping] of [['prepared',false],['serving',true]]){
+   const excluded=await run(worker,client,assert,{phase,spectatorProcessed:0,spectatorFailed:0},mode,stopping);
+   assert.equal(excluded.servingSourceBatchRpcCalls,0,'Preparation and final drain are excluded from serving usage');
+  }
+ }
+ await assert.rejects(run(async()=>({sourceMode:'single',processed:0,results:[]}),{},assert,{},'batch'),/Actual operational worker source mode/);
+});
+
+test('batch HUD admission permits an idle worker only with same-run serving audience batch proof',t=>{
+ const line=script.split('\n').find(row=>row.includes('let batch=true;'));
+ assert.ok(line);
+ const code=line.slice(line.indexOf("node -e '")+9,line.indexOf("' \"$repo_root"));
+ const dir=mkdtempSync(join(tmpdir(),'ops-batch-admission-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const file=join(dir,'report.json'),audienceFile=join(dir,'audience.json');
+ const ready={sha:'same-head',phase:'serving',readsEnabled:true,shadow:{passed:true},spectatorReady:true,spectatorFailed:0};
+ const mode={spectatorSourceMode:'batch',sourceBatchModeVerified:true};
+ const audience={sha:'same-head',phase:'ready',...mode,servingSourceBatchRpcCalls:1};
+ for(const [flag,patch,audiencePatch,expected] of [
+  ['0',{},null,0],['1',{},audience,1],
+  ['1',{...mode,sourceBatchRpcCalls:0},audience,0],
+  ['1',{...mode,sourceBatchRpcCalls:0},{...audience,servingSourceBatchRpcCalls:0},1],
+  ['1',mode,{...audience,sha:'old-head'},1],['1',mode,{...audience,phase:'failed'},1],
+  ['1',mode,{...audience,spectatorSourceMode:'single'},1],
+  ['1',{...mode,spectatorSourceMode:'single'},audience,1],
+  ['1',{...mode,sourceBatchModeVerified:false},audience,1],
+  ['1',{...mode,spectatorFailed:1},audience,1],
+ ]){
+  writeFileSync(file,JSON.stringify({...ready,...patch}));
+  writeFileSync(audienceFile,JSON.stringify(audiencePatch));
+  const result=spawnSync(process.execPath,['-e',code,file,flag,audienceFile],{encoding:'utf8',timeout:5000});
+  assert.equal(result.status,expected,result.stderr);
+ }
+});
+
+test('batch SQL identity check resolves repository files from a foreign working directory',()=>{
+ const marker="<<'BATCH_SOURCE_HASH'\n";
+ const start=script.indexOf(marker)+marker.length;assert.ok(start>=marker.length);
+ const code=script.slice(start,script.indexOf('\nBATCH_SOURCE_HASH',start));
+ const root=fileURLToPath(new URL('../../',import.meta.url));
+ const result=spawnSync(process.execPath,['--input-type=module','-',root],{cwd:tmpdir(),input:code,encoding:'utf8',timeout:5000});
+ assert.equal(result.status,0,result.stderr);
+ const metadataMarker="<<'BATCH_SOURCE_METADATA'\n";
+ const metadataStart=script.indexOf(metadataMarker)+metadataMarker.length;assert.ok(metadataStart>=metadataMarker.length);
+ const imports=script.slice(metadataStart,script.indexOf('const query=',metadataStart));
+ const metadata=spawnSync(process.execPath,['--input-type=module','-','owned-container','unused-report.json',root],{
+  cwd:tmpdir(),input:imports+"\nassert.equal(sourceBatchProfile.sqlSha256,'f8fceb3ab75a8473704ddbbe804d6ea7502f01e93d21b7e90445f35b0ebb5fba');",encoding:'utf8',timeout:5000});
+ assert.equal(metadata.status,0,metadata.stderr);
+});
+
+test('loaded audience worker forwards batch mode and counts only ready-phase batch calls',async()=>{
+ const audience=readFileSync(new URL('./operations-audience.mjs',import.meta.url),'utf8');
+ const start=audience.indexOf('const result=await loaded.worker.processPublicSpectatorJobs(');
+ const end=audience.indexOf('workerCalls++;',start);assert.ok(start>0&&end>start);
+ const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
+ const run=new AsyncFunction('assert','loaded','service','deadline','spectatorSourceMode','phase','stopping',
+  'let sourceBatchModeVerified=false,sourceBatchRpcCalls=0,servingSourceBatchRpcCalls=0;'+audience.slice(start,end)+
+  'return {sourceBatchModeVerified,sourceBatchRpcCalls,servingSourceBatchRpcCalls};');
+ for(const mode of ['single','batch'])for(const [phase,stopping]of [['starting',false],['ready',false],['ready',true]]){
+  const loaded={worker:{processPublicSpectatorJobs:async(wrapper,deadline,actualMode)=>{
+   assert.equal(actualMode,mode);assert.ok(deadline>Date.now());
+   await wrapper.rpc(mode==='batch'?'get_public_spectator_projection_sources_v2':'get_public_spectator_projection_source_v2',{});
+   return {sourceMode:actualMode};
+  }}};
+  const service={rpc:()=>({abortSignal:signal=>{assert.ok(signal instanceof AbortSignal);return Promise.resolve({data:[],error:null});}})};
+  const value=await run(assert,loaded,service,Date.now()+5000,mode,phase,stopping);
+  assert.equal(value.sourceBatchModeVerified,true);assert.equal(value.sourceBatchRpcCalls,mode==='batch'?1:0);
+  assert.equal(value.servingSourceBatchRpcCalls,mode==='batch'&&phase==='ready'&&!stopping?1:0);
+ }
+ await assert.rejects(run(assert,{worker:{processPublicSpectatorJobs:async()=>({sourceMode:'single'})}},{},Date.now()+5000,'batch','ready',false),/Actual audience worker source mode/);
+ const profile=readFileSync(new URL('./operations-rpc-profile.sql',import.meta.url),'utf8');
+ assert.match(profile,/WHEN strpos\(query,'get_public_spectator_projection_sources_v2'\)>0 THEN 'get_public_spectator_projection_sources_v2'/);
+ assert.match(audience,/sourceBatchModeAndServingUsage:sourceBatchModeVerified&&sourceBatchRpcCalls>0&&servingSourceBatchRpcCalls>0/);
+});
+
+test('targeted runs stay separate from full acceptance and retain actual conservation gates',()=>{
+ const start=script.indexOf('if [[ "$diagnostic_scope" != none ]]; then\n  loaded_phase_checkpoint');
+ const end=script.indexOf('\nrun_browser_proof\n',start);
+ assert.ok(start>0&&end>start);
+ const branch=script.slice(start,end);
+ assert.match(branch,/targeted canonical Cashier payment reproduction across ten fresh tours/);
+ assert.match(branch,/real check-in HTTP commit, independent observation, exact retry and tenant boundary/);
+ const targetedSelectors=[...branch.matchAll(/run_browser_proof '' '' '([^']+)'/g)].map(m=>m[1]);
+ assert.equal(targetedSelectors.length,2);
+ assert.ok(branch.indexOf('targeted-payment-locks-http.json')<branch.indexOf("run_browser_proof '' '' 'targeted canonical"));
+ assert.ok(branch.indexOf('if [[ "$targeted_browser_status" != 0 ]];then exit "$targeted_browser_status";fi')<branch.indexOf('TARGETED_PAYMENT_CONSERVATION'));
+ assert.match(branch,/wait "\$payment_lock_sampler_pid" \|\| targeted_observer_status=\$\?/);
+ for(const selector of targetedSelectors){
+  const title=selector.replace(/\$$/,'');
+  assert.ok(new RegExp(selector).test('chromium e2e/cashier-tour-real.spec.ts '+title),'Playwright grep includes project/file prefixes');
+ }
+ assert.match(branch,/movements:200,cash:1320000000,entries:200,activeSeats:200,seatedChips:4000000/);
+ assert.match(branch,/assert\.equal\(fence\.before,after\)/);
+ assert.match(branch,/for\(const key of \['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'\]\)/);
+ assert.match(branch,/fullAudienceChecks:audience\.checks/);
+ assert.match(branch,/TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE/);
+ assert.match(branch,/assert\.equal\(runtime\.pendingReentryTransportApplied,true\)/);
+ assert.match(branch,/assert\.equal\(runtime\.correctionMigrationApplied,true\)/);
+ const guard=script.slice(script.indexOf('case "$diagnostic_scope"'),script.indexOf('if [[ "$operations_rest_pool"'));
+ assert.match(guard,/"\$reentry_transport_probe" != 1/);
+ assert.match(guard,/"\$correction_undo_probe" != 1/);
+ assert.match(guard,/"\$prize_close_probe" != 1/);
+ assert.match(guard,/"\$reentry_fault_mode" != healthy/);
+ const gates=[...script.matchAll(/INSERT INTO public\.centerpoint_tournament_ops_release\(id,enabled,allowed_club_ids\)[\s\S]+?ON CONFLICT\(id\) DO UPDATE SET enabled=excluded\.enabled,allowed_club_ids=excluded\.allowed_club_ids;/g)].map(m=>m[0].replace(/\r/g,''));
+ assert.equal(gates.length,2);assert.equal(gates[0],gates[1],'Targeted fixture must use the existing canonical release gate, not a parallel flag');
+ assert.doesNotMatch(branch,/all-operational-stages-passed/);
+ assert.match(branch,/\n  exit 0\nfi$/);
+ assert.match(workflow,/github\.event_name == 'workflow_dispatch' && inputs\.diagnostic_scope \|\| 'none'/);
+ assert.match(workflow,/name: \$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.diagnostic_scope && inputs\.diagnostic_scope != 'none' && format\('targeted-\{0\}', inputs\.diagnostic_scope\) \|\| 'isolated-e2e' \}\}/);
+});
+
+test('targeted receipt preserves failed full delivery qualification and rejects unhealthy audience',t=>{
+ const dir=mkdtempSync(join(tmpdir(),'targeted-receipt-'));
+ t.after(()=>rmSync(dir,{recursive:true,force:true}));
+ const marker="<<'TARGETED_FINAL_RECEIPT'\n";
+ const start=script.indexOf(marker)+marker.length;
+ const body=script.slice(start,script.indexOf('\nTARGETED_FINAL_RECEIPT',start));
+ assert.ok(start>=marker.length);
+ const write=(name,value)=>writeFileSync(join(dir,name),JSON.stringify(value));
+ write('operations-schema-freeze-http.json',{before:'catalog'});
+ write('clock-candidate-broadcast-http.json',{phase:'stopped',failures:0});
+ write('operations-candidate-package-http.json',{pendingReentryTransportApplied:true,correctionMigrationApplied:true});
+ const checks={zeroErrors:true,atLeast30Seconds:true,allViewers:true,tableP95Within3Seconds:true,allSawLaterTableRevision:false,tableSpecificSourceDeliveryVerified:false};
+ const run=(patch={},exit='1')=>{
+  write('operations-audience-http.json',{phase:'failed',viewers:1000,checks:{...checks,...patch}});
+  return spawnSync(process.execPath,['--input-type=module','-',dir,'dealer-checkin','1000','a'.repeat(40),'catalog',exit],{input:body,encoding:'utf8',timeout:5000});
+ };
+ assert.equal(run().status,0);
+ const result=JSON.parse(readFileSync(join(dir,'targeted-operations-result-http.json'),'utf8'));
+ assert.equal(result.qualification,false);assert.equal(result.fullAudiencePhase,'failed');
+ assert.deepEqual(result.fullAudienceChecks,checks);
+ assert.equal(JSON.parse(readFileSync(join(dir,'operations-audience-http.json'),'utf8')).phase,'failed');
+ for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.notEqual(run({[key]:false}).status,0,key);
+ assert.notEqual(run({},'137').status,0,'Unexpected audience process exit must fail');
+});
+
 test('handover fixture cannot consume the independent salary actor',()=>{
  const selection=script.slice(script.indexOf("SELECT 'ad500000-0000-4000-8000-000000000001',c.user_id"),script.indexOf('ORDER BY c.user_id LIMIT 1;'));
  assert.match(selection,/c\.user_id=\(SELECT id FROM auth\.users WHERE email='cashier-latency-19@test\.invalid'\)/);
@@ -544,6 +770,8 @@ test('audience diagnostics distinguish descriptor pressure, deadlines and HTTP w
 });
 
 test('worker diagnostics preserve exact known lease rejection without exporting arbitrary RPC or error text',()=>{
+ assert.deepEqual(audienceWorkerFailure('get_public_spectator_projection_source_v2',{message:'source_pending'}),{operation:'get_public_spectator_projection_source_v2',reason:'source_pending'});
+ assert.equal(audienceWorkerFailure('get_public_spectator_projection_source_v2',{message:'source_pending private SQL'}).reason,'unknown');
  assert.deepEqual(audienceWorkerFailure('get_public_spectator_projection_source_v2',{message:'lease_expired'}),{operation:'get_public_spectator_projection_source_v2',reason:'lease_expired'});
  assert.deepEqual(audienceWorkerFailure('private_rpc',{message:'private SQL and token'}),{operation:'unknown',reason:'unknown'});
  assert.equal(audienceWorkerFailure('claim_public_spectator_projection_v2',{message:'lease_expired private'}).reason,'unknown');
@@ -708,8 +936,13 @@ test('prize-close HTTP probe requires full current33 and retains its bounded fin
  assert.ok(script.indexOf("[functions.compute-payouts]")<script.indexOf('supabase start --exclude'));
  assert.ok(script.indexOf("CLOSE_PRIZE_CANDIDATE_PATH")>script.indexOf('CORRECTION_OWNED_PREFLIGHT'));
  assert.ok(script.indexOf('hud_projector_pid=$!')<script.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE'));
- assert.ok(script.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE')<script.indexOf('kill -TERM "$audience_pid"'));
- assert.ok(script.indexOf('kill -TERM "$audience_pid"')<script.indexOf('HUD_DRAIN_BARRIER'));
+ // The manual targeted mode exits before the default full stages. Its own
+ // drain is not the full-suite prize/HUD drain checked here.
+ const fullStart=script.indexOf('\nrun_browser_proof\n');
+ assert.ok(fullStart>script.lastIndexOf('TARGETED_FINAL_RECEIPT'));
+ const fullStages=script.slice(fullStart);
+ assert.ok(fullStages.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE')<fullStages.indexOf('kill -TERM "$audience_pid"'));
+ assert.ok(fullStages.indexOf('kill -TERM "$audience_pid"')<fullStages.indexOf('HUD_DRAIN_BARRIER'));
  assert.ok(script.indexOf('HUD_DRAIN_BARRIER')<script.indexOf('PREPARED_HUD_FINAL_RECEIPT'));
  assert.ok(posix.matchesGlob('VinPoker/output/operations-latency/cashier-http-prize-close-http.json','VinPoker/output/operations-latency/*-http.json'));
  const e2e=readFileSync(new URL('../../e2e/cashier-tour-real.spec.ts',import.meta.url),'utf8');assert.ok(e2e.includes('LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED'));assert.ok(e2e.includes("prizeTotal=closed.prize_total"));

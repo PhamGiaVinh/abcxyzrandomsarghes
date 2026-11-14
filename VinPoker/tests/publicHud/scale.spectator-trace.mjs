@@ -3,7 +3,7 @@ export function instrumentSpectatorWorker(source){
  const signature='export async function processPublicSpectatorJobs(';
  if(source.split(signature).length!==2)throw Error('Spectator worker instrumentation boundary changed');
  return source.replace(signature,'async function originalProcessPublicSpectatorJobs(')+`
-export async function processPublicSpectatorJobs(client,deadline){
+export async function processPublicSpectatorJobs(client,deadline,sourceMode){
  const batch=crypto.randomUUID();
  return originalProcessPublicSpectatorJobs({rpc:async(name,args)=>{
   const startedAt=Date.now();let outcome='error';
@@ -16,12 +16,12 @@ export async function processPublicSpectatorJobs(client,deadline){
    const generation=scopeIndex!==null&&typeof value==='string'&&/^[0-9]{1,20}$/.test(value)?value:null;
    console.log(${JSON.stringify(marker)}+JSON.stringify({batch,rpc:name,component:args.p_component??null,startedAt,endedAt:Date.now(),outcome,scopeIndex,generation}));
   }catch{/* Telemetry cannot replace a business RPC result. */}}
- }},deadline);
+ }},deadline,sourceMode);
 }
 `;
 }
 export function parseSpectatorTrace(log){
- const allowed=new Set(['absorb_public_spectator_generations_v2','flush_public_spectator_broadcast_v2','claim_public_spectator_projection_v2','get_public_spectator_projection_source_v2','publish_public_spectator_projection_v2','fail_public_spectator_projection_v2']);
+ const allowed=new Set(['absorb_public_spectator_generations_v2','flush_public_spectator_broadcast_v2','claim_public_spectator_projection_v2','get_public_spectator_projection_source_v2','get_public_spectator_projection_sources_v2','publish_public_spectator_projection_v2','fail_public_spectator_projection_v2']);
  const events=[];
  for(const line of log.split('\n')){
   const at=line.indexOf(marker);if(at<0)continue;
@@ -41,6 +41,25 @@ export function summarizeSpectatorTrace(events){
  const summary=values=>({samples:values.length,p95Ms:values.length?[...values].sort((a,b)=>a-b)[Math.ceil(values.length*.95)-1]:null,maxMs:values.length?values.reduce((max,value)=>Math.max(max,value),0):null});
  const byRpc={};
  for(const row of events)(byRpc[row.rpc]??=[]).push(row.endedAt-row.startedAt);
+ const batches=new Map();
+ for(const row of events){
+  const batch=batches.get(row.batch)??{start:row.startedAt,end:row.endedAt,claims:[],sources:[]};
+  batch.start=Math.min(batch.start,row.startedAt);batch.end=Math.max(batch.end,row.endedAt);
+  if(row.rpc==='claim_public_spectator_projection_v2'&&row.outcome==='ok')batch.claims.push(row);
+  if(row.rpc==='get_public_spectator_projection_source_v2')batch.sources.push(row);
+  batches.set(row.batch,batch);
+ }
+ const boundaries=[],sourceWaits=[];let unpairedSources=0;
+ for(const batch of batches.values()){
+  if(batch.end>batch.start){boundaries.push([batch.start,1],[batch.end,-1]);}
+  for(const source of batch.sources){
+   const claim=batch.claims.filter(row=>row.endedAt<=source.startedAt).sort((a,b)=>b.endedAt-a.endedAt)[0];
+   if(claim)sourceWaits.push(source.startedAt-claim.endedAt);else unpairedSources++;
+  }
+ }
+ // Half-open observed RPC envelopes: a batch ending at t does not overlap one starting at t.
+ boundaries.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);let active=0,maxObservedOverlappingBatches=0;
+ for(const [,delta] of boundaries){active+=delta;maxObservedOverlappingBatches=Math.max(maxObservedOverlappingBatches,active);}
  const flushes=new Map();
  for(const row of events)if(row.rpc==='flush_public_spectator_broadcast_v2'&&row.outcome==='ok'){
   const rows=flushes.get(row.batch)??[];rows.push(row);flushes.set(row.batch,rows);
@@ -54,6 +73,9 @@ export function summarizeSpectatorTrace(events){
   wait.push(flush.startedAt-row.endedAt);throughFlush.push(flush.endedAt-row.endedAt);
  }
  return {rpcDurations:Object.fromEntries(Object.entries(byRpc).map(([rpc,values])=>[rpc,summary(values)])),published,withoutFollowingFlush,
+  workerBatches:{observed:batches.size,maxObservedOverlappingBatches:batches.size?maxObservedOverlappingBatches:null,
+   claimAckToSourceStart:summary(sourceWaits),unpairedSources,
+   scope:'Observed RPC envelopes only, not complete worker lifetimes or pool acquisition time. Individual source RPCs pair only with a completed successful claim in the same batch. Source-batch RPC durations are retained without per-job queue attribution.'},
   publishAckToNextSuccessfulFlushStart:summary(wait),publishAckToNextSuccessfulFlushEnd:summary(throughFlush),
   scope:'Same-batch successful flush starting after publish acknowledgement; not proof a particular tournament notification was emitted or delivered. Missing following flushes are counted, not treated as zero. Independent percentiles are not additive.'};
 }

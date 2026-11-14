@@ -64,3 +64,58 @@ test('request scope binds readers whose canonical public wire omits tournamentId
  assert.throws(()=>e.observe(1,{...scope,tournamentId:id(99)},f,1300),/requested table scope/);
  e.observe(1,{...scope,tableId:id(99)},f,1300);assert.equal(e.report().matchedDeliveries,1);
 });
+
+test('optional phase timing preserves the original credited frame, signed clocks and delivery gate',()=>{
+ const plain=createOperationalHandDeliveryEvidence(10),timed=createOperationalHandDeliveryEvidence(10);
+ plain.receipt(receipt());timed.receipt(receipt());
+ const timing={pendingAt:800,dispatchAt:900,headersAt:1005,bodyReadyAt:1250};
+ plain.observe(0,scope,frame(),1300);timed.observe(0,scope,frame(),1300,timing);
+ assert.deepEqual(timed.report(),plain.report());assert.equal(timed.report().diagnostics,undefined);
+ timing.dispatchAt=1; // Caller mutation must not rewrite credited evidence.
+ timed.observe(0,scope,frame(),1400,{pendingAt:1310,dispatchAt:1320,headersAt:1330,bodyReadyAt:1350});
+ const diagnostic=timed.report({diagnostics:true}).diagnostics,row=diagnostic.perHand[0];
+ assert.equal(diagnostic.timedMatches,1);assert.equal(diagnostic.untimedMatches,0);
+ assert.equal(row.finishIntentToAckMs,100);assert.equal(row.delivery.p95Ms,300);
+ assert.equal(row.stages.intentToDispatchMs.minMs,-100);
+ assert.equal(row.stages.oldestRequestToDispatchMs.p95Ms,100);
+ assert.equal(row.stages.dispatchToHeadersMs.p95Ms,105);
+ assert.equal(row.stages.headersToBodyMs.p95Ms,245);
+ assert.equal(row.stages.bodyToConsumerMs.p95Ms,50);
+ assert.equal(timed.report().complete,false);
+});
+
+test('phase diagnostics follow the same coalesced hand match, not a faster replacement frame',()=>{
+ const e=createOperationalHandDeliveryEvidence(10);e.receipt(receipt());
+ const later=frame(receipt(1));later.hand.status='in_progress';later.hand.actions=[];
+ e.observe(0,scope,later,2050,{pendingAt:1900,dispatchAt:1950,headersAt:2005,bodyReadyAt:2040});
+ e.receipt(receipt(1));
+ const report=e.report({diagnostics:true});
+ assert.equal(report.matchedDeliveries,1);assert.equal(report.p95Ms,1050);
+ assert.equal(report.diagnostics.perHand[0].coalescedFrames,1);
+ assert.equal(report.diagnostics.perHand[0].stages.intentToDispatchMs.p95Ms,950);
+ assert.equal(report.diagnostics.perHand[1].delivery.samples,0);
+ assert.equal(report.diagnostics.perHand[1].delivery.p95Ms,null);
+});
+
+test('diagnostics reject unknown fields/order drift and retain untimed matches without inventing zero timings',()=>{
+ const e=createOperationalHandDeliveryEvidence(10);e.receipt(receipt());
+ const timing={pendingAt:900,dispatchAt:1000,headersAt:1100,bodyReadyAt:1200};
+ for(const invalid of [{...timing,token:'private'},{...timing,headersAt:999},{...timing,bodyReadyAt:1301},{...timing,pendingAt:0}])
+  assert.throws(()=>e.observe(0,scope,frame(),1300,invalid));
+ assert.equal(e.report().matchedDeliveries,0);
+ e.observe(0,scope,frame(),1300);
+ const report=e.report({diagnostics:true});
+ assert.equal(report.matchedDeliveries,1);assert.equal(report.diagnostics.timedMatches,0);
+ assert.equal(report.diagnostics.untimedMatches,1);
+ assert.equal(report.diagnostics.perHand[0].stages.dispatchToHeadersMs.p95Ms,null);
+ assert.doesNotMatch(JSON.stringify(report),/private/);
+});
+
+test('final diagnostics export at most twenty per-hand rows and ten worst scalar samples',()=>{
+ const e=createOperationalHandDeliveryEvidence(10);
+ for(let n=0;n<20;n++){const r=receipt(n);e.receipt(r);for(let v=0;v<10;v++)e.observe(v,scope,frame(r),r.verifiedAt);}
+ const before=e.report(),after=e.report({diagnostics:true});
+ assert.equal(after.diagnostics.perHand.length,20);assert.equal(after.diagnostics.worstSamples.length,10);
+ const {diagnostics,...unchanged}=after;assert.deepEqual(unchanged,before);
+ assert.equal(after.matchedDeliveries,200);assert.equal(after.complete,true);
+});

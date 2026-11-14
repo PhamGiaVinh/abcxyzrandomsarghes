@@ -17,12 +17,18 @@ export function sql(query,{captureFailure=false}={}){
 }
 export function jsonSql(query){return JSON.parse(sql(query));}
 export function pgbench(script,{orderedTransactions=false}={}){
-  const program=`import json,sys,tempfile,pathlib,subprocess
+  const waitDiagnostic=orderedTransactions&&process.env.PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC==='1';
+  const observerSource=waitDiagnostic?readFileSync(new URL('./writer.wait.observer.py',import.meta.url),'utf8'):'';
+  const program=observerSource+`\nimport json,sys,tempfile,pathlib,subprocess,os
 with tempfile.TemporaryDirectory(prefix='vinpoker-hud-pgbench-') as directory:
  root=pathlib.Path(directory)
  source=root/'writer.sql'
  source.write_text(sys.stdin.read())
- result=subprocess.run(['pgbench','-n','-M','prepared','-c','1','-j','1','-t','220','-f',str(source),'-l','--log-prefix='+str(root/'latency')],capture_output=True,text=True)
+ observer=start_writer_observer(root) if ${waitDiagnostic?'True':'False'} else None
+ try:
+  result=subprocess.run(['pgbench','-n','-M','prepared','-c','1','-j','1','-t','220','-f',str(source),'-l','--log-prefix='+str(root/'latency')],capture_output=True,text=True,env=writer_observer_env('vinpoker_hud_writer_probe') if observer else None)
+ finally:
+  wait_evidence=finish_writer_observer(observer,root) if observer else None
  if result.returncode: raise RuntimeError(result.stderr)
  records=[]
  for log in sorted(root.glob('latency.*')):
@@ -30,7 +36,7 @@ with tempfile.TemporaryDirectory(prefix='vinpoker-hud-pgbench-') as directory:
    fields=line.split()
    records.append(dict(client=int(fields[0]),transaction=int(fields[1]),latencyMs=float(fields[2])/1000,script=int(fields[3]),epochSeconds=int(fields[4]),epochMicros=int(fields[5]),warmup=index<20))
  samples=sorted(row['latencyMs'] for row in records if not row['warmup'])
- print(json.dumps(dict(samples=samples,transactions=records) if ${orderedTransactions?'True':'False'} else samples))`;
+ print(json.dumps(dict(samples=samples,transactions=records,**({'waitDiagnostic':wait_evidence} if observer else {})) if ${orderedTransactions?'True':'False'} else samples))`;
   return JSON.parse(execFileSync(windows?'wsl':'python3',windows?[...prefix.slice(0,-1),'python3','-c',program]:['-c',program],{
     input:script,
     encoding:'utf8',maxBuffer:1024*1024,

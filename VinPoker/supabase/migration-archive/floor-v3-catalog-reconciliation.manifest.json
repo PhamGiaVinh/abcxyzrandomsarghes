@@ -10149,6 +10149,21 @@
       "version": "20270128000341",
       "filename": "20270128000341_retire_legacy_break_bounded_preflight.sql",
       "sha256": "bf04c5a289f8b5398191b170d14be9c54b6cd1944ac75f0fae1d590a6cac3017"
+    },
+    {
+      "version": "20270128000342",
+      "filename": "20270128000342_nonblocking_spectator_source_generation.sql",
+      "sha256": "329598b30c0dd07b3832c2309fc7b61b668352926b7c25d35c97db35d8c57c83"
+    },
+    {
+      "version": "20270128000343",
+      "filename": "20270128000343_spectator_pending_source_outcome.sql",
+      "sha256": "a3aa2e51b405a37481ada4d0b105fd727eb4e21fd4cdc46e5994b562f0783221"
+    },
+    {
+      "version": "20270128000344",
+      "filename": "20270128000344_spectator_bounded_source_batch.sql",
+      "sha256": "f8fceb3ab75a8473704ddbbe804d6ea7502f01e93d21b7e90445f35b0ebb5fba"
     }
   ],
   "floorActiveAllowlist": [

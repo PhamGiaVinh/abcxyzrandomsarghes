@@ -1,6 +1,17 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {audienceSelectionReadiness,recordAudienceDetailEvent} from './operations-audience-scope.mjs';
+
+test('diagnostic pending time keeps the oldest coalesced request and resets at dispatch or scope invalidation',()=>{
+ const state={};
+ recordAudienceDetailEvent(state,'request',100);recordAudienceDetailEvent(state,'request',150);
+ assert.equal(state.detailPendingAt,100);
+ recordAudienceDetailEvent(state,'dispatch',200);
+ assert.equal(state.detailDispatchedPendingAt,100);assert.equal(state.detailPendingAt,undefined);
+ recordAudienceDetailEvent(state,'request',220);recordAudienceDetailEvent(state,'invalidate',250);
+ assert.equal(state.detailPendingAt,undefined);
+ recordAudienceDetailEvent(state,'dispatch',300);assert.equal(state.detailDispatchedPendingAt,300);
+});
 const selection={tableId:'private-table',sessionId:'private-session'};
 const ready={online:true,ready:true,clockReady:true,tableId:selection.tableId,observedSession:selection.sessionId};
 test('no selection reports unknown; all five actual readiness conditions must hold',()=>{

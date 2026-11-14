@@ -1,5 +1,162 @@
 import {afterEach,expect,it,vi} from 'vitest';
 import {processPublicSpectatorJobs} from '../../supabase/functions/public-spectator-projector-v2/worker';
+import {decodeSourceBatch} from '../../supabase/functions/public-spectator-projector-v2/sourceBatch';
+
+const batchJobs=[1,2].map(i=>({tournament_id:`10000000-0000-4000-8000-${String(i).padStart(12,'0')}`,component:'tables',fencing_token:`20000000-0000-4000-8000-${String(i).padStart(12,'0')}`}));
+const batchSource=(job=batchJobs[0])=>({tournamentId:job.tournament_id,component:job.component,sourceVector:{generation:'1'},payload:{items:[]}});
+it('matches reordered complete source receipts to the original job order',()=>{
+ const raw=[{...batchJobs[1],requiresIndividual:true},{...batchJobs[0],source:batchSource()}];
+ expect(decodeSourceBatch(batchJobs,raw)).toEqual([{source:batchSource()},{requiresIndividual:true}]);
+});
+it('keeps exact fencing and source errors distinct from individual-read requests',()=>{
+ expect(decodeSourceBatch(batchJobs,[{...batchJobs[0],source:{fenced:true}},{...batchJobs[1],error:'source_failed',sqlstate:'42501'}]))
+  .toEqual([{source:{fenced:true}},{error:'source_failed',sqlstate:'42501'}]);
+});
+it.each([
+ [],[{...batchJobs[0],source:batchSource()}],
+ [{...batchJobs[0],source:batchSource()},{...batchJobs[0],source:batchSource()}],
+ [{...batchJobs[0],source:batchSource()},{...batchJobs[1],fencing_token:batchJobs[0].fencing_token,source:batchSource()}],
+ [{...batchJobs[0],source:batchSource()},{...batchJobs[1],tournament_id:'10000000-0000-4000-8000-000000000099',source:batchSource()}],
+ [{...batchJobs[0],source:batchSource(batchJobs[1])},{...batchJobs[1],source:batchSource(batchJobs[1])}],
+ [{...batchJobs[0],source:{...batchSource(),component:'ranking'}},{...batchJobs[1],source:batchSource(batchJobs[1])}],
+ ...[{fenced:true,extra:true},{fenced:false},{sourceVector:{generation:'-1'},payload:{}},{sourceVector:{generation:'9223372036854775808'},payload:{}},{sourceVector:{generation:'1'},payload:null},{sourceVector:[],payload:{}},{sourceVector:null,payload:{}},{sourceVector:{generation:'1'},payload:[]}]
+  .map(source=>[{...batchJobs[0],source:'sourceVector' in source?{...batchSource(),...source}:source},{...batchJobs[1],source:batchSource(batchJobs[1])}]),
+ [{...batchJobs[0],requiresIndividual:true,source:batchSource()},{...batchJobs[1],source:batchSource()}],
+ [{...batchJobs[0],error:'other',sqlstate:'42501'},{...batchJobs[1],source:batchSource()}],
+].map(raw=>({raw})))('rejects the entire malformed receipt envelope before any payload use: %#',({raw})=>{
+ expect(()=>decodeSourceBatch(batchJobs,raw)).toThrow('invalid_source_batch_receipt');
+});
+it('counts UTF8 bytes and rejects oversized batch responses',()=>{
+ const raw=[{...batchJobs[0],source:{...batchSource(),payload:{name:'é'.repeat(530000)}}},{...batchJobs[1],source:batchSource()}];
+ expect(()=>decodeSourceBatch(batchJobs,raw)).toThrow('invalid_source_batch_receipt');
+});
+
+function batchWorkerFixture(count=2){
+ const jobs=Array.from({length:count},(_,i)=>({...batchJobs[0],tournament_id:`10000000-0000-4000-8000-${String(i+1).padStart(12,'0')}`,fencing_token:`20000000-0000-4000-8000-${String(i+1).padStart(12,'0')}`,group_key:'component'}));
+ let response:(jobs:typeof batchJobs)=>unknown=items=>items.map(job=>({...job,source:batchSource(job)}));
+ let batchError:unknown=null;
+ const rpc=vi.fn(async(name:string,args:Record<string,unknown>)=>{
+  if(name==='claim_public_spectator_projection_v2')return {data:jobs,error:null};
+  if(name==='get_public_spectator_projection_sources_v2')return {data:response(args.p_jobs as typeof batchJobs),error:batchError};
+  if(name==='get_public_spectator_projection_source_v2')return {data:batchSource({tournament_id:String(args.p_tournament_id),component:String(args.p_component),fencing_token:String(args.p_fencing_token)}),error:null};
+  if(name==='publish_public_spectator_projection_v2')return {data:true,error:null};
+  return {data:0,error:null};
+ });
+ return {jobs,rpc,setResponse:(value:typeof response)=>{response=value;},setError:(value:unknown)=>{batchError=value;}};
+}
+it('uses bounded source waves and preserves exact publish identities',async()=>{
+ const f=batchWorkerFixture(8);f.setResponse(items=>items.toReversed().map(job=>({...job,source:batchSource(job)})));
+ const result=await processPublicSpectatorJobs(f,Date.now()+5000,'batch');
+ expect(result.processed).toBe(8);expect(result.results.every(row=>row.published)).toBe(true);
+ const sources=f.rpc.mock.calls.filter(([name])=>name==='get_public_spectator_projection_sources_v2');
+ expect(sources.map(([,args])=>(args.p_jobs as unknown[]).length)).toEqual([6,2]);
+ expect(f.rpc.mock.calls.filter(([name])=>name==='get_public_spectator_projection_source_v2')).toHaveLength(0);
+ for(const job of f.jobs)expect(f.rpc).toHaveBeenCalledWith('publish_public_spectator_projection_v2',expect.objectContaining({p_tournament_id:job.tournament_id,p_fencing_token:job.fencing_token}));
+});
+it('prefetches only one source wave while retaining six publish lanes',async()=>{
+ const f=batchWorkerFixture(20),original=f.rpc.getMockImplementation()!;
+ const releases:Array<()=>void>=[];let active=0,maxActive=0,sourceCalls=0;
+ f.rpc.mockImplementation(async(name,args)=>{
+  if(name==='get_public_spectator_projection_sources_v2')sourceCalls++;
+  if(name==='publish_public_spectator_projection_v2'){
+   active++;maxActive=Math.max(maxActive,active);
+   await new Promise<void>(resolve=>releases.push(resolve));active--;
+  }
+  return original(name,args);
+ });
+ const running=processPublicSpectatorJobs(f,Date.now()+5000,'batch');await settle();
+ const firstReadAhead=sourceCalls,firstActive=active;
+ for(let i=0;i<4;i++){for(const release of releases.splice(0))release();await settle();}
+ const result=await running;
+ expect(firstReadAhead).toBe(2);expect(firstActive).toBe(6);
+ expect(sourceCalls).toBe(4);expect(maxActive).toBe(6);expect(result.processed).toBe(20);
+ expect(result.results.every(row=>row.published)).toBe(true);
+});
+it.each(['throw','malformed'] as const)('drains a %s prefetched wave without publishing it or escaping rejection',async kind=>{
+ const f=batchWorkerFixture(14),original=f.rpc.getMockImplementation()!;
+ const releases:Array<()=>void>=[];let reads=0;
+ f.rpc.mockImplementation(async(name,args)=>{
+  if(name==='get_public_spectator_projection_sources_v2'&&++reads===2){
+   if(kind==='throw')throw Error('transport failed');
+   return {data:[],error:null};
+  }
+  if(name==='publish_public_spectator_projection_v2'&&releases.length<6&&reads<=2)
+   await new Promise<void>(resolve=>releases.push(resolve));
+  return original(name,args);
+ });
+ let ended=false;const running=processPublicSpectatorJobs(f,Date.now()+5000,'batch').then(value=>{ended=true;return value;});
+ await settle();expect(reads).toBe(2);expect(ended).toBe(false);
+ for(const release of releases)release();
+ const result=await running;
+ expect(result.processed).toBe(14);expect(result.results.filter(row=>row.published)).toHaveLength(8);
+ expect(result.results.filter(row=>row.error)).toHaveLength(6);
+ expect(f.rpc.mock.calls.filter(([name])=>name==='get_public_spectator_projection_source_v2')).toHaveLength(0);
+});
+it('drains a held read ahead at deadline without starting later publications or another wave',async()=>{
+ let now=100;vi.spyOn(Date,'now').mockImplementation(()=>now);
+ const f=batchWorkerFixture(20),original=f.rpc.getMockImplementation()!;
+ let reads=0,releaseSource!:(value:{data:unknown;error:unknown})=>void;
+ const releases:Array<()=>void>=[];
+ f.rpc.mockImplementation(async(name,args)=>{
+  if(name==='get_public_spectator_projection_sources_v2'&&++reads===2)
+   return new Promise(resolve=>{releaseSource=resolve;});
+  if(name==='publish_public_spectator_projection_v2')await new Promise<void>(resolve=>releases.push(resolve));
+  return original(name,args);
+ });
+ let ended=false;const running=processPublicSpectatorJobs(f,200,'batch').then(value=>{ended=true;return value;});
+ await settle();expect(reads).toBe(2);expect(releases).toHaveLength(6);
+ now=200;for(const release of releases)release();await settle();
+ expect(ended).toBe(false);const calls=f.rpc.mock.calls.length;
+ releaseSource({data:f.jobs.slice(6,12).map(({group_key,...job})=>({...job,source:batchSource(job)})),error:null});
+ const result=await running;
+ expect(f.rpc).toHaveBeenCalledTimes(calls);expect(reads).toBe(2);
+ expect(result.processed).toBe(12);expect(result.results.filter(row=>row.published)).toHaveLength(6);
+ expect(result.results.filter(row=>row.error==='deadline_exceeded')).toHaveLength(6);
+});
+it('reads individually only for the exact size-budget marker, retaining source errors',async()=>{
+ const f=batchWorkerFixture();f.setResponse(items=>[{...items[0],requiresIndividual:true},{...items[1],error:'source_failed',sqlstate:'42501'}]);
+ const result=await processPublicSpectatorJobs(f,Date.now()+5000,'batch');
+ expect(f.rpc.mock.calls.filter(([name])=>name==='get_public_spectator_projection_source_v2')).toEqual([
+  ['get_public_spectator_projection_source_v2',{p_tournament_id:f.jobs[0].tournament_id,p_component:'tables',p_fencing_token:f.jobs[0].fencing_token}],
+ ]);
+ expect(result.results.filter(row=>row.published)).toHaveLength(1);
+ expect(result.results.find(row=>row.key.startsWith(f.jobs[1].tournament_id))?.error).toBe('source_failed');
+});
+it.each(['transport','missing','wrong-token'] as const)('rejects the whole %s batch before publishing or falling back',async kind=>{
+ const f=batchWorkerFixture();
+ if(kind==='transport')f.setError({code:'XX000'});
+ if(kind==='missing')f.setResponse(items=>[{...items[0],source:batchSource()}]);
+ if(kind==='wrong-token')f.setResponse(items=>items.map(job=>({...job,fencing_token:batchJobs[0].fencing_token,source:batchSource(job)})));
+ const result=await processPublicSpectatorJobs(f,Date.now()+5000,'batch');
+ expect(result.processed).toBe(2);expect(result.results.every(row=>!row.published&&row.error)).toBe(true);
+ expect(f.rpc.mock.calls.filter(([name])=>['publish_public_spectator_projection_v2','get_public_spectator_projection_source_v2'].includes(name))).toHaveLength(0);
+ expect(f.rpc.mock.calls.filter(([name])=>name==='fail_public_spectator_projection_v2')).toHaveLength(2);
+});
+it('does not start an individual fallback after the original deadline',async()=>{
+ let now=100;vi.spyOn(Date,'now').mockImplementation(()=>now);
+ const f=batchWorkerFixture();f.setResponse(items=>{now=200;return items.map(job=>({...job,requiresIndividual:true}));});
+ const result=await processPublicSpectatorJobs(f,200,'batch');
+ expect(result.results.every(row=>row.error==='deadline_exceeded')).toBe(true);
+ expect(f.rpc.mock.calls.filter(([name])=>['get_public_spectator_projection_source_v2','publish_public_spectator_projection_v2','fail_public_spectator_projection_v2'].includes(name))).toHaveLength(0);
+});
+it('waits for a complete slow source wave before publishing any job',async()=>{
+ const f=batchWorkerFixture();let release!:(value:{data:unknown;error:unknown})=>void;
+ const held=new Promise<{data:unknown;error:unknown}>(resolve=>{release=resolve;});
+ const client={async rpc(name:string,args:Record<string,unknown>){if(name==='get_public_spectator_projection_sources_v2')return held;return f.rpc(name,args);}};
+ const running=processPublicSpectatorJobs(client,Date.now()+5000,'batch');await settle();
+ expect(f.rpc.mock.calls.filter(([name])=>name==='publish_public_spectator_projection_v2')).toHaveLength(0);
+ release({data:f.jobs.map(({group_key,...job})=>({...job,source:batchSource(job)})),error:null});
+ expect((await running).results.every(row=>row.published)).toBe(true);
+});
+it('does not publish an individual source that finishes after the deadline',async()=>{
+ let now=100;vi.spyOn(Date,'now').mockImplementation(()=>now);
+ const f=batchWorkerFixture();f.setResponse(items=>[{...items[0],requiresIndividual:true},{...items[1],source:{fenced:true}}]);
+ const client={async rpc(name:string,args:Record<string,unknown>){const value=await f.rpc(name,args);if(name==='get_public_spectator_projection_source_v2')now=200;return value;}};
+ const result=await processPublicSpectatorJobs(client,200,'batch');
+ expect(result.results.filter(row=>row.error==='deadline_exceeded')).toHaveLength(1);
+ expect(result.results.every(row=>!row.published)).toBe(true);
+ expect(f.rpc.mock.calls.filter(([name])=>['publish_public_spectator_projection_v2','fail_public_spectator_projection_v2'].includes(name))).toHaveLength(0);
+});
 
 afterEach(()=>vi.restoreAllMocks());
 function fixture(count=8){
@@ -31,6 +188,90 @@ function fixture(count=8){
   fenced:()=>{published=false;},flushStarts,get flushes(){return flushes;},get maxActive(){return maxActive;}};
 }
 async function settle(){for(let i=0;i<100;i++)await Promise.resolve();}
+
+it('bounds job concurrency at six and finishes claimed work once without overlapping each job',async()=>{
+ const jobs=Array.from({length:21},(_,i)=>({tournament_id:'tour-'+i,component:'tables',group_key:'component',fencing_token:'token-'+i}));
+ let active=0,maxActive=0,started=0;
+ const releases:Array<()=>void>=[],published=new Set<string>(),sourceReady=new Set<string>();
+ const rpc=vi.fn(async(name:string,args:Record<string,unknown>)=>{
+  if(name==='claim_public_spectator_projection_v2')return {data:jobs,error:null};
+  if(name==='get_public_spectator_projection_source_v2'){
+   active++;started++;maxActive=Math.max(maxActive,active);
+   await new Promise<void>(resolve=>releases.push(resolve));
+   sourceReady.add(String(args.p_tournament_id));
+   return {data:{sourceVector:{generation:'1'},payload:{items:[]}},error:null};
+  }
+  if(name==='publish_public_spectator_projection_v2'){
+   const key=String(args.p_tournament_id);expect(sourceReady.has(key)).toBe(true);expect(published.has(key)).toBe(false);
+   published.add(key);active--;return {data:true,error:null};
+  }
+  return {data:0,error:null};
+ });
+ const running=processPublicSpectatorJobs({rpc});await settle();
+ expect(started).toBe(6);expect(active).toBe(6);
+ for(let wave=0;wave<jobs.length&&published.size<jobs.length;wave++){
+  for(const release of releases.splice(0))release();await settle();
+ }
+ expect(published.size).toBe(jobs.length);
+ const result=await running;
+ expect(maxActive).toBe(6);expect(active).toBe(0);expect(result.processed).toBe(21);
+ expect(result.results.every(row=>row.published&&!row.error)).toBe(true);
+});
+
+function startupFixture(){
+ let absorbResolve!:(value:{data:unknown;error:unknown})=>void,flushResolve!:(value:{data:unknown;error:unknown})=>void;
+ let absorbReject!:(error:Error)=>void,flushReject!:(error:Error)=>void;
+ const absorb=new Promise<{data:unknown;error:unknown}>((resolve,reject)=>{absorbResolve=resolve;absorbReject=reject;});
+ const flush=new Promise<{data:unknown;error:unknown}>((resolve,reject)=>{flushResolve=resolve;flushReject=reject;});
+ let flushes=0;
+ const rpc=vi.fn(async(name:string)=>{
+  if(name==='absorb_public_spectator_generations_v2')return absorb;
+  if(name==='flush_public_spectator_broadcast_v2'&&++flushes===1)return flush;
+  return {data:name==='claim_public_spectator_projection_v2'?[]:0,error:null};
+ });
+ return {rpc,absorbResolve,flushResolve,absorbReject,flushReject};
+}
+it.each(['absorb','flush'] as const)('overlaps startup but waits for both commits when %s finishes first',async first=>{
+ const f=startupFixture(),running=processPublicSpectatorJobs(f);
+ await settle();expect(f.rpc.mock.calls.map(([name])=>name)).toEqual(['absorb_public_spectator_generations_v2','flush_public_spectator_broadcast_v2']);
+ if(first==='absorb')f.absorbResolve({data:1,error:null});else f.flushResolve({data:1,error:null});
+ await settle();expect(f.rpc).toHaveBeenCalledTimes(2);
+ if(first==='absorb')f.flushResolve({data:1,error:null});else f.absorbResolve({data:1,error:null});
+ expect((await running).claimed).toBe(0);
+ expect(f.rpc.mock.calls[2][0]).toBe('claim_public_spectator_projection_v2');
+});
+it.each(['absorb','flush'] as const)('drains the other startup RPC after a returned %s error and never claims',async failed=>{
+ const f=startupFixture();let ended=false;
+ const running=processPublicSpectatorJobs(f).catch(error=>{ended=true;return error;});
+ await settle();
+ if(failed==='absorb')f.absorbResolve({data:null,error:{code:'failure'}});else f.flushResolve({data:null,error:{code:'failure'}});
+ await settle();expect(ended).toBe(false);expect(f.rpc).toHaveBeenCalledTimes(2);
+ if(failed==='absorb')f.flushResolve({data:1,error:null});else f.absorbResolve({data:1,error:null});
+ expect((await running).message).toBe(failed==='absorb'?'generation_absorb_failed':'broadcast_flush_failed');
+ expect(f.rpc).toHaveBeenCalledTimes(2);
+});
+it.each(['absorb','flush'] as const)('drains the other startup RPC after a thrown %s error',async failed=>{
+ const f=startupFixture(),cause=Error('transport failure');let ended=false;
+ const running=processPublicSpectatorJobs(f).catch(error=>{ended=true;return error;});
+ await settle();if(failed==='absorb')f.absorbReject(cause);else f.flushReject(cause);
+ await settle();expect(ended).toBe(false);
+ if(failed==='absorb')f.flushResolve({data:1,error:null});else f.absorbResolve({data:1,error:null});
+ expect(await running).toBe(cause);expect(f.rpc).toHaveBeenCalledTimes(2);
+});
+it('preserves absorb error precedence while draining both startup failures',async()=>{
+ const f=startupFixture(),running=processPublicSpectatorJobs(f).catch(error=>error);
+ await settle();f.flushReject(Error('flush failed'));f.absorbResolve({data:null,error:{code:'failure'}});
+ expect((await running).message).toBe('generation_absorb_failed');expect(f.rpc).toHaveBeenCalledTimes(2);
+});
+it('drains startup at deadline and leaves new outbox work for the next dispatch',async()=>{
+ let now=0;vi.spyOn(Date,'now').mockImplementation(()=>now);
+ const f=startupFixture();let ended=false;
+ const running=processPublicSpectatorJobs(f,1000).catch(error=>{ended=true;return error;});
+ await settle();f.flushResolve({data:0,error:null});now=1000;
+ await settle();expect(ended).toBe(false);
+ f.absorbResolve({data:1,error:null});expect((await running).message).toBe('deadline_exceeded');
+ expect(f.rpc).toHaveBeenCalledTimes(2);
+});
 
 it('does not publish or fail a claim explicitly fenced by the source RPC',async()=>{
  const f=fixture(1);

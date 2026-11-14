@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {sql,jsonSql} from './nativeDb.mjs';
+import {pendingSourceProbeEnabled,sourceBatchProbeEnabled,sourceBatchProfile,writerWaitDiagnosticEnabled} from './scale.write.protocol.mjs';
 const sha256=value=>createHash('sha256').update(value).digest('hex');
 export const writerSourceFunctions=()=>{
  // enqueue is called indirectly by hand_changed; direct trigger hashes alone
@@ -19,10 +20,17 @@ export function currentWriterIdentity(){
   sourceHands:Number(sql('SELECT count(*) FROM public.tournament_hands;'))};
 }
 export function currentWriterCodeIdentity(){
+ const pendingSourceProbe=pendingSourceProbeEnabled(process.env);
+ const sourceBatchProbe=sourceBatchProbeEnabled(process.env);
+ const candidateInputs=process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE==='1'?[...inputs,'supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql']:inputs;
+ if(pendingSourceProbe)candidateInputs.push('supabase/migrations/20270128000343_spectator_pending_source_outcome.sql');
+ if(sourceBatchProbe)candidateInputs.push('supabase/migrations/'+sourceBatchProfile.migration);
+ if(writerWaitDiagnosticEnabled(process.env))candidateInputs.push('tests/publicHud/writer.wait.observer.py','tests/publicHud/writer-wait-observer.native.mjs');
  const sha=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
  assert.equal(sha,process.env.GITHUB_SHA,'Default checkout must match the current workflow SHA');
  return {sha,
+  ...(sourceBatchProbe?{sourceBatchProbe:true,sourceBatchSqlSha256:sourceBatchProfile.sqlSha256}:{}),
   manifestSha256:sha256(readFileSync('scripts/ops/tracker-hud-20261104-manifest.json')),
-  fixtureInputsSha256:sha256(JSON.stringify(inputs.map(file=>[file,sha256(readFileSync(file))]))),
+  fixtureInputsSha256:sha256(JSON.stringify(candidateInputs.map(file=>[file,sha256(readFileSync(file))]))),
   sourceFunctionsSha256:sha256(JSON.stringify(writerSourceFunctions()))};
 }

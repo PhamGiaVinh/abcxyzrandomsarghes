@@ -22,6 +22,13 @@ assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_CANDIDATE_PROBE,'1');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
 assert.ok(['10','1000'].includes(process.env.LOCAL_OPERATIONS_AUDIENCE));
+const sourceBatchFlag=process.env.LOCAL_SOURCE_BATCH_PROBE??'0';
+assert.ok(['0','1'].includes(sourceBatchFlag),'Invalid operational source batch mode');
+if(sourceBatchFlag==='1'){
+ assert.equal(process.env.LOCAL_PENDING_SOURCE_PROBE,'1');assert.equal(process.env.LOCAL_SOURCE_GENERATION_PROBE,'1');
+ assert.equal(process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE??'none','none');
+}
+const spectatorSourceMode=sourceBatchFlag==='1'?'batch':'single';
 const [statusPath,container,reportPath,controlDir]=process.argv.slice(2);
 assert.ok(process.argv.length===5||process.argv.length===6);
 assert.match(statusPath??'',/^\/tmp\/cashier-e2e-[A-Za-z0-9]+\/isolated-status\.json$/);
@@ -69,10 +76,13 @@ const save=()=>{report.elapsedMs=Date.now()-started;writeFileSync(reportPath,JSO
 const spectatorPending=()=>Number(execute('SELECT (SELECT count(*) FROM spectator_projection_v2.work_groups)+(SELECT count(*) FROM spectator_projection_v2.deferred_generations_v1);'));
 const spectatorWork=async()=>{
  const deadline=Date.now()+5000;
- const result=await processPublicSpectatorJobs({rpc:(name,args)=>{const left=deadline-Date.now();assert.ok(left>0,'Spectator fixture deadline');return client.rpc(name,args).abortSignal(AbortSignal.timeout(left));}},deadline);
+ const result=await processPublicSpectatorJobs({rpc:(name,args)=>{const left=deadline-Date.now();assert.ok(left>0,'Spectator fixture deadline');if(name==='get_public_spectator_projection_sources_v2'){report.sourceBatchRpcCalls++;if(report.phase==='serving'&&!stopping)report.servingSourceBatchRpcCalls++;}return client.rpc(name,args).abortSignal(AbortSignal.timeout(left));}},deadline,spectatorSourceMode);
+ assert.equal(result.sourceMode,spectatorSourceMode,'Actual operational worker source mode');
+ report.sourceBatchModeVerified=true;
  report.spectatorProcessed+=result.processed;report.spectatorFailed+=result.results.filter(row=>row.error).length;
  assert.equal(report.spectatorFailed,0,'Actual spectator worker failure');
 };
+report.spectatorSourceMode=spectatorSourceMode;report.sourceBatchRpcCalls=0;report.servingSourceBatchRpcCalls=0;report.sourceBatchModeVerified=false;
 try{
  execute('UPDATE tracker_analytics_v1.config SET worker_enabled=true WHERE singleton AND NOT enabled AND NOT backfill_complete;');save();
  let complete=false;

@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import {cashierWorklistDiagnostic} from '../scripts/ops/cashier-worklist-diagnostic.mjs';
+import {publicReplayDiagnostic} from '../scripts/ops/public-replay-diagnostic.mjs';
 import {readFileSync,writeFileSync,appendFileSync,renameSync,existsSync,statSync} from 'node:fs';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
@@ -14,6 +16,59 @@ import {classifyPublicHudHand} from '../supabase/functions/_shared/publicHudCont
 
 const currentFloorRosterV6=process.env.LOCAL_OPERATIONS_FLOOR_ROSTER_V6_ENABLED==='1';
 const floorRosterRpc=currentFloorRosterV6?'get_floor_tournament_table_roster_v6':'get_floor_tournament_table_roster_v3';
+
+test('targeted canonical Cashier payment reproduction across ten fresh tours',async({page})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE!=='cashier-payment','Explicit isolated reproduction only');
+ test.setTimeout(900_000);
+ const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const club='a2000000-0000-4000-8000-000000000001';
+ expect(staff).toHaveLength(20);
+ const payments:{round:number;actorIndex:number;ms:number;paymentState:string|null;seatingState:string|null;reason:string|null}[]=[];
+ let phase='opening',completedTours=0,failedHttp:unknown=null;
+ const safe=(v:unknown)=>typeof v==='string'&&/^[a-zA-Z0-9_]{1,80}$/.test(v)?v:null;
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-targeted-payment-http.json'),JSON.stringify({
+  kind:'TARGETED_CANONICAL_PAYMENT_REPRODUCTION_NOT_FULL_ACCEPTANCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+  phase,completedTours,viewers:Number(process.env.LOCAL_OPERATIONS_AUDIENCE),payments,failedHttp,
+  qualification:false,productionChanged:false,
+  limits:'Ten fresh TEST tours/200canonical payments with unchanged5s HTTP budgets and exact retries. Separate tours share the audience database. Not historical root-cause proof, full operations acceptance, or hosted capacity.'
+ },null,2));
+ const request=async(path:string,token:string,args:Record<string,unknown>,round:number,actorIndex:number)=>{
+  const at=performance.now(),startedAt=Date.now(),signal=AbortSignal.timeout(5000);let stage='headers',status:number|undefined,headersMs:number|undefined,responseCode:string|undefined,serverTiming:unknown;
+  try{
+   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(args),signal});
+   status=response.status;headersMs=performance.now()-at;serverTiming=audienceServerTiming(response.headers);stage='body';const data=await response.json();
+   responseCode=typeof data?.code==='string'&&/^(?:PGRST\d{3}|[0-9A-Z]{5})$/.test(data.code)?data.code:undefined;stage='assertion';expect(response.ok).toBe(true);
+   return {data,ms:performance.now()-at};
+  }catch(error){
+   failedHttp={path,round,actorIndex,stage,status,headersMs,responseCode,serverTiming,startedAt,failedAt:Date.now(),elapsedMs:performance.now()-at,signalAborted:signal.aborted,...audienceFailure(error,status)};
+   throw error;
+  }
+ };
+ try{
+  for(let round=0;round<10;round++){
+   const tour='a3000000-0000-4000-8000-'+String(4+round).padStart(12,'0');
+   phase='opening';report();
+   for(let n=1;n<=3;n++){
+    const intent={p_tournament_id:tour,p_game_table_id:'ac710000-0000-4000-8000-'+String(round*3+n).padStart(12,'0'),p_control_mode:'manual',p_request_id:crypto.randomUUID()};
+    const opened=await request('/rest/v1/rpc/floor_open_tournament_table_v3',owner,intent,round,-1);
+    expect(opened.data.ok).toBe(true);
+    expect((await request('/rest/v1/rpc/floor_open_tournament_table_v3',owner,intent,round,-1)).data).toEqual(opened.data);
+   }
+   phase='canonical-payment';report();
+   for(const [actorIndex,actor] of staff.entries()){
+    const registration=(await request('/functions/v1/tournament-register',actor.token,{tournament_id:tour},round,actorIndex)).data;
+    expect(registration.success).toBe(true);expect(Number(registration.total_pay)).toBe(6600000);
+    const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registration.registration_id,amount:Number(registration.total_pay),request_id:crypto.randomUUID()};
+    const paid=await request('/rest/v1/rpc/resolve_cashier_cash_buyin_intent_v1',actor.token,{p_intent:intent,p_action:'record'},round,actorIndex);
+    payments.push({round,actorIndex,ms:paid.ms,paymentState:safe(paid.data.result?.payment_state),seatingState:safe(paid.data.result?.seating_state),reason:safe(paid.data.result?.reason)});report();
+    expect(paid.data).toMatchObject({ok:true,status:'recorded',result:{payment_state:'paid',seating_state:'seated'}});
+    expect((await request('/rest/v1/rpc/resolve_cashier_cash_buyin_intent_v1',actor.token,{p_intent:intent,p_action:'record'},round,actorIndex)).data).toEqual(paid.data);
+   }
+   completedTours++;report();
+  }
+  phase='passed';
+ }finally{report();}
+});
 
 test('final current Floor seat locks and redraw conserve every paid entry over HTTP',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_REDRAW_ENABLED!=='1','Explicit final isolated redraw stage only');test.setTimeout(180_000);
@@ -1210,16 +1265,19 @@ test('twenty distinct Floor actors sustain the four-reader reconciliation cadenc
 
 test('current Cashier partial-cash intent HTTP, duplicate recovery and real browser journal',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_CHECKIN_ENABLED!=='1','Contemporary isolated contract only');test.setTimeout(180_000);
+ const partialTestStarted=performance.now();
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
  const club='a2000000-0000-4000-8000-000000000001',tour='a3000000-0000-4000-8000-000000000001';
  const headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
  const rpc=async(token:string,name:string,args:Record<string,unknown>)=>{const started=performance.now(),response=await fetch(api+'/rest/v1/rpc/'+name,{method:'POST',headers:headers(token),body:JSON.stringify(args),signal:AbortSignal.timeout(5000)});const data=await response.json();expect(response.ok,name).toBe(true);return {data,ms:performance.now()-started};};
  const registrations:string[]=[],rows:{warmup:boolean;actor:number;ackMs:number;retryMs:number;independentReadMs:number}[]=[];
  const totals=Array(20).fill(0) as number[];let phase='register',uiMs:number|null=null,race:unknown=null;
+ const browserDiagnostic:{enteredAtMs:number|null;worklists:(ReturnType<typeof cashierWorklistDiagnostic>&{observedMs:number})[];ui:null|{targetButtons:number;alerts:number;observedMs:number};captureErrors:number}={enteredAtMs:null,worklists:[],ui:null,captureErrors:0};
+ let diagnosticActive=false,stopBrowserDiagnostic=()=>{};
  const distribution=(field:'ackMs'|'retryMs'|'independentReadMs')=>{const values=rows.filter(r=>!r.warmup).map(r=>r[field]).sort((a,b)=>a-b);return {samples:values.length,p95Ms:values.length===20?values[18]:null,maxMs:values.at(-1)??null};};
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-cash-intent-partial-http.json'),JSON.stringify({
-  kind:'REAL_AUTH_CURRENT_CASHIER_PARTIAL_INTENT_HTTP_AND_BROWSER_JOURNAL',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,actors:20,warmup:2,graded:20,rows,
-  distributions:{ack:distribution('ackMs'),retry:distribution('retryMs'),independentRead:distribution('independentReadMs')},ui:{samples:uiMs===null?0:1,clickToVerifiedRowMs:uiMs},race,
+  kind:'REAL_AUTH_CURRENT_CASHIER_PARTIAL_INTENT_HTTP_AND_BROWSER_JOURNAL',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,elapsedMs:performance.now()-partialTestStarted,actors:20,warmup:2,graded:20,rows,
+  distributions:{ack:distribution('ackMs'),retry:distribution('retryMs'),independentRead:distribution('independentReadMs')},ui:{samples:uiMs===null?0:1,clickToVerifiedRowMs:uiMs},race,browserDiagnostic,
   qualification:false,limitations:'Actual112contract matches three read-only production function-body fingerprints. Server-priced registrations use the actual registration Edge. Twenty serial graded partial payments from distinct Auth cashiers;two warmups pay the first two registrations once more. One real browser journal payment,not20UI samples. Duplicate contenders may return busy and then recover by the same immutable intent. No full payment,seating,re-entry,undo,prize,close-buy,export or mixed1000-viewer capacity claim.',
  },null,2));
  const worklist=async()=>{const result=(await rpc(owner,'cashier_tour_worklist_v1',{p_club_id:club,p_tournament_id:tour,p_query:'',p_bucket:'all',p_page:0,p_limit:50})).data;expect(result.ok).toBe(true);expect(Array.isArray(result.rows)).toBe(true);return result.rows as {id:string;received:number;status:string;total_pay:number}[];};
@@ -1254,7 +1312,24 @@ test('current Cashier partial-cash intent HTTP, duplicate recovery and real brow
   const otherClub=(await rpc(staff[0].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:{...raced,club_id:'ad200000-0000-4000-8000-000000000002'},p_action:'record'})).data;expect(otherClub.error).toBe('actor_not_allowed');
   const cancelledIntent=intent(0),cancelled=(await rpc(staff[0].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:cancelledIntent,p_action:'cancel'})).data;expect(cancelled.status).toBe('cancelled');
   expect((await rpc(staff[0].token,'resolve_cashier_cash_buyin_intent_v1',{p_intent:cancelledIntent,p_action:'record'})).data).toEqual(cancelled);await verify(0);
-  phase='browser-journal';await page.setViewportSize({width:1280,height:900});await page.goto('/ops/cashier/tour?club='+club);
+  phase='browser-journal';
+  browserDiagnostic.enteredAtMs=performance.now()-partialTestStarted;
+  diagnosticActive=true;
+  const onWorklist=(response:import('@playwright/test').Response)=>{void(async()=>{
+   if(!diagnosticActive||!response.url().endsWith('/rpc/cashier_tour_worklist_v1')||response.request().method()!=='POST')return;
+   try{
+    const value={...cashierWorklistDiagnostic(response.request().postDataJSON(),await response.json(),response.status(),{clubId:club,tournamentId:tour,registrationId:registrations[0],expectedName:'Cashier latency TEST 1'}),observedMs:performance.now()-partialTestStarted};
+    if(!diagnosticActive)return;
+    browserDiagnostic.worklists.push(value);if(browserDiagnostic.worklists.length>12)browserDiagnostic.worklists.shift();report();
+   }catch{if(diagnosticActive){browserDiagnostic.captureErrors++;report();}}
+  })();};
+  page.on('response',onWorklist);let probing=false;
+  const probe=setInterval(()=>{if(!diagnosticActive||probing)return;probing=true;void(async()=>{
+   try{const ui={targetButtons:await page.getByRole('button',{name:/^Cashier latency TEST 1\b/}).count(),alerts:await page.getByRole('alert').count(),observedMs:performance.now()-partialTestStarted};if(diagnosticActive){browserDiagnostic.ui=ui;report();}}
+   catch{if(diagnosticActive)browserDiagnostic.captureErrors++;}finally{probing=false;}
+  })();},1000);
+  stopBrowserDiagnostic=()=>{diagnosticActive=false;clearInterval(probe);page.off('response',onWorklist);};
+  await page.setViewportSize({width:1280,height:900});await page.goto('/ops/cashier/tour?club='+club);
   await page.getByRole('button',{name:/^Cashier Edge TEST Tour ·/}).first().click();await page.getByRole('button',{name:/^Chờ tại quầy/}).click();
   const participant=()=>page.getByRole('button',{name:/^Cashier latency TEST 1\b/});await participant().click();
   await page.getByLabel('Nhận tiền mặt (VND)',{exact:true}).fill('1000');const button=page.getByRole('button',{name:'Ghi nhận tiền mặt',exact:true});await expect(button).toBeEnabled();
@@ -1263,7 +1338,7 @@ test('current Cashier partial-cash intent HTTP, duplicate recovery and real brow
   totals[0]+=1000;await expect(participant()).toContainText('Đã xác minh 4.000 VND');uiMs=performance.now()-started;await verify(0);expect(uiMs).toBeLessThanOrEqual(3000);
   expect(rows.filter(row=>!row.warmup)).toHaveLength(20);expect(distribution('ackMs').p95Ms).toBeLessThanOrEqual(1000);expect(distribution('retryMs').p95Ms).toBeLessThanOrEqual(1000);
   phase='passed';report();
- }catch(error){phase+='-failed';report();throw error;}
+ }catch(error){phase+='-failed';report();throw error;}finally{stopBrowserDiagnostic();}
 });
 
 test('current Cashier full payment commits canonical seats through real HTTP',async({page})=>{
@@ -1805,10 +1880,12 @@ test('anonymous public replay reads the recorded hand through actual HTTP',async
  let phase='source',navigationToReadyMs:number|null=null,anonymousHttpReads=0,pageErrorCount=0;
  const replayHttp:Record<string,{statuses:Record<string,number>;sqlStates:Record<string,number>;aborted:number;otherFailures:number}>={};
  const diagnosticReads:Promise<void>[]=[];
+ const replayResponseShapes:unknown[]=[];let replayDiagnosticActive=true;
+ const replayStarted=performance.now();
  const navigationSamplesMs:number[]=[];
  let replayPage:Page|undefined,uiState:Record<string,boolean|number>|null=null;
  const evidence={sourceHandVerified:false,anonymousHandVerified:false,crossTourDenied:false,actualBrowserRpc:false,sliderAdvanced:false,sliderRewound:false,anonymousStorage:true};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-replay-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PUBLIC_REPLAY_CANONICAL_RECORDED_HAND',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,evidence,anonymousHttpReads,pageErrorCount,navigationToReadyMs,navigationSamplesMs,replayHttp,uiState,samples:navigationSamplesMs.length,requiredNavigations:5,qualification:false,limitations:'Five sequential real anonymous Chromium navigations through public HTTP for the preceding canonical five-action fold hand. No route interception/dev fixtures/derived-HUD activation. Verifies source identity,table/tour scoping and action scrubbing. Five navigations are a bounded repeatability probe,not p95 or1000DOM capacity. Does not qualify showdown,sidepots,HUD freeze or history-dot navigation. Diagnostics retain only known RPC names,HTTP status/SQLSTATE counters and fixed UI booleans/counts;no DOM text,payloads,URLs or credentials.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-public-replay-ui-http.json'),JSON.stringify({kind:'REAL_ANONYMOUS_PUBLIC_REPLAY_CANONICAL_RECORDED_HAND',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,evidence,anonymousHttpReads,pageErrorCount,navigationToReadyMs,navigationSamplesMs,replayHttp,replayResponseShapes,uiState,samples:navigationSamplesMs.length,requiredNavigations:5,qualification:false,limitations:'Five sequential real anonymous Chromium navigations through public HTTP for the preceding canonical five-action fold hand. No route interception/dev fixtures/derived-HUD activation. Verifies source identity,table/tour scoping and action scrubbing. Five navigations are a bounded repeatability probe,not p95 or1000DOM capacity. Does not qualify showdown,sidepots,HUD freeze or history-dot navigation. Diagnostics retain only known RPC names,HTTP status/SQLSTATE counters,fixed response-shape flags/counts and UI booleans/counts;no DOM text,payloads,URLs or credentials.'},null,2));
  let context:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  try{
  const response=await fetch(api+'/rest/v1/tournament_hands?select=id,tournament_table_id,table_session_id,status&tournament_id=eq.'+tour+'&hand_number=eq.9023',{headers,signal:AbortSignal.timeout(5000)});
@@ -1826,9 +1903,13 @@ test('anonymous public replay reads the recorded hand through actual HTTP',async
   expect(denied?.id??null).not.toBe(hand.id);expect(denied?.actions??[]).toHaveLength(0);expect(denied?.players??[]).toHaveLength(0);evidence.crossTourDenied=true;
   context=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:'vi-VN',viewport:{width:1366,height:900}});
   const viewer=await context.newPage();replayPage=viewer;viewer.on('pageerror',()=>pageErrorCount++);
-  const knownRpc=(url:string)=>{const name=new URL(url).pathname.split('/').at(-1)??'';return ['get_public_tournament_table_hand_v2','get_public_tournament_hand_v2','get_public_tournament_table_history_v2','get_public_tournament_hand_catalog_v2','get_public_tournament_settlement','get_public_tournament_viewer_snapshot_v2','get_public_tournament_table_clock_v1'].includes(name)?name:null;};
+  const knownRpc=(url:string)=>{const name=new URL(url).pathname.split('/').at(-1)??'';return ['get_public_tournament_table_hand_v2','get_public_tournament_hand_v2','get_public_tournament_table_history_v2','get_public_tournament_hand_catalog_v2','get_public_tournament_settlement','get_public_tournament_viewer_snapshot_v2','get_public_tournament_table_clock_v1','get_public_tournament_clock_summary','get_public_tournament_table_live_or_last_hand_v2'].includes(name)?name:null;};
   const bucket=(name:string)=>replayHttp[name]??(replayHttp[name]={statuses:{},sqlStates:{},aborted:0,otherFailures:0});
-  viewer.on('response',response=>{const name=knownRpc(response.url());if(!name)return;const row=bucket(name),status=String(response.status());row.statuses[status]=(row.statuses[status]??0)+1;if(!response.ok()&&diagnosticReads.length<100)diagnosticReads.push((async()=>{try{const value=await response.json(),code=typeof value?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(value.code)?value.code:'unknown';row.sqlStates[code]=(row.sqlStates[code]??0)+1;}catch{row.sqlStates.nonJson=(row.sqlStates.nonJson??0)+1;}})());});
+  viewer.on('response',response=>{if(!replayDiagnosticActive)return;const name=knownRpc(response.url());if(!name)return;const row=bucket(name),status=String(response.status());row.statuses[status]=(row.statuses[status]??0)+1;if(diagnosticReads.length<100)diagnosticReads.push((async()=>{try{const value=await response.json();if(!replayDiagnosticActive)return;
+   if(!response.ok()){const code=typeof value?.code==='string'&&/^(?:[0-9A-Z]{5}|PGRST\d{3})$/.test(value.code)?value.code:'unknown';row.sqlStates[code]=(row.sqlStates[code]??0)+1;}
+   const shape=publicReplayDiagnostic(name,value,response.status(),{tour,table:hand.tournament_table_id,hand:hand.id});
+   if(shape){replayResponseShapes.push({...shape,observedMs:performance.now()-replayStarted});if(replayResponseShapes.length>12)replayResponseShapes.shift();}
+  }catch{if(replayDiagnosticActive&&!response.ok())row.sqlStates.nonJson=(row.sqlStates.nonJson??0)+1;}})());});
   viewer.on('requestfailed',request=>{const name=knownRpc(request.url());if(!name)return;const row=bucket(name);if(request.failure()?.errorText==='net::ERR_ABORTED')row.aborted++;else row.otherFailures++;});
   const publicResponse=viewer.waitForResponse(response=>{
    if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/get_public_tournament_table_hand_v2'))return false;
@@ -1863,7 +1944,7 @@ test('anonymous public replay reads the recorded hand through actual HTTP',async
 
   const storage=await context.storageState();evidence.anonymousStorage=!storage.origins.some(origin=>origin.localStorage.some(item=>item.name.endsWith('-auth-token')));expect(evidence.anonymousStorage).toBe(true);expect(pageErrorCount).toBe(0);
   await Promise.allSettled(diagnosticReads);phase='passed';report();
- }catch(error){phase+='-failed';if(replayPage&&!replayPage.isClosed()){try{uiState=await replayPage.evaluate(()=>{const text=document.body.textContent??'';return {rail:!!document.querySelector('[data-testid="replay-action-rail"]'),rptShell:!!document.querySelector('[data-testid="viewer-rpt-shell"]'),selectCount:document.querySelectorAll('select').length,queryError:text.includes('Không thể truy vấn hand.'),targetLoading:text.includes('Đang tìm hand từ đường dẫn'),notFound:text.includes('Không tìm thấy hand'),listError:text.includes('Không tải được lịch sử hand'),replayDataError:text.includes('Không thể tải dữ liệu replay'),withdrawn:text.includes('Giải này không còn được công khai'),watchClose:!!document.querySelector('[aria-label="Đóng trình xem"]')};});}catch{uiState={inspectionFailed:true};}}await Promise.allSettled(diagnosticReads);report();throw error;}finally{await context?.close();}
+ }catch(error){phase+='-failed';if(replayPage&&!replayPage.isClosed()){try{uiState=await replayPage.evaluate(()=>{const text=document.body.textContent??'';return {rail:!!document.querySelector('[data-testid="replay-action-rail"]'),rptShell:!!document.querySelector('[data-testid="viewer-rpt-shell"]'),selectCount:document.querySelectorAll('select').length,queryError:text.includes('Không thể truy vấn hand.'),targetLoading:text.includes('Đang tìm hand từ đường dẫn'),notFound:text.includes('Không tìm thấy hand'),listError:text.includes('Không tải được lịch sử hand'),replayDataError:text.includes('Không thể tải dữ liệu replay'),withdrawn:text.includes('Giải này không còn được công khai'),trackerFatal:text.includes('Không tải được dữ liệu live tracker'),catalogInvalid:text.includes('invalid_public_table_catalog'),clockInvalid:text.includes('Không xác minh được đồng hồ giải công khai.'),countsInvalid:text.includes('Không xác minh được số người chơi và stack trung bình.'),pulsePlaceholders:document.querySelectorAll('.animate-pulse.bg-muted').length,watchClose:!!document.querySelector('[aria-label="Đóng trình xem"]')};});}catch{uiState={inspectionFailed:true};}}await Promise.allSettled(diagnosticReads);report();throw error;}finally{replayDiagnosticActive=false;await context?.close();}
 });
 
 test('anonymous prepared HUD reads canonical operational history and replay',async({page,browser})=>{

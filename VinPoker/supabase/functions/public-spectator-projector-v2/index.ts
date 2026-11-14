@@ -9,6 +9,8 @@ Deno.serve(async request=>{
   if(!expected||supplied!==expected)return reply({error:'unauthorized'},401);
   const url=Deno.env.get('SUPABASE_URL'),key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if(!url||!key)return reply({error:'server_configuration'},500);
+  const batchFlag=Deno.env.get('PUBLIC_SPECTATOR_SOURCE_BATCH')??'0';
+  if(!['0','1'].includes(batchFlag))return reply({error:'server_configuration'},500);
   const client=createClient(url,key,{auth:{persistSession:false}}),deadline=Date.now()+5_000;
   try{
     return reply(await processPublicSpectatorJobs({rpc:async(name,args)=>{
@@ -16,6 +18,6 @@ Deno.serve(async request=>{
       const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),remaining);
       try{return await client.rpc(name,args).abortSignal(controller.signal);}
       finally{clearTimeout(timer);}
-    }},deadline));
+    }},deadline,batchFlag==='1'?'batch':'single'));
   }catch{return reply({error:'projection_unavailable'},503);}
 });

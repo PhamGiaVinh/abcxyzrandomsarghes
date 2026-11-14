@@ -6,7 +6,7 @@ import {createHash} from 'node:crypto';
 import {currentWriterIdentity,writerSourceFunctions as sourceFunctions} from './scale.write.identity.mjs';
 import {sql,jsonSql} from './nativeDb.mjs';
 import {measureFixtureWriterTransactions} from './scale.write.native.mjs';
-import {matchedWriterStatistics,validateMatchedWriterEvidence} from './scale.write.protocol.mjs';
+import {matchedWriterStatistics,validateMatchedWriterEvidence,sourceGeneration342Profile} from './scale.write.protocol.mjs';
 assert.equal(process.env.PUBLIC_HUD_WRITER_CONTROL,'isolated-native-only');
 assert.ok(process.env.PUBLIC_HUD_WRITER_CONTROL_REPORT,'Explicit diagnostic report path required');
 const database=process.env.PUBLIC_HUD_LOCAL_DATABASE;
@@ -39,6 +39,9 @@ const observerNames=['mark_dirty','mark_hand_child_dirty','mark_row_dirty'];
 const observerSignatures=['spectator_projection_v2.mark_dirty(uuid,text,text,text)','spectator_projection_v2.mark_hand_child_dirty()','spectator_projection_v2.mark_row_dirty()'];
 const baselineHashes=['5275ae9972ac43651bd1b831b52332dd','e9df156b6ee5d6a22ba968257ae38852','34ebfad5c2bea4d3306d67d435fe02a6'];
 const candidateHashes=['e5684f8818e0d536bcdde7842032f71d','c9f805174bf0cf551aff43a748684df1','27a7e7aad6c0a9f52b040594b4ac115b'];
+assert.ok(['0','1'].includes(process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE??'0'));
+const sourceGenerationProbe=process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE==='1';
+if(sourceGenerationProbe)candidateHashes[0]=sourceGeneration342Profile.definitionMd5;
 const observerMetadata=()=>jsonSql(`SELECT jsonb_agg(to_jsonb(p) ORDER BY p.proname) FROM pg_proc p WHERE p.oid IN(${observerSignatures.map(s=>`'${s}'::regprocedure`).join(',')});`);
 const observers=()=>jsonSql(`SELECT jsonb_agg(jsonb_build_object('name',p.proname,'definition',replace(pg_get_functiondef(p.oid),chr(13),'')) ORDER BY p.proname) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='spectator_projection_v2' AND p.proname IN('mark_dirty','mark_hand_child_dirty','mark_row_dirty');`);
 const candidateObservers=profilePath?observers():null;
@@ -110,6 +113,7 @@ try{
 }
 const report={kind:profilePath?'DIAGNOSTIC_MATCHED_HAND_OBSERVERS_NOT_QUALIFICATION':'DIAGNOSTIC_MATCHED_SETUP_MARGINAL_HUD_MARKER_NOT_QUALIFICATION',observerProfile:profilePath?{baseline:baselineObservers,candidate:candidateObservers}:null,database,sourceHands:Number(sourceCount),pairs:results,sourceTriggerCatalogRestored:true,qualification:false,limitations:profilePath?'Only this fixture hand writer and its three Spectator observers plus HUD hand trigger. No settlement/result/withdrawal coverage. Same data/index setup; cache/autovacuum/OS scheduling can differ. Original failed gate remains.':'Only marginal HUD hand marker; other incremental changes remain in both arms. Owned unprojected jobs are cleaned; index bloat, legacy marker state, cache/autovacuum/OS scheduling can still differ. No original failed result is replaced.'};
 if(profilePath)report.observerFunctionMetadataRestored=true;
+if(sourceGenerationProbe)report.sourceGenerationCandidate=sourceGeneration342Profile.migration;
 if(profilePath)report.matchedHandObserverStatistics=matchedWriterStatistics(results);
 report.sourceFunctionsRestored=JSON.stringify(sourceFunctions())===JSON.stringify(originalSourceFunctions);
 assert.equal(report.sourceFunctionsRestored,true,'Fixture writer/source trigger functions changed');
