@@ -42,3 +42,22 @@ test('prefixed seven-file closure keeps exact bytes and rejects mixed roots',()=
  const result=await summarizeBundleForm(form),serialized=JSON.stringify(result);assert.ok(!serialized.includes('PRIVATE'));assert.deepEqual(result[0].metadataKeys,['importMap','nested']);assert.equal(result[1].bytes,6);assert.equal(result[1].name,'index.ts');
  assert.throws(()=>validateInspectionBase({version:18}));
 });
+
+test('raw hosted multipart verifies all seven distinct bytes and only bounded identical vendor duplication',async()=>{
+ const {verifyBundleForm}=await import('./spectator342344-edge-release.mjs');
+ const {readFileSync}=await import('node:fs');
+ function form(change){const value=new FormData();value.append('metadata','{}');for(const f of manifest.edgeFiles)value.append('file',new Blob([readFileSync(join(root,f.path))]),f.path);if(change)change(value);return value;}
+ const vendor=manifest.edgeFiles.find(f=>f.path.includes('/vendor/'));const addVendor=value=>value.append('file',new Blob([readFileSync(join(root,vendor.path))]),vendor.path);
+ assert.deepEqual(await verifyBundleForm(form(),manifest),{distinctFiles:7,parts:7});assert.deepEqual(await verifyBundleForm(form(addVendor),manifest),{distinctFiles:7,parts:8});
+ for(const change of [v=>{addVendor(v);addVendor(v);},v=>v.append('file',new Blob(['drift']),vendor.path),v=>v.append('file',new Blob(['extra']),'extra.ts'),v=>v.append('file',new Blob([readFileSync(join(root,'deno.json'))]),'deno.json')])await assert.rejects(()=>verifyBundleForm(form(change),manifest));
+ const missing=new FormData();missing.append('metadata','{}');await assert.rejects(()=>verifyBundleForm(missing,manifest));
+});
+test('existing21 activation verifies source before and after one flag write and allows its single version increment',async()=>{
+ const {activateVerifiedBundle}=await import('./spectator342344-edge-release.mjs');let flag='0',reads=0;const writes=[],events=[];const base={...PRIOR_EDGE,version:21,ezbr_sha256:'917bc15f88f8f17985e7deff37801699f80eeab04be8f8dcced1e246a265e8a5'};
+ await activateVerifiedBundle({manifest,management:async(method,path,body)=>{if(path==='secrets'){if(method==='POST'){flag=body[0].value;writes.push(flag);return;}return[{name:'PUBLIC_SPECTATOR_SOURCE_BATCH',value:flag}];}return{...base,version:flag==='1'?22:21};},readDownloaded:async()=>{reads++;},verifyDatabase:async()=>{},denied:async()=>401,report:e=>events.push(e)});
+ assert.deepEqual(writes,['1']);assert.equal(reads,2);assert.equal(events[0].version,22);assert.equal(events[0].kind,'SPECTATOR_EXISTING_BUNDLE_ACTIVATED_RUNTIME_OBSERVATION_REQUIRED');
+});
+test('existing activation rejects source failure without enabling or verifies batch0 after post-activation failure',async()=>{
+ const {activateVerifiedBundle}=await import('./spectator342344-edge-release.mjs');
+ for(const failAt of [1,2]){let flag='0',reads=0;const writes=[],events=[];const base={...PRIOR_EDGE,version:21,ezbr_sha256:'917bc15f88f8f17985e7deff37801699f80eeab04be8f8dcced1e246a265e8a5'};await assert.rejects(()=>activateVerifiedBundle({manifest,management:async(method,path,body)=>{if(path==='secrets'){if(method==='POST'){flag=body[0].value;writes.push(flag);return;}return[{name:'PUBLIC_SPECTATOR_SOURCE_BATCH',value:flag}];}return{...base,version:flag==='1'?22:21};},readDownloaded:async()=>{if(++reads===failAt)throw Error('fixed');},verifyDatabase:async()=>{},denied:async()=>401,report:e=>events.push(e)}));assert.deepEqual(writes,failAt===1?[]:['1','0']);assert.equal(events[0].batchDisabledVerified,failAt===2);}
+});

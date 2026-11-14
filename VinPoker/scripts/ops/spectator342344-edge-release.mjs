@@ -34,6 +34,35 @@ export function verifyDownloaded(root,manifest){
  for(const file of manifest.edgeFiles){assert.equal(digest(readFileSync(resolve(base,file.path),'utf8').replace(/\r\n?/g,'\n')),file.sha256,'Downloaded runtime source drift');}
  return base;
 }
+export async function verifyBundleForm(form,manifest){
+ const files=[];let metadata=0;
+ for(const [field,value] of form.entries()){
+  if(field==='metadata'){assert.equal(typeof value,'string');assert.ok(JSON.parse(value));metadata++;continue;}
+  assert.equal(field,'file');assert.notEqual(typeof value,'string');files.push(value);
+ }
+ assert.equal(metadata,1);const names=[...new Set(files.map(f=>f.name))];const normalized=normalizeDownloadedPaths(names);
+ assert.deepEqual([...normalized].sort(),manifest.edgeFiles.map(f=>f.path).sort(),'Hosted bundle distinct closure differs');
+ const paths=new Map(names.map((name,i)=>[name,normalized[i]])),counts=new Map(),rawHashes=new Map();
+ for(const file of files){const path=paths.get(file.name),wanted=manifest.edgeFiles.find(f=>f.path===path);assert.ok(wanted);const bytes=Buffer.from(await file.arrayBuffer());assert.equal(digest(bytes.toString('utf8').replace(/\r\n?/g,'\n')),wanted.sha256,'Hosted bundle source drift');if(rawHashes.has(path))assert.equal(digest(bytes),rawHashes.get(path),'Duplicate source bytes differ');else rawHashes.set(path,digest(bytes));const count=(counts.get(path)??0)+1;counts.set(path,count);assert.ok(count<=(path==='supabase/functions/_shared/vendor/tslib-2.8.1.mjs'?2:1),'Unexpected duplicate hosted source');}
+ return{distinctFiles:normalized.length,parts:files.length};
+}
+export function validateActivationBase(value){validatePriorEdge({...value,version:12,ezbr_sha256:PRIOR_EDGE.ezbr_sha256});assert.equal(value.version,21);assert.equal(value.ezbr_sha256,'917bc15f88f8f17985e7deff37801699f80eeab04be8f8dcced1e246a265e8a5');}
+export async function activateVerifiedBundle({management,readDownloaded,manifest,verifyDatabase,denied,report=()=>{}}){
+ let phase='preflight',changed=false;
+ const meta=()=>management('GET',`functions/${name}`);
+ const flag=async value=>{await management('POST','secrets',[{name:'PUBLIC_SPECTATOR_SOURCE_BATCH',value}]);verifySecret(await management('GET','secrets'),value);};
+ try{
+  await verifyDatabase();const before=await meta();validateActivationBase(before);verifySecret(await management('GET','secrets'),'0');
+  phase='verify-existing-source';await readDownloaded(manifest);validateActivationBase(await meta());assert.equal(await denied(),401);
+  phase='batch-one';changed=true;await flag('1');const after=await meta();validatePriorEdge({...after,version:12,ezbr_sha256:PRIOR_EDGE.ezbr_sha256});assert.ok([before.version,before.version+1].includes(after.version));assert.equal(after.ezbr_sha256,before.ezbr_sha256);
+  phase='verify-activated-source';await readDownloaded(manifest);await verifyDatabase();assert.equal(await denied(),401);verifySecret(await management('GET','secrets'),'1');const stable=await meta();assert.equal(stable.version,after.version);assert.equal(stable.ezbr_sha256,after.ezbr_sha256);
+  report({kind:'SPECTATOR_EXISTING_BUNDLE_ACTIVATED_RUNTIME_OBSERVATION_REQUIRED',version:after.version,ezbrSha256:after.ezbr_sha256,closureFiles:manifest.edgeFiles.length,batch:'1'});
+ }catch{
+  let disabled=false;if(changed){try{await flag('0');disabled=true;}catch{}}
+  let observed=null;try{const m=await meta();observed={version:m.version,ezbrSha256:m.ezbr_sha256,status:m.status};}catch{}
+  report({kind:'SPECTATOR_EXISTING_ACTIVATION_STOP_NO_AUTOMATIC_RETRY',phase,batchDisabledVerified:disabled,observed});throw Error('Verified activation stopped');
+ }
+}
 export function validateRepairBase(value){validatePriorEdge({...value,version:12,ezbr_sha256:PRIOR_EDGE.ezbr_sha256});assert.equal(value.version,18);assert.equal(value.ezbr_sha256,'1f97018b2874c4ea9595582fe441ca2d7f7447c9a1c170ea65b42a6ac3b63e44');}
 export async function summarizeBundleForm(form){
  const parts=[];
@@ -116,7 +145,7 @@ export async function runEdgeRelease({management,cli,readDownloaded,manifest,ver
  }
 }
 async function main(){
- const operation=process.argv[2]??'deploy';assert.ok(['capture-prior','deploy','repair-bundle','restore-prior','inspect-bundle','inspect-prior'].includes(operation));
+ const operation=process.argv[2]??'deploy';assert.ok(['capture-prior','deploy','repair-bundle','restore-prior','inspect-bundle','inspect-prior','activate-verified'].includes(operation));
  const env=process.env;assert.equal(env.GITHUB_REPOSITORY,repo);assert.equal(env.GITHUB_REF,'refs/heads/main');assert.equal(env.GITHUB_EVENT_NAME,'workflow_dispatch');assert.equal(env.SUPABASE_PROJECT_REF,project);assert.ok(env.SUPABASE_ACCESS_TOKEN);
  assert.equal(env.CONFIRM_EDGE_RELEASE,operation==='restore-prior'?`RESTORE_SPECTATOR_PRIOR_CODE_${env.GITHUB_SHA}`:`RELEASE_SPECTATOR_BATCH_${env.GITHUB_SHA}`);
  const root=resolve(fileURLToPath(new URL('../..',import.meta.url))),pkg=loadPackage(root);
@@ -134,7 +163,7 @@ async function main(){
  const verifyDatabase=async()=>{preparationPhase='database:344-postcheck';const result=await query(postcheckSql(pkg,344));classifyPostcheck(result);preparationPhase='database:dispatcher-active';const active=await query(activeSql());assert.equal(active.exact,true);};
  const cli=args=>{preparationPhase=`cli:${args[0]}:${args[1]??'version'}`;const r=spawnSync('supabase',args,{cwd:root,encoding:'utf8',timeout:120000,maxBuffer:4*1024*1024});assert.equal(r.status,0,'CLI operation failed; raw output withheld');return r.stdout;};
  assert.equal(cli(['--version']).trim(),'2.101.0','Pinned CLI version required');
- const readDownloaded=async manifest=>{const downloadRoot=mkdtempSync(join(tmpdir(),'spectator-batch-verify-'));cli(['functions','download',name,'--project-ref',project,'--use-api','--workdir',downloadRoot]);verifyDownloaded(downloadRoot,manifest);};
+ const readDownloaded=async manifest=>{preparationPhase='hosted-bundle:multipart-source';const response=await fetch(`https://api.supabase.com/v1/projects/${project}/functions/${name}/body`,{headers:{Authorization:`Bearer ${env.SUPABASE_ACCESS_TOKEN}`,Accept:'multipart/form-data'},signal:AbortSignal.timeout(30000)});assert.ok(response.ok);assert.match(response.headers.get('content-type')??'',/^multipart\//);return verifyBundleForm(await response.formData(),manifest);};
  const denied=async()=>{const r=await fetch(`https://${project}.supabase.co/functions/v1/${name}`,{method:'POST',signal:AbortSignal.timeout(10000)});return r.status;};
  const report=event=>console.log(JSON.stringify(event));
  const priorRoot=resolve(env.RUNNER_TEMP,'spectator-prior-v12');
@@ -148,7 +177,7 @@ async function main(){
   verifyDownloaded(priorRoot,{edgeFiles:priorFiles});
  };
  if(operation==='capture-prior'||operation==='inspect-prior'){
-  if(env.OPERATION==='repair-bundle'||operation==='inspect-prior'){validateRepairBase(await management('GET',`functions/${name}`));verifySecret(await management('GET','secrets'),'0');await verifyDatabase();materializePrior('43626793959');report({kind:'VERIFIED_ORIGINAL_PRIOR_V12_ARTIFACT_REUSED',originatingRun:43626793959,sourceCommit:'unknown'});return;}
+  if(env.OPERATION==='repair-bundle'||env.OPERATION==='activate-verified'||operation==='inspect-prior'){const current=await management('GET',`functions/${name}`);if(env.OPERATION==='activate-verified')validateActivationBase(current);else validateRepairBase(current);verifySecret(await management('GET','secrets'),'0');await verifyDatabase();materializePrior('43626793959');report({kind:'VERIFIED_ORIGINAL_PRIOR_V12_ARTIFACT_REUSED',originatingRun:43626793959,sourceCommit:'unknown'});return;}
   validatePriorEdge(await management('GET',`functions/${name}`));await verifyDatabase();
   const rawPrior=mkdtempSync(join(tmpdir(),'spectator-prior-download-'));cli(['functions','download',name,'--project-ref',project,'--use-api','--workdir',rawPrior]);const priorBase=verifyDownloaded(rawPrior,{edgeFiles:priorFiles});
   for(const file of priorFiles){const dest=resolve(priorRoot,file.path);mkdirSync(dirname(dest),{recursive:true});writeFileSync(dest,readFileSync(resolve(priorBase,file.path)));}
@@ -167,7 +196,8 @@ async function main(){
   report({kind:'READ_ONLY_EDGE_BUNDLE_INVENTORY',version:after.version,ezbrSha256:after.ezbr_sha256,parts});return;
  }
  const beforeRuntime=await query(hostedRuntimeSql);
- await runEdgeRelease({manifest:pkg.manifest,management,cli,verifyDatabase,readDownloaded,denied,sourceRoot:root,repair:operation==='repair-bundle',report});
+ if(operation==='activate-verified')await activateVerifiedBundle({manifest:pkg.manifest,management,readDownloaded,verifyDatabase,denied,report});
+ else await runEdgeRelease({manifest:pkg.manifest,management,cli,verifyDatabase,readDownloaded,denied,sourceRoot:root,repair:operation==='repair-bundle',report});
  for(let i=0;i<3;i++){await new Promise(r=>setTimeout(r,5000));const observed=classifyHostedRuntime(beforeRuntime,await query(hostedRuntimeSql));report({kind:'SPECTATOR_HOSTED_RUNTIME_OBSERVATION',...observed});if(observed.state==='hosted-batch-observed')break;}
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(error=>{console.error(JSON.stringify({kind:'SPECTATOR_EDGE_PREFLIGHT_STOP',phase:preparationPhase,errorClass:error?.name??'Error',errorCode:typeof error?.code==='string'?error.code:null}));console.error('SPECTATOR_EDGE_RELEASE_STOP_RAW_DETAILS_WITHHELD');process.exitCode=1;});
