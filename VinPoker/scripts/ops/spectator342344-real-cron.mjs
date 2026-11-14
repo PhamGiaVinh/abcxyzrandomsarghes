@@ -30,8 +30,8 @@ const owned=json(pauseSql());sql('SELECT cron.alter_job(52,active:=false);');
 assert.throws(()=>sql(resumeSql(owned.pauseXmin)),e=>e.stderr.includes('dispatcher_pause_ownership_drift'));
 // Test-only recovery from deliberate competitor: never part of production controller.
 sql('SELECT cron.alter_job(52,active:=true);');
-function asynchronous(query){return new Promise(resolve=>{const child=spawn('docker',args,{stdio:['pipe','pipe','pipe']});let out='',err='';child.stdout.on('data',b=>out+=b);child.stderr.on('data',b=>err+=b);child.on('close',code=>resolve({code,out,err}));child.stdin.end(role+query);});}
-async function waitForSleep(){for(let i=0;i<50;i++){if(raw("SELECT count(*) FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND wait_event='PgSleep' AND query LIKE '%cron.alter_job(52%';").trim()!=='0')return;await new Promise(r=>setTimeout(r,20));}throw Error('Concurrent transaction did not reach synchronized sleep');}
+function asynchronous(query){return new Promise(resolve=>{const child=spawn('docker',args,{stdio:['pipe','pipe','pipe']});let out='',err='';child.stdout.on('data',b=>out+=b);child.stderr.on('data',b=>err+=b);child.on('close',code=>resolve({code,out,err}));child.stdin.end(role+"SET application_name='spectator-cron-race';"+query);});}
+async function waitForSleep(){for(let i=0;i<50;i++){if(raw("SELECT count(*) FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND wait_event='PgSleep' AND application_name='spectator-cron-race';").trim()!=='0')return;await new Promise(r=>setTimeout(r,20));}throw Error('Concurrent transaction did not reach synchronized sleep');}
 // Force a real committed competing update after the serializable snapshot, before API UPDATE.
 const racing=asynchronous(pauseSql().replace(' PERFORM cron.alter_job(52,active:=false);',' PERFORM pg_sleep(5); PERFORM cron.alter_job(52,active:=false);'));
 await waitForSleep();sql('SELECT cron.alter_job(52,active:=true);');
