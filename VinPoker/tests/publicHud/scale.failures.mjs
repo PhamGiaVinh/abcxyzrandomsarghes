@@ -14,7 +14,8 @@ export function sanitizeHudAttemptTrace(attempts){
  if(!Array.isArray(attempts))return [];
  return attempts.slice(-8).map(value=>{
   const row={};
-  for(const key of ['attempt','launchedAt','headersAt','completedAt','httpStatus','upstreamMs','proxyMs','elapsedMs']){
+  for(const key of ['attempt','launchedAt','headersAt','completedAt','httpStatus','upstreamMs','proxyMs','elapsedMs',
+   'postgrest_jwtMs','postgrest_parseMs','postgrest_planMs','postgrest_transactionMs','postgrest_responseMs']){
    const n=value?.[key];if(typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=Number.MAX_SAFE_INTEGER)row[key]=n;
   }
   if(['current','updating','warming','unavailable','revoked','unknown'].includes(value?.state))row.state=value.state;

@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {parsePostgrestServerTiming} from './scale.postgrest-metrics.mjs';
 
 // Load-generator transport only. Every call is a distinct real HTTP request;
 // no response cache, batch, application retry or cross-viewer deduplication.
@@ -28,7 +29,10 @@ export function createLocalHttpTransport(){
       if(!res.complete){finish(Error('HTTP_RESPONSE_INCOMPLETE'));return;}
       finish(null,{status:res.statusCode,ok:res.statusCode>=200&&res.statusCode<300,headers:res.headers,headersAt,text:Buffer.concat(chunks).toString('utf8')});
      });
-     try{onHeaders?.({status:responseStatus,headersAt});}catch{}
+     if(onHeaders)try{
+      const timing=parsePostgrestServerTiming(res.headers['server-timing']);
+      onHeaders?.({status:responseStatus,headersAt,...(timing.available?{postgrestPhases:timing.phases}:{})});
+     }catch{}
     });
     req.on('error',error=>finish(error));req.end(body);
    });

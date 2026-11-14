@@ -8,6 +8,7 @@ it('retains only eight sanitized attempt snapshots including an unfinished reque
  attempts[11].state='current';expect(rows[7].state).toBe('unavailable');
  expect(JSON.stringify(rows)).not.toContain('PRIVATE');
  expect(sanitizeHudAttemptTrace([{headersAt:NaN,elapsedMs:-1,state:'PRIVATE',httpStatus:200,completedAt:1234}])).toEqual([{httpStatus:200,completedAt:1234}]);
+ expect(sanitizeHudAttemptTrace([{postgrest_transactionMs:12.5,postgrest_planMs:0,postgrest_responseMs:Infinity,serverTiming:'PRIVATE'}])).toEqual([{postgrest_planMs:0,postgrest_transactionMs:12.5}]);
  expect(sanitizeHudAttemptTrace(null)).toEqual([]);
 });
 describe('safe HUD read failure diagnosis',()=>{

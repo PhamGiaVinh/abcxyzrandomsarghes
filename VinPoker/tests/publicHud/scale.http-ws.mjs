@@ -84,7 +84,7 @@ async function post(path,body,privileged=false,phase='other',callerSignal,trace)
  const timeout=AbortSignal.timeout(10000),signal=callerSignal?AbortSignal.any([callerSignal,timeout]):timeout;
  const intentionallyCancelled=error=>error?.httpStatus===undefined&&callerSignal?.aborted&&!timeout.aborted&&(error===callerSignal.reason||error?.name==='AbortError');
  try{
- const response=await httpTransport.request(status.API_URL+path,{headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:encoded,signal,...(trace?{onHeaders:({status,headersAt})=>{trace.httpStatus=status;trace.headersAt=trace.launchedAt+headersAt-start;}}:{})}).catch(error=>{
+ const response=await httpTransport.request(status.API_URL+path,{headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},body:encoded,signal,...(trace?{onHeaders:({status,headersAt,postgrestPhases})=>{trace.httpStatus=status;trace.headersAt=trace.launchedAt+headersAt-start;for(const name of ['jwt','parse','plan','transaction','response'])if(postgrestPhases?.[name]!==undefined)trace['postgrest_'+name+'Ms']=postgrestPhases[name];}}:{})}).catch(error=>{
   if(intentionallyCancelled(error))throw error;
   const kind=`${phase}:${path.split('/').at(-1)}:${timeout.aborted?'timeout':'transport'}`;stats.transportErrors[kind]=(stats.transportErrors[kind]??0)+1;throw error;
  });
