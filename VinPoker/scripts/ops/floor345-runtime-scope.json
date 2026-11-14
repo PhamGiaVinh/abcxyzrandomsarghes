@@ -1,0 +1,94 @@
+{
+  "kind": "EXACT_FLOOR345_CURRENT_RUNTIME_NOT_HISTORICAL",
+  "pr": 1638,
+  "candidateSha": "8a9be1958c4d76326ddf6bbb344c1d36aa667178",
+  "files": [
+    {
+      "status": "A",
+      "path": ".github/workflows/floor-fast-bust-db.yml",
+      "sha256": "7e2146505f5ee007d90be65d411d39118a1e45dcd333fe5aa87cc9e1e1b4fcba"
+    },
+    {
+      "status": "M",
+      "path": ".github/workflows/ops-floor-cashier-disposable-db.yml",
+      "sha256": "bd86678c2b26d0107d7c121ba8562513eadd174adafc88ab6f82597802db4d72",
+      "preimageSha256": "04491cb211b2b61571de14e56335ed904a00aad69e36ee5ccbce887d005c57f1"
+    },
+    {
+      "status": "M",
+      "path": "VinPoker/src/components/cashier/tournament-live/FloorTableMapPanelV3.tsx",
+      "sha256": "5343afb0e6f5cf8d999989a94c8017bdb91c16664d18f87e565264d45edc276f",
+      "preimageSha256": "46b0eda55bb7670af0e898b182439e955f1d490dd6059432469037b37d8ed313"
+    },
+    {
+      "status": "M",
+      "path": "VinPoker/src/components/cashier/tournament-live/__tests__/FloorTableMapPanelV3.closed.test.tsx",
+      "sha256": "d98abaf2cd9b698fb3c3d85acf328503c202b01c4d356f385cf2b5c689582d24",
+      "preimageSha256": "ab4f320ac2c1b5fc652733535f87f66262cb8dac5a302b2a97ba5d7cb6e950c2"
+    },
+    {
+      "status": "M",
+      "path": "VinPoker/src/components/ops/shared/FloorSeatRoster.tsx",
+      "sha256": "89233dd073c11bd96c5d3c74273a9fd5cf6499580d6362a7ba23eeb4327c2cb5",
+      "preimageSha256": "1a2de262501431078ec62393ccb59ce4da1a0965259054daf17fcef14dc6bd46"
+    },
+    {
+      "status": "M",
+      "path": "VinPoker/src/lib/featureFlags.ts",
+      "sha256": "67a994ece63a433578ecb136f71e37b328d0f23d56658387714d53af5bd1931e",
+      "preimageSha256": "abc5459086f1e2b16c6ac45a93a0fe074eddbec2e4228a5e911c5585e0095eea"
+    },
+    {
+      "status": "A",
+      "path": "VinPoker/src/lib/floorFastBust.test.ts",
+      "sha256": "5e40c0461e21609a2616a9d5e8e29c2f57110f0221ee45606d204d3da709bef0"
+    },
+    {
+      "status": "M",
+      "path": "VinPoker/src/lib/floorTableControlV3.ts",
+      "sha256": "bed43050e0142ee76bafcc32516b4a60404bc0417c279996e7bec8e4b2750b56",
+      "preimageSha256": "ed07e85400c240eaea423bf9bb8a308143dafa1ce7f26301154768d931c0d985"
+    },
+    {
+      "status": "M",
+      "path": "VinPoker/supabase/migration-archive/floor-v3-catalog-reconciliation.manifest.json",
+      "sha256": "313031e0e1d366923e35247659e48556a30845e8cea7eeb5a70fcc2b5eaabe5f",
+      "preimageSha256": "9cbe8466f6d37d5fecb96208fb11f6603043fdcd5317b6a18f5f40d89e5c69af"
+    },
+    {
+      "status": "A",
+      "path": "VinPoker/supabase/migrations/20270128000345_floor_operator_fast_bust_v1.sql",
+      "sha256": "6a64cf4c2d4f54c980f046261aa8dabf02c2a601ade7f4393b612c9fcfa297a2"
+    },
+    {
+      "status": "A",
+      "path": "VinPoker/tests/floorTableControlV3/fastBust.concurrent.sh",
+      "sha256": "d783fd9120654a44c33f48e9f614d4993450c0b20953220c54ee3d0567e06a7c"
+    },
+    {
+      "status": "A",
+      "path": "VinPoker/tests/floorTableControlV3/fastBust.disposable.sql",
+      "sha256": "cd7d134226884fae7918e6bf17bc6c366e28c5a08e3d9d7c7edd1fc4ce3178b3"
+    }
+  ],
+  "guards": [
+    "VinPoker/scripts/ops/select-floor345-runtime.mjs",
+    "VinPoker/scripts/ops/floor345-runtime-scope.json",
+    "VinPoker/scripts/ops/floor345-runtime-integration.yml",
+    "VinPoker/scripts/ops/floor345-fresh-baseline.json",
+    "VinPoker/scripts/ops/floor345-fresh-baseline.mjs",
+    "VinPoker/scripts/ops/floor345-fresh-baseline.test.mjs",
+    "VinPoker/scripts/ops/restore-schema-test-baseline.mjs",
+    ".github/workflows/floor345-fresh-schema.yml",
+    "VinPoker/tests/floorTableControlV3/floor345.currentSchema.sql",
+    "VinPoker/tests/floorTableControlV3/floor345.currentSchema.concurrent.sh",
+    "VinPoker/scripts/ops/select-floor345-runtime.test.mjs"
+  ],
+  "integrationWorkflow": {
+    "path": ".github/workflows/dealer-checkin-current-schema.yml",
+    "sha256": "72329049e99ba352976d69f41489fee823ddc2b1ec0467b0c894fde2f35fc0d7",
+    "preimageSha256": "f70354c83dde1f7aa7018b0da040563dcb64504ad029b72a65d8aa0b7ad47515"
+  },
+  "historicalCoverage": false,
+  "reviewedBaseSha": "fb6c1055d40df8c5b014e9de228a98e1c6e0cbf9"
+}

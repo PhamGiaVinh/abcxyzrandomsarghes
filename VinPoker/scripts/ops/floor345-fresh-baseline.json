@@ -1,0 +1,22 @@
+{
+  "kind": "FRESH_CURRENT_SCHEMA_FOR_FLOOR345_NOT_PRE03_RECOVERY",
+  "repository": "PhamGiaVinh/abcxyzrandomsarghes",
+  "capture": {
+    "run": 43471170552,
+    "workflowId": 322144993,
+    "sha": "d54afa6c4b8de94caffb5f50c1dcf46a709c1a16",
+    "actor": "PhamGiaVinh",
+    "event": "workflow_dispatch",
+    "branch": "main",
+    "artifactId": 14062030756,
+    "artifactDigest": "sha256:cafa1eb37c1c6d87f46bc3e2773b7ae15db2024d4db3e07609929dbae9d8d387",
+    "schemaSha256": "35fc93f15fac55fe63386f06b5da7ea497e5e68aadb5168616c11cca202f66e7"
+  },
+  "candidateSha": "8a9be1958c4d76326ddf6bbb344c1d36aa667178",
+  "migration": {
+    "path": "VinPoker/supabase/migrations/20270128000345_floor_operator_fast_bust_v1.sql",
+    "sha256": "6a64cf4c2d4f54c980f046261aa8dabf02c2a601ade7f4393b612c9fcfa297a2"
+  },
+  "historicalCoverage": "Original pre03 artifact remains unavailable. This fresh capture does not establish historical upgrade coverage.",
+  "productionMutation": false
+}

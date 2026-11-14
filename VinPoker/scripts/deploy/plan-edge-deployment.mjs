@@ -4,6 +4,7 @@ import { posix as path } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadDeploymentManifest, resolveTargetContracts } from "./deployment-manifest.mjs";
 import { selectTargetContractProfile } from "./target-contract-profile.mjs";
+import { hash, loadObservationPolicy, observationCandidate } from "./verified-deployment-observation.mjs";
 
 const SHARED_PREFIXES = [
   "VinPoker/supabase/functions/_shared/",
@@ -47,6 +48,12 @@ function normalizePath(path) {
 export function isFrontendPath(path) {
   const normalized = normalizePath(path);
   return FRONTEND_FILES.has(normalized) || FRONTEND_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+}
+
+export function frontendTreeFingerprint(repositoryRoot,sha){
+  const entries=execFileSync('git',['-C',repositoryRoot,'ls-tree','-r','-z',sha],{encoding:'utf8',maxBuffer:16*1024*1024})
+    .split('\0').filter(Boolean).filter(row=>isFrontendPath(row.slice(row.indexOf('\t')+1))).sort();
+  return hash(JSON.stringify(entries));
 }
 
 function git(repositoryRoot, args) {
@@ -331,10 +338,11 @@ function inspectRetainedCompatibility(repositoryRoot, receiptSha, gate) {
   };
 }
 
-export function buildComponentDiffs({ repositoryRoot, targetSha, baselines, manifest, mainRef = "origin/main" }) {
+export function buildComponentDiffs({ repositoryRoot, targetSha, baselines, manifest, mainRef = "origin/main", observationPolicy = null }) {
   verifyCommitOnMain(repositoryRoot, targetSha, mainRef);
   const result = { frontend: null, functions: {} };
   const targetSource = createTargetSourceReader(repositoryRoot, targetSha);
+  const frontendFingerprint=observationPolicy?frontendTreeFingerprint(repositoryRoot,targetSha):null;
 
   const frontendReceipt = receiptFor(baselines, "frontend");
   if (frontendReceipt?.sha) verifyCommitOnMain(repositoryRoot, frontendReceipt.sha, mainRef);
@@ -352,7 +360,7 @@ export function buildComponentDiffs({ repositoryRoot, targetSha, baselines, mani
     const receipt = receiptFor(baselines, name);
     if (receipt?.sha) verifyCommitOnMain(repositoryRoot, receipt.sha, mainRef);
     const targetHasEntrypoint = targetSource.source(`${config.path}/index.ts`) !== null;
-    const importClosure = targetHasEntrypoint && receipt?.sha
+    const importClosure = targetHasEntrypoint && (receipt?.sha || observationPolicy)
       ? inspectTargetImportClosure({ sourceReader: targetSource, entrypoint: `${config.path}/index.ts` })
       : { complete: true, files: [], reason: "not_needed" };
     // Keep the complete direct function tree in scope (including tests and
@@ -373,6 +381,9 @@ export function buildComponentDiffs({ repositoryRoot, targetSha, baselines, mani
     // target-SHA closure. If that proof cannot be built, the full source diff
     // is retained so the deployment gate fails closed.
     const dependencyFiles = files.filter((path) => !directFiles.includes(path) && !sharedFiles.includes(path));
+    const observed=observationCandidate(observationPolicy,{name,verifyJwt:config.verifyJwt,
+      frontendFingerprint,closure:importClosure,
+      readRaw:path=>execFileSync('git',['-C',repositoryRoot,'show',`${targetSha}:${path}`],{maxBuffer:4*1024*1024})});
     result.functions[name] = {
       baselineSha: receipt?.sha ?? null,
       baselineSource: receipt?.source ?? "missing",
@@ -380,7 +391,8 @@ export function buildComponentDiffs({ repositoryRoot, targetSha, baselines, mani
       // A target predating this function must retain the existing receipt rather
       // than being forced to deploy source it does not contain. A present target
       // without a receipt remains changed and therefore manual-only.
-      changed: targetHasEntrypoint && (receipt?.sha ? directFiles.length > 0 || sharedFiles.length > 0 || dependencyFiles.length > 0 : true),
+      changed: targetHasEntrypoint && !observed && (receipt?.sha ? directFiles.length > 0 || sharedFiles.length > 0 || dependencyFiles.length > 0 : true),
+      ...(observed?{observedSource:observed}:{}),
       directFiles,
       sharedFiles,
       dependencyFiles,
@@ -551,6 +563,7 @@ function enrichPlan(plan) {
     criticalFunctions: plan.criticalFunctions,
     noncriticalFunctions: [],
     criticalChanged: plan.criticalChanged,
+    observedForFrontend: Object.entries(plan.componentDiffs.functions).filter(([,diff])=>diff.observedSource).map(([name])=>name).sort(),
     requiredForFrontend: plan.requiredForFrontend,
     retainedForFrontend: plan.retainedForFrontend,
     missingRetainedForFrontend: plan.missingRetainedForFrontend,
@@ -576,12 +589,12 @@ function enrichPlan(plan) {
 
 export function renderPlanSummary(plan) {
   const rows = Object.entries(plan.components.functions)
-    .filter(([, item]) => item.changed || item.selected)
-    .map(([name, item]) => `| Edge ${name} | ${item.baselineSha ?? "MISSING"} | ${item.directFiles.length} | ${item.sharedFiles.length} | ${(item.dependencyFiles ?? []).length} | ${item.selected ? "selected" : "held"} | ${item.verifyJwt ? "verify" : "no-verify"} | ${item.contractCount} |`);
+    .filter(([, item]) => item.changed || item.selected || item.observedSource)
+    .map(([name, item]) => `| Edge ${name} | ${item.baselineSha ?? "MISSING"} | ${item.directFiles.length} | ${item.sharedFiles.length} | ${(item.dependencyFiles ?? []).length} | ${item.observedSource ? "observed candidate; fresh verification required; source unknown" : item.selected ? "selected" : "held"} | ${item.verifyJwt ? "verify" : "no-verify"} | ${item.contractCount} |`);
   const fullDiffs = [
     ["Frontend", plan.components.frontend.baselineSha, plan.components.frontend.files],
     ...Object.entries(plan.components.functions)
-      .filter(([, item]) => item.changed || item.selected)
+      .filter(([, item]) => item.changed || item.selected || item.observedSource)
       .map(([name, item]) => [`Edge ${name}`, item.baselineSha, [...item.directFiles, ...item.sharedFiles, ...(item.dependencyFiles ?? [])]]),
   ].flatMap(([label, baselineSha, files]) => [
     `<details><summary>${label} full diff</summary>`,
@@ -642,6 +655,7 @@ function writeOutputs(path, plan) {
     `critical_functions=${JSON.stringify(plan.criticalFunctions)}`,
     `noncritical_functions=[]`,
     `critical_changed=${JSON.stringify(plan.criticalChanged)}`,
+    `observed_for_frontend=${JSON.stringify(plan.observedForFrontend)}`,
     `required_critical_for_frontend=${JSON.stringify(plan.requiredForFrontend)}`,
     `retained_for_frontend=${JSON.stringify(plan.retainedForFrontend)}`,
     `missing_retained_for_frontend=${JSON.stringify(plan.missingRetainedForFrontend)}`,
@@ -676,7 +690,8 @@ function run() {
 
   const manifest = loadDeploymentManifest();
   const baselines = JSON.parse(readFileSync(baselinesPath, "utf8"));
-  const componentDiffs = buildComponentDiffs({ repositoryRoot, targetSha: sha, baselines, manifest });
+  const componentDiffs = buildComponentDiffs({ repositoryRoot, targetSha: sha, baselines, manifest,
+    observationPolicy:args.get('verified-observations')==='true'?loadObservationPolicy():null });
   const contractSelection = selectTargetContractProfile({ targetRoot: repositoryRoot });
   const plan = buildDeploymentPlan({
     event,

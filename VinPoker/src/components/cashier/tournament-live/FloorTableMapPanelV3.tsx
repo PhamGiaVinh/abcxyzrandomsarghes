@@ -45,6 +45,9 @@ type PendingTableAction = "close" | "break";
 
 function v3ErrorMessage(error: string): string {
   switch (error) {
+    case "seat_identity_changed": return "Ghế này đã thay đổi người hoặc lượt tham gia. Hãy chọn lại đúng ghế hiện tại.";
+    case "V3_BUST_RECEIPT_UNVERIFIED": return "Chưa xác minh được kết quả loại người. Hãy làm mới để kiểm tra trước khi thao tác tiếp.";
+    case "redraw_in_progress": return "Bàn đang trong lượt redraw. Hoàn tất lượt đó trước khi loại người.";
     case "STALE_STATE": return "Dữ liệu bàn vừa thay đổi. Hãy tải lại trước khi thao tác lại.";
     case "table_has_active_hand":
     case "player_in_active_hand": return "Bàn đang có ván chạy nên thao tác này đã bị chặn.";
@@ -121,7 +124,10 @@ function ScopedFloorTableMapPanelV3({
   const [pendingMoves, setPendingMoves] = useState<FloorPendingTrackerMove[]>([]);
   const [secondaryLoadError, setSecondaryLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [rosterReady, setRosterReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const mutationBusy = useRef(false);
+  const bustRequests = useRef(new Map<string, string>());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [openTable, setOpenTable] = useState(false);
@@ -165,18 +171,21 @@ function ScopedFloorTableMapPanelV3({
   }, [selectedTable]);
 
   const readScope = `${actorId ?? ""}:${tournament.id}`;
-  const selectedSessionScope = JSON.stringify([readScope, selectedTable?.tournamentTableId,
+  const selectedSessionScope = JSON.stringify([readScope, sessionEpoch ?? null, selectedTable?.tournamentTableId,
     selectedTable?.tableSessionId, selectedTable?.controlEpoch]);
   const selectedWriteScope = JSON.stringify([selectedSessionScope, selectedTable?.sessionRevision]);
   const selectedWriteScopeRef = useRef(selectedWriteScope);
   selectedWriteScopeRef.current = selectedWriteScope;
-  const actionIsCurrent = pendingActionScope === selectedWriteScope && !loading && !loadError;
+  const actionIsCurrent = pendingActionScope === selectedWriteScope && !loadError
+    && (!loading || (v3.fastBustEnabled && rosterReady && pendingTableAction === "close"));
+  const bustActionIsCurrent = pendingActionScope === (v3.fastBustEnabled ? selectedSessionScope : selectedWriteScope)
+    && !loadError && (v3.fastBustEnabled || !loading);
   const currentReadScope = useRef(readScope);
   currentReadScope.current = readScope;
   const readSequence = useRef(0);
   const liveHintEpoch = useRef(0);
   const liveReadId = useId();
-  const load = useCallback(async (silent = false) => {
+  const load = useCallback(async (silent = false, onRosterVerified?: () => void) => {
     const sequence = ++readSequence.current;
     const hintAtStart = liveHintEpoch.current;
     const isCurrent = () => currentReadScope.current === readScope && readSequence.current === sequence;
@@ -187,6 +196,7 @@ function ScopedFloorTableMapPanelV3({
     // Silent refresh may publish the new roster before its action lists.
     // Retain the visible roster, but fence writes for every refresh generation.
     setLoading(true);
+    setRosterReady(false);
     try {
       const settled = await Promise.allSettled([
         v3.getTournamentTableRoster(tournament.id).then(roster => {
@@ -195,6 +205,8 @@ function ScopedFloorTableMapPanelV3({
           if (isCurrent() && roster.ok) {
             setTables(roster.data);
             setLoadError(null);
+            setRosterReady(true);
+            onRosterVerified?.();
           }
           return roster;
         }),
@@ -337,7 +349,6 @@ function ScopedFloorTableMapPanelV3({
 
   useEffect(() => {
     setEntrySelection(null);
-    setPendingBustSeat(null);
     setPendingFreeSitSeat(null);
     setPendingTableAction(null);
     setBreakPlan(null);
@@ -345,6 +356,10 @@ function ScopedFloorTableMapPanelV3({
     setBreakPlanError(null);
     setLockReason("Giữ ghế cho vận hành");
   }, [selectedSeatNumber, selectedTableId, selectedWriteScope]);
+
+  // Other people's operations may change the table revision while Floor confirms
+  // this exact seat. Only a different seat/session/actor retires that intent.
+  useEffect(() => { setPendingBustSeat(null); }, [selectedSeatNumber, selectedTableId, selectedSessionScope]);
 
   useEffect(() => {
     setMoveTarget(null); setMoveOpen(false); setRestoreTarget(null);
@@ -356,8 +371,9 @@ function ScopedFloorTableMapPanelV3({
   useEffect(() => { setModeOpen(false); }, [selectedTableSessionId, selectedTableControlMode]);
 
 
-  const run = async (successMessage: string | ((data: Record<string, unknown>) => string), mutation: Mutation): Promise<boolean> => {
-    if (busy || tournamentEnded) return false;
+  const run = async (successMessage: string | ((data: Record<string, unknown>) => string), mutation: Mutation, backgroundRefresh = false): Promise<boolean> => {
+    if (mutationBusy.current || tournamentEnded) return false;
+    mutationBusy.current = true;
     setBusy(true);
     try {
       const result = await mutation();
@@ -365,21 +381,25 @@ function ScopedFloorTableMapPanelV3({
         const message = v3ErrorMessage(result.error);
         setOperationError(message);
         toast.error(message);
-        await load();
+        if (backgroundRefresh) void load(true);
+        else await load();
         return false;
       }
       setOperationError(null);
       toast.success(typeof successMessage === "function" ? successMessage(result.data) : successMessage);
       onParticipationChanged?.();
-      await load();
+      if (backgroundRefresh) void load(true);
+      else await load();
       return true;
     } catch {
       const message = "Mất kết nối khi thao tác. Chưa xác nhận thay đổi; hãy tải lại để kiểm tra trạng thái bàn.";
       setOperationError(message);
       toast.error(message);
-      await load();
+      if (backgroundRefresh) void load(true);
+      else await load();
       return false;
     } finally {
+      mutationBusy.current = false;
       setBusy(false);
     }
   };
@@ -410,13 +430,20 @@ function ScopedFloorTableMapPanelV3({
         <section className="rounded-xl border border-destructive/35 bg-destructive/10 p-3" role="alert">
           <p className="font-semibold text-destructive">Cần sửa dữ liệu ghế {seat.seatNumber}</p>
           <p className="mt-1 text-sm text-muted-foreground">{seat.integrityStatus === "invalid_participation"
-            ? "Dữ liệu người chơi, phiên bàn hoặc chip chưa khớp. Các thao tác chuyển, rời ghế và loại được khóa để tránh nhầm người."
-            : "Đang có người trên server nhưng thiếu hồ sơ dự giải. Các thao tác chuyển, rời ghế và loại được khóa để tránh nhầm người."}</p>
+            ? v3.fastBustEnabled ? "Thông tin chưa khớp. Có thể xác nhận người chơi đã dừng chơi để loại hoặc giải phóng đúng ghế này."
+              : "Dữ liệu người chơi, phiên bàn hoặc chip chưa khớp. Các thao tác chuyển, rời ghế và loại được khóa để tránh nhầm người."
+            : v3.fastBustEnabled ? "Thiếu hồ sơ dự giải. Có thể giải phóng ghế này; hệ thống không tự tạo hồ sơ hay ghi một lượt bust mới."
+              : "Đang có người trên server nhưng thiếu hồ sơ dự giải. Các thao tác chuyển, rời ghế và loại được khóa để tránh nhầm người."}</p>
           <p className="mt-2 break-all font-mono text-xs text-muted-foreground">Mã người chơi: {seat.playerId}</p>
+          {v3.fastBustEnabled && <Button data-ops-action="floor.player.open_bust" className="mt-3 min-h-12 w-full" variant="destructive"
+            disabled={busy || !actorId || !seat.seatId}
+            onClick={() => { setPendingActionScope(selectedSessionScope); setPendingBustSeat(seat); }}>
+            <UserRoundX className="mr-2 h-4 w-4" /> Loại / giải phóng ghế
+          </Button>}
         </section>
       );
     }
-    const trackerChipBlocked = selectedTable.controlMode === "tracker" && seat.chipCount !== 0;
+    const trackerChipBlocked = !v3.fastBustEnabled && selectedTable.controlMode === "tracker" && seat.chipCount !== 0;
     const pendingForEntry = pendingMoves.find((move) => move.entryId === seat.entryId && move.status === "pending");
     const staleForEntry = pendingMoves.find((move) => move.entryId === seat.entryId && move.status === "stale");
     const pendingDestination = tables.find((table) => table.tournamentTableId === pendingForEntry?.destinationTournamentTableId);
@@ -437,7 +464,7 @@ function ScopedFloorTableMapPanelV3({
               <UserRoundMinus className="mr-2 h-4 w-4" /> Rời ghế
             </Button>
           )}
-          <Button data-ops-action="floor.player.open_bust" variant="destructive" className="min-h-12" disabled={busy || trackerChipBlocked} onClick={() => { setPendingActionScope(selectedWriteScope); setPendingBustSeat(seat); }}>
+          <Button data-ops-action="floor.player.open_bust" variant="destructive" className="min-h-12" disabled={busy || trackerChipBlocked || (v3.fastBustEnabled && !seat.seatId)} onClick={() => { setPendingActionScope(v3.fastBustEnabled ? selectedSessionScope : selectedWriteScope); setPendingBustSeat(seat); }}>
             <UserRoundX className="mr-2 h-4 w-4" /> Loại khỏi giải
           </Button>
         </div>
@@ -527,6 +554,10 @@ function ScopedFloorTableMapPanelV3({
         <FloorTableRosterIndex tables={tableIndex} onOpen={(tableId) => {
           // The sheet may have been closed across a server-only mode transition.
           // Read once at entry; never require a failed write to discover new fences.
+          if (v3.fastBustEnabled) {
+            void load(true, () => { setSelectedTableId(tableId); setSelectedSeatNumber(null); });
+            return;
+          }
           void load(true).then((verified) => {
             if (verified) { setSelectedTableId(tableId); setSelectedSeatNumber(null); }
           });
@@ -722,6 +753,7 @@ function ScopedFloorTableMapPanelV3({
                 </div>
 
                 <FloorSeatRoster
+                  onDataIssueSeatTap={v3.fastBustEnabled ? setSelectedSeatNumber : undefined}
                   seats={selectedRosterSeats}
                   maxSeats={selectedTable.maxSeats}
                   seatLocks={selectedTable.seatLocks}
@@ -811,20 +843,22 @@ function ScopedFloorTableMapPanelV3({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={pendingBustSeat !== null && actionIsCurrent} onOpenChange={(open) => { if (!open) setPendingBustSeat(null); }}>
+      <AlertDialog open={pendingBustSeat !== null && bustActionIsCurrent} onOpenChange={(open) => { if (!open) setPendingBustSeat(null); }}>
         <AlertDialogContent className="operations-typography box-border max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-md overflow-y-auto rounded-xl p-4 sm:p-6">
           <AlertDialogHeader>
             <AlertDialogTitle>Loại người chơi khỏi giải?</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="min-w-0 space-y-3 text-left text-sm">
-                <p>Người chơi sẽ rời bàn và được ghi nhận đã bị loại. Không trả thưởng ở bước này.</p>
+                <p>{v3.fastBustEnabled
+                  ? "Xác nhận người chơi đã dừng chơi. Hồ sơ hợp lệ được ghi nhận đã loại; ghế lỗi chỉ được giải phóng, không tạo hồ sơ hay trả thưởng."
+                  : "Người chơi sẽ rời bàn và được ghi nhận đã bị loại. Không trả thưởng ở bước này."}</p>
                 {selectedTable && pendingBustSeat && (
                   <dl className="min-w-0 space-y-2 rounded-lg border border-border bg-card/55 p-3 text-sm text-foreground">
                     <div><dt className="text-xs text-muted-foreground">Người chơi</dt><dd className="break-all font-semibold">{pendingBustSeat.displayName}</dd></div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1"><div><dt className="text-xs text-muted-foreground">Vị trí</dt><dd>Bàn {selectedTable.tableNumber} · Ghế {pendingBustSeat.seatNumber}</dd></div><div><dt className="text-xs text-muted-foreground">Entry</dt><dd>{pendingBustSeat.entryNo}</dd></div><div><dt className="text-xs text-muted-foreground">Chip</dt><dd>{formatStack(pendingBustSeat.chipCount)}</dd></div></div>
                   </dl>
                 )}
-                {selectedTable?.controlMode === "manual" && (pendingBustSeat?.chipCount ?? 0) > 0 && (
+                {(selectedTable?.controlMode === "manual" || v3.fastBustEnabled) && (pendingBustSeat?.chipCount ?? 0) > 0 && (
                   <p className="rounded-lg border border-amber-400/25 bg-amber-400/5 p-3 text-amber-100/90">Người chơi còn chip. Vui lòng kiểm tra trước khi loại.</p>
                 )}
               </div>
@@ -838,8 +872,32 @@ function ScopedFloorTableMapPanelV3({
               disabled={busy || !selectedTable || !pendingBustSeat}
               onClick={async (event) => {
                 event.preventDefault();
-                if (!actionIsCurrent || !selectedTable || !pendingBustSeat) return;
+                if (!bustActionIsCurrent || !selectedTable || !pendingBustSeat) return;
                 const seat = pendingBustSeat;
+                if (v3.fastBustEnabled) {
+                  if (!seat.seatId) return;
+                  const table = selectedTable, scope = readScope;
+                  const intentKey = JSON.stringify([scope, table.tournamentTableId, table.tableSessionId,
+                    table.controlEpoch, seat.seatId, seat.playerId, seat.seatNumber, seat.seatEntryId ?? null]);
+                  let requestId = bustRequests.current.get(intentKey);
+                  if (!requestId) { requestId = crypto.randomUUID(); bustRequests.current.set(intentKey, requestId); }
+                  const ownedRequestId = requestId;
+                  const ok = await run(data => data.outcome === "orphan_seat_released"
+                    ? "Đã giải phóng ghế lỗi. Không ghi thêm lượt bust." : "Đã loại người chơi khỏi giải.", async () => {
+                    const result = await v3.bustSeatExact({ tournamentId: tournament.id,
+                      tournamentTableId: table.tournamentTableId, tableSessionId: table.tableSessionId,
+                      seatId: seat.seatId!, playerId: seat.playerId, seatNumber: seat.seatNumber,
+                      seatEntryId: seat.seatEntryId ?? null, expectedControlEpoch: table.controlEpoch,
+                      requestId: ownedRequestId, reason: "floor_confirmed_player_out" });
+                    if (result.ok && currentReadScope.current === scope) setTables(current => current.map(row =>
+                      row.tournamentTableId === table.tournamentTableId && row.tableSessionId === table.tableSessionId
+                        ? { ...row, seats: row.seats.filter(value => value.seatId !== seat.seatId) } : row));
+                    return result;
+                  }, true);
+                  if (ok) setPendingBustSeat(null);
+                  return;
+                }
+                if (!seat.entryId) return;
                 const ok = await run("Đã loại người chơi khỏi giải.", () => v3.bustPlayer({
                   entryId: seat.entryId,
                   expectedRevision: selectedTable.sessionRevision,

@@ -77,6 +77,7 @@ jobs:
       critical_functions: ${{ steps.plan.outputs.critical_functions }}
       noncritical_functions: ${{ steps.plan.outputs.noncritical_functions }}
       critical_changed: ${{ steps.plan.outputs.critical_changed }}
+      observed_for_frontend: ${{ steps.plan.outputs.observed_for_frontend }}
       required_critical_for_frontend: ${{ steps.plan.outputs.required_critical_for_frontend }}
       retained_for_frontend: ${{ steps.plan.outputs.retained_for_frontend }}
       missing_retained_for_frontend: ${{ steps.plan.outputs.missing_retained_for_frontend }}
@@ -172,6 +173,7 @@ jobs:
             --repository "${GITHUB_WORKSPACE}/target-source" \
             --sha "$TARGET_SHA" \
             --baselines "${RUNNER_TEMP}/deployment-baselines.json" \
+            --verified-observations true \
             --selected "$selected_csv" \
             --deploy-frontend "$DEPLOY_FRONTEND" \
             --force-frontend-redeploy "$FORCE_FRONTEND_REDEPLOY" \
@@ -412,12 +414,19 @@ jobs:
 
   validate-critical-environment:
     name: Verify owner-authorized critical release
-    if: github.event_name == 'workflow_dispatch' && needs.plan.outputs.critical_functions != '[]'
+    if: github.event_name == 'workflow_dispatch' && (needs.plan.outputs.critical_functions != '[]' || needs.plan.outputs.frontend == 'true')
     needs:
       - plan
       - target-preflight
     runs-on: ubuntu-latest
     steps:
+      - name: Verify required reviewers remain configured
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          environment="$(gh api "repos/$GITHUB_REPOSITORY/environments/dealer-swing-production-critical")"
+          jq -e '.protection_rules | any(.type == "required_reviewers" and ((.reviewers // []) | length > 0))' <<<"$environment" >/dev/null
       - name: Require owner dispatch of the preflighted release
         shell: bash
         env:
@@ -518,11 +527,13 @@ jobs:
       needs.plan.outputs.frontend == 'true' &&
       needs.control-plane-quality.result == 'success' &&
       needs.target-preflight.result == 'success' &&
+      needs.validate-critical-environment.result == 'success' &&
       (needs.plan.outputs.critical_functions == '[]' || needs.deploy-critical-edge.result == 'success')
     needs:
       - plan
       - control-plane-quality
       - target-preflight
+      - validate-critical-environment
       - deploy-critical-edge
     runs-on: ubuntu-latest
     environment:
@@ -610,6 +621,15 @@ jobs:
           VITE_SUPABASE_URL: "https://orlesggcjamwuknxwcpk.supabase.co"
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+
+      - name: Recheck observed live closures before frontend deployment
+        if: needs.plan.outputs.observed_for_frontend != '[]'
+        env:
+          OBSERVED_COMPONENTS: ${{ needs.plan.outputs.observed_for_frontend }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASEACCESSTOKEN }}
+        run: >-
+          node control-plane/VinPoker/scripts/deploy/verified-deployment-observation.mjs
+          "${GITHUB_WORKSPACE}/target-source" "$OBSERVED_COMPONENTS"
 
       - name: Deploy prebuilt bundle to Vercel
         shell: bash

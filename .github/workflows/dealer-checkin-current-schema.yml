@@ -394,7 +394,56 @@ on:
       - 'VinPoker/src/lib/floorPending*'
 permissions: { actions: read, contents: read }
 jobs:
+  select-floor345:
+    runs-on: ubuntu-24.04
+    outputs:
+      mode: ${{ steps.select.outputs.mode }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - id: select
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          mode=legacy
+          if git show "$BASE_SHA:VinPoker/scripts/ops/select-floor345-runtime.mjs" > "$RUNNER_TEMP/select-floor345-runtime.mjs"; then
+            mode="$(node "$RUNNER_TEMP/select-floor345-runtime.mjs" "$GITHUB_WORKSPACE" "$BASE_SHA" "$HEAD_SHA" "$PR_NUMBER")"
+          fi
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+  floor345-qualified:
+    needs: select-floor345
+    if: needs.select-floor345.outputs.mode == 'floor345'
+    uses: ./.github/workflows/floor345-fresh-schema.yml
   runtime:
+    needs: [select-floor345, legacy-runtime, floor345-qualified]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require the selected complete runtime proof
+        env:
+          SELECT_RESULT: ${{ needs.select-floor345.result }}
+          MODE: ${{ needs.select-floor345.outputs.mode }}
+          LEGACY_RESULT: ${{ needs.legacy-runtime.result }}
+          FLOOR345_RESULT: ${{ needs.floor345-qualified.result }}
+        run: |
+          set -euo pipefail
+          test "$SELECT_RESULT" = success
+          if [[ "$MODE" == floor345 ]]; then
+            test "$FLOOR345_RESULT" = success
+            test "$LEGACY_RESULT" = skipped
+          else
+            test "$MODE" = legacy
+            test "$LEGACY_RESULT" = success
+            test "$FLOOR345_RESULT" = skipped
+          fi
+  legacy-runtime:
+    needs: select-floor345
+    if: needs.select-floor345.outputs.mode != 'floor345'
     runs-on: ubuntu-latest
     # The retained-schema suite now includes full worker/concurrency chains.
     # Keep every per-case deadline; only allow the complete job to finish.
