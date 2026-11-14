@@ -81,11 +81,11 @@ BEGIN
    WHERE t.player_id='30000000-0000-4000-8000-000000000001'::uuid AND t.version=v)
  INTO blocked;
  barrier_until:=clock_timestamp();
- PERFORM set_config('response.headers',jsonb_build_array(jsonb_build_object(
-  'X-Hud-Fixture-Observed-At',ready_observed::text,
-  'X-Hud-Fixture-Barrier-From',barrier_from::text,
-  'X-Hud-Fixture-Barrier-Until',barrier_until::text,
-  'X-Hud-Fixture-Blocked',CASE WHEN blocked THEN '1' ELSE '0' END))::text,true);
+ PERFORM set_config('response.headers',jsonb_build_array(
+  jsonb_build_object('X-Hud-Fixture-Observed-At',ready_observed::text),
+  jsonb_build_object('X-Hud-Fixture-Barrier-From',barrier_from::text),
+  jsonb_build_object('X-Hud-Fixture-Barrier-Until',barrier_until::text),
+  jsonb_build_object('X-Hud-Fixture-Blocked',CASE WHEN blocked THEN '1' ELSE '0' END))::text,true);
  RETURN ready;
 END $$;
 REVOKE ALL ON FUNCTION public.fixture_scale_amend_once_v1(uuid,uuid,text),public.fixture_scale_amend_ready_v1(uuid) FROM PUBLIC,anon,authenticated;

@@ -28,9 +28,12 @@ const readiness=operation=>{
  const probe=jsonSql(`${service}WITH checked AS MATERIALIZED (
   SELECT public.fixture_scale_amend_ready_v1('${operation}') AS ready)
   SELECT jsonb_build_object('ready',ready,'headers',current_setting('response.headers')::jsonb,'after',clock_timestamp()) FROM checked;`);
- const observedAt=Date.parse(probe.headers[0]['X-Hud-Fixture-Observed-At']);
+ assert.ok(Array.isArray(probe.headers)&&probe.headers.length===4,'PostgREST header array required');
+ for(const header of probe.headers)assert.ok(Object.keys(header).length===1&&typeof Object.values(header)[0]==='string','PostgREST accepts only single-key string header objects');
+ const allHeaders=Object.assign({},...probe.headers);assert.equal(Object.keys(allHeaders).length,4,'Repeated diagnostic header');
+ const observedAt=Date.parse(allHeaders['X-Hud-Fixture-Observed-At']);
  assert.ok(Number.isFinite(observedAt)&&observedAt<=Date.parse(probe.after),'Readiness clock must follow its snapshot');
- const headers=Object.fromEntries(Object.entries(probe.headers[0]).map(([key,value])=>[key.toLowerCase(),value]));
+ const headers=Object.fromEntries(Object.entries(allHeaders).map(([key,value])=>[key.toLowerCase(),value]));
  const barrier=parseFixtureHudBarrier(headers);assert.ok(barrier,'Missing bounded barrier observation');
  assert.ok(observedAt<=barrier.from&&barrier.until<=Date.parse(probe.after),'Separate barrier snapshot must follow readiness and precede response');
  barrierObservations.push({ready:probe.ready,...barrier});
