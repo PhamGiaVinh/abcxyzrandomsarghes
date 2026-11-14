@@ -19,6 +19,8 @@ export type FloorTableControlV3RpcName =
   | "get_floor_tournament_table_roster_v4"
   | "get_floor_tournament_table_roster_v5"
   | "get_floor_tournament_table_roster_v6"
+  | "get_floor_tournament_table_roster_v7"
+  | "floor_operator_bust_seat_v1"
   | "get_floor_restorable_entries_v3"
   | "validate_tracker_table_writer_context_v3"
   | "floor_open_tournament_table_v3"
@@ -122,6 +124,8 @@ export type FloorSeatableEntry = {
  * `table_id`: the browser only receives all three explicit V3 identities.
  */
 export type FloorTableRosterSeat = {
+  seatId?: string | null;
+  seatEntryId?: string | null;
   seatNumber: number;
   entryId: string | null;
   playerId: string;
@@ -438,6 +442,10 @@ function parseRosterSeat(value: unknown, requireIntegrityStatus: boolean): Floor
   const chipCount = value.chip_count;
   const isActive = value.is_active;
   const integrityStatus = value.integrity_status ?? (!requireIntegrityStatus ? "valid" : undefined);
+  if ((value.seat_id !== undefined && value.seat_id !== null && (typeof value.seat_id !== "string" || !value.seat_id))
+    || (value.seat_entry_id !== undefined && value.seat_entry_id !== null && (typeof value.seat_entry_id !== "string" || !value.seat_entry_id))) {
+    return { ok: false, error: "V3_ROSTER_SEAT_MALFORMED" };
+  }
   if (
     typeof seatNumber !== "number" || !Number.isSafeInteger(seatNumber) || seatNumber < 1 || seatNumber > 9
     || (entryId !== null && (typeof entryId !== "string" || !entryId))
@@ -456,6 +464,7 @@ function parseRosterSeat(value: unknown, requireIntegrityStatus: boolean): Floor
     ok: true,
     data: {
       seatNumber: seatNumber as number,
+      ...(value.seat_id !== undefined ? { seatId: value.seat_id as string | null, seatEntryId: (value.seat_entry_id ?? null) as string | null } : {}),
       entryId: entryId as string | null,
       playerId: playerId as string,
       displayName: displayName as string,
@@ -741,10 +750,11 @@ function parseBreakPlan(value: unknown): FloorTableControlV3Result<FloorBreakPla
 
 export function createFloorTableControlV3Client(
   rpc: FloorTableControlV3Rpc,
-  options: { enabled?: boolean; redrawSeatLockEnabled?: boolean; deferredTrackerMoveEnabled?: boolean } = {},
+  options: { enabled?: boolean; redrawSeatLockEnabled?: boolean; deferredTrackerMoveEnabled?: boolean; fastBustEnabled?: boolean } = {},
 ) {
   const enabled = options.enabled ?? FEATURES.floorTableControlV3;
   const redrawSeatLockEnabled = options.redrawSeatLockEnabled ?? FEATURES.floorRedrawSeatLockV1;
+  const fastBustEnabled = options.fastBustEnabled ?? FEATURES.floorFastBustV1;
   const deferredTrackerMoveEnabled = options.deferredTrackerMoveEnabled ?? FEATURES.floorDeferredTrackerMoveV1;
 
   const call = async (
@@ -768,6 +778,7 @@ export function createFloorTableControlV3Client(
   return {
     enabled,
     redrawSeatLockEnabled,
+    fastBustEnabled,
     deferredTrackerMoveEnabled,
 
     // Keep the exact receipt envelope, including durable business rejections.
@@ -836,7 +847,9 @@ export function createFloorTableControlV3Client(
     },
 
     async getTournamentTableRoster(tournamentId: string): Promise<FloorTableControlV3Result<FloorTournamentTableRoster[]>> {
-      const response = redrawSeatLockEnabled
+      const response = fastBustEnabled
+        ? await call("get_floor_tournament_table_roster_v7", { p_tournament_id: tournamentId })
+        : redrawSeatLockEnabled
         ? await callRedrawSeatLock("get_floor_tournament_table_roster_v6", { p_tournament_id: tournamentId })
         : await call("get_floor_tournament_table_roster_v3", { p_tournament_id: tournamentId });
       if (response.ok === false) return { ok: false, error: response.error };
@@ -1079,6 +1092,27 @@ export function createFloorTableControlV3Client(
       return parseBreakPlan(response.data);
     },
 
+    bustSeatExact: async (args: { tournamentId: string; tournamentTableId: string; tableSessionId: string; seatId: string;
+      playerId: string; seatNumber: number; seatEntryId: string | null; expectedControlEpoch: number; requestId: string; reason: string }): Promise<FloorTableControlV3Result<Record<string, unknown>>> => {
+      if (!fastBustEnabled) return { ok: false, error: "FLOOR_FAST_BUST_DISABLED" };
+      const response = mutationFromResponse(await call("floor_operator_bust_seat_v1", {
+        p_tournament_id: args.tournamentId, p_tournament_table_id: args.tournamentTableId,
+        p_table_session_id: args.tableSessionId, p_seat_id: args.seatId, p_expected_player_id: args.playerId,
+        p_expected_seat_number: args.seatNumber, p_expected_seat_entry_id: args.seatEntryId,
+        p_expected_control_epoch: args.expectedControlEpoch, p_request_id: args.requestId, p_reason: args.reason,
+      }));
+      if (!response.ok) return response;
+      const data = response.data;
+      if (data.seat_id !== args.seatId || data.table_session_id !== args.tableSessionId
+        || data.request_id !== args.requestId || data.payout_applied !== false
+        || !Number.isSafeInteger(data.revision) || (data.revision as number) < 0
+        || !["busted", "orphan_seat_released"].includes(String(data.outcome))
+        || (data.outcome === "busted" && data.entry_id !== args.seatEntryId)
+        || (data.outcome === "orphan_seat_released" && data.entry_id !== null)) {
+        return { ok: false, error: "V3_BUST_RECEIPT_UNVERIFIED" };
+      }
+      return response;
+    },
     bustPlayer: (args: { entryId: string; expectedRevision: number; expectedControlEpoch: number; expectedChipCount: number; requestId: string; reason?: string }) =>
       call("floor_bust_player_v3", {
         p_entry_id: args.entryId,

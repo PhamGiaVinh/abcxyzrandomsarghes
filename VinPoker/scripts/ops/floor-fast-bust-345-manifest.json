@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "kind": "FLOOR345_EXACT_PROTECTED_RELEASE",
+  "projectRef": "orlesggcjamwuknxwcpk",
+  "sourcePr": 1638,
+  "migrations": [
+    {
+      "version": "20270128000345",
+      "name": "floor_operator_fast_bust_v1",
+      "action": "APPLY",
+      "sha256": "6a64cf4c2d4f54c980f046261aa8dabf02c2a601ade7f4393b612c9fcfa297a2",
+      "path": "supabase/migrations/20270128000345_floor_operator_fast_bust_v1.sql"
+    }
+  ],
+  "builder": {
+    "path": "VinPoker/scripts/ops/ops-1359-release-gate.mjs",
+    "sha256": "dd0fd6a9a307c0f6b3d75196f8f0f685833f1d9b5e2200ebe8c71e9b81c26847"
+  },
+  "atomicSqlSha256": "061882287c7a754288e3cc41fd513b5fab273977b2848ab77cc18e8ffd8e069e",
+  "sourcePreimages": {
+    "public.get_floor_tournament_table_roster_v6(uuid)": "e5425dc9b81a09d48206b3d270323069",
+    "public.floor_bust_player_v3(uuid,bigint,bigint,integer,uuid,text)": "a204a2cf93debeb96a6a0c4f0b495149"
+  },
+  "newSignatures": [
+    "public.get_floor_tournament_table_roster_v7(uuid)",
+    "public.floor_operator_bust_seat_v1(uuid,uuid,uuid,uuid,uuid,integer,uuid,bigint,uuid,text)"
+  ],
+  "edgeDeploy": [],
+  "automaticRetry": false,
+  "referenceProductSha": "438290856c05fe426e41be0a385fd4431d4ffe16",
+  "releaseIdentity": "Exact owner-approved source SHA plus protected-base full Floor345 package classifier"
+}

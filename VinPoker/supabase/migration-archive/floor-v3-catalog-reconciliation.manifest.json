@@ -7670,569 +7670,425 @@
     }
   ],
   "ownerGatedActiveAllowlist": [
-{
-  "domain": "player-financial-reports-v1",
-  "filename": "20261103153245_player_financial_reports_v1.sql",
-  "sha256": "89d10dd1b5b38433bfd1c2afba04b753cdfca17c57e662f1a3a8ddf4083d20fc",
-  "version": "20261103153245"
-},
-{
-  "domain": "payout-publication-after-cashier-v1",
-  "filename": "20261103131615_payout_publication_after_cashier.sql",
-  "sha256": "cd6f4c4264da7e4ca18bd2e45115cb7beadc2029ceaedbb5b10dcb810d9c069f",
-  "version": "20261103131615"
-},
-    {
-      "version": "20270128000301",
-      "filename": "20270128000301_tracker_decided_hand_action_guard_v1.sql",
-      "sha256": "eee78ac780a8aa1cfd0010a56842316787523fd1f6622830990e40c54722f4f5",
-      "domain": "tracker-decided-hand-action-campaign"
-    },
-    {
-      "version": "20270128000189",
-      "filename": "20270128000189_tracker_action_stack_bound_v1.sql",
-      "sha256": "864946be61d9c2fe7768bc8d564897adda665b796c70f3b11b9b73966500ec44",
-      "domain": "tracker-action-stack-integrity-campaign"
-    },
-    {
-      "version": "20270128000113",
-      "filename": "20270128000113_cashier_canonical_paid_seating_v1.sql",
-      "sha256": "4b5faf7b9e79868efe7b62c37436252aff5a9ffa86594cf0d3d2f8424cb3cf46",
-      "domain": "cashier-canonical-paid-seating-campaign"
-    },
-    {
-      "version": "20270128000087",
-      "filename": "20270128000087_dealer_rotation_persist_session_fence_v1.sql",
-      "sha256": "a6bd06550895cac9aafed67859f80012592a50c33041717f6399ba822c2eeadf",
-      "domain": "dealer-rotation-persist-session-fence-campaign"
-    },
-    {
-      "version": "20270128000086",
-      "filename": "20270128000086_tournament_table_write_tenant_v1.sql",
-      "sha256": "01b495928a662277f4f0def15114f8376838a7c24c29db42be0e4585c4cb3740",
-      "domain": "tournament-table-tenant-boundary-campaign"
-    },
-    {
-      "version": "20270128000085",
-      "filename": "20270128000085_cashier_club_scope_authority_v1.sql",
-      "sha256": "bdf62cc23d4335fe11e93de5bb20f4fc967057425d90b44fdc63552cea413a2b",
-      "domain": "cashier-club-scope-authority-campaign"
-    },
-    {
-      "version": "20270128000084",
-      "filename": "20270128000084_profiles_anon_public_projection_v1.sql",
-      "sha256": "4db92b6d27a80bc13ad1bc2c37404b3ba61f0387fe170f47c53e8ccb3c491059",
-      "domain": "profiles-anon-public-projection-campaign"
-    },
-    {
-      "version": "20270128000083",
-      "filename": "20270128000083_shift_payroll_return_type_v1.sql",
-      "sha256": "ab1c5a98b03c9f032a1b8367a73a04d2536fa69e642bb27261a1a3be800349a7",
-      "domain": "shift-payroll-return-type-campaign"
-    },
-    {
-      "version": "20270128000082",
-      "filename": "20270128000082_payroll_legacy_read_club_authority_v1.sql",
-      "sha256": "04f949cc08ac4f93c7bad343c0767cce36196daa6b58a1691cf18184ff202289",
-      "domain": "payroll-legacy-read-authority-campaign"
-    },
-    {
-      "version": "20270128000080",
-      "filename": "20270128000080_dealer_operator_next_intent_v1.sql",
-      "sha256": "0b90049a0cb63242bc5a99dd078781a3987956146546377db4c936843433c4ce",
-      "domain": "dealer-operator-next-intent-campaign"
-    },
-    {
-      "version": "20270128000081",
-      "filename": "20270128000081_dealer_close_forecast_slots_v1.sql",
-      "sha256": "accba5a8dd0873dd4de5d3c24d42abfbb6e3c519991f76ce02bcb3a7c5c70ff8",
-      "domain": "dealer-close-forecast-slots-campaign"
-    },
-    {
-      "version": "20270128000088",
-      "filename": "20270128000088_tournament_config_atomic_save_v1.sql",
-      "sha256": "292731d050964b90c6b3bb878de1ca636fce0e16756d3944712d3da28d86c8f5",
-      "domain": "tournament-config-atomic-save-campaign"
-    },
-    {
-      "version": "20270128000089",
-      "filename": "20270128000089_clock_start_level_readiness_v1.sql",
-      "sha256": "1f4b7d21014fe561110de19c17ea26d94485c09fba02a80ed16d07019cc6de92",
-      "domain": "clock-start-level-readiness-campaign"
-    },
-    {
-      "version": "20270128000090",
-      "filename": "20270128000090_public_clock_projection_v1.sql",
-      "sha256": "a9ca114984800b87af15cbaea4a4c95067182e1375f84074e382cf3ebd032276",
-      "domain": "public-clock-read-projection-campaign"
-    },
-    {
-      "version": "20270128000091",
-      "filename": "20270128000091_tournament_create_with_levels_atomic_v1.sql",
-      "sha256": "116a88485f116956602f9b7362bf39bb45efefe6aceaba5b7dbda03e59e56a15",
-      "domain": "tournament-create-levels-atomic-campaign"
-    },
-    {
-      "version": "20270128000092",
-      "filename": "20270128000092_club_series_reorder_atomic_v1.sql",
-      "sha256": "fdd9624de2d86252dff8472ba66a40fc55648f85cf297028633d0a3068100f54",
-      "domain": "club-series-reorder-atomic-campaign"
-    },
-    {
-      "version": "20270128000093",
-      "filename": "20270128000093_floor_legacy_restore_exact_session_required_v1.sql",
-      "sha256": "ed747bda61c670c1422e96066722f1d5cd3c6beea29dafd85dd29d350562a569",
-      "domain": "floor-legacy-restore-retirement-campaign"
-    },
-    {
-      "version": "20270128000094",
-      "filename": "20270128000094_tracker_manual_finish_lock_authority_v1.sql",
-      "sha256": "e15068894a124c376c2ffe8681d043af47838ca90177b19113fef9f434a7088c",
-      "domain": "tracker-manual-finish-lock-authority-campaign"
-    },
-    {
-      "version": "20270128000095",
-      "filename": "20270128000095_tracker_manual_finish_intent_receipts_v1.sql",
-      "sha256": "bcc05611aeae23d3f76890fc782cf1f6fd9d8fe90a2569ba57ca19e5ff5931fb",
-      "domain": "tracker-manual-finish-intent-receipts-campaign"
-    },
-    {
-      "version": "20270128000096",
-      "filename": "20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql",
-      "sha256": "c7e745378c1525fe7df19d7385a3e3ca6b9ff07a9c410b46643cad7e08ee18bd",
-      "domain": "tracker-bare-finish-retirement-campaign"
-    },
-    {
-      "version": "20270128000097",
-      "filename": "20270128000097_tracker_manual_finish_cancellation_receipt_v1.sql",
-      "sha256": "1eb303d909b98b13dd0cf52ca61cbd7cdba8c0c7c0611c8347f8a002953b5cdf",
-      "domain": "tracker-manual-finish-cancellation-campaign"
-    },
-    {
-      "version": "20270128000098",
-      "filename": "20270128000098_tracker_public_history_attention_state_v1.sql",
-      "sha256": "12f4911956f22c3bc72a1437517f74619045ded758621ba77441d50f22161938",
-      "domain": "tracker-public-history-attention-state-campaign"
-    },
-    {
-      "version": "20270128000099",
-      "filename": "20270128000099_tracker_historical_intent_resolution_v1.sql",
-      "sha256": "d06bb38e2adaff726a5631666682b678f989ae59790aa51e956daaca7881b9fc",
-      "domain": "tracker-historical-intent-resolution-campaign"
-    },
-    {
-      "version": "20270128000100",
-      "filename": "20270128000100_dealer_manual_swing_receipt_v1.sql",
-      "sha256": "dd4dac547f821922395a9a0781a50b19ae5b01a3bdee7d7d007c8a684a42e83b",
-      "domain": "dealer-manual-swing-receipt-campaign"
-    },
-    {
-      "version": "20270128000101",
-      "filename": "20270128000101_dealer_manual_swing_cancel_actor_v1.sql",
-      "sha256": "fdd9a2e41533c5378156dc2fe4ce55123de885b0978d780b9512cadef5ee1043",
-      "domain": "dealer-manual-swing-cancel-actor-campaign"
-    },
-    {
-      "version": "20270128000102",
-      "filename": "20270128000102_dealer_initial_intent_resolution_v1.sql",
-      "sha256": "bdf880411f806f90b8200944cff68d486b5d1ac25e1ae387254a8ae0c87fac87",
-      "domain": "dealer-initial-intent-resolution-campaign"
-    },
-    {
-      "version": "20270128000103",
-      "filename": "20270128000103_dealer_worker_swing_atomic_result_v1.sql",
-      "sha256": "9bb8838b598cb444738576a64bf2df97b74ddc7b0c83494bdc97e4891f605f23",
-      "domain": "dealer-worker-swing-atomic-result-campaign"
-    },
-    {
-      "version": "20270128000104",
-      "filename": "20270128000104_dealer_legacy_preassign_cleanup_atomic_v1.sql",
-      "sha256": "b53b68484a8f3af536ef865de00bdc45f1691bd72680860f2583ed7befbd6490",
-      "domain": "dealer-legacy-preassign-cleanup-atomic-campaign"
-    },
-    {
-      "version": "20270128000105",
-      "filename": "20270128000105_dealer_legacy_adoption_atomic_v1.sql",
-      "sha256": "dda67897862d4555a7272da27963f8f9360b9357b4c176d7d6ded224c15cae6c",
-      "domain": "dealer-legacy-adoption-atomic-campaign"
-    },
-    {
-      "version": "20270128000106",
-      "filename": "20270128000106_dealer_emergency_replan_prepare_atomic_v1.sql",
-      "sha256": "ca49dca4e164e329fa318a19dfefac3f47ca69fd7e6746691e877401f6547167",
-      "domain": "dealer-emergency-replan-prepare-atomic-campaign"
-    },
-    {
-      "version": "20270128000079",
-      "filename": "20270128000079_dealer_close_next_reservation_v1.sql",
-      "sha256": "ae8293a00b54d322e4e83dc36783094376a34691c20f3658de234e289d11bc66",
-      "domain": "dealer-close-next-reservation-campaign"
-    },
-    {
-      "version": "20270128000078",
-      "filename": "20270128000078_dealer_next_plan_rest_floor_v1.sql",
-      "sha256": "fb855366059ca54debf10490ca90afffb789750c25d13073bf14354d8e55b1df",
-      "domain": "dealer-next-plan-rest-floor-campaign"
-    },
-    {
-      "version": "20270128000076",
-      "filename": "20270128000076_tracker_hand_input_scoped_read_v1.sql",
-      "sha256": "15ae40bf5e44c01d2f03d14090499f3687ca22e0d61da131962e1f17eba3de54",
-      "domain": "tracker-hand-input-scoped-read-campaign"
-    },
-    {
-      "version": "20270128000077",
-      "filename": "20270128000077_tracker_roster_scoped_read_v2.sql",
-      "sha256": "9ac013f3a8be2cfd2d657f223b5182a3ebe48217e1a6df6b7eb5cad0120e6062",
-      "domain": "tracker-roster-scoped-read-campaign"
-    },
-    {
-      "version": "20270128000075",
-      "filename": "20270128000075_tracker_manual_cards_receipts_v1.sql",
-      "sha256": "4f52194e0c0721552519660abb844e3ccb5e6dba307f45203de08a2a6b6f9a4a",
-      "domain": "tracker-manual-cards-receipts-campaign"
-    },
-    {
-      "version": "20270128000074",
-      "filename": "20270128000074_tracker_public_hand_visibility_v1.sql",
-      "sha256": "1b26b18d91807e2aa937c114810ee4e074f66e4c3af30d4ca50c51b433078163",
-      "domain": "tracker-public-hand-visibility-campaign"
-    },
-    {
-      "version": "20270128000072",
-      "filename": "20270128000072_tracker_voice_assignment_lifecycle_v1.sql",
-      "sha256": "6a0b7cb216c6eec027e4ff0b4eb7e5a7a4478ba0bf879b14a65906ce8c4edb09",
-      "domain": "tracker-voice-assignment-lifecycle-campaign"
-    },
-    {
-      "version": "20270128000073",
-      "filename": "20270128000073_dealer_voice_swing_lock_order_v1.sql",
-      "sha256": "5b44af84a9e20627152471141bca6ca42539f1ca658bbaade89a061a7066530b",
-      "domain": "dealer-voice-swing-lock-order-campaign"
-    },
-    {
-      "version": "20270128000071",
-      "filename": "20270128000071_tracker_voice_finish_actor_session_fence_v1.sql",
-      "sha256": "1a747f345d56b6ff4b5c13186dd5e98f9db384e918659808b638e39be6203993",
-      "domain": "tracker-voice-finish-actor-session-campaign"
-    },
-    {
-      "version": "20270128000070",
-      "filename": "20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql",
-      "sha256": "5a25a790d88f06969a13ad3a801998869b260f8fb69e71cbb08691e922c9aea2",
-      "domain": "tracker-voice-card-actor-epoch-campaign"
-    },
-    {
-      "version": "20270128000067",
-      "filename": "20270128000067_floor_manual_bust_restore_read_v1.sql",
-      "sha256": "427ec7f078b6e7c258af3dd165d2ce7400155acae144140a045472bc1c8d6597",
-      "domain": "floor-manual-bust-restore-campaign"
-    },
-    {
-      "version": "20270128000068",
-      "filename": "20270128000068_floor_restore_canonical_tuple_v1.sql",
-      "sha256": "f7441afd63f5bbbb6c54d2b006c3e6c1d7f119003699c6594e54eb3749c4ff5c",
-      "domain": "floor-restore-canonical-tuple-campaign"
-    },
-    {
-      "version": "20270128000069",
-      "filename": "20270128000069_chip_issuance_exact_intent_v1.sql",
-      "sha256": "c92283d9084afe9dd68c1967e80366f3af9fe55cea1589b04f67239df8374b5f",
-      "domain": "chip-issuance-exact-intent-campaign"
-    },
-    {
-      "version": "20270128000066",
-      "filename": "20270128000066_floor_manual_seat_session_fence_v1.sql",
-      "sha256": "2da4583e6d695ec2e36779f31dc4d784142e85e6e29888ab1ae633010490d90b",
-      "domain": "floor-manual-seat-session-fence-campaign"
-    },
-    {
-      "version": "20270128000064",
-      "filename": "20270128000064_dealer_swing_scoped_stop_v1.sql",
-      "sha256": "043a0ab740c5ec489b049ee1b95f41257eca5c4b5194e417242340c486ffec17",
-      "domain": "dealer-swing-scoped-stop-campaign"
-    },
-    {
-      "version": "20270128000065",
-      "filename": "20270128000065_floor_physical_asset_authority_commit_fence_v1.sql",
-      "sha256": "014718d85013b0b714afd96a300b7a80f38f45b031dc0ebef3740145f11682f6",
-      "domain": "quads-physical-asset-authority-fence-campaign"
-    },
-    {
-      "version": "20270128000063",
-      "filename": "20270128000063_floor_physical_asset_provision_v1.sql",
-      "sha256": "8ee185c840976f58854ec006c8ab1d6d6d6f8d34077ecffd68e52a7ee62f697f",
-      "domain": "quads-physical-asset-provision-campaign"
-    },
-    {
-      "version": "20270128000062",
-      "filename": "20270128000062_floor_roster_participation_integrity_v6.sql",
-      "sha256": "45fd420f2f0f1120c085843bd2503e92dddf5b764b1076ea3d7d1c00b5ad8e31",
-      "domain": "floor-roster-participation-integrity-campaign"
-    },
-    {
-      "version": "20270128000061",
-      "filename": "20270128000061_tracker_legacy_stack_retirement_v1.sql",
-      "sha256": "a037ef4fe53edb058e833e6605180f710875ce04a15f1770022bbf559650c9d2",
-      "domain": "tracker-legacy-stack-integrity-campaign"
-    },
-    {
-      "version": "20270128000060",
-      "filename": "20270128000060_tracker_legacy_reentry_retirement_v1.sql",
-      "sha256": "9b366c60ecfcc20f9d51876a0cdf9ad59b7c528255277ffce889792ca921a067",
-      "domain": "tracker-legacy-reentry-integrity-campaign"
-    },
-    {
-      "version": "20270128000059",
-      "filename": "20270128000059_tracker_completed_void_integrity_v1.sql",
-      "sha256": "83c3ac2381b184627c20439276a62afe1401cb980387ff1dc2b7be7ea711794d",
-      "domain": "tracker-completed-void-integrity-campaign"
-    },
-    {
-      "version": "20270128000058",
-      "filename": "20270128000058_tracker_hand_identity_revision_v1.sql",
-      "sha256": "48bc7cba5892c66819037ffbee796d02551436c85495e3f03d878512c112e99b",
-      "domain": "tracker-history-identity-revision-campaign"
-    },
-    {
-      "version": "20270128000057",
-      "filename": "20270128000057_dealer_pt_policy_tenant_integrity_v1.sql",
-      "sha256": "0b5c774899b6e933049a74be985b1f72e96b2501e5daf15a087e6fc784e80d20",
-      "domain": "dealer-policy-tenant-campaign"
-    },
-    {
-      "version": "20270128000056",
-      "filename": "20270128000056_tracker_card_batch_integrity_v1.sql",
-      "sha256": "bfdd54961f66da91b54fafa825926c9f6b362917fb8b7b315c897c676d4bf4e1",
-      "domain": "tracker-card-integrity-campaign"
-    },
-    {
-      "version": "20270128000055",
-      "filename": "20270128000055_chip_pending_cancellation_v1.sql",
-      "sha256": "c78099b9a34d5a7887f7d4b01901579ac39f3609c24836ba75ed4b7774cdc052",
-      "domain": "restore-chip-recovery-campaign"
-    },
-    {
-      "version": "20270128000054",
-      "filename": "20270128000054_restore_pending_cancellation_v1.sql",
-      "sha256": "db398f93e1d3f26ebca82f329ca8bbe6393cb3c6ba36bc2ab41912136f15312e",
-      "domain": "restore-chip-recovery-campaign"
-    },
-    {
-      "version": "20270128000053",
-      "filename": "20270128000053_chip_color_up_receipt_reconciliation_v1.sql",
-      "sha256": "3284dafe204a92bc33b57221d08093106074796d374a44a29aeeba883a2a0270",
-      "domain": "restore-chip-recovery-campaign"
-    },
-    {
-      "version": "20270128000052",
-      "filename": "20270128000052_floor_restore_receipt_reconciliation_v1.sql",
-      "sha256": "9629ee3543ef8eee2e5f97f61a9236cbdf383ace9fa39064d56e46ecc5d85de4",
-      "domain": "restore-chip-recovery-campaign"
-    },
-    {
-      "version": "20270128000051",
-      "filename": "20270128000051_dealer_checkin_receipt_reconciliation_v1.sql",
-      "sha256": "d53efa3e45942142c0aaac8148e116272294b4b2ff1d871ae38f1a672642ff9d",
-      "domain": "dealer-checkin-recovery-campaign"
-    },
-    {
-      "version": "20270128000037",
-      "filename": "20270128000037_floor_legacy_close_session_fence_v1.sql",
-      "sha256": "13766d88de0765d7fdebb0edf89f250af2ecf34e226c2e2146148bd85e497c3c",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000038",
-      "filename": "20270128000038_floor_break_lowest_number_policy_v1.sql",
-      "sha256": "657c1db3b3773dad47f070aa1a5d4757dfe2b30077f602075499bd81814b4721",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000039",
-      "filename": "20270128000039_floor_break_ticket_audit_v1.sql",
-      "sha256": "451788264693a09342660306a58806853b269a2aca08c3415ce2506865359f4a",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000040",
-      "filename": "20270128000040_floor_break_balanced_plan_v1.sql",
-      "sha256": "360647f7766261b6f063af6efb07b5b003456f74f842ca035c1e8954dc570d38",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000041",
-      "filename": "20270128000041_floor_deferred_move_ticket_audit_v1.sql",
-      "sha256": "377269df73038faf401649c63de2790146d009635228793138a88511b3dc5ba8",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000042",
-      "filename": "20270128000042_floor_canonical_move_ticket_integrity_v1.sql",
-      "sha256": "70044e39df48a1515687d912eed1065d7f1c80b0e805a7418616a118a0cce28d",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000043",
-      "filename": "20270128000043_floor_move_exact_intent_v1.sql",
-      "sha256": "f545d9cd37e7a6d8a59ad2ee392e3f72c551d3da5441839b2523502dfc6ae7dd",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000044",
-      "filename": "20270128000044_floor_seat_ticket_read_v1.sql",
-      "sha256": "ac977694c020afba499abf360902129360aebc9873ec5d40791c85744c122d26",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000045",
-      "filename": "20270128000045_floor_seat_ticket_select_scope_v1.sql",
-      "sha256": "46bdb1ee2dc1ce684e766c1d762265453cfb0f440e7c86f1227c543e422b8e59",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000046",
-      "filename": "20270128000046_dealer_inventory_canonical_table_link_v1.sql",
-      "sha256": "70d5c8ace517321fb2a7ac0a26c7098619391fa2cdc504d7436a9d1225426358",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000047",
-      "filename": "20270128000047_floor_closed_session_attendance_v1.sql",
-      "sha256": "68f37a501ee80408770f437553295271198222804bc58e978d6296eb54e61ad0",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000048",
-      "filename": "20270128000048_floor_move_or_queue_exact_intent_v1.sql",
-      "sha256": "7ee0538bcd42c45ab746dba5dd8d9f91e2b01d655fa351930ee409f78f4488ae",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000049",
-      "filename": "20270128000049_floor_mode_tombstone_guard_v1.sql",
-      "sha256": "eabbd6af0738a10d3a492b5e26c173b7e3c4fa3fc0c819ff4df2d06d433586a7",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000050",
-      "filename": "20270128000050_floor_mode_retry_schedule_v1.sql",
-      "sha256": "a173187282c167238d204c48d50b23895459f4698afcdfe498bca4ee64d76c2a",
-      "domain": "floor-session-ticket-campaign"
-    },
-    {
-      "version": "20270128000036",
-      "filename": "20270128000036_floor_manual_entry_roundtrip_v1.sql",
-      "sha256": "306474110038315a5477b5e712067c831003b26cec60fc34375896c87baa05d5",
-      "domain": "floor-manual-entry-roundtrip"
-    },
-    {
-      "version": "20270128000035",
-      "filename": "20270128000035_tournament_seat_assign_integrity_v1.sql",
-      "sha256": "18161246d73dc4e7aefb9d42665b5d168bd804b9b8ae63799b94d6e734ee6131",
-      "domain": "tournament-seat-assign-integrity"
-    },
-    {
-      "version": "20270128000034",
-      "filename": "20270128000034_floor_move_wrapper_receipt_v1.sql",
-      "sha256": "e8ca3398d34977fca7d4faec08ad144473829af6d747210ac69b3a534fb99082",
-      "domain": "floor-move-wrapper-receipt"
-    },
-    {
-      "version": "20270128000033",
-      "filename": "20270128000033_tournament_seat_move_tuple_v1.sql",
-      "sha256": "7fa5d62f4188e596da9edd936716508b6d6d5355282b6754c77b7930f2489685",
-      "domain": "tournament-seat-move-tuple"
-    },
-    {
-      "version": "20270128000032",
-      "filename": "20270128000032_tournament_seat_display_preservation_v1.sql",
-      "sha256": "43c5720e052341fd281f72a9d6d68876e800b3ef31f05b5083bf03d43a2694b5",
-      "domain": "tournament-seat-display"
-    },
-    {
-      "version": "20270128000031",
-      "filename": "20270128000031_tournament_participation_current_scope_v1.sql",
-      "sha256": "493cea04355059ea2d023ac97c539cb79b1ba60a4fc3e4875f105417b65d150d",
-      "domain": "tournament-participation"
-    },
-    {
-      "version": "20270128000030",
-      "filename": "20270128000030_tracker_roster_intent_fence_v1.sql",
-      "sha256": "0484566b13c0992c90c2006c2f5bd8bda0bfa462544d0e891da48dfa5ca255c8",
-      "domain": "tracker-roster-intent"
-    },
-    {
-      "version": "20270128000029",
-      "filename": "20270128000029_floor_deferred_break_intent_v1.sql",
-      "sha256": "c056e7b0179e6bcb4f2d05f39a9f67fe5fea7ceb11e3bfb92120a0bf4be697ac",
-      "domain": "floor-deferred-break-intent"
-    },
-    {
-      "version": "20270128000028",
-      "filename": "20270128000028_tracker_roster_exact_session_v1.sql",
-      "sha256": "06501440d7a3a66debf55e5b9eb5739ef64a27919726c285e676099aeabf77b2",
-      "domain": "tracker-roster-session"
-    },
-    {
-      "version": "20270128000027",
-      "filename": "20270128000027_tracker_equal_blinds_contract_v1.sql",
-      "sha256": "4ca0e916ee0f9741eb029684d0e0a2f6d3dd562953513f33dc5da931dc8134e8",
-      "domain": "tracker-blind-lineage"
-    },
-    {
-      "version": "20270128000026",
-      "filename": "20270128000026_floor_open_session_name_integrity_v1.sql",
-      "sha256": "9195a9b61d1151375157c81015c2bbacc7917e732ea7f17f09f7713cdbf3ce8e",
-      "domain": "floor-table-control"
-    },
-    {
-      "version": "20270128000025",
-      "filename": "20270128000025_dealer_automatic_rest_history_fence_v1.sql",
-      "sha256": "ce93618b571de95d92637d2d82fed24ab5169d5db0a9595ee169ae81d5afda0b",
-      "domain": "dealer-swing"
-    },
-    {
-      "version": "20270128000024",
-      "filename": "20270128000024_tracker_history_scoped_canary_claim_v1.sql",
-      "sha256": "1ce1e654ab13d1a1a29c18202bbb8bb34647c56f8970744283996ef59c727ec1",
-      "domain": "tracker-history"
-    },
-    {
-      "version": "20270128000023",
-      "filename": "20270128000023_dealer_empty_reservation_exact_session_v2.sql",
-      "sha256": "77592c44d07482b42dc267bfa1ae7aa097f1e84f5ee4f21d402b6cd2421b6d55",
-      "domain": "dealer-swing"
-    },
-    {
-      "version": "20270128000022",
-      "filename": "20270128000022_dealer_assignment_off_commit_fence_v1.sql",
-      "sha256": "ca353676d90e993440ee6a6de17c33eeef01ad8207d4076e07d576ebff786fe0",
-      "domain": "dealer-swing"
-    },
-    {
-      "version": "20270128000021",
-      "filename": "20270128000021_dealer_ready_private_trigger_v1.sql",
-      "sha256": "bda701820882229c6b2a5241dd2f65067755f20f4405980ccc9850717d8be4c6",
-      "domain": "dealer-swing"
-    },
-    {
-      "version": "20270128000020",
-      "filename": "20270128000020_dealer_ready_backup_private_cron_v1.sql",
-      "sha256": "550555b385f59b77cde479546d88f1a9e41abf4f8170991af110d26cfb419b4d",
-      "domain": "dealer-swing"
-    },
-    {
-      "version": "20270128000014",
-      "filename": "20270128000014_dealer_checkin_club_shift_receipt_v1.sql",
-      "sha256": "e42980cb86ce1234e3a69cf399ae042b548eabc040e3b14d9b6eeff0064fa054",
-      "domain": "dealer-swing"
-    },
     {
       "version": "20260925115949",
       "filename": "20260925115949_public_table_history_verified_results.sql",
       "sha256": "9429ab4fcaf2b38f9bb425023fdb20e74f94da6465878bff3a676eeb50793bc7",
       "domain": "public-spectator"
+    },
+    {
+      "version": "20261027151355",
+      "filename": "20261027151355_fnb_confirmed_stocktake_snapshot_v1.sql",
+      "sha256": "f9b859e0e74b1c21d9051c1fd721ca49a3c78694ef92052385083f63d9cb4daf",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261028200630",
+      "filename": "20261028200630_multiday_registration_requires_locked_rules_local.sql",
+      "sha256": "0bdb0ea41985d6527f621efd9ed48345459505be1f75d4db3e3a2c7b566051ae",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029053635",
+      "filename": "20261029053635_multiday_individual_complete_package_v1.sql",
+      "sha256": "f6dfd3a2ae77c115f7f4dbe5722814816898ce80714d58fe6cbf0c4fc60e5ef0",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029055503",
+      "filename": "20261029055503_multiday_unpaid_restore_individual_payment_fence_v1.sql",
+      "sha256": "c63dffcb498ec79139d308066b5aff23c5d2601c80a7661c011a23d7f111c32f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029074734",
+      "filename": "20261029074734_dealer_expired_rest_marker_completion_v1.sql",
+      "sha256": "ba09e335b55d9dcb784da1678750e3e6c1ca957cd60a1b600f938f8cce01c61f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029082610",
+      "filename": "20261029082610_dealer_ready_continuous_rest_anchor_v1.sql",
+      "sha256": "a3b6acd3189eeffe372d5b25b351d673d711bb77b25a049b13d0907855b81939",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029090402",
+      "filename": "20261029090402_finance_rake_event_day_recognition_v1.sql",
+      "sha256": "76cc13229a9e5e7e4ee34f5d4760a2db60b1d66e96a1212b3d2c1aa9d91c6a46",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029092203",
+      "filename": "20261029092203_owner_tour_rake_live_read_v1.sql",
+      "sha256": "5ce78be16ae38ed1c97dacd461ef08c00b4cad878b7def36be5d331bb96c530e",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029092520",
+      "filename": "20261029092520_tour_revenue_buy_close_snapshot_v1.sql",
+      "sha256": "84ccfeb427d8c04c5bbd4e7be9747b4763d6d8033937d47a8a178bdb469f9403",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029092756",
+      "filename": "20261029092756_close_tournament_buy_v1.sql",
+      "sha256": "5907f71c1ff881d2046cc8a6a772d3ab6c773a61903dbeec29944973b0ba198f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029100324",
+      "filename": "20261029100324_tour_revenue_shared_live_source_v1.sql",
+      "sha256": "b8385948a49e7bb85745aaaf53c767a3b2e3c210ac4d4d7d0fc1efbac68018ce",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029100837",
+      "filename": "20261029100837_finance_receipt_snapshot_revenue_v1.sql",
+      "sha256": "f656f7ea305cf6cd3dae5330c8f253ec9f817fe8eb242ca856ac9910173fac4f",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029102508",
+      "filename": "20261029102508_tour_revenue_buy_state_read_v1.sql",
+      "sha256": "081c43403281e9d04341707eddfd40fe093d592b4ee1d7d24a46742465709365",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029155420",
+      "filename": "20261029155420_series_paid_pending_counts_v1.sql",
+      "sha256": "f08fc76d4b9e944bcf10641b1b27e07367bf254c50a358b7962fe903bb7590d9",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261029160012",
+      "filename": "20261029160012_registration_expiry_skip_paid_v1.sql",
+      "sha256": "0e409369dc86be05658f90cbb9e21a6c7ab0d3385eddd142f91e532787f771d5",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030050418",
+      "filename": "20261030050418_dealer_table_arrival_ack_v1.sql",
+      "sha256": "1efe03eb0762996c7bf64cf0bfa156a875d906b395ff2c14328f9063cc46dbf4",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030090047",
+      "filename": "20261030090047_pt_actual_hours_new_payable_boundary_v1.sql",
+      "sha256": "6e07537e0ecfa8b7dc2b291cd0bf917a5e9dfba670dbc79def9d94b57db230bb",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030090337",
+      "filename": "20261030090337_pt_legacy_monthly_overlap_guard_v1.sql",
+      "sha256": "2a8fd2ef75f4990f7be572735683a6ffd017c31e9371529631e848617e82e9a0",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030090948",
+      "filename": "20261030090948_pt_finalized_payment_monthly_overlap_guard_v1.sql",
+      "sha256": "ff1aedf8de2d23047a2509ba30a0bf9b6bb3ae5b53796fc7c1b205bb191c4143",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030091334",
+      "filename": "20261030091334_pt_statement_request_readback_v1.sql",
+      "sha256": "d3550bb1c071cc70ddf80b07599d20520b2c95f119b730b7a3390485aff295dc",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030092830",
+      "filename": "20261030092830_pt_attendance_cap_reservation_anchor_v1.sql",
+      "sha256": "dbf04b9496ffec776cdbd97f786b71fb750693337d3e595d53353a9f6e653569",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030151432",
+      "filename": "20261030151432_floor_closed_session_rest_markers_v1.sql",
+      "sha256": "cd483e6980c3a0996c04323f626c85533000ba387ce87363e71c20c14173a639",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030162544",
+      "filename": "20261030162544_multiday_live_prize_configuration_cashier_boundary_v1.sql",
+      "sha256": "47ae92efcfc9806ee580b0d0e2c0b87f5f096b88c02ee06224c585d18780f3ef",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261030174722",
+      "filename": "20261030174722_series_pulse_ended_flight_exclusion_v1.sql",
+      "sha256": "4e05f5f3e71f07b7821f9e2c0c77366bb6fabd3beafec095bdc4687afd108eb7",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261101021500",
+      "filename": "20261101021500_floor_closed_session_dealer_rest_current_v2.sql",
+      "sha256": "0ab6b7409718ceee919f2be8334bf0ab36f87b7d6479861622cadd0cebd4bbda",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261101022500",
+      "filename": "20261101022500_dealer_rest_worker_rpc_service_only_v1.sql",
+      "sha256": "65c37ccd0fba233440fc5795372d1a3511c49763aeeb9b098a599f07ce368cf1",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261102092616",
+      "filename": "20261102092616_staff_inactive_ft_earned_days_v1.sql",
+      "sha256": "e9d6a166ae334fda067380d0e41c22dca8df4cb87683314e6ab13a2e5dae2d34",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261102112426",
+      "filename": "20261102112426_staff_checkout_before_inactive_v1.sql",
+      "sha256": "2b9a3fc094e562b149155c8145e8c71621d3f2975695b453c108a305a8cc7ce4",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261103035223",
+      "filename": "20261103035223_staking_refund_predecessor_line_endings_v1.sql",
+      "sha256": "f50e02e4b075941604b32177c11f42edb3cdf5507131a18e6cfc08fa090dbe72",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261103035328",
+      "filename": "20261103035328_staking_funding_predecessor_line_endings_v1.sql",
+      "sha256": "9c2f495f7adfb6a4b9ee8fc613d7be4850d86a51bc45280d488fc657ed579585",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261103040730",
+      "filename": "20261103040730_notification_push_outbox_actual_predecessor_v1.sql",
+      "sha256": "432c6f8d9dea256431bfb4123be9f882b571b152c8907c9dea7f1cb206891277",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20261103041341",
+      "filename": "20261103041341_dealer_fallback_session_rest_composition_v2.sql",
+      "sha256": "e5e7b230b72c57acd1543ab97467008a2a380df0525dfa67ec8a18e39eb54c69",
+      "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "domain": "payout-publication-after-cashier-v1",
+      "filename": "20261103131615_payout_publication_after_cashier.sql",
+      "sha256": "cd6f4c4264da7e4ca18bd2e45115cb7beadc2029ceaedbb5b10dcb810d9c069f",
+      "version": "20261103131615"
+    },
+    {
+      "domain": "player-financial-reports-v1",
+      "filename": "20261103153245_player_financial_reports_v1.sql",
+      "sha256": "89d10dd1b5b38433bfd1c2afba04b753cdfca17c57e662f1a3a8ddf4083d20fc",
+      "version": "20261103153245"
+    },
+    {
+      "version": "20261104001500",
+      "filename": "20261104001500_public_hud_incremental_projection.sql",
+      "sha256": "23e5050d921adbe50f3739f3d6285c5defc69b4df606757f98d1a67277405771",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104001600",
+      "filename": "20261104001600_public_hud_worker_rpc.sql",
+      "sha256": "96d41633e0dec3748c9f8d0a58ae591436af1965c2dc5c6d5ec8b08beb2f2398",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104001700",
+      "filename": "20261104001700_public_hud_metadata_backfill.sql",
+      "sha256": "be1a386dd7e7318da5ecbc4558c117c8aed02ba851fa356893e6adfeda7ddd18",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104001800",
+      "filename": "20261104001800_public_hud_read_contract.sql",
+      "sha256": "2b8af10ab68bc5f88eec2b885e4861d7d03a4e1c37d1d7f5d465bbb533388bc7",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104001900",
+      "filename": "20261104001900_public_spectator_compact_generations.sql",
+      "sha256": "f49a87fa2a3bad952993d6703cce3cc6951d1281e20a1d87072415e2beffb6a3",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002000",
+      "filename": "20261104002000_public_hud_dispatch_health.sql",
+      "sha256": "283d9d6dc63b541f2ef704ca4c916c4ebf97485e826dc183b464c559f8071ba2",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002100",
+      "filename": "20261104002100_public_current_hand_bounded.sql",
+      "sha256": "ba66dccf215d578425a7cc52f891cf646ddc1f43d0a07946ae980b2444ec6d8d",
+      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002200",
+      "filename": "20261104002200_public_tracker_read_plan_reuse.sql",
+      "sha256": "b9f59c22a9004aa888f88c45523e8f55f204f6345ae46a9131212fb5aa137eae",
+      "reason": "Tracker public read plan reuse; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002300",
+      "filename": "20261104002300_tracker_participation_read_plan_reuse.sql",
+      "sha256": "f2d85f6a0f46d9330f7b6efcbac40711248d0d9df8e838eb2c61c0e463ff281c",
+      "reason": "Tracker canonical participation plan reuse; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002400",
+      "filename": "20261104002400_public_hud_history_ordered_page.sql",
+      "sha256": "ebdee90872c0f14baeda9bad6404ebf9093d16aeec975bd5b263f215c347170a",
+      "reason": "Tracker ordered HUD history page; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002500",
+      "filename": "20261104002500_public_clock_read_plan_reuse.sql",
+      "sha256": "9293856d227d8675737a6930bb7d35755a3f0b4a1332aca6a9641e2892daf240",
+      "reason": "Tracker public clock plan reuse; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002600",
+      "filename": "20261104002600_public_hud_summary_batch.sql",
+      "sha256": "ea7e7a7a20f19f088f1625338690627221c0cd930bfe2b66796a1ad748894c40",
+      "reason": "Tracker bounded public HUD snapshot batch; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002700",
+      "filename": "20261104002700_public_current_table_prepared_reads.sql",
+      "sha256": "12807953a68860b7285138e53718c7da77615078ed347ddd059e19d6f8c56786",
+      "reason": "Tracker prepared public current-table reads; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002800",
+      "filename": "20261104002800_public_hud_identity_ordered_lookup.sql",
+      "sha256": "30b558d20c8afd0857fcd661b396c7b46a18825f5ca220738a99bebed125241a",
+      "reason": "Tracker ordered private HUD identity lookup; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104002900",
+      "filename": "20261104002900_public_hud_identity_membership_lookup.sql",
+      "sha256": "31a1db41893bff8f01a8a0f2870754441121231ae74f4fe19c6df87fe229fe22",
+      "reason": "Tracker primary-key membership lookup preserving public HUD identity scope; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003000",
+      "filename": "20261104003000_public_hud_identity_membership_keyset.sql",
+      "sha256": "fc7d7de2630e4285ed2c4cd22fddd723819d17ded04da0d0f619011d5bcd559a",
+      "reason": "Tracker keyset membership lookup preserving invalid-parent gates; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003100",
+      "filename": "20261104003100_public_hud_enqueue_write_coalescing.sql",
+      "sha256": "1c8892e6e68aaf5d82348fc3bd8376fa840df890a8a7e444cfa4627aecfd516b",
+      "reason": "Tracker coalesced derived HUD enqueue writes preserving withdrawal and lease fencing; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003200",
+      "filename": "20261104003200_public_clock_counts_only.sql",
+      "sha256": "e6152212aa102d02aee1675f129c22a058b20c528e45414371bc6bbc1bfeddc2",
+      "reason": "Tracker scoped public clock counts-only projection preserving canonical counters, public visibility and ACL; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003300",
+      "filename": "20261104003300_public_hud_null_proof_short_circuit.sql",
+      "sha256": "13c8fe25395afe7a6e80dbd9cbd410ecdfbb31284e95efd6120265e94a4860b7",
+      "reason": "Tracker missing-proof numeric validation short circuit preserving unknown stack, JSON validation and ACL; production apply requires owner-approved exact migration package."
+    },
+    {
+      "version": "20261104003400",
+      "filename": "20261104003400_public_hud_result_withdrawal_scope.sql",
+      "sha256": "ce75e0ce79a3852ee0c4174fb5f34893fa52c9fde156d0022b6553e4b27b447c",
+      "reason": "Profile result withdrawal retains global HUD access invalidation without reloading unrelated tournament components; hand and tournament withdrawal remain unchanged. Exact package approval required."
+    },
+    {
+      "version": "20261105044028",
+      "filename": "20261105044028_public_hud_hand_withdrawal_scope.sql",
+      "sha256": "d5c0b3b88d6632997285e1cfbe4a7451b628cf16900b8cd07762e24fa21d93aa",
+      "reason": "Scoped hand withdrawal preserves immediate HUD/live/replay clearing and old-client full visibility while avoiding unrelated metadata reload. Exact package approval required."
+    },
+    {
+      "version": "20261105072714",
+      "filename": "20261105072714_public_hud_history_amounts_materialized.sql",
+      "sha256": "58411814af239826ddef22d930985c6dd4efe7c5554ea14287d088601bd9b892",
+      "reason": "Materialize four validated settlement amounts once per bounded history row. Preserves source, proof, pagination, unknown stacks and ACL. Exact package approval required."
+    },
+    {
+      "version": "20261105200303",
+      "filename": "20261105200303_public_hud_history_unverified_seed_short_circuit.sql",
+      "sha256": "6c44386dd744d4d8d8d56841f9e73cf483ff94834beed0eb8aa156813fb58d92",
+      "reason": "Skip redundant starting-stack lookup only without a verified outcome. Preserves raw membership, proof validation, unknown values and pagination. Exact package approval required."
+    },
+    {
+      "version": "20261105203358",
+      "filename": "20261105203358_spectator_compact_generation_lookup.sql",
+      "sha256": "e50c41cfb36d5ec82bdfcafac9e9be68dabe9f76a5c5c47df1ec333956ecebe6",
+      "reason": "Private partial index for compact component generations while retaining historical markers. Preserves writer, fencing, source, RLS and ACL. Exact package approval required."
+    },
+    {
+      "version": "20261105213000",
+      "filename": "20261105213000_public_hud_claim_source_batch.sql",
+      "sha256": "453fbcb692d45f2c7a35d45a3e13fd79fe0aa15cf64dbcba29fe083afcff139d",
+      "reason": "Service-only canonical claim plus source batching. Preserves limits, lease and publication fences. Exact package approval required before production apply."
+    },
+    {
+      "version": "20261106010000",
+      "filename": "20261106010000_public_hud_visibility_restore_reclassification.sql",
+      "sha256": "6baa164410055ec37d38fbb3ca499d8d618dafc8043140f348197c1c6b4e1a95",
+      "reason": "Targeted hidden-edit HUD restoration with parent-first publisher fencing and visibility barriers; preserves source, counters and ACL. Exact owner-approved26-migration package is required before production apply."
+    },
+    {
+      "version": "20261106025221",
+      "filename": "20261106025221_public_hud_visibility_required_work.sql",
+      "sha256": "ce728badbd5869871c913746d7f204847ca22721872bd279657d43d5ea4a5a1b",
+      "reason": "Private visibility-generation required-work tracking with fenced completion, resumable pending-cursor upgrade and disabled-reader/worker/no-lease apply guards. Exact owner-approved27-migration package required before production apply."
+    },
+    {
+      "version": "20261106105930",
+      "filename": "20261106105930_public_clock_numeric_buy_in.sql",
+      "sha256": "29c7132c6d1690114fb467d19727ba3e5e752da63dff114f67132f8b67603711",
+      "reason": "Read-only numeric buy-in coercion restores the canonical SQL clock output contract on production bigint source columns. Preserves source, clock rules, owner/ACL and visibility. Exact owner-approved28-migration package required before production apply."
+    },
+    {
+      "version": "20261106111519",
+      "filename": "20261106111519_public_hud_visibility_work_wakeup.sql",
+      "sha256": "8aa0c2a11fd69abfc412c87481b167578bf4b659cb38e7c4611d0793670b73aa",
+      "reason": "Successful fenced child publication may accelerate only its unleased matching-generation visibility parent through SKIP LOCKED. Busy parents retain existing retries; source/counters/barriers/leases are unchanged. Exact owner-approved29-migration package required."
+    },
+    {
+      "version": "20261106144208",
+      "filename": "20261106144208_public_spectator_source_lease_outcome.sql",
+      "sha256": "f3511b1a3946cc1bf20f316539e752790cdbdc10f2e2046fcaf6d01130739fb1",
+      "reason": "Exact stale-lease receipt after existing service authorization; no source payload or authority for old workers. Keeps publication fencing. Requires quiesced spectator worker, no active leases and exact owner-approved30-migration package before production apply."
+    },
+    {
+      "version": "20261106184814",
+      "filename": "20261106184814_public_table_clock_read_bundle.sql",
+      "sha256": "4ae3e8d59c292d17ef778508df9ba4eccc4d2cdaa2d52472098b7cb09a0c4057",
+      "reason": "Fresh public table and clock canonical getters in one STABLE invoker statement; preserves denial precedence and existing authorization. No source mutation. Requires exact owner-approved31-migration package before production apply."
+    },
+    {
+      "version": "20261107013500",
+      "filename": "20261107013500_cashier_app_reentry_transport_v1.sql",
+      "sha256": "092302c8cbdc82ee93a969470aa027fc86cd886a27b65be2980a09c1fb043373",
+      "reason": "Service-only invoker transport composes canonical app reentry,validated bank snapshot and optional notification in one transaction. SQL bytes match isolated healthy/fault tests. Additional migration32 is outside the HUD31 manifest;requires exact owner-approved supplemental manifest,verified base31 receipts,fresh recovery and object/ACL postchecks before production apply."
+    },
+    {
+      "version": "20261107045330",
+      "filename": "20261107045330_tracker_correction_hand_lock_order_v1.sql",
+      "sha256": "4d11a2efb317463c5bf40cd7b43b09e43749e287dc95b5e9e09bc51066c11858",
+      "reason": "Exact captured correction context serializes callers per hand before existing row locks. Native same-key and distinct-key20-session races and denial/boundary/recovery checks passed. Outside HUD31 and reentry32 manifests;requires separately pinned final release approval,fresh recovery,and paused/drained correction writers before production apply."
+    },
+    {
+      "version": "20261107093000",
+      "filename": "20261107093000_tournament_close_paid_prize_source_v1.sql",
+      "sha256": "d440b3cfee358de0f313f6ece501bd8e43714e692ff566717e6b1a9cbdbd60cc",
+      "reason": "Supplement34 corrects only new close/readiness paid-prize totals;preserves immutable close reports,payments,metadata and ACLs. Native canonical single/multi-place journeys,tenant/status exclusions,both row-lock race orderings and late ACL-drift rollback passed. Requires exact separately pinned supplemental package approval,fresh recovery,all33 prior atomic receipts and full34 activation checks before production apply."
+    },
+    {
+      "version": "20261107151500",
+      "filename": "20261107151500_public_hud_dispatch_project_url_v1.sql",
+      "sha256": "3c00edaae8ba71e9f556ae932219c538ca29e00d106708a66672f0e9f15e2295",
+      "reason": "Supplement35 reuses the existing spectator canonical-project URL fallback after managed-role GUC activation failed42501. Preserves source,jobs,ACLs and role policy. Native SQL-sink dispatch/denials/drift/rollback passed;exact full35 restore/activation and final production package approval remain required."
     },
     {
       "version": "20270115000003",
@@ -8355,6 +8211,12 @@
       "domain": "floor"
     },
     {
+      "version": "20270128000014",
+      "filename": "20270128000014_dealer_checkin_club_shift_receipt_v1.sql",
+      "sha256": "e42980cb86ce1234e3a69cf399ae042b548eabc040e3b14d9b6eeff0064fa054",
+      "domain": "dealer-swing"
+    },
+    {
       "version": "20270128000015",
       "filename": "20270128000015_floor_restore_bust_integrity_v1.sql",
       "sha256": "9134ab822cec4d003995fd5238c16403c8bce8f49e63bf14ca006de527186e79",
@@ -8383,6 +8245,528 @@
       "filename": "20270128000019_dealer_manual_assignment_receipt_read_v1.sql",
       "sha256": "7037d878228e68fe6493a47132df03dfc0c49e4988467166326984664d6a3835",
       "domain": "dealer-swing"
+    },
+    {
+      "version": "20270128000020",
+      "filename": "20270128000020_dealer_ready_backup_private_cron_v1.sql",
+      "sha256": "550555b385f59b77cde479546d88f1a9e41abf4f8170991af110d26cfb419b4d",
+      "domain": "dealer-swing"
+    },
+    {
+      "version": "20270128000021",
+      "filename": "20270128000021_dealer_ready_private_trigger_v1.sql",
+      "sha256": "bda701820882229c6b2a5241dd2f65067755f20f4405980ccc9850717d8be4c6",
+      "domain": "dealer-swing"
+    },
+    {
+      "version": "20270128000022",
+      "filename": "20270128000022_dealer_assignment_off_commit_fence_v1.sql",
+      "sha256": "ca353676d90e993440ee6a6de17c33eeef01ad8207d4076e07d576ebff786fe0",
+      "domain": "dealer-swing"
+    },
+    {
+      "version": "20270128000023",
+      "filename": "20270128000023_dealer_empty_reservation_exact_session_v2.sql",
+      "sha256": "77592c44d07482b42dc267bfa1ae7aa097f1e84f5ee4f21d402b6cd2421b6d55",
+      "domain": "dealer-swing"
+    },
+    {
+      "version": "20270128000024",
+      "filename": "20270128000024_tracker_history_scoped_canary_claim_v1.sql",
+      "sha256": "1ce1e654ab13d1a1a29c18202bbb8bb34647c56f8970744283996ef59c727ec1",
+      "domain": "tracker-history"
+    },
+    {
+      "version": "20270128000025",
+      "filename": "20270128000025_dealer_automatic_rest_history_fence_v1.sql",
+      "sha256": "ce93618b571de95d92637d2d82fed24ab5169d5db0a9595ee169ae81d5afda0b",
+      "domain": "dealer-swing"
+    },
+    {
+      "version": "20270128000026",
+      "filename": "20270128000026_floor_open_session_name_integrity_v1.sql",
+      "sha256": "9195a9b61d1151375157c81015c2bbacc7917e732ea7f17f09f7713cdbf3ce8e",
+      "domain": "floor-table-control"
+    },
+    {
+      "version": "20270128000027",
+      "filename": "20270128000027_tracker_equal_blinds_contract_v1.sql",
+      "sha256": "4ca0e916ee0f9741eb029684d0e0a2f6d3dd562953513f33dc5da931dc8134e8",
+      "domain": "tracker-blind-lineage"
+    },
+    {
+      "version": "20270128000028",
+      "filename": "20270128000028_tracker_roster_exact_session_v1.sql",
+      "sha256": "06501440d7a3a66debf55e5b9eb5739ef64a27919726c285e676099aeabf77b2",
+      "domain": "tracker-roster-session"
+    },
+    {
+      "version": "20270128000029",
+      "filename": "20270128000029_floor_deferred_break_intent_v1.sql",
+      "sha256": "c056e7b0179e6bcb4f2d05f39a9f67fe5fea7ceb11e3bfb92120a0bf4be697ac",
+      "domain": "floor-deferred-break-intent"
+    },
+    {
+      "version": "20270128000030",
+      "filename": "20270128000030_tracker_roster_intent_fence_v1.sql",
+      "sha256": "0484566b13c0992c90c2006c2f5bd8bda0bfa462544d0e891da48dfa5ca255c8",
+      "domain": "tracker-roster-intent"
+    },
+    {
+      "version": "20270128000031",
+      "filename": "20270128000031_tournament_participation_current_scope_v1.sql",
+      "sha256": "493cea04355059ea2d023ac97c539cb79b1ba60a4fc3e4875f105417b65d150d",
+      "domain": "tournament-participation"
+    },
+    {
+      "version": "20270128000032",
+      "filename": "20270128000032_tournament_seat_display_preservation_v1.sql",
+      "sha256": "43c5720e052341fd281f72a9d6d68876e800b3ef31f05b5083bf03d43a2694b5",
+      "domain": "tournament-seat-display"
+    },
+    {
+      "version": "20270128000033",
+      "filename": "20270128000033_tournament_seat_move_tuple_v1.sql",
+      "sha256": "7fa5d62f4188e596da9edd936716508b6d6d5355282b6754c77b7930f2489685",
+      "domain": "tournament-seat-move-tuple"
+    },
+    {
+      "version": "20270128000034",
+      "filename": "20270128000034_floor_move_wrapper_receipt_v1.sql",
+      "sha256": "e8ca3398d34977fca7d4faec08ad144473829af6d747210ac69b3a534fb99082",
+      "domain": "floor-move-wrapper-receipt"
+    },
+    {
+      "version": "20270128000035",
+      "filename": "20270128000035_tournament_seat_assign_integrity_v1.sql",
+      "sha256": "18161246d73dc4e7aefb9d42665b5d168bd804b9b8ae63799b94d6e734ee6131",
+      "domain": "tournament-seat-assign-integrity"
+    },
+    {
+      "version": "20270128000036",
+      "filename": "20270128000036_floor_manual_entry_roundtrip_v1.sql",
+      "sha256": "306474110038315a5477b5e712067c831003b26cec60fc34375896c87baa05d5",
+      "domain": "floor-manual-entry-roundtrip"
+    },
+    {
+      "version": "20270128000037",
+      "filename": "20270128000037_floor_legacy_close_session_fence_v1.sql",
+      "sha256": "13766d88de0765d7fdebb0edf89f250af2ecf34e226c2e2146148bd85e497c3c",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000038",
+      "filename": "20270128000038_floor_break_lowest_number_policy_v1.sql",
+      "sha256": "657c1db3b3773dad47f070aa1a5d4757dfe2b30077f602075499bd81814b4721",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000039",
+      "filename": "20270128000039_floor_break_ticket_audit_v1.sql",
+      "sha256": "451788264693a09342660306a58806853b269a2aca08c3415ce2506865359f4a",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000040",
+      "filename": "20270128000040_floor_break_balanced_plan_v1.sql",
+      "sha256": "360647f7766261b6f063af6efb07b5b003456f74f842ca035c1e8954dc570d38",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000041",
+      "filename": "20270128000041_floor_deferred_move_ticket_audit_v1.sql",
+      "sha256": "377269df73038faf401649c63de2790146d009635228793138a88511b3dc5ba8",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000042",
+      "filename": "20270128000042_floor_canonical_move_ticket_integrity_v1.sql",
+      "sha256": "70044e39df48a1515687d912eed1065d7f1c80b0e805a7418616a118a0cce28d",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000043",
+      "filename": "20270128000043_floor_move_exact_intent_v1.sql",
+      "sha256": "f545d9cd37e7a6d8a59ad2ee392e3f72c551d3da5441839b2523502dfc6ae7dd",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000044",
+      "filename": "20270128000044_floor_seat_ticket_read_v1.sql",
+      "sha256": "ac977694c020afba499abf360902129360aebc9873ec5d40791c85744c122d26",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000045",
+      "filename": "20270128000045_floor_seat_ticket_select_scope_v1.sql",
+      "sha256": "46bdb1ee2dc1ce684e766c1d762265453cfb0f440e7c86f1227c543e422b8e59",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000046",
+      "filename": "20270128000046_dealer_inventory_canonical_table_link_v1.sql",
+      "sha256": "70d5c8ace517321fb2a7ac0a26c7098619391fa2cdc504d7436a9d1225426358",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000047",
+      "filename": "20270128000047_floor_closed_session_attendance_v1.sql",
+      "sha256": "68f37a501ee80408770f437553295271198222804bc58e978d6296eb54e61ad0",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000048",
+      "filename": "20270128000048_floor_move_or_queue_exact_intent_v1.sql",
+      "sha256": "7ee0538bcd42c45ab746dba5dd8d9f91e2b01d655fa351930ee409f78f4488ae",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000049",
+      "filename": "20270128000049_floor_mode_tombstone_guard_v1.sql",
+      "sha256": "eabbd6af0738a10d3a492b5e26c173b7e3c4fa3fc0c819ff4df2d06d433586a7",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000050",
+      "filename": "20270128000050_floor_mode_retry_schedule_v1.sql",
+      "sha256": "a173187282c167238d204c48d50b23895459f4698afcdfe498bca4ee64d76c2a",
+      "domain": "floor-session-ticket-campaign"
+    },
+    {
+      "version": "20270128000051",
+      "filename": "20270128000051_dealer_checkin_receipt_reconciliation_v1.sql",
+      "sha256": "d53efa3e45942142c0aaac8148e116272294b4b2ff1d871ae38f1a672642ff9d",
+      "domain": "dealer-checkin-recovery-campaign"
+    },
+    {
+      "version": "20270128000052",
+      "filename": "20270128000052_floor_restore_receipt_reconciliation_v1.sql",
+      "sha256": "9629ee3543ef8eee2e5f97f61a9236cbdf383ace9fa39064d56e46ecc5d85de4",
+      "domain": "restore-chip-recovery-campaign"
+    },
+    {
+      "version": "20270128000053",
+      "filename": "20270128000053_chip_color_up_receipt_reconciliation_v1.sql",
+      "sha256": "3284dafe204a92bc33b57221d08093106074796d374a44a29aeeba883a2a0270",
+      "domain": "restore-chip-recovery-campaign"
+    },
+    {
+      "version": "20270128000054",
+      "filename": "20270128000054_restore_pending_cancellation_v1.sql",
+      "sha256": "db398f93e1d3f26ebca82f329ca8bbe6393cb3c6ba36bc2ab41912136f15312e",
+      "domain": "restore-chip-recovery-campaign"
+    },
+    {
+      "version": "20270128000055",
+      "filename": "20270128000055_chip_pending_cancellation_v1.sql",
+      "sha256": "c78099b9a34d5a7887f7d4b01901579ac39f3609c24836ba75ed4b7774cdc052",
+      "domain": "restore-chip-recovery-campaign"
+    },
+    {
+      "version": "20270128000056",
+      "filename": "20270128000056_tracker_card_batch_integrity_v1.sql",
+      "sha256": "bfdd54961f66da91b54fafa825926c9f6b362917fb8b7b315c897c676d4bf4e1",
+      "domain": "tracker-card-integrity-campaign"
+    },
+    {
+      "version": "20270128000057",
+      "filename": "20270128000057_dealer_pt_policy_tenant_integrity_v1.sql",
+      "sha256": "0b5c774899b6e933049a74be985b1f72e96b2501e5daf15a087e6fc784e80d20",
+      "domain": "dealer-policy-tenant-campaign"
+    },
+    {
+      "version": "20270128000058",
+      "filename": "20270128000058_tracker_hand_identity_revision_v1.sql",
+      "sha256": "48bc7cba5892c66819037ffbee796d02551436c85495e3f03d878512c112e99b",
+      "domain": "tracker-history-identity-revision-campaign"
+    },
+    {
+      "version": "20270128000059",
+      "filename": "20270128000059_tracker_completed_void_integrity_v1.sql",
+      "sha256": "83c3ac2381b184627c20439276a62afe1401cb980387ff1dc2b7be7ea711794d",
+      "domain": "tracker-completed-void-integrity-campaign"
+    },
+    {
+      "version": "20270128000060",
+      "filename": "20270128000060_tracker_legacy_reentry_retirement_v1.sql",
+      "sha256": "9b366c60ecfcc20f9d51876a0cdf9ad59b7c528255277ffce889792ca921a067",
+      "domain": "tracker-legacy-reentry-integrity-campaign"
+    },
+    {
+      "version": "20270128000061",
+      "filename": "20270128000061_tracker_legacy_stack_retirement_v1.sql",
+      "sha256": "a037ef4fe53edb058e833e6605180f710875ce04a15f1770022bbf559650c9d2",
+      "domain": "tracker-legacy-stack-integrity-campaign"
+    },
+    {
+      "version": "20270128000062",
+      "filename": "20270128000062_floor_roster_participation_integrity_v6.sql",
+      "sha256": "45fd420f2f0f1120c085843bd2503e92dddf5b764b1076ea3d7d1c00b5ad8e31",
+      "domain": "floor-roster-participation-integrity-campaign"
+    },
+    {
+      "version": "20270128000063",
+      "filename": "20270128000063_floor_physical_asset_provision_v1.sql",
+      "sha256": "8ee185c840976f58854ec006c8ab1d6d6d6f8d34077ecffd68e52a7ee62f697f",
+      "domain": "quads-physical-asset-provision-campaign"
+    },
+    {
+      "version": "20270128000064",
+      "filename": "20270128000064_dealer_swing_scoped_stop_v1.sql",
+      "sha256": "043a0ab740c5ec489b049ee1b95f41257eca5c4b5194e417242340c486ffec17",
+      "domain": "dealer-swing-scoped-stop-campaign"
+    },
+    {
+      "version": "20270128000065",
+      "filename": "20270128000065_floor_physical_asset_authority_commit_fence_v1.sql",
+      "sha256": "014718d85013b0b714afd96a300b7a80f38f45b031dc0ebef3740145f11682f6",
+      "domain": "quads-physical-asset-authority-fence-campaign"
+    },
+    {
+      "version": "20270128000066",
+      "filename": "20270128000066_floor_manual_seat_session_fence_v1.sql",
+      "sha256": "2da4583e6d695ec2e36779f31dc4d784142e85e6e29888ab1ae633010490d90b",
+      "domain": "floor-manual-seat-session-fence-campaign"
+    },
+    {
+      "version": "20270128000067",
+      "filename": "20270128000067_floor_manual_bust_restore_read_v1.sql",
+      "sha256": "427ec7f078b6e7c258af3dd165d2ce7400155acae144140a045472bc1c8d6597",
+      "domain": "floor-manual-bust-restore-campaign"
+    },
+    {
+      "version": "20270128000068",
+      "filename": "20270128000068_floor_restore_canonical_tuple_v1.sql",
+      "sha256": "f7441afd63f5bbbb6c54d2b006c3e6c1d7f119003699c6594e54eb3749c4ff5c",
+      "domain": "floor-restore-canonical-tuple-campaign"
+    },
+    {
+      "version": "20270128000069",
+      "filename": "20270128000069_chip_issuance_exact_intent_v1.sql",
+      "sha256": "c92283d9084afe9dd68c1967e80366f3af9fe55cea1589b04f67239df8374b5f",
+      "domain": "chip-issuance-exact-intent-campaign"
+    },
+    {
+      "version": "20270128000070",
+      "filename": "20270128000070_tracker_voice_card_actor_epoch_fences_v1.sql",
+      "sha256": "5a25a790d88f06969a13ad3a801998869b260f8fb69e71cbb08691e922c9aea2",
+      "domain": "tracker-voice-card-actor-epoch-campaign"
+    },
+    {
+      "version": "20270128000071",
+      "filename": "20270128000071_tracker_voice_finish_actor_session_fence_v1.sql",
+      "sha256": "1a747f345d56b6ff4b5c13186dd5e98f9db384e918659808b638e39be6203993",
+      "domain": "tracker-voice-finish-actor-session-campaign"
+    },
+    {
+      "version": "20270128000072",
+      "filename": "20270128000072_tracker_voice_assignment_lifecycle_v1.sql",
+      "sha256": "6a0b7cb216c6eec027e4ff0b4eb7e5a7a4478ba0bf879b14a65906ce8c4edb09",
+      "domain": "tracker-voice-assignment-lifecycle-campaign"
+    },
+    {
+      "version": "20270128000073",
+      "filename": "20270128000073_dealer_voice_swing_lock_order_v1.sql",
+      "sha256": "5b44af84a9e20627152471141bca6ca42539f1ca658bbaade89a061a7066530b",
+      "domain": "dealer-voice-swing-lock-order-campaign"
+    },
+    {
+      "version": "20270128000074",
+      "filename": "20270128000074_tracker_public_hand_visibility_v1.sql",
+      "sha256": "1b26b18d91807e2aa937c114810ee4e074f66e4c3af30d4ca50c51b433078163",
+      "domain": "tracker-public-hand-visibility-campaign"
+    },
+    {
+      "version": "20270128000075",
+      "filename": "20270128000075_tracker_manual_cards_receipts_v1.sql",
+      "sha256": "4f52194e0c0721552519660abb844e3ccb5e6dba307f45203de08a2a6b6f9a4a",
+      "domain": "tracker-manual-cards-receipts-campaign"
+    },
+    {
+      "version": "20270128000076",
+      "filename": "20270128000076_tracker_hand_input_scoped_read_v1.sql",
+      "sha256": "15ae40bf5e44c01d2f03d14090499f3687ca22e0d61da131962e1f17eba3de54",
+      "domain": "tracker-hand-input-scoped-read-campaign"
+    },
+    {
+      "version": "20270128000077",
+      "filename": "20270128000077_tracker_roster_scoped_read_v2.sql",
+      "sha256": "9ac013f3a8be2cfd2d657f223b5182a3ebe48217e1a6df6b7eb5cad0120e6062",
+      "domain": "tracker-roster-scoped-read-campaign"
+    },
+    {
+      "version": "20270128000078",
+      "filename": "20270128000078_dealer_next_plan_rest_floor_v1.sql",
+      "sha256": "fb855366059ca54debf10490ca90afffb789750c25d13073bf14354d8e55b1df",
+      "domain": "dealer-next-plan-rest-floor-campaign"
+    },
+    {
+      "version": "20270128000079",
+      "filename": "20270128000079_dealer_close_next_reservation_v1.sql",
+      "sha256": "ae8293a00b54d322e4e83dc36783094376a34691c20f3658de234e289d11bc66",
+      "domain": "dealer-close-next-reservation-campaign"
+    },
+    {
+      "version": "20270128000080",
+      "filename": "20270128000080_dealer_operator_next_intent_v1.sql",
+      "sha256": "0b90049a0cb63242bc5a99dd078781a3987956146546377db4c936843433c4ce",
+      "domain": "dealer-operator-next-intent-campaign"
+    },
+    {
+      "version": "20270128000081",
+      "filename": "20270128000081_dealer_close_forecast_slots_v1.sql",
+      "sha256": "accba5a8dd0873dd4de5d3c24d42abfbb6e3c519991f76ce02bcb3a7c5c70ff8",
+      "domain": "dealer-close-forecast-slots-campaign"
+    },
+    {
+      "version": "20270128000082",
+      "filename": "20270128000082_payroll_legacy_read_club_authority_v1.sql",
+      "sha256": "04f949cc08ac4f93c7bad343c0767cce36196daa6b58a1691cf18184ff202289",
+      "domain": "payroll-legacy-read-authority-campaign"
+    },
+    {
+      "version": "20270128000083",
+      "filename": "20270128000083_shift_payroll_return_type_v1.sql",
+      "sha256": "ab1c5a98b03c9f032a1b8367a73a04d2536fa69e642bb27261a1a3be800349a7",
+      "domain": "shift-payroll-return-type-campaign"
+    },
+    {
+      "version": "20270128000084",
+      "filename": "20270128000084_profiles_anon_public_projection_v1.sql",
+      "sha256": "4db92b6d27a80bc13ad1bc2c37404b3ba61f0387fe170f47c53e8ccb3c491059",
+      "domain": "profiles-anon-public-projection-campaign"
+    },
+    {
+      "version": "20270128000085",
+      "filename": "20270128000085_cashier_club_scope_authority_v1.sql",
+      "sha256": "bdf62cc23d4335fe11e93de5bb20f4fc967057425d90b44fdc63552cea413a2b",
+      "domain": "cashier-club-scope-authority-campaign"
+    },
+    {
+      "version": "20270128000086",
+      "filename": "20270128000086_tournament_table_write_tenant_v1.sql",
+      "sha256": "01b495928a662277f4f0def15114f8376838a7c24c29db42be0e4585c4cb3740",
+      "domain": "tournament-table-tenant-boundary-campaign"
+    },
+    {
+      "version": "20270128000087",
+      "filename": "20270128000087_dealer_rotation_persist_session_fence_v1.sql",
+      "sha256": "a6bd06550895cac9aafed67859f80012592a50c33041717f6399ba822c2eeadf",
+      "domain": "dealer-rotation-persist-session-fence-campaign"
+    },
+    {
+      "version": "20270128000088",
+      "filename": "20270128000088_tournament_config_atomic_save_v1.sql",
+      "sha256": "292731d050964b90c6b3bb878de1ca636fce0e16756d3944712d3da28d86c8f5",
+      "domain": "tournament-config-atomic-save-campaign"
+    },
+    {
+      "version": "20270128000089",
+      "filename": "20270128000089_clock_start_level_readiness_v1.sql",
+      "sha256": "1f4b7d21014fe561110de19c17ea26d94485c09fba02a80ed16d07019cc6de92",
+      "domain": "clock-start-level-readiness-campaign"
+    },
+    {
+      "version": "20270128000090",
+      "filename": "20270128000090_public_clock_projection_v1.sql",
+      "sha256": "a9ca114984800b87af15cbaea4a4c95067182e1375f84074e382cf3ebd032276",
+      "domain": "public-clock-read-projection-campaign"
+    },
+    {
+      "version": "20270128000091",
+      "filename": "20270128000091_tournament_create_with_levels_atomic_v1.sql",
+      "sha256": "116a88485f116956602f9b7362bf39bb45efefe6aceaba5b7dbda03e59e56a15",
+      "domain": "tournament-create-levels-atomic-campaign"
+    },
+    {
+      "version": "20270128000092",
+      "filename": "20270128000092_club_series_reorder_atomic_v1.sql",
+      "sha256": "fdd9624de2d86252dff8472ba66a40fc55648f85cf297028633d0a3068100f54",
+      "domain": "club-series-reorder-atomic-campaign"
+    },
+    {
+      "version": "20270128000093",
+      "filename": "20270128000093_floor_legacy_restore_exact_session_required_v1.sql",
+      "sha256": "ed747bda61c670c1422e96066722f1d5cd3c6beea29dafd85dd29d350562a569",
+      "domain": "floor-legacy-restore-retirement-campaign"
+    },
+    {
+      "version": "20270128000094",
+      "filename": "20270128000094_tracker_manual_finish_lock_authority_v1.sql",
+      "sha256": "e15068894a124c376c2ffe8681d043af47838ca90177b19113fef9f434a7088c",
+      "domain": "tracker-manual-finish-lock-authority-campaign"
+    },
+    {
+      "version": "20270128000095",
+      "filename": "20270128000095_tracker_manual_finish_intent_receipts_v1.sql",
+      "sha256": "bcc05611aeae23d3f76890fc782cf1f6fd9d8fe90a2569ba57ca19e5ff5931fb",
+      "domain": "tracker-manual-finish-intent-receipts-campaign"
+    },
+    {
+      "version": "20270128000096",
+      "filename": "20270128000096_tracker_bare_finish_authenticated_retirement_v1.sql",
+      "sha256": "c7e745378c1525fe7df19d7385a3e3ca6b9ff07a9c410b46643cad7e08ee18bd",
+      "domain": "tracker-bare-finish-retirement-campaign"
+    },
+    {
+      "version": "20270128000097",
+      "filename": "20270128000097_tracker_manual_finish_cancellation_receipt_v1.sql",
+      "sha256": "1eb303d909b98b13dd0cf52ca61cbd7cdba8c0c7c0611c8347f8a002953b5cdf",
+      "domain": "tracker-manual-finish-cancellation-campaign"
+    },
+    {
+      "version": "20270128000098",
+      "filename": "20270128000098_tracker_public_history_attention_state_v1.sql",
+      "sha256": "12f4911956f22c3bc72a1437517f74619045ded758621ba77441d50f22161938",
+      "domain": "tracker-public-history-attention-state-campaign"
+    },
+    {
+      "version": "20270128000099",
+      "filename": "20270128000099_tracker_historical_intent_resolution_v1.sql",
+      "sha256": "d06bb38e2adaff726a5631666682b678f989ae59790aa51e956daaca7881b9fc",
+      "domain": "tracker-historical-intent-resolution-campaign"
+    },
+    {
+      "version": "20270128000100",
+      "filename": "20270128000100_dealer_manual_swing_receipt_v1.sql",
+      "sha256": "dd4dac547f821922395a9a0781a50b19ae5b01a3bdee7d7d007c8a684a42e83b",
+      "domain": "dealer-manual-swing-receipt-campaign"
+    },
+    {
+      "version": "20270128000101",
+      "filename": "20270128000101_dealer_manual_swing_cancel_actor_v1.sql",
+      "sha256": "fdd9a2e41533c5378156dc2fe4ce55123de885b0978d780b9512cadef5ee1043",
+      "domain": "dealer-manual-swing-cancel-actor-campaign"
+    },
+    {
+      "version": "20270128000102",
+      "filename": "20270128000102_dealer_initial_intent_resolution_v1.sql",
+      "sha256": "bdf880411f806f90b8200944cff68d486b5d1ac25e1ae387254a8ae0c87fac87",
+      "domain": "dealer-initial-intent-resolution-campaign"
+    },
+    {
+      "version": "20270128000103",
+      "filename": "20270128000103_dealer_worker_swing_atomic_result_v1.sql",
+      "sha256": "9bb8838b598cb444738576a64bf2df97b74ddc7b0c83494bdc97e4891f605f23",
+      "domain": "dealer-worker-swing-atomic-result-campaign"
+    },
+    {
+      "version": "20270128000104",
+      "filename": "20270128000104_dealer_legacy_preassign_cleanup_atomic_v1.sql",
+      "sha256": "b53b68484a8f3af536ef865de00bdc45f1691bd72680860f2583ed7befbd6490",
+      "domain": "dealer-legacy-preassign-cleanup-atomic-campaign"
+    },
+    {
+      "version": "20270128000105",
+      "filename": "20270128000105_dealer_legacy_adoption_atomic_v1.sql",
+      "sha256": "dda67897862d4555a7272da27963f8f9360b9357b4c176d7d6ded224c15cae6c",
+      "domain": "dealer-legacy-adoption-atomic-campaign"
+    },
+    {
+      "version": "20270128000106",
+      "filename": "20270128000106_dealer_emergency_replan_prepare_atomic_v1.sql",
+      "sha256": "ca49dca4e164e329fa318a19dfefac3f47ca69fd7e6746691e877401f6547167",
+      "domain": "dealer-emergency-replan-prepare-atomic-campaign"
     },
     {
       "version": "20270128000107",
@@ -8419,6 +8803,12 @@
       "filename": "20270128000112_cashier_cash_intent_receipts_v1.sql",
       "sha256": "6472bcae99b4ed01b75adbbcfdc595a4e7a3ef23257f98900bb39f5d580f9d39",
       "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000113",
+      "filename": "20270128000113_cashier_canonical_paid_seating_v1.sql",
+      "sha256": "4b5faf7b9e79868efe7b62c37436252aff5a9ffa86594cf0d3d2f8424cb3cf46",
+      "domain": "cashier-canonical-paid-seating-campaign"
     },
     {
       "version": "20270128000114",
@@ -8871,6 +9261,12 @@
       "domain": "all-fixes-backend-20261103"
     },
     {
+      "version": "20270128000189",
+      "filename": "20270128000189_tracker_action_stack_bound_v1.sql",
+      "sha256": "864946be61d9c2fe7768bc8d564897adda665b796c70f3b11b9b73966500ec44",
+      "domain": "tracker-action-stack-integrity-campaign"
+    },
+    {
       "version": "20270128000190",
       "filename": "20270128000190_dealer_scores_scoped_read_v1.sql",
       "sha256": "5a7207786cd72b3ca80cb86a2ef3317c13d1203622baea1f2d700248f3db67c9",
@@ -8910,12 +9306,6 @@
       "version": "20270128000196",
       "filename": "20270128000196_sepay_pull_total_fence_v2.sql",
       "sha256": "380b29c21cbc0554d40819932b7d5cef7679740a37db5bbba6f17cd36c8b1c27",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261103040730",
-      "filename": "20261103040730_notification_push_outbox_actual_predecessor_v1.sql",
-      "sha256": "432c6f8d9dea256431bfb4123be9f882b571b152c8907c9dea7f1cb206891277",
       "domain": "all-fixes-backend-20261103"
     },
     {
@@ -9255,12 +9645,6 @@
       "domain": "all-fixes-backend-20261103"
     },
     {
-      "version": "20261103035223",
-      "filename": "20261103035223_staking_refund_predecessor_line_endings_v1.sql",
-      "sha256": "f50e02e4b075941604b32177c11f42edb3cdf5507131a18e6cfc08fa090dbe72",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
       "version": "20270128000254",
       "filename": "20270128000254_staking_refund_effect_intents_v1.sql",
       "sha256": "c8c9cbbb32c911442370f87a53c470606dd6dc698dca815308599a1f9100bac6",
@@ -9282,12 +9666,6 @@
       "version": "20270128000257",
       "filename": "20270128000257_staking_refund_preview_v1.sql",
       "sha256": "2919e01d7f58d58d8b2540f74114ed13bc183d882bf92b02742357f01cfaaef5",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261103035328",
-      "filename": "20261103035328_staking_funding_predecessor_line_endings_v1.sql",
-      "sha256": "9c2f495f7adfb6a4b9ee8fc613d7be4850d86a51bc45280d488fc657ed579585",
       "domain": "all-fixes-backend-20261103"
     },
     {
@@ -9525,168 +9903,6 @@
       "domain": "all-fixes-backend-20261103"
     },
     {
-      "version": "20261027151355",
-      "filename": "20261027151355_fnb_confirmed_stocktake_snapshot_v1.sql",
-      "sha256": "f9b859e0e74b1c21d9051c1fd721ca49a3c78694ef92052385083f63d9cb4daf",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261028200630",
-      "filename": "20261028200630_multiday_registration_requires_locked_rules_local.sql",
-      "sha256": "0bdb0ea41985d6527f621efd9ed48345459505be1f75d4db3e3a2c7b566051ae",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029053635",
-      "filename": "20261029053635_multiday_individual_complete_package_v1.sql",
-      "sha256": "f6dfd3a2ae77c115f7f4dbe5722814816898ce80714d58fe6cbf0c4fc60e5ef0",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029055503",
-      "filename": "20261029055503_multiday_unpaid_restore_individual_payment_fence_v1.sql",
-      "sha256": "c63dffcb498ec79139d308066b5aff23c5d2601c80a7661c011a23d7f111c32f",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029074734",
-      "filename": "20261029074734_dealer_expired_rest_marker_completion_v1.sql",
-      "sha256": "ba09e335b55d9dcb784da1678750e3e6c1ca957cd60a1b600f938f8cce01c61f",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029082610",
-      "filename": "20261029082610_dealer_ready_continuous_rest_anchor_v1.sql",
-      "sha256": "a3b6acd3189eeffe372d5b25b351d673d711bb77b25a049b13d0907855b81939",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029090402",
-      "filename": "20261029090402_finance_rake_event_day_recognition_v1.sql",
-      "sha256": "76cc13229a9e5e7e4ee34f5d4760a2db60b1d66e96a1212b3d2c1aa9d91c6a46",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029092203",
-      "filename": "20261029092203_owner_tour_rake_live_read_v1.sql",
-      "sha256": "5ce78be16ae38ed1c97dacd461ef08c00b4cad878b7def36be5d331bb96c530e",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029092520",
-      "filename": "20261029092520_tour_revenue_buy_close_snapshot_v1.sql",
-      "sha256": "84ccfeb427d8c04c5bbd4e7be9747b4763d6d8033937d47a8a178bdb469f9403",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029092756",
-      "filename": "20261029092756_close_tournament_buy_v1.sql",
-      "sha256": "5907f71c1ff881d2046cc8a6a772d3ab6c773a61903dbeec29944973b0ba198f",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029100324",
-      "filename": "20261029100324_tour_revenue_shared_live_source_v1.sql",
-      "sha256": "b8385948a49e7bb85745aaaf53c767a3b2e3c210ac4d4d7d0fc1efbac68018ce",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029100837",
-      "filename": "20261029100837_finance_receipt_snapshot_revenue_v1.sql",
-      "sha256": "f656f7ea305cf6cd3dae5330c8f253ec9f817fe8eb242ca856ac9910173fac4f",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029102508",
-      "filename": "20261029102508_tour_revenue_buy_state_read_v1.sql",
-      "sha256": "081c43403281e9d04341707eddfd40fe093d592b4ee1d7d24a46742465709365",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261103041341",
-      "filename": "20261103041341_dealer_fallback_session_rest_composition_v2.sql",
-      "sha256": "e5e7b230b72c57acd1543ab97467008a2a380df0525dfa67ec8a18e39eb54c69",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029155420",
-      "filename": "20261029155420_series_paid_pending_counts_v1.sql",
-      "sha256": "f08fc76d4b9e944bcf10641b1b27e07367bf254c50a358b7962fe903bb7590d9",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261029160012",
-      "filename": "20261029160012_registration_expiry_skip_paid_v1.sql",
-      "sha256": "0e409369dc86be05658f90cbb9e21a6c7ab0d3385eddd142f91e532787f771d5",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261030050418",
-      "filename": "20261030050418_dealer_table_arrival_ack_v1.sql",
-      "sha256": "1efe03eb0762996c7bf64cf0bfa156a875d906b395ff2c14328f9063cc46dbf4",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261030090047",
-      "filename": "20261030090047_pt_actual_hours_new_payable_boundary_v1.sql",
-      "sha256": "6e07537e0ecfa8b7dc2b291cd0bf917a5e9dfba670dbc79def9d94b57db230bb",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261030090337",
-      "filename": "20261030090337_pt_legacy_monthly_overlap_guard_v1.sql",
-      "sha256": "2a8fd2ef75f4990f7be572735683a6ffd017c31e9371529631e848617e82e9a0",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261030090948",
-      "filename": "20261030090948_pt_finalized_payment_monthly_overlap_guard_v1.sql",
-      "sha256": "ff1aedf8de2d23047a2509ba30a0bf9b6bb3ae5b53796fc7c1b205bb191c4143",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261030091334",
-      "filename": "20261030091334_pt_statement_request_readback_v1.sql",
-      "sha256": "d3550bb1c071cc70ddf80b07599d20520b2c95f119b730b7a3390485aff295dc",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261030092830",
-      "filename": "20261030092830_pt_attendance_cap_reservation_anchor_v1.sql",
-      "sha256": "dbf04b9496ffec776cdbd97f786b71fb750693337d3e595d53353a9f6e653569",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261030151432",
-      "filename": "20261030151432_floor_closed_session_rest_markers_v1.sql",
-      "sha256": "cd483e6980c3a0996c04323f626c85533000ba387ce87363e71c20c14173a639",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261030162544",
-      "filename": "20261030162544_multiday_live_prize_configuration_cashier_boundary_v1.sql",
-      "sha256": "47ae92efcfc9806ee580b0d0e2c0b87f5f096b88c02ee06224c585d18780f3ef",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261030174722",
-      "filename": "20261030174722_series_pulse_ended_flight_exclusion_v1.sql",
-      "sha256": "4e05f5f3e71f07b7821f9e2c0c77366bb6fabd3beafec095bdc4687afd108eb7",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261101021500",
-      "filename": "20261101021500_floor_closed_session_dealer_rest_current_v2.sql",
-      "sha256": "0ab6b7409718ceee919f2be8334bf0ab36f87b7d6479861622cadd0cebd4bbda",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261101022500",
-      "filename": "20261101022500_dealer_rest_worker_rpc_service_only_v1.sql",
-      "sha256": "65c37ccd0fba233440fc5795372d1a3511c49763aeeb9b098a599f07ce368cf1",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
       "version": "20270128000297",
       "filename": "20270128000297_ops_live_clock_authority_v1.sql",
       "sha256": "c343b8df75a5600b9f6bead341d223df848ba47cfc28bf15b60e68b1b7c3bbe7",
@@ -9709,6 +9925,12 @@
       "filename": "20270128000300_fnb_stock_in_request_binding_v1.sql",
       "sha256": "db1c596c29bab4f5b80bb0e12dfc91d38eddec94573e92f72e489477295bc2ff",
       "domain": "all-fixes-backend-20261103"
+    },
+    {
+      "version": "20270128000301",
+      "filename": "20270128000301_tracker_decided_hand_action_guard_v1.sql",
+      "sha256": "eee78ac780a8aa1cfd0010a56842316787523fd1f6622830990e40c54722f4f5",
+      "domain": "tracker-decided-hand-action-campaign"
     },
     {
       "version": "20270128000302",
@@ -9861,228 +10083,6 @@
       "domain": "rotation-retention-20261108"
     },
     {
-      "version": "20261102092616",
-      "filename": "20261102092616_staff_inactive_ft_earned_days_v1.sql",
-      "sha256": "e9d6a166ae334fda067380d0e41c22dca8df4cb87683314e6ab13a2e5dae2d34",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261102112426",
-      "filename": "20261102112426_staff_checkout_before_inactive_v1.sql",
-      "sha256": "2b9a3fc094e562b149155c8145e8c71621d3f2975695b453c108a305a8cc7ce4",
-      "domain": "all-fixes-backend-20261103"
-    },
-    {
-      "version": "20261104001500",
-      "filename": "20261104001500_public_hud_incremental_projection.sql",
-      "sha256": "23e5050d921adbe50f3739f3d6285c5defc69b4df606757f98d1a67277405771",
-      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104001600",
-      "filename": "20261104001600_public_hud_worker_rpc.sql",
-      "sha256": "96d41633e0dec3748c9f8d0a58ae591436af1965c2dc5c6d5ec8b08beb2f2398",
-      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104001700",
-      "filename": "20261104001700_public_hud_metadata_backfill.sql",
-      "sha256": "be1a386dd7e7318da5ecbc4558c117c8aed02ba851fa356893e6adfeda7ddd18",
-      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104001800",
-      "filename": "20261104001800_public_hud_read_contract.sql",
-      "sha256": "2b8af10ab68bc5f88eec2b885e4861d7d03a4e1c37d1d7f5d465bbb533388bc7",
-      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104001900",
-      "filename": "20261104001900_public_spectator_compact_generations.sql",
-      "sha256": "f49a87fa2a3bad952993d6703cce3cc6951d1281e20a1d87072415e2beffb6a3",
-      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104002000",
-      "filename": "20261104002000_public_hud_dispatch_health.sql",
-      "sha256": "283d9d6dc63b541f2ef704ca4c916c4ebf97485e826dc183b464c559f8071ba2",
-      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104002100",
-      "filename": "20261104002100_public_current_hand_bounded.sql",
-      "sha256": "ba66dccf215d578425a7cc52f891cf646ddc1f43d0a07946ae980b2444ec6d8d",
-      "reason": "Tracker incremental HUD exact source promotion; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104002200",
-      "filename": "20261104002200_public_tracker_read_plan_reuse.sql",
-      "sha256": "b9f59c22a9004aa888f88c45523e8f55f204f6345ae46a9131212fb5aa137eae",
-      "reason": "Tracker public read plan reuse; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104002300",
-      "filename": "20261104002300_tracker_participation_read_plan_reuse.sql",
-      "sha256": "f2d85f6a0f46d9330f7b6efcbac40711248d0d9df8e838eb2c61c0e463ff281c",
-      "reason": "Tracker canonical participation plan reuse; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104002400",
-      "filename": "20261104002400_public_hud_history_ordered_page.sql",
-      "sha256": "ebdee90872c0f14baeda9bad6404ebf9093d16aeec975bd5b263f215c347170a",
-      "reason": "Tracker ordered HUD history page; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104002500",
-      "filename": "20261104002500_public_clock_read_plan_reuse.sql",
-      "sha256": "9293856d227d8675737a6930bb7d35755a3f0b4a1332aca6a9641e2892daf240",
-      "reason": "Tracker public clock plan reuse; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104002600",
-      "filename": "20261104002600_public_hud_summary_batch.sql",
-      "sha256": "ea7e7a7a20f19f088f1625338690627221c0cd930bfe2b66796a1ad748894c40",
-      "reason": "Tracker bounded public HUD snapshot batch; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104002700",
-      "filename": "20261104002700_public_current_table_prepared_reads.sql",
-      "sha256": "12807953a68860b7285138e53718c7da77615078ed347ddd059e19d6f8c56786",
-      "reason": "Tracker prepared public current-table reads; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104002800",
-      "filename": "20261104002800_public_hud_identity_ordered_lookup.sql",
-      "sha256": "30b558d20c8afd0857fcd661b396c7b46a18825f5ca220738a99bebed125241a",
-      "reason": "Tracker ordered private HUD identity lookup; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104002900",
-      "filename": "20261104002900_public_hud_identity_membership_lookup.sql",
-      "sha256": "31a1db41893bff8f01a8a0f2870754441121231ae74f4fe19c6df87fe229fe22",
-      "reason": "Tracker primary-key membership lookup preserving public HUD identity scope; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104003000",
-      "filename": "20261104003000_public_hud_identity_membership_keyset.sql",
-      "sha256": "fc7d7de2630e4285ed2c4cd22fddd723819d17ded04da0d0f619011d5bcd559a",
-      "reason": "Tracker keyset membership lookup preserving invalid-parent gates; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104003100",
-      "filename": "20261104003100_public_hud_enqueue_write_coalescing.sql",
-      "sha256": "1c8892e6e68aaf5d82348fc3bd8376fa840df890a8a7e444cfa4627aecfd516b",
-      "reason": "Tracker coalesced derived HUD enqueue writes preserving withdrawal and lease fencing; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104003200",
-      "filename": "20261104003200_public_clock_counts_only.sql",
-      "sha256": "e6152212aa102d02aee1675f129c22a058b20c528e45414371bc6bbc1bfeddc2",
-      "reason": "Tracker scoped public clock counts-only projection preserving canonical counters, public visibility and ACL; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104003300",
-      "filename": "20261104003300_public_hud_null_proof_short_circuit.sql",
-      "sha256": "13c8fe25395afe7a6e80dbd9cbd410ecdfbb31284e95efd6120265e94a4860b7",
-      "reason": "Tracker missing-proof numeric validation short circuit preserving unknown stack, JSON validation and ACL; production apply requires owner-approved exact migration package."
-    },
-    {
-      "version": "20261104003400",
-      "filename": "20261104003400_public_hud_result_withdrawal_scope.sql",
-      "sha256": "ce75e0ce79a3852ee0c4174fb5f34893fa52c9fde156d0022b6553e4b27b447c",
-      "reason": "Profile result withdrawal retains global HUD access invalidation without reloading unrelated tournament components; hand and tournament withdrawal remain unchanged. Exact package approval required."
-    },
-    {
-      "version": "20261105044028",
-      "filename": "20261105044028_public_hud_hand_withdrawal_scope.sql",
-      "sha256": "d5c0b3b88d6632997285e1cfbe4a7451b628cf16900b8cd07762e24fa21d93aa",
-      "reason": "Scoped hand withdrawal preserves immediate HUD/live/replay clearing and old-client full visibility while avoiding unrelated metadata reload. Exact package approval required."
-    },
-    {
-      "version": "20261105072714",
-      "filename": "20261105072714_public_hud_history_amounts_materialized.sql",
-      "sha256": "58411814af239826ddef22d930985c6dd4efe7c5554ea14287d088601bd9b892",
-      "reason": "Materialize four validated settlement amounts once per bounded history row. Preserves source, proof, pagination, unknown stacks and ACL. Exact package approval required."
-    },
-    {
-      "version": "20261105200303",
-      "filename": "20261105200303_public_hud_history_unverified_seed_short_circuit.sql",
-      "sha256": "6c44386dd744d4d8d8d56841f9e73cf483ff94834beed0eb8aa156813fb58d92",
-      "reason": "Skip redundant starting-stack lookup only without a verified outcome. Preserves raw membership, proof validation, unknown values and pagination. Exact package approval required."
-    },
-    {
-      "version": "20261105203358",
-      "filename": "20261105203358_spectator_compact_generation_lookup.sql",
-      "sha256": "e50c41cfb36d5ec82bdfcafac9e9be68dabe9f76a5c5c47df1ec333956ecebe6",
-      "reason": "Private partial index for compact component generations while retaining historical markers. Preserves writer, fencing, source, RLS and ACL. Exact package approval required."
-    },
-    {
-      "version": "20261105213000",
-      "filename": "20261105213000_public_hud_claim_source_batch.sql",
-      "sha256": "453fbcb692d45f2c7a35d45a3e13fd79fe0aa15cf64dbcba29fe083afcff139d",
-      "reason": "Service-only canonical claim plus source batching. Preserves limits, lease and publication fences. Exact package approval required before production apply."
-    },
-    {
-      "version": "20261106010000",
-      "filename": "20261106010000_public_hud_visibility_restore_reclassification.sql",
-      "sha256": "6baa164410055ec37d38fbb3ca499d8d618dafc8043140f348197c1c6b4e1a95",
-      "reason": "Targeted hidden-edit HUD restoration with parent-first publisher fencing and visibility barriers; preserves source, counters and ACL. Exact owner-approved26-migration package is required before production apply."
-    },
-    {
-      "version": "20261106025221",
-      "filename": "20261106025221_public_hud_visibility_required_work.sql",
-      "sha256": "ce728badbd5869871c913746d7f204847ca22721872bd279657d43d5ea4a5a1b",
-      "reason": "Private visibility-generation required-work tracking with fenced completion, resumable pending-cursor upgrade and disabled-reader/worker/no-lease apply guards. Exact owner-approved27-migration package required before production apply."
-    },
-    {
-      "version": "20261106105930",
-      "filename": "20261106105930_public_clock_numeric_buy_in.sql",
-      "sha256": "29c7132c6d1690114fb467d19727ba3e5e752da63dff114f67132f8b67603711",
-      "reason": "Read-only numeric buy-in coercion restores the canonical SQL clock output contract on production bigint source columns. Preserves source, clock rules, owner/ACL and visibility. Exact owner-approved28-migration package required before production apply."
-    },
-    {
-      "version": "20261106111519",
-      "filename": "20261106111519_public_hud_visibility_work_wakeup.sql",
-      "sha256": "8aa0c2a11fd69abfc412c87481b167578bf4b659cb38e7c4611d0793670b73aa",
-      "reason": "Successful fenced child publication may accelerate only its unleased matching-generation visibility parent through SKIP LOCKED. Busy parents retain existing retries; source/counters/barriers/leases are unchanged. Exact owner-approved29-migration package required."
-    },
-    {
-      "version": "20261106144208",
-      "filename": "20261106144208_public_spectator_source_lease_outcome.sql",
-      "sha256": "f3511b1a3946cc1bf20f316539e752790cdbdc10f2e2046fcaf6d01130739fb1",
-      "reason": "Exact stale-lease receipt after existing service authorization; no source payload or authority for old workers. Keeps publication fencing. Requires quiesced spectator worker, no active leases and exact owner-approved30-migration package before production apply."
-    },
-    {
-      "version": "20261106184814",
-      "filename": "20261106184814_public_table_clock_read_bundle.sql",
-      "sha256": "4ae3e8d59c292d17ef778508df9ba4eccc4d2cdaa2d52472098b7cb09a0c4057",
-      "reason": "Fresh public table and clock canonical getters in one STABLE invoker statement; preserves denial precedence and existing authorization. No source mutation. Requires exact owner-approved31-migration package before production apply."
-    },
-    {
-      "version": "20261107013500",
-      "filename": "20261107013500_cashier_app_reentry_transport_v1.sql",
-      "sha256": "092302c8cbdc82ee93a969470aa027fc86cd886a27b65be2980a09c1fb043373",
-      "reason": "Service-only invoker transport composes canonical app reentry,validated bank snapshot and optional notification in one transaction. SQL bytes match isolated healthy/fault tests. Additional migration32 is outside the HUD31 manifest;requires exact owner-approved supplemental manifest,verified base31 receipts,fresh recovery and object/ACL postchecks before production apply."
-    },
-    {
-      "version": "20261107045330",
-      "filename": "20261107045330_tracker_correction_hand_lock_order_v1.sql",
-      "sha256": "4d11a2efb317463c5bf40cd7b43b09e43749e287dc95b5e9e09bc51066c11858",
-      "reason": "Exact captured correction context serializes callers per hand before existing row locks. Native same-key and distinct-key20-session races and denial/boundary/recovery checks passed. Outside HUD31 and reentry32 manifests;requires separately pinned final release approval,fresh recovery,and paused/drained correction writers before production apply."
-    },
-    {
-      "version": "20261107093000",
-      "filename": "20261107093000_tournament_close_paid_prize_source_v1.sql",
-      "sha256": "d440b3cfee358de0f313f6ece501bd8e43714e692ff566717e6b1a9cbdbd60cc",
-      "reason": "Supplement34 corrects only new close/readiness paid-prize totals;preserves immutable close reports,payments,metadata and ACLs. Native canonical single/multi-place journeys,tenant/status exclusions,both row-lock race orderings and late ACL-drift rollback passed. Requires exact separately pinned supplemental package approval,fresh recovery,all33 prior atomic receipts and full34 activation checks before production apply."
-    },
-    {
-      "version": "20261107151500",
-      "filename": "20261107151500_public_hud_dispatch_project_url_v1.sql",
-      "sha256": "3c00edaae8ba71e9f556ae932219c538ca29e00d106708a66672f0e9f15e2295",
-      "reason": "Supplement35 reuses the existing spectator canonical-project URL fallback after managed-role GUC activation failed42501. Preserves source,jobs,ACLs and role policy. Native SQL-sink dispatch/denials/drift/rollback passed;exact full35 restore/activation and final production package approval remain required."
-    },
-    {
       "version": "20270128000328",
       "filename": "20270128000328_schedule_rotation_retention_current_role.sql",
       "sha256": "f9b648dad6722562f23272faa72e2dc18363ce2a313e44b4935734846ae11309",
@@ -10164,6 +10164,11 @@
       "version": "20270128000344",
       "filename": "20270128000344_spectator_bounded_source_batch.sql",
       "sha256": "f8fceb3ab75a8473704ddbbe804d6ea7502f01e93d21b7e90445f35b0ebb5fba"
+    },
+    {
+      "version": "20270128000345",
+      "filename": "20270128000345_floor_operator_fast_bust_v1.sql",
+      "sha256": "6a64cf4c2d4f54c980f046261aa8dabf02c2a601ade7f4393b612c9fcfa297a2"
     }
   ],
   "floorActiveAllowlist": [

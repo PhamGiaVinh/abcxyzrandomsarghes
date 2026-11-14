@@ -35,9 +35,12 @@ test("campaign applies use owner authorization without native reviewer capabilit
   }
 });
 
-test("owner-approved critical release does not require a paid reviewer gate", () => {
+test("owner-approved critical and frontend releases verify the existing reviewer gate", () => {
   const gate = workflow.slice(workflow.indexOf("  validate-critical-environment:"), workflow.indexOf("  deploy-critical-edge:"));
-  assert.doesNotMatch(gate, /required_reviewers|gh api/);
+  assert.match(gate, /gh api.*environments\/dealer-swing-production-critical/);
+  assert.match(gate, /required_reviewers/);
+  assert.match(gate, /length > 0/);
+  assert.match(gate, /needs\.plan\.outputs\.frontend == 'true'/);
   const script = gate.match(/node --input-type=module <<'NODE'\r?\n([\s\S]*?)\r?\n\s*NODE/);
   assert.ok(script, "owner authorization must execute before critical deployment");
   const valid = { RELEASE_EVENT: "workflow_dispatch", RELEASE_REF: "refs/heads/main", INITIAL_ACTOR: "owner", TRIGGERING_ACTOR: "owner", REPOSITORY_OWNER: "owner" };
@@ -503,3 +506,16 @@ test("readiness ACL repair apply is manual, protected, source-pinned, and cannot
     false,
   );
 });
+
+ test('normalized source observations require a fresh live check immediately before frontend mutation',()=>{
+  assert.match(workflow,/--verified-observations true/);
+  const guard=workflow.indexOf('- name: Recheck observed live closures before frontend deployment');
+  const build=workflow.indexOf('- name: Build exact frontend source');
+  const deploy=workflow.indexOf('- name: Deploy prebuilt bundle to Vercel');
+  assert.ok(build>=0&&guard>build&&deploy>guard);
+  const gate=workflow.slice(guard,deploy);
+  assert.match(gate,/needs\.plan\.outputs\.observed_for_frontend != '\[\]'/);
+  assert.match(gate,/verified-deployment-observation\.mjs/);
+  assert.match(gate,/SUPABASE_ACCESS_TOKEN/);
+  assert.doesNotMatch(gate,/continue-on-error|recordSuccessfulReceipt|deployment-receipts\.mjs record|VERCEL_TOKEN/);
+ });
