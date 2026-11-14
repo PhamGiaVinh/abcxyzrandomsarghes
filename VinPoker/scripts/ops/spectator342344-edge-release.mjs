@@ -11,6 +11,7 @@ import {activeSql} from './spectator342344-dispatch-control.mjs';
 import {PRIOR_EDGE,validatePriorEdge} from './spectator342344-production.mjs';
 const project='orlesggcjamwuknxwcpk',name='public-spectator-projector-v2',repo='PhamGiaVinh/abcxyzrandomsarghes';
 export const priorFiles=[{"path":"supabase/functions/public-spectator-projector-v2/index.ts","sha256":"a526662249793eb37b533a2192024fba8bab7569faf7b9c6900bf4e6c38a7d31"},{"path":"supabase/functions/_shared/vendor/tslib-2.8.1.mjs","sha256":"c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9"},{"path":"supabase/functions/public-spectator-projector-v2/worker.ts","sha256":"b8f252ef975bdf73900411300a35e3d1419abb95a46b259aeb95a692948f31df"},{"path":"supabase/functions/_shared/publicSpectatorReducer.ts","sha256":"e37dc20ba3a6abe1520efdfb069479abfb30ba7f7e555d66eb5e17c999b66365"},{"path":"src/lib/tracker-poker/handStateCore.ts","sha256":"de51b02dac7cd329c6768bc9510fc7bb09c3c31fd49d46f6eb9b1cd811c728ae"},{"path":"deno.json","sha256":"4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0"}];
+let preparationPhase='startup';
 const digest=x=>createHash('sha256').update(x).digest('hex');
 export function verifySecret(rows,flag){
  assert.ok(['0','1'].includes(flag));const values=rows.filter(r=>r.name==='PUBLIC_SPECTATOR_SOURCE_BATCH');
@@ -115,11 +116,11 @@ export async function runEdgeRelease({management,cli,readDownloaded,manifest,ver
  }
 }
 async function main(){
- const operation=process.argv[2]??'deploy';assert.ok(['capture-prior','deploy','repair-bundle','restore-prior','inspect-bundle'].includes(operation));
+ const operation=process.argv[2]??'deploy';assert.ok(['capture-prior','deploy','repair-bundle','restore-prior','inspect-bundle','inspect-prior'].includes(operation));
  const env=process.env;assert.equal(env.GITHUB_REPOSITORY,repo);assert.equal(env.GITHUB_REF,'refs/heads/main');assert.equal(env.GITHUB_EVENT_NAME,'workflow_dispatch');assert.equal(env.SUPABASE_PROJECT_REF,project);assert.ok(env.SUPABASE_ACCESS_TOKEN);
  assert.equal(env.CONFIRM_EDGE_RELEASE,operation==='restore-prior'?`RESTORE_SPECTATOR_PRIOR_CODE_${env.GITHUB_SHA}`:`RELEASE_SPECTATOR_BATCH_${env.GITHUB_SHA}`);
  const root=resolve(fileURLToPath(new URL('../..',import.meta.url))),pkg=loadPackage(root);
- const gh=path=>JSON.parse(execFileSync('gh',['api',`repos/${repo}/${path}`],{encoding:'utf8',timeout:30000,maxBuffer:2*1024*1024,stdio:['ignore','pipe','pipe']}));
+ const gh=path=>{preparationPhase=`github:${path}`;return JSON.parse(execFileSync('gh',['api',`repos/${repo}/${path}`],{encoding:'utf8',timeout:30000,maxBuffer:2*1024*1024,stdio:['ignore','pipe','pipe']}));};
  assert.equal(gh('git/ref/heads/main').object.sha,env.GITHUB_SHA);
  const run=gh(`actions/runs/${env.GITHUB_RUN_ID}`);assert.equal(run.head_sha,env.GITHUB_SHA);assert.equal(run.event,'workflow_dispatch');assert.equal(run.actor?.login,'PhamGiaVinh');assert.equal(run.triggering_actor?.login,'PhamGiaVinh');assert.equal(run.workflow_id,gh('actions/workflows/spectator342344-edge-release.yml').id);
  const pr=gh('pulls/1646');assert.equal(pr.merged,true);assert.equal(pr.head.sha,pkg.manifest.referenceProductSha);assert.equal(pr.merge_commit_sha,'440731086582389e70bc935f77df1bb90fa8a425');
@@ -128,10 +129,10 @@ async function main(){
  const artifacts=gh('actions/runs/43624550712/artifacts').artifacts.filter(a=>a.name==='spectator342344-receipts-43624550712'&&!a.expired);assert.equal(artifacts.length,1);
  const zip=execFileSync('gh',['api',`repos/${repo}/actions/artifacts/${artifacts[0].id}/zip`],{timeout:30000,maxBuffer:1024*1024,stdio:['ignore','pipe','pipe']});assert.equal('sha256:'+digest(zip),artifacts[0].digest);
  const zipPath=join(mkdtempSync(join(tmpdir(),'spectator-phase-a-')),'receipts.zip');writeFileSync(zipPath,zip);const receipt=execFileSync('unzip',['-p',zipPath,'spectator342344-apply.txt'],{encoding:'utf8',maxBuffer:1024*1024});verifyPhaseA(receipt,pkg.manifest);
- const management=async(method,path,body)=>{const response=await fetch(`https://api.supabase.com/v1/projects/${project}/${path}`,{method,headers:{Authorization:`Bearer ${env.SUPABASE_ACCESS_TOKEN}`,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});assert.ok(response.ok,'Management request failed; raw body withheld');return method==='POST'&&path==='secrets'?undefined:response.json();};
+ const management=async(method,path,body)=>{if(path!=='database/query')preparationPhase=`management:${method}:${path}`;const response=await fetch(`https://api.supabase.com/v1/projects/${project}/${path}`,{method,headers:{Authorization:`Bearer ${env.SUPABASE_ACCESS_TOKEN}`,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)});assert.ok(response.ok,'Management request failed; raw body withheld');return method==='POST'&&path==='secrets'?undefined:response.json();};
  const query=async sql=>{const rows=await management('POST','database/query',{query:sql});assert.equal(rows.length,1);const values=Object.values(rows[0]);assert.equal(values.length,1);return typeof values[0]==='string'?JSON.parse(values[0]):values[0];};
- const verifyDatabase=async()=>{const result=await query(postcheckSql(pkg,344));classifyPostcheck(result);const active=await query(activeSql());assert.equal(active.exact,true);};
- const cli=args=>{const r=spawnSync('supabase',args,{cwd:root,encoding:'utf8',timeout:120000,maxBuffer:4*1024*1024});assert.equal(r.status,0,'CLI operation failed; raw output withheld');return r.stdout;};
+ const verifyDatabase=async()=>{preparationPhase='database:344-postcheck';const result=await query(postcheckSql(pkg,344));classifyPostcheck(result);preparationPhase='database:dispatcher-active';const active=await query(activeSql());assert.equal(active.exact,true);};
+ const cli=args=>{preparationPhase=`cli:${args[0]}:${args[1]??'version'}`;const r=spawnSync('supabase',args,{cwd:root,encoding:'utf8',timeout:120000,maxBuffer:4*1024*1024});assert.equal(r.status,0,'CLI operation failed; raw output withheld');return r.stdout;};
  assert.equal(cli(['--version']).trim(),'2.101.0','Pinned CLI version required');
  const readDownloaded=async manifest=>{const downloadRoot=mkdtempSync(join(tmpdir(),'spectator-batch-verify-'));cli(['functions','download',name,'--project-ref',project,'--use-api','--workdir',downloadRoot]);verifyDownloaded(downloadRoot,manifest);};
  const denied=async()=>{const r=await fetch(`https://${project}.supabase.co/functions/v1/${name}`,{method:'POST',signal:AbortSignal.timeout(10000)});return r.status;};
@@ -140,14 +141,14 @@ async function main(){
  const materializePrior=priorRunId=>{
   assert.match(priorRunId??'',/^\d+$/);const old=gh(`actions/runs/${priorRunId}`);assert.equal(old.workflow_id,run.workflow_id);assert.equal(old.actor.login,'PhamGiaVinh');assert.equal(old.head_branch,'main');assert.equal(old.event,'workflow_dispatch');assert.equal(old.status,'completed');
   const items=gh(`actions/runs/${priorRunId}/artifacts`).artifacts.filter(a=>a.name===`spectator-prior-v12-${priorRunId}`&&!a.expired);assert.equal(items.length,1);
-  const bytes=execFileSync('gh',['api',`repos/${repo}/actions/artifacts/${items[0].id}/zip`],{timeout:30000,maxBuffer:4*1024*1024,stdio:['ignore','pipe','pipe']});assert.equal('sha256:'+digest(bytes),items[0].digest);
-  const backupZip=join(mkdtempSync(join(tmpdir(),'spectator-prior-')),'source.zip');writeFileSync(backupZip,bytes);
+  preparationPhase='prior-artifact:download';const bytes=execFileSync('gh',['api',`repos/${repo}/actions/artifacts/${items[0].id}/zip`],{timeout:30000,maxBuffer:4*1024*1024,stdio:['ignore','pipe','pipe']});assert.equal('sha256:'+digest(bytes),items[0].digest);
+  preparationPhase='prior-artifact:extract-and-hash';const backupZip=join(mkdtempSync(join(tmpdir(),'spectator-prior-')),'source.zip');writeFileSync(backupZip,bytes);
   const paths=execFileSync('unzip',['-Z1',backupZip],{encoding:'utf8'}).trim().split('\n');assert.deepEqual(paths.sort(),priorFiles.map(f=>f.path).sort());
   for(const file of priorFiles){const content=execFileSync('unzip',['-p',backupZip,file.path],{maxBuffer:2*1024*1024});assert.equal(digest(content.toString('utf8').replace(/\r\n?/g,'\n')),file.sha256);const dest=resolve(priorRoot,file.path);mkdirSync(dirname(dest),{recursive:true});writeFileSync(dest,content);}
   verifyDownloaded(priorRoot,{edgeFiles:priorFiles});
  };
- if(operation==='capture-prior'){
-  if(env.OPERATION==='repair-bundle'){validateRepairBase(await management('GET',`functions/${name}`));verifySecret(await management('GET','secrets'),'0');await verifyDatabase();materializePrior('43626793959');report({kind:'VERIFIED_ORIGINAL_PRIOR_V12_ARTIFACT_REUSED',originatingRun:43626793959,sourceCommit:'unknown'});return;}
+ if(operation==='capture-prior'||operation==='inspect-prior'){
+  if(env.OPERATION==='repair-bundle'||operation==='inspect-prior'){validateRepairBase(await management('GET',`functions/${name}`));verifySecret(await management('GET','secrets'),'0');await verifyDatabase();materializePrior('43626793959');report({kind:'VERIFIED_ORIGINAL_PRIOR_V12_ARTIFACT_REUSED',originatingRun:43626793959,sourceCommit:'unknown'});return;}
   validatePriorEdge(await management('GET',`functions/${name}`));await verifyDatabase();
   const rawPrior=mkdtempSync(join(tmpdir(),'spectator-prior-download-'));cli(['functions','download',name,'--project-ref',project,'--use-api','--workdir',rawPrior]);const priorBase=verifyDownloaded(rawPrior,{edgeFiles:priorFiles});
   for(const file of priorFiles){const dest=resolve(priorRoot,file.path);mkdirSync(dirname(dest),{recursive:true});writeFileSync(dest,readFileSync(resolve(priorBase,file.path)));}
@@ -169,4 +170,4 @@ async function main(){
  await runEdgeRelease({manifest:pkg.manifest,management,cli,verifyDatabase,readDownloaded,denied,sourceRoot:root,repair:operation==='repair-bundle',report});
  for(let i=0;i<3;i++){await new Promise(r=>setTimeout(r,5000));const observed=classifyHostedRuntime(beforeRuntime,await query(hostedRuntimeSql));report({kind:'SPECTATOR_HOSTED_RUNTIME_OBSERVATION',...observed});if(observed.state==='hosted-batch-observed')break;}
 }
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(()=>{console.error('SPECTATOR_EDGE_RELEASE_STOP_RAW_DETAILS_WITHHELD');process.exitCode=1;});
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(error=>{console.error(JSON.stringify({kind:'SPECTATOR_EDGE_PREFLIGHT_STOP',phase:preparationPhase,errorClass:error?.name??'Error',errorCode:typeof error?.code==='string'?error.code:null}));console.error('SPECTATOR_EDGE_RELEASE_STOP_RAW_DETAILS_WITHHELD');process.exitCode=1;});
