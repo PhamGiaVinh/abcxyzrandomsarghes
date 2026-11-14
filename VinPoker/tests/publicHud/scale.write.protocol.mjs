@@ -21,6 +21,17 @@ export function writerWaitDiagnosticEnabled(env){
  }
  return flag==='1';
 }
+export function writerOnlyQualificationEnabled(env){
+ const flag=env.PUBLIC_HUD_WRITER_ONLY_QUALIFICATION??'0';
+ assert.ok(['0','1'].includes(flag),'Invalid writer-only qualification');
+ if(flag==='1'){
+  assert.equal(env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD,'canonical-hand-observers-paired-v1');
+  assert.equal(env.PUBLIC_HUD_SCALE_HANDS,'1000000');
+  assert.notEqual(env.PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC,'1','Writer qualification must be uninstrumented');
+  assert.notEqual(env.PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY,'1','Writer qualification cannot be audience evidence-only');
+ }
+ return flag==='1';
+}
 export function audienceEvidenceOnlyEnabled(env){
  const flag=env.PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY??'0';
  assert.ok(['0','1'].includes(flag),'Invalid audience evidence-only mode');

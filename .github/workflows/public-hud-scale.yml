@@ -34,6 +34,10 @@ on:
       - 'VinPoker/scripts/ops/operations-audience-scope.mjs'
   workflow_dispatch:
     inputs:
+      writer_only_qualification:
+        description: 'Strict uninstrumented writer gates only; no audience/full-load claim'
+        type: boolean
+        default: false
       audience_evidence_only:
         description: 'Full audience evidence after writer grade; ALWAYS FAILS, never qualifies'
         type: boolean
@@ -118,6 +122,7 @@ jobs:
       run:
         working-directory: VinPoker
     env:
+      PUBLIC_HUD_WRITER_ONLY_QUALIFICATION: ${{ inputs.writer_only_qualification && '1' || '0' }}
       PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY: ${{ inputs.audience_evidence_only && '1' || '0' }}
       PUBLIC_HUD_SOURCE_BATCH_PROBE: ${{ inputs.source_batch_probe && '1' || '0' }}
       PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC: ${{ inputs.writer_wait_diagnostic && '1' || '0' }}
@@ -135,6 +140,9 @@ jobs:
       PUBLIC_HUD_CLOCK_UI_PROBE: ${{ inputs.clock_ui_probe && '1' || '0' }}
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
+      - name: Reject writer-only combined with full audience qualification
+        if: inputs.writer_only_qualification && inputs.qualification
+        run: exit 1
       - name: Reject evidence-only capture combined with qualification
         if: inputs.audience_evidence_only && inputs.qualification
         run: exit 1
