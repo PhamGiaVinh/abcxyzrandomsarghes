@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Tournament } from "@/types/tournament";
-const state = vi.hoisted(() => ({ roster: vi.fn(), entries: vi.fn(), restorable: vi.fn(), moves: vi.fn(), redraw: vi.fn(), close: vi.fn() }));
+const state = vi.hoisted(() => ({ roster: vi.fn(), entries: vi.fn(), restorable: vi.fn(), moves: vi.fn(), redraw: vi.fn(), close: vi.fn(), bust: vi.fn() }));
 type LiveChannel = { changes: { table: string; filter: string; read: () => void }[]; status?: (value: string) => void; ready?: (value: { extension: string; status: string }) => void;
   on: (kind: string, filter: { table: string; filter: string }, read: () => void) => LiveChannel;
   subscribe: (status: (value: string) => void) => LiveChannel };
@@ -16,7 +16,7 @@ const client = { rpc: vi.fn(), removeChannel: vi.fn(async () => "ok"), channel: 
     subscribe(status) { channel.status = status; return channel; } };
   live.channels.push(channel); return channel;
 }) };
-const v3 = { enabled: true, redrawSeatLockEnabled: true, getTournamentTableRoster: state.roster,
+const v3 = { enabled: true, redrawSeatLockEnabled: true, fastBustEnabled: false, bustSeatExact: state.bust, getTournamentTableRoster: state.roster,
   getSeatableEntries: state.entries, getRestorableEntries: state.restorable, getPendingTrackerMoves: state.moves, closeTournamentTable: state.close };
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => client }));
 vi.mock("@/lib/floorTableControlV3", () => ({ createFloorTableControlV3Client: () => v3 }));
@@ -32,6 +32,7 @@ import { FloorTableMapPanelV3 } from "../FloorTableMapPanelV3";
 import { FloorTableMapPanel } from "../FloorTableMapPanel";
 const tour = (status: string) => ({ id: "tour", name: "TEST", status } as Tournament);
 beforeEach(() => { for (const method of Object.values(state)) method.mockReset().mockResolvedValue({ ok: true, data: [] });
+  v3.fastBustEnabled = false;
   live.channels.length = 0; broadcasts.entries.length = 0; client.channel.mockClear(); client.removeChannel.mockClear(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 it("passes the shell identity to redraw and retires an open dialog when the session changes", async () => {
@@ -86,6 +87,59 @@ const table = (number: number) => ({ tournamentTableId: `table-${number}`, gameT
   tableNumber: number, tableName: `TEST table ${number}`, tableSessionId: `session-${number}`, sessionRevision: 1,
   controlEpoch: 1, controlMode: "manual", tournamentTableStatus: "active", sessionClosedAt: null,
   activeDealerAssignmentId: null, seats: [], seatLocks: [], maxSeats: 9 });
+
+it("releases consecutive exact seats and opens empty-table close without waiting for secondary lists", async () => {
+  v3.fastBustEnabled = true;
+  const seats = [1, 2].map(n => ({ seatId: `seat-${n}`, seatEntryId: null, seatNumber: n, entryId: null,
+    playerId: `player-${n}`, displayName: `Ghost ${n}`, entryNo: null, chipCount: 1000,
+    integrityStatus: "missing_entry", isActive: true }));
+  const current = { ...table(1), seats };
+  state.roster.mockResolvedValue({ ok: true, data: [current] });
+  // These lists are unrelated to removing an exact occupant or closing an empty table.
+  state.restorable.mockImplementation(() => new Promise(() => {}));
+  state.bust.mockImplementation(async ({ seatId }: { seatId: string }) => {
+    current.seats = current.seats.filter(s => s.seatId !== seatId);
+    current.sessionRevision++;
+    return { ok: true, data: { outcome: "orphan_seat_released" } };
+  });
+  render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
+  fireEvent.click(await screen.findByTestId("floor-table-roster-card"));
+  for (const n of [1, 2]) {
+    const row = await screen.findByTestId(`floor-seat-row-${n}`);
+    expect(row).toBeEnabled(); fireEvent.click(row);
+    fireEvent.click(await screen.findByRole("button", { name: "Loại / giải phóng ghế" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Xác nhận loại" }));
+    await waitFor(() => expect(state.bust).toHaveBeenCalledTimes(n));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Xác nhận loại" })).not.toBeInTheDocument());
+  }
+  expect(state.bust.mock.calls.map(([args]) => args.seatId)).toEqual(["seat-1", "seat-2"]);
+  fireEvent.click(screen.getByRole("button", { name: "Đóng bàn trống" }));
+  expect(await screen.findByRole("heading", { name: "Đóng bàn trống?" })).toBeInTheDocument();
+});
+
+it("keeps an exact bust confirmation during refresh and guards repeated clicks", async () => {
+  v3.fastBustEnabled = true;
+  const seat = { seatId: "seat-1", seatEntryId: "entry", seatNumber: 1, entryId: "entry", playerId: "player",
+    displayName: "Player", entryNo: 1, chipCount: 1000, integrityStatus: "valid", isActive: true };
+  const current = { ...table(1), controlMode: "tracker", seats: [seat] };
+  state.roster.mockResolvedValue({ ok: true, data: [current] });
+  let finish!: (value: unknown) => void;
+  state.bust.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const view = render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
+  fireEvent.click(await screen.findByTestId("floor-table-roster-card"));
+  fireEvent.click(await screen.findByTestId("floor-seat-row-1"));
+  fireEvent.click(screen.getByRole("button", { name: "Loại khỏi giải" }));
+  expect(await screen.findByRole("button", { name: "Xác nhận loại" })).toBeEnabled();
+  // Unrelated table revision/slow list must not dismiss this exact-seat intent.
+  state.roster.mockResolvedValue({ ok: true, data: [{ ...current, sessionRevision: 2 }] });
+  state.restorable.mockImplementation(() => new Promise(() => {}));
+  view.rerender(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={1} />);
+  await waitFor(() => expect(state.roster).toHaveBeenCalledTimes(3));
+  const confirm = screen.getByRole("button", { name: "Xác nhận loại" });
+  fireEvent.click(confirm); fireEvent.click(confirm);
+  expect(state.bust).toHaveBeenCalledTimes(1);
+  await act(async () => { finish({ ok: false, error: "seat_identity_changed" }); });
+});
 it("observes the scoped source tables and coalesces changes into a fresh roster", async () => {
   render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
   await screen.findByText(/Chưa có bàn đang hoạt động/);

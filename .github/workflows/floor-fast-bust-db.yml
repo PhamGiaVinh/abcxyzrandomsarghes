@@ -1,0 +1,65 @@
+name: floor-fast-bust-db
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/supabase/migrations/20270128000345_floor_operator_fast_bust_v1.sql'
+      - 'VinPoker/tests/floorTableControlV3/fastBust*'
+      - 'VinPoker/src/lib/floorFastBust.test.ts'
+      - 'VinPoker/src/lib/floorTableControlV3.ts'
+      - 'VinPoker/src/lib/featureFlags.ts'
+      - 'VinPoker/src/components/cashier/tournament-live/FloorTableMapPanelV3.tsx'
+      - 'VinPoker/src/components/cashier/tournament-live/__tests__/FloorTableMapPanelV3.closed.test.tsx'
+      - 'VinPoker/src/components/ops/shared/FloorSeatRoster.tsx'
+      - '.github/workflows/floor-fast-bust-db.yml'
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: npm ci --ignore-scripts
+      - name: Exact-seat client and Floor interaction regression
+        run: npx vitest run src/lib/floorFastBust.test.ts src/components/cashier/tournament-live/__tests__/FloorTableMapPanelV3.closed.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Application typecheck
+        run: node --max-old-space-size=6144 node_modules/typescript/bin/tsc -p tsconfig.app.json --noEmit
+      - name: Frontend production build
+        if: ${{ !cancelled() }}
+        run: npm run build
+  postgres-17:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact-seat writer native PostgreSQL cases
+        working-directory: VinPoker
+        run: psql -X -v ON_ERROR_STOP=1 -f tests/floorTableControlV3/fastBust.disposable.sql
+      - name: Concurrent exact-seat and duplicate intents
+        working-directory: VinPoker
+        run: bash tests/floorTableControlV3/fastBust.concurrent.sh
