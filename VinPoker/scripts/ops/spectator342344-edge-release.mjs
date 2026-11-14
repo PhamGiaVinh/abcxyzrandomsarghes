@@ -38,8 +38,8 @@ export async function summarizeBundleForm(form){
  const parts=[];
  for(const [field,value] of form.entries()){
   if(typeof value==='string'){
-   const part={field,kind:'text',bytes:Buffer.byteLength(value),sha256:digest(value)};
-   if(field==='metadata'){const parsed=JSON.parse(value);assert.ok(parsed&&typeof parsed==='object'&&!Array.isArray(parsed));part.metadataKeys=Object.keys(parsed).sort();part.metadataShapes=Object.fromEntries(Object.entries(parsed).map(([key,item])=>[key,{type:Array.isArray(item)?'array':typeof item,bytes:Buffer.byteLength(JSON.stringify(item)),sha256:digest(JSON.stringify(item))}]));}
+   const part={field,kind:'text',bytes:Buffer.byteLength(value)};
+   if(field==='metadata'){const parsed=JSON.parse(value);assert.ok(parsed&&typeof parsed==='object'&&!Array.isArray(parsed));part.metadataKeys=Object.keys(parsed).sort();part.metadataShapes=Object.fromEntries(Object.entries(parsed).map(([key,item])=>[key,{type:Array.isArray(item)?'array':typeof item,bytes:Buffer.byteLength(JSON.stringify(item))}]));}
    parts.push(part);
   }else{const bytes=Buffer.from(await value.arrayBuffer());parts.push({field,kind:'file',name:value.name,bytes:value.size,type:value.type,sha256:digest(bytes),canonicalSha256:digest(bytes.toString('utf8').replace(/\r\n?/g,'\n'))});}
  }
