@@ -1,0 +1,50 @@
+name: Spectator batch protected Edge release
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/spectator342344-edge-release.yml'
+      - 'VinPoker/scripts/ops/spectator342344-edge-release*'
+  workflow_dispatch:
+    inputs:
+      confirmation: {description: RELEASE_SPECTATOR_BATCH_<exact main SHA>, required: true, type: string}
+permissions: {contents: read, actions: read, pull-requests: read}
+concurrency: {group: vinpoker-production-database-release, cancel-in-progress: false}
+jobs:
+  edge-controls:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Ordered activation, source and rollback guards
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/VinPoker
+        run: node --test VinPoker/scripts/ops/spectator342344-edge-release.test.mjs
+  release:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: edge-controls
+    environment: dealer-swing-production-critical
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ github.sha }}'}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Install existing pinned deployment CLI
+        run: npm install --global supabase@2.101.0
+      - name: Verify committed database phase, deploy batch0, verify source, enable batch1
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASEACCESSTOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          CONFIRM_EDGE_RELEASE: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          node VinPoker/scripts/ops/spectator342344-edge-release.mjs | tee "$RUNNER_TEMP/spectator-edge-release.jsonl"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: spectator-edge-release-${{ github.run_id }}
+          path: ${{ runner.temp }}/spectator-edge-release.jsonl
+          if-no-files-found: ignore
