@@ -1,0 +1,3 @@
+FROM postgres:17.6-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential postgresql-server-dev-17 curl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://api.github.com/repos/citusdata/pg_cron/tarball/9490f9cc9803f75105f2f7d89839a998f011f8d8 -o /tmp/cron.tar.gz && echo "d6bccd1bb3ab7a357f8de798af487b6f4d7169def88883808aaec99375547a8c  /tmp/cron.tar.gz" | sha256sum -c - && mkdir /tmp/cron && tar xzf /tmp/cron.tar.gz -C /tmp/cron --strip-components=1 && make -C /tmp/cron PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config && make -C /tmp/cron PG_CONFIG=/usr/lib/postgresql/17/bin/pg_config install && rm -rf /tmp/cron /tmp/cron.tar.gz

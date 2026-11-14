@@ -8,7 +8,7 @@ const source='71d20fcefaf2c104b0a4cf9e35011b527c1a6882';
 export const sourceBaseSha='883131bd15a62620886fbbec2008c93b0b67aa5a';
 export const controlPaths=new Set([
  '.github/workflows/spectator342344-protected-release.yml',
- ...['atomic-postgres.mjs','dispatch-control.mjs','dispatch-control.test.mjs','dispatcher-current.fixture.sql','github.mjs','github.test.mjs','manifest.json','production.mjs','protected-apply.mjs','protected-apply.test.mjs','release-context.mjs','release-context.test.mjs','release-plan.mjs','release-plan.test.mjs'].map(name=>'VinPoker/scripts/ops/spectator342344-'+name)
+ ...['cron.Dockerfile','real-cron.mjs','atomic-postgres.mjs','dispatch-control.mjs','dispatch-control.test.mjs','dispatcher-current.fixture.sql','github.mjs','github.test.mjs','manifest.json','production.mjs','protected-apply.mjs','protected-apply.test.mjs','release-context.mjs','release-context.test.mjs','release-plan.mjs','release-plan.test.mjs'].map(name=>'VinPoker/scripts/ops/spectator342344-'+name)
 ]);
 export function validateControlAdvance(base,head,comparison,complete=false){
  assert.match(base,/^[a-f0-9]{40}$/);assert.match(head,/^[a-f0-9]{40}$/);

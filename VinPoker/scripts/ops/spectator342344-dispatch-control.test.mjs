@@ -57,3 +57,12 @@ test('only exact actual v12 deployment metadata is accepted; request errors stop
 test('drain observes both startup RPCs as well as claim/publication lifecycle',()=>{
  for(const name of ['absorb_public_spectator_generations_v2','flush_public_spectator_broadcast_v2','claim_public_spectator_projection_v2','get_public_spectator_projection_source_v2','publish_public_spectator_projection_v2','fail_public_spectator_projection_v2'])assert.ok(drainSql().includes(name));
 });
+
+test('supported cron API is used in serializable transactions without direct table lock or grants',()=>{
+ for(const sql of [pauseSql(),resumeSql('123')]){
+  assert.ok(sql.startsWith('BEGIN ISOLATION LEVEL SERIALIZABLE;'));
+  assert.ok(sql.includes('cron.alter_job(52,active:='));
+  assert.ok(sql.includes('v_hud_xmin'));
+  assert.ok(!/FOR UPDATE|GRANT |UPDATE cron\.job/.test(sql));
+ }
+});

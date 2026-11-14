@@ -10,24 +10,30 @@ const expected=(active)=>`${job(52,'public-spectator-v2-dispatch','6a58054106472
 export const ledgerSql="BEGIN READ ONLY;SET LOCAL statement_timeout='10s';SELECT COALESCE(json_agg(json_build_object('version',version,'name',name) ORDER BY version),'[]'::json)::text FROM supabase_migrations.schema_migrations;COMMIT;";
 export function activeSql(){return `BEGIN READ ONLY;SET LOCAL statement_timeout='10s';SELECT json_build_object('exact',COALESCE((${expected(true)}),false))::text;COMMIT;`;}
 export function pauseSql(){
- return `BEGIN;SET LOCAL lock_timeout='1s';SET LOCAL statement_timeout='10s';
- DO $pause$ BEGIN
+ return `BEGIN ISOLATION LEVEL SERIALIZABLE;SET LOCAL lock_timeout='1s';SET LOCAL statement_timeout='10s';
+ DO $pause$ DECLARE v_hud_xmin text; v_before_xmin text; BEGIN
  IF current_user<>'postgres' THEN RAISE EXCEPTION 'dispatcher_actor_drift';END IF;
- PERFORM 1 FROM cron.job WHERE jobid IN(52,55) FOR UPDATE NOWAIT;
+ SELECT xmin::text INTO STRICT v_hud_xmin FROM cron.job WHERE jobid=55;
  IF NOT COALESCE((${expected(true)}),false) THEN RAISE EXCEPTION 'dispatcher_preimage_drift';END IF;
+ SELECT xmin::text INTO STRICT v_before_xmin FROM cron.job WHERE jobid=52;
  PERFORM cron.alter_job(52,active:=false);
+ IF NOT COALESCE((${expected(false)}),false) OR NOT EXISTS(SELECT 1 FROM cron.job WHERE jobid=55 AND xmin::text=v_hud_xmin)
+ OR EXISTS(SELECT 1 FROM cron.job WHERE jobid=52 AND xmin::text=v_before_xmin)
+ THEN RAISE EXCEPTION 'dispatcher_pause_postimage_drift';END IF;
  END $pause$;
  SELECT json_build_object('paused',NOT active,'pauseXmin',xmin::text)::text FROM cron.job WHERE jobid=52;COMMIT;`;
 }
 export function resumeSql(pauseXmin){
  assert.match(pauseXmin??'',/^\d{1,20}$/,'Observed pause row version required');
- return `BEGIN;SET LOCAL lock_timeout='1s';SET LOCAL statement_timeout='10s';
- DO $resume$ BEGIN
+ return `BEGIN ISOLATION LEVEL SERIALIZABLE;SET LOCAL lock_timeout='1s';SET LOCAL statement_timeout='10s';
+ DO $resume$ DECLARE v_hud_xmin text; BEGIN
  IF current_user<>'postgres' THEN RAISE EXCEPTION 'dispatcher_actor_drift';END IF;
- PERFORM 1 FROM cron.job WHERE jobid IN(52,55) FOR UPDATE NOWAIT;
+ SELECT xmin::text INTO STRICT v_hud_xmin FROM cron.job WHERE jobid=55;
  IF NOT COALESCE((${expected(false)}),false) OR NOT EXISTS(SELECT 1 FROM cron.job WHERE jobid=52 AND xmin::text='${pauseXmin}')
  THEN RAISE EXCEPTION 'dispatcher_pause_ownership_drift';END IF;
  PERFORM cron.alter_job(52,active:=true);
+ IF NOT COALESCE((${expected(true)}),false) OR NOT EXISTS(SELECT 1 FROM cron.job WHERE jobid=55 AND xmin::text=v_hud_xmin)
+ THEN RAISE EXCEPTION 'dispatcher_resume_postimage_drift';END IF;
  END $resume$;
  SELECT json_build_object('resumed',COALESCE((${expected(true)}),false))::text;COMMIT;`;
 }
