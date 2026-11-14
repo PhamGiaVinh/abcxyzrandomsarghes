@@ -53,14 +53,15 @@ export async function activateVerifiedBundle({management,readDownloaded,manifest
  const flag=async value=>{await management('POST','secrets',[{name:'PUBLIC_SPECTATOR_SOURCE_BATCH',value}]);verifySecret(await management('GET','secrets'),value);};
  try{
   await verifyDatabase();const before=await meta();validateActivationBase(before);verifySecret(await management('GET','secrets'),'0');
-  phase='verify-existing-source';await readDownloaded(manifest);validateActivationBase(await meta());assert.equal(await denied(),401);
+  phase='verify-existing-source';await readDownloaded(manifest);phase='verify-existing-metadata';validateActivationBase(await meta());phase='verify-existing-auth';assert.equal(await denied(),401);
   phase='batch-one';changed=true;await flag('1');const after=await meta();validatePriorEdge({...after,version:12,ezbr_sha256:PRIOR_EDGE.ezbr_sha256});assert.ok([before.version,before.version+1].includes(after.version));assert.equal(after.ezbr_sha256,before.ezbr_sha256);
   phase='verify-activated-source';await readDownloaded(manifest);await verifyDatabase();assert.equal(await denied(),401);verifySecret(await management('GET','secrets'),'1');const stable=await meta();assert.equal(stable.version,after.version);assert.equal(stable.ezbr_sha256,after.ezbr_sha256);
   report({kind:'SPECTATOR_EXISTING_BUNDLE_ACTIVATED_RUNTIME_OBSERVATION_REQUIRED',version:after.version,ezbrSha256:after.ezbr_sha256,closureFiles:manifest.edgeFiles.length,batch:'1'});
- }catch{
+ }catch(error){
+  const failedOperation=preparationPhase,causeClass=error?.name??'Error',causeCode=typeof error?.code==='string'?error.code:null;
   let disabled=false;if(changed){try{await flag('0');disabled=true;}catch{}}
   let observed=null;try{const m=await meta();observed={version:m.version,ezbrSha256:m.ezbr_sha256,status:m.status};}catch{}
-  report({kind:'SPECTATOR_EXISTING_ACTIVATION_STOP_NO_AUTOMATIC_RETRY',phase,batchDisabledVerified:disabled,observed});throw Error('Verified activation stopped');
+  report({kind:'SPECTATOR_EXISTING_ACTIVATION_STOP_NO_AUTOMATIC_RETRY',phase,failedOperation,causeClass,causeCode,batchDisabledVerified:disabled,observed});throw Error('Verified activation stopped');
  }
 }
 export function validateRepairBase(value){validatePriorEdge({...value,version:12,ezbr_sha256:PRIOR_EDGE.ezbr_sha256});assert.equal(value.version,18);assert.equal(value.ezbr_sha256,'1f97018b2874c4ea9595582fe441ca2d7f7447c9a1c170ea65b42a6ac3b63e44');}
@@ -75,7 +76,7 @@ export async function summarizeBundleForm(form){
  }
  return parts;
 }
-export function validateInspectionBase(value){assert.equal(value.slug,name);assert.equal(value.version,18);assert.equal(value.status,'ACTIVE');assert.equal(value.verify_jwt,false);assert.equal(value.import_map,true);assert.equal(value.ezbr_sha256,'1f97018b2874c4ea9595582fe441ca2d7f7447c9a1c170ea65b42a6ac3b63e44');}
+export function validateInspectionBase(value){assert.equal(value.slug,name);assert.equal(value.version,21);assert.equal(value.status,'ACTIVE');assert.equal(value.verify_jwt,false);assert.equal(value.import_map,true);assert.equal(value.ezbr_sha256,'917bc15f88f8f17985e7deff37801699f80eeab04be8f8dcced1e246a265e8a5');}
 export function verifyPhaseA(lines,manifest){
  const rows=lines.trim().split(/\r?\n/).map(line=>JSON.parse(line));
  assert.equal(rows.length,5);
@@ -191,9 +192,9 @@ async function main(){
  if(operation==='inspect-bundle'){
   const before=await management('GET',`functions/${name}`);validateInspectionBase(before);verifySecret(await management('GET','secrets'),'0');await verifyDatabase();
   const response=await fetch(`https://api.supabase.com/v1/projects/${project}/functions/${name}/body`,{headers:{Authorization:`Bearer ${env.SUPABASE_ACCESS_TOKEN}`,Accept:'multipart/form-data'},signal:AbortSignal.timeout(30000)});
-  assert.ok(response.ok);assert.match(response.headers.get('content-type')??'',/^multipart\//);const parts=await summarizeBundleForm(await response.formData());
+  assert.ok(response.ok);assert.match(response.headers.get('content-type')??'',/^multipart\//);const form=await response.formData();const parts=await summarizeBundleForm(form);report({kind:'READ_ONLY_EDGE_BUNDLE_INVENTORY_PARTS',parts});preparationPhase='inspect:raw-source-verification';const source=await verifyBundleForm(form,pkg.manifest);preparationPhase='inspect:auth-denial';const authStatus=await denied();assert.equal(authStatus,401);
   const after=await management('GET',`functions/${name}`);validateInspectionBase(after);verifySecret(await management('GET','secrets'),'0');await verifyDatabase();
-  report({kind:'READ_ONLY_EDGE_BUNDLE_INVENTORY',version:after.version,ezbrSha256:after.ezbr_sha256,parts});return;
+  report({kind:'READ_ONLY_EDGE_BUNDLE_INVENTORY',version:after.version,ezbrSha256:after.ezbr_sha256,source,authStatus});return;
  }
  const beforeRuntime=await query(hostedRuntimeSql);
  if(operation==='activate-verified')await activateVerifiedBundle({manifest:pkg.manifest,management,readDownloaded,verifyDatabase,denied,report});
