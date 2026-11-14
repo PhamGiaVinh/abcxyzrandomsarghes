@@ -31,10 +31,20 @@ function set(path, bytes, mode = '100644') {
 function commit(parent) { return git('commit-tree', git('write-tree').trim(), '-p', parent, '-m', 'isolated policy fixture').trim(); }
 const baseline = '3c9a965edb4c96d34263c09db42dc11c5d6182c1';
 const candidate = 'c69bce72ca98332ac4740808b05db01bf7bed398';
+// Carry the already released Floor345 catalog/file through both fixture sides.
+// The only newly admitted SQL remains the exact original342–344 package.
+const floorBase = '556b474dbf7b82b791889fa31f6896c21667cb0d';
+const integrated = '17e6d9b5218ce3d603c05d71e2e401573f42bc64';
+const catalog = policy.migrationScope[0].path;
+const floor345 = 'VinPoker/supabase/migrations/20270128000345_floor_operator_fast_bust_v1.sql';
 git('read-tree', baseline);
+set(catalog, original('show', `${floorBase}:${catalog}`));
+set(floor345, original('show', `${floorBase}:${floor345}`));
 for (const path of guards) set(path, readFileSync(join(source, path)));
 const base = commit(baseline);
 git('read-tree', candidate);
+set(catalog, original('show', `${integrated}:${catalog}`));
+set(floor345, original('show', `${floorBase}:${floor345}`));
 for (const path of guards) set(path, readFileSync(join(source, path)));
 // Preserve the candidate's additional operational safety cases when it inherits
 // the policy fixture correction; do not overwrite them with the older base test.
@@ -68,6 +78,7 @@ test('exact committed package selects current-source342, not historical proof', 
 test('unknown SQL, missing/renamed/symlink SQL, catalog drift and historical edits fail closed', () => {
   const sql = policy.migrationScope.find(f => f.status === 'A').path;
   for (const change of [
+    () => set(floor345, '-- changed released Floor345'),
     () => set('VinPoker/supabase/migrations/unknown.sql', 'select 1;'),
     () => git('update-index', '--force-remove', sql),
     () => set(sql, original('show', `${candidate}:${sql}`) + '\n-- changed'),
