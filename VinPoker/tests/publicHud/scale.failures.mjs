@@ -10,6 +10,13 @@ export function classifyEdgeFailure(body){
  return 'unknown';
 }
 // Allowlisted diagnostics only. The caller retains every original failure gate.
+export function parseFixtureHudBarrier(headers){
+ const flag=headers?.['x-hud-fixture-blocked'];
+ const from=Date.parse(headers?.['x-hud-fixture-barrier-from']??'');
+ const until=Date.parse(headers?.['x-hud-fixture-barrier-until']??'');
+ if(!['0','1'].includes(flag)||!Number.isSafeInteger(from)||from<0||!Number.isSafeInteger(until)||until<from)return null;
+ return {from,until,blocked:flag==='1'};
+}
 export function sanitizeHudAttemptTrace(attempts){
  if(!Array.isArray(attempts))return [];
  return attempts.slice(-8).map(value=>{

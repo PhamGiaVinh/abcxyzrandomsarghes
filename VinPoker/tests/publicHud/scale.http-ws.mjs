@@ -13,7 +13,7 @@ import {maximumSample,summaryApiReport} from './scale.summary.mjs';
 import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
 import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,sourceBatchProfile,sourceBatchProbeEnabled} from './scale.write.protocol.mjs';
 import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure,committedHistoryWithdrawalDenial} from './scale.restoration.mjs';
-import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure,sanitizeHudAttemptTrace} from './scale.failures.mjs';
+import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure,sanitizeHudAttemptTrace,parseFixtureHudBarrier} from './scale.failures.mjs';
 import {tableFailureSample,overviewGenerationSample} from './scale.table-trace.mjs';
 import {audienceSocketDiagnostic} from '../../scripts/ops/operations-audience-scope.mjs';
 import {registerPublicTournamentRead,PUBLIC_SPECTATOR_READ_INTERVAL_MS,PUBLIC_SPECTATOR_OVERVIEW_READ_INTERVAL_MS,PUBLIC_SPECTATOR_HINT_JITTER_MS} from '../../.local-data/hud-scale-runtime/publicSnapshotCoordinator.mjs';
@@ -64,6 +64,7 @@ const uuid=(prefix,n)=>`${prefix}-0000-4000-8000-${n.toString(16).padStart(12,'0
 const amendmentKinds=['correct','void','restore','verify','revoke','reverify','result_create','result_edit','result_revoke','result_reverify'];
 const player=uuid('30000000',1),stats={summary:[],summaryHttp:[],realtime:[],sourceToReadStart:[],tableRead:[],snapshot:[],snapshotToReadStart:[],snapshotRead:[],snapshotToPublication:[],snapshotPublicationToRead:[],projection:[],errors:{},transportErrors:{},reconnects:0,sourceWrites:0,revocationClears:0};
 const readyProbeTimes=new Map(),amendReadyProbeTimes=new Map(),workerProbeDiagnostics=[];
+const amendmentBarrierTrace={limit:128,dropped:0,events:[],scope:'Separate service-only fixture barrier snapshot; not the viewer read or the readiness snapshot.'};
 const coveringHintDiagnostics=new Map();
 const overviewFaultEpochs=new Map();
 const overviewGenerationTrace={enabled:targetDuration===30,limit:6000,dropped:0,events:[]};
@@ -111,6 +112,12 @@ async function post(path,body,privileged=false,phase='other',callerSignal,trace)
   assert.ok(Number.isFinite(observedAt),'Missing fixture readiness clock');
   readyProbeTimes.set(body.p_hand_id,{observedAt,readMs:performance.now()-start});
  }
+ if(path.endsWith('/fixture_scale_amend_ready_v1')){
+  const barrier=parseFixtureHudBarrier(response.headers);
+  const observation={clientReceivedAt:Date.now(),ready:value===true,...(barrier??{captureUnavailable:true})};
+  if(amendmentBarrierTrace.events.length>=amendmentBarrierTrace.limit){amendmentBarrierTrace.events.shift();amendmentBarrierTrace.dropped++;}
+  amendmentBarrierTrace.events.push(observation);
+ }
  if(path.endsWith('/fixture_scale_amend_ready_v1')&&value===true){
   const observedAt=Date.parse(response.headers['x-hud-fixture-observed-at']??'');
   assert.ok(Number.isFinite(observedAt),'Missing amendment readiness clock');
@@ -157,7 +164,8 @@ const hud=async(tour,mode='summary',accessSnapshot,phase,signal,onPreparing,onAt
    const cancelled=signal?.aborted===true&&error?.publicHudCallerCancelled===true&&error?.publicHudDeadline!==true;
    const outcome=phase+':'+(cancelled?'caller_cancelled':'failed');rpcOutcomes[outcome]=(rpcOutcomes[outcome]??0)+1;
    if(!cancelled){const kind=phase+':'+classifyHudReadFailure(error);hudFailureKinds[kind]=(hudFailureKinds[kind]??0)+1;
-    const sample={...diagnostic,attemptTrace:sanitizeHudAttemptTrace(diagnostic.attemptTrace),kind,failedAt:Date.now(),elapsedMs:performance.now()-start,callerAborted:signal?.aborted===true};
+    const barrierObservation=amendmentBarrierTrace.events.at(-1);
+    const sample={...diagnostic,barrierObservation:barrierObservation?{...barrierObservation}:null,attemptTrace:sanitizeHudAttemptTrace(diagnostic.attemptTrace),kind,failedAt:Date.now(),elapsedMs:performance.now()-start,callerAborted:signal?.aborted===true};
     if(hudFailureSamples.length<64)hudFailureSamples.push(sample);
     if(phase==='restoration-readiness'&&hudReadinessFailureSamples.length<4)hudReadinessFailureSamples.push(sample);
    }
@@ -189,7 +197,7 @@ const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale
 const writerMethod=process.env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD??'startup';
 assert.ok(['startup','canonical-hand-observers-paired-v1'].includes(writerMethod),'Unknown writer grading method');
 let writerQualification=null;
-const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,...(sourceGenerationProbe?{sourceGenerationCandidate:sourceGeneration342Profile}:{}),...(pendingSourceProbe?{pendingSourceCandidate:pendingSourceProfile}:{}),...(sourceBatchProbe?{sourceBatchCandidate:sourceBatchProfile}:{}),qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,hudReadinessFailureSamples,tableFailureSamples,overviewGenerationTrace,
+const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,...(sourceGenerationProbe?{sourceGenerationCandidate:sourceGeneration342Profile}:{}),...(pendingSourceProbe?{pendingSourceCandidate:pendingSourceProfile}:{}),...(sourceBatchProbe?{sourceBatchCandidate:sourceBatchProfile}:{}),qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,hudReadinessFailureSamples,tableFailureSamples,overviewGenerationTrace,amendmentBarrierTrace,
  partial:state==='failed'?{incomplete:true,restorationFailure,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,tableFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
@@ -204,6 +212,7 @@ if(viewers===1000&&targetDuration===1800){
 }
 for(const scenario of ['concentrated','distributed','overview']){
  const overview=scenario==='overview',duration=overview?30:targetDuration;
+ amendmentBarrierTrace.events.length=0;amendmentBarrierTrace.dropped=0;
  phases={};transportTimings={};rpcOutcomes={};runtimeFailures={};hudFailureKinds={};tableFailureKinds={};requestAccounting={};dispatchBuckets=new Map();const eventLoop=monitorEventLoopDelay({resolution:20});eventLoop.enable();const utilizationStart=nodePerformance.eventLoopUtilization();
  const cpuStart=process.cpuUsage(),generatorStart=performance.now();
  const offset={summary:stats.summary.length,summaryHttp:stats.summaryHttp.length,realtime:stats.realtime.length,sourceToReadStart:stats.sourceToReadStart.length,tableRead:stats.tableRead.length,snapshot:stats.snapshot.length,snapshotToReadStart:stats.snapshotToReadStart.length,snapshotRead:stats.snapshotRead.length,snapshotToPublication:stats.snapshotToPublication.length,snapshotPublicationToRead:stats.snapshotPublicationToRead.length,projection:stats.projection.length,reconnects:stats.reconnects,revocationClears:stats.revocationClears,sourceWrites:stats.sourceWrites};
@@ -708,6 +717,7 @@ for(const scenario of ['concentrated','distributed','overview']){
  const sample=key=>stats[key].slice(offset[key]);
  const apiSummary=summaryApiReport(sample('summaryHttp'));
  const report={scenario,viewers,durationSeconds:duration,summaryTimingVersion:'per-rpc-complete-body-and-ready-v1',apiSummary,httpSummarySamples:apiSummary.all.samples,httpSummaryP95Ms:apiSummary.all.p95Ms,readySummarySamples:apiSummary.ready.samples,readySummaryP95Ms:apiSummary.ready.p95Ms,logicalHudSamples:sample('summary').length,logicalHudP95Ms:percentile(sample('summary'),.95),logicalHudMaxMs:maximumSample(sample('summary')),healthyRealtimeSamples:sample('realtime').length,healthyRealtimeP95Ms:percentile(sample('realtime'),.95),expectedDeliveries,excludedForPlannedFault,missedDeliveries,pendingDeliveries:clients.reduce((n,c)=>n+c.expected.length,0),minSamplesPerViewer:Math.min(...clients.map(c=>c.deliverySamples)),minHealthyOnline,unexpectedDisconnects,healthySocketCoverage:healthyWallMs?healthySocketMs/(healthyWallMs*viewers):0,projectionSamples:sample('projection').length,projectionMaxMs:maximumSample(sample('projection')),projectedHandsPerSecond:sample('projection').length/duration,sourceWrites:stats.sourceWrites-offset.sourceWrites,health,errors:{...stats.errors},reconnects:stats.reconnects-offset.reconnects,reconnectedClients,revokedClients,revocationClears:stats.revocationClears-offset.revocationClears};
+ report.amendmentBarrierTrace={...amendmentBarrierTrace,events:amendmentBarrierTrace.events.map(value=>({...value}))};
  reports.push(report);save('running');
  report.clockLifecycle={version:'production-felt-bundled-full-load-or-overview-shared-slot-v2',physicalReadsContainingClock:clients.reduce((n,c)=>n+c.clockPhysicalReads,0),bundledPhysicalReads:clients.reduce((n,c)=>n+c.bundledClockPhysicalReads,0),standalonePhysicalReads:clients.reduce((n,c)=>n+c.clockPhysicalReads-c.bundledClockPhysicalReads,0),minScopedReadsPerViewer:Math.min(...clients.map(c=>c.clockScopedReads)),superseded:clients.reduce((n,c)=>n+c.supersededClockReads,0),pendingAtGrading:clients.filter(c=>c.clockPending||c.clockBusy).length,scopeCancellation:true,errorsRemainFailures:true};assert.ok(report.clockLifecycle.minScopedReadsPerViewer>=1,'Every viewer needs a successful scoped clock read');assert.equal(report.clockLifecycle.pendingAtGrading,0);save('running');
  report.notReadyOutcomes=notReadyOutcomes;
