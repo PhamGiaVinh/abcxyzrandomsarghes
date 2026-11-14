@@ -19,6 +19,12 @@ jobs:
         with: {fetch-depth: 10}
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with: {node-version: 22}
+      - name: Verify supported pinned CLI installation without production credentials
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/spectator-cli" --no-save --package-lock=false supabase@2.101.0
+          test "$("$RUNNER_TEMP/spectator-cli/node_modules/.bin/supabase" --version)" = 2.101.0
+          echo "$RUNNER_TEMP/spectator-cli/node_modules/.bin" >>"$GITHUB_PATH"
       - name: Ordered activation, source and rollback guards
         env:
           RELEASE_SOURCE_ROOT: ${{ github.workspace }}/VinPoker
@@ -35,7 +41,11 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with: {node-version: 22}
       - name: Install existing pinned deployment CLI
-        run: npm install --global supabase@2.101.0
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/spectator-cli" --no-save --package-lock=false supabase@2.101.0
+          test "$("$RUNNER_TEMP/spectator-cli/node_modules/.bin/supabase" --version)" = 2.101.0
+          echo "$RUNNER_TEMP/spectator-cli/node_modules/.bin" >>"$GITHUB_PATH"
       - name: Capture verified prior source before any production change
         if: inputs.operation == 'deploy'
         env:
