@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "kind": "SPECTATOR342344_EXACT_RELEASE",
+  "projectRef": "orlesggcjamwuknxwcpk",
+  "sourcePr": 1646,
+  "referenceProductSha": "71d20fcefaf2c104b0a4cf9e35011b527c1a6882",
+  "migrations": [
+    {
+      "version": "20270128000342",
+      "name": "nonblocking_spectator_source_generation",
+      "action": "APPLY",
+      "path": "supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql",
+      "sha256": "329598b30c0dd07b3832c2309fc7b61b668352926b7c25d35c97db35d8c57c83",
+      "atomicSha256": "d0403a911a5bee20d14e8c87cd06a38046d90b3838b7691f1aac699b8b3dbb05"
+    },
+    {
+      "version": "20270128000343",
+      "name": "spectator_pending_source_outcome",
+      "action": "APPLY",
+      "path": "supabase/migrations/20270128000343_spectator_pending_source_outcome.sql",
+      "sha256": "a3aa2e51b405a37481ada4d0b105fd727eb4e21fd4cdc46e5994b562f0783221",
+      "atomicSha256": "8e84828b4f82ca24cf4cae34a0b47d3d853e850365ae3d80af9782bcd0b534f4"
+    },
+    {
+      "version": "20270128000344",
+      "name": "spectator_bounded_source_batch",
+      "action": "APPLY",
+      "path": "supabase/migrations/20270128000344_spectator_bounded_source_batch.sql",
+      "sha256": "f8fceb3ab75a8473704ddbbe804d6ea7502f01e93d21b7e90445f35b0ebb5fba",
+      "atomicSha256": "4aa76b6650b58dfd1866b69255008ea714f3d9031939bc6c8598d3f111dbd0cf"
+    }
+  ],
+  "builder": {
+    "path": "VinPoker/scripts/ops/ops-1359-release-gate.mjs",
+    "sha256": "dd0fd6a9a307c0f6b3d75196f8f0f685833f1d9b5e2200ebe8c71e9b81c26847"
+  },
+  "automaticRetry": false,
+  "edgeFunction": "public-spectator-projector-v2",
+  "batchFlag": "PUBLIC_SPECTATOR_SOURCE_BATCH",
+  "dispatcher": {
+    "jobId": 52,
+    "name": "public-spectator-v2-dispatch",
+    "schedule": "1 second"
+  },
+  "preserveDispatcherJobIds": [
+    55
+  ]
+}
