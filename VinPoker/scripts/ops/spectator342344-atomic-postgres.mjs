@@ -29,6 +29,11 @@ for(const [begin,end] of [['CREATE OR REPLACE FUNCTION public.claim_public_spect
  sql(original.slice(original.indexOf(begin),original.indexOf(end)));
 }
 sql(readFileSync('supabase/migrations/20261106144208_public_spectator_source_lease_outcome.sql','utf8'));
+// Match the explicit live owner/ACL preimage, as in the qualified generation
+// fixture. Do not weaken the migration guard to accommodate a test bootstrap.
+sql(`REVOKE ALL ON FUNCTION spectator_projection_v2.mark_dirty(uuid,text,text,text) FROM PUBLIC,anon,authenticated,service_role;
+ GRANT EXECUTE ON FUNCTION spectator_projection_v2.mark_dirty(uuid,text,text,text) TO service_role;`);
+assert.equal(sql("SELECT md5(pg_get_functiondef('spectator_projection_v2.mark_dirty(uuid,text,text,text)'::regprocedure));"),'e5684f8818e0d536bcdde7842032f71d');
 sql(`CREATE SCHEMA supabase_migrations;CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY,name text,statements text[]);
  CREATE FUNCTION supabase_migrations.reject_receipt() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'isolated receipt rejection';END$$;`);
 const snapshot=()=>jsonSql(`SELECT json_build_object(
@@ -41,7 +46,7 @@ const snapshot=()=>jsonSql(`SELECT json_build_object(
 for(const entry of pkg.entries){
  const before=snapshot();
  sql('CREATE TRIGGER reject_receipt BEFORE INSERT ON supabase_migrations.schema_migrations FOR EACH ROW EXECUTE FUNCTION supabase_migrations.reject_receipt();');
- assert.throws(()=>sql(entry.atomic,{captureFailure:true}),'Injected receipt failure must abort DDL');
+ assert.throws(()=>sql(entry.atomic,{captureFailure:true}),error=>error.stderr?.includes('isolated receipt rejection'),'Injected receipt trigger must actually be reached');
  assert.deepEqual(snapshot(),before,'DDL/function/ledger state rolls back together');
  sql('DROP TRIGGER reject_receipt ON supabase_migrations.schema_migrations;');
  sql(entry.atomic);
@@ -49,11 +54,23 @@ for(const entry of pkg.entries){
  assert.deepEqual(jsonSql(receiptSql(item)),{count:1,exact:true});
  classifyPostcheck(jsonSql(postcheckSql(pkg,Number(entry.version.slice(-3)))));
  const after=snapshot();
- assert.throws(()=>sql(entry.atomic,{captureFailure:true}),'Duplicate version must not replay');
+ assert.throws(()=>sql(entry.atomic,{captureFailure:true}),error=>error.stderr?.includes('migration ledger conflict'),'Duplicate version must hit ledger conflict');
  assert.deepEqual(snapshot(),after);
 }
 sql('GRANT EXECUTE ON FUNCTION public.get_public_spectator_projection_sources_v2(jsonb) TO anon;');
 assert.throws(()=>classifyPostcheck(jsonSql(postcheckSql(pkg,344))),'Exposed privileged function must fail postcheck');
 sql('REVOKE EXECUTE ON FUNCTION public.get_public_spectator_projection_sources_v2(jsonb) FROM anon;');
 classifyPostcheck(jsonSql(postcheckSql(pkg,344)));
+for(const table of ['source_nonblocking_original_v1','source_pending_original_v1']){
+ sql(`GRANT INSERT ON spectator_projection_v2.${table} TO anon;`);
+ assert.throws(()=>classifyPostcheck(jsonSql(postcheckSql(pkg,344))),'Write privilege must fail private recovery check');
+ sql(`REVOKE INSERT ON spectator_projection_v2.${table} FROM anon;`);
+ const definition=sql(`SELECT encode(convert_to(definition,'UTF8'),'hex') FROM spectator_projection_v2.${table};`);
+ assert.match(definition,/^[a-f0-9]+$/);
+ sql(`UPDATE spectator_projection_v2.${table} SET definition=definition||E'\\n-- corrupted';`);
+ assert.throws(()=>classifyPostcheck(jsonSql(postcheckSql(pkg,344))),'Corrupted recovery definition must fail');
+ // Hex preserves trailing newlines across the psql test transport's trim().
+ sql(`UPDATE spectator_projection_v2.${table} SET definition=convert_from(decode('${definition}','hex'),'UTF8');`);
+ classifyPostcheck(jsonSql(postcheckSql(pkg,344)));
+}
 console.log('SPECTATOR342344_NATIVE_ATOMIC_ROLLBACK_RECEIPTS_REPLAY_ACL_PASS');

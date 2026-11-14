@@ -15,10 +15,17 @@ export function postcheckSql(pkg,phase){
  assert.ok(body,'Reviewed batch body delimiter required');
  const recoveries=['source_nonblocking_original_v1',...(phase>=343?['source_pending_original_v1']:[])];
  return `BEGIN READ ONLY;SET LOCAL statement_timeout='10s';SELECT json_build_object(
- 'marker',${metadata(marker)} AND EXISTS(SELECT 1 FROM spectator_projection_v2.source_nonblocking_original_v1 WHERE original_body_md5='76e70967db6247ba01fc6d1e9f8355e9' AND candidate_body_md5=(SELECT md5(prosrc) FROM pg_proc WHERE oid=to_regprocedure('${marker}'))),
+ 'marker',${metadata(marker)} AND COALESCE((SELECT md5(prosrc)='c1da47ebdf9a70ac414ae3f2ccc4b8c0' AND provolatile='v' AND md5(pg_get_functiondef(oid))='0d471115d7d14e8f780859f83cd2598c' FROM pg_proc WHERE oid=to_regprocedure('${marker}')),false),
  'source',${metadata(source)} AND md5(replace(pg_get_functiondef(to_regprocedure('${source}')),chr(13),''))='${phase>=343?'6269d9fc1b2737f30b56a4bcdb42fb79':'0557076e4866159dc1095c5257ceb7c6'}',
  'batch',${phase>=344?`${metadata(batch)} AND COALESCE((SELECT md5(prosrc)='${hash(body,'md5')}' AND provolatile='s' AND prorettype='jsonb'::regtype AND NOT proretset FROM pg_proc WHERE oid=to_regprocedure('${batch}')),false)`:`to_regprocedure('${batch}') IS NULL`},
- 'recovery',COALESCE((SELECT count(*)=${recoveries.length} AND bool_and(c.relowner='postgres'::regrole AND c.relrowsecurity AND NOT has_table_privilege('anon',c.oid,'SELECT') AND NOT has_table_privilege('authenticated',c.oid,'SELECT') AND NOT has_table_privilege('service_role',c.oid,'SELECT')) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='spectator_projection_v2' AND c.relname IN (${recoveries.map(n=>`'${n}'`).join(',')})),false))::text;COMMIT;`;
+ 'recovery',COALESCE((SELECT count(*)=${recoveries.length} AND bool_and(c.relowner='postgres'::regrole AND c.relrowsecurity
+ AND NOT EXISTS(SELECT 1 FROM aclexplode(COALESCE(c.relacl,acldefault('r',c.relowner))) a WHERE a.grantee IN (0,'anon'::regrole,'authenticated'::regrole,'service_role'::regrole))
+ AND NOT has_table_privilege('anon',c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+ AND NOT has_table_privilege('authenticated',c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+ AND NOT has_table_privilege('service_role',c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'))
+ FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='spectator_projection_v2' AND c.relname IN (${recoveries.map(n=>`'${n}'`).join(',')})),false)
+ AND COALESCE((SELECT count(*)=1 AND bool_and(signature='${marker}' AND md5(definition)='e5684f8818e0d536bcdde7842032f71d' AND original_body_md5='76e70967db6247ba01fc6d1e9f8355e9' AND candidate_body_md5='c1da47ebdf9a70ac414ae3f2ccc4b8c0') FROM spectator_projection_v2.source_nonblocking_original_v1),false)
+ ${phase>=343?`AND COALESCE((SELECT count(*)=1 AND bool_and(signature='${source}' AND original_definition_hash='0557076e4866159dc1095c5257ceb7c6' AND md5(definition)=original_definition_hash AND candidate_definition_hash='6269d9fc1b2737f30b56a4bcdb42fb79') FROM spectator_projection_v2.source_pending_original_v1),false)`:''})::text;COMMIT;`;
 }
 export function classifyPostcheck(row){
  assert.ok(row?.marker===true&&row.source===true&&row.batch===true&&row.recovery===true,'Affected object/ACL postcheck failed');
@@ -68,5 +75,6 @@ export function executePackage(sourceRoot,transport,report=()=>{}){
   }
   report({kind:'COMMITTED_EXACT_OBJECTS_VERIFIED',version:entry.version,sha256:entry.sha256});
  }
+ classifyPaused(transport.json(pausedSql()));
  return {kind:'SPECTATOR342344_DATABASE_VERIFIED',dispatcherStillPaused:true};
 }
