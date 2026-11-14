@@ -8,7 +8,7 @@ import {canonicalSqlText,buildAtomicMigrationQuery} from './ops-1359-release-gat
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const hash=value=>createHash('sha256').update(value).digest('hex');
 // This module prepares exact SQL only. It has no database or network transport.
-export const MANIFEST_SHA256='b03ce894d202339e69e47d21498c7ed118b85d0c60494a1fd8db7503474af7d2';
+export const MANIFEST_SHA256='c3bb0d4e081083d4dd59c00c9f7d1cef7dd4edbc5090471f11605f7de86622b4';
 export function loadPackage(sourceRoot){
  const bytes=canonicalSqlText(readFileSync(resolve(root,'scripts/ops/spectator342344-manifest.json')));
  assert.equal(hash(bytes),MANIFEST_SHA256,'Reviewed manifest differs');

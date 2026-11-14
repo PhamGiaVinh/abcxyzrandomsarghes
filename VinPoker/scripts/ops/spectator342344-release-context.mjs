@@ -45,7 +45,7 @@ export function validateApproval(mode,env,recovery,observed,manifest,now=Date.no
  assert.equal(env.MANIFEST_SHA256,MANIFEST_SHA256);
  assert.equal(env.RELEASE_SHA,manifest.referenceProductSha,'Only exact qualified source allowed');
  assert.equal(env.SOURCE_PR,'1646');
- assert.equal(env.SOURCE_PR_BASE_SHA,env.GITHUB_SHA);
+ assert.equal(env.SOURCE_PR_BASE_SHA,manifest.sourceBaseSha);
  assert.equal(observed.controllerSha,env.GITHUB_SHA);
  assert.equal(observed.sourceSha,env.RELEASE_SHA);
  assert.equal(recovery.databaseOwnerAndEffectiveAclMatch,true);

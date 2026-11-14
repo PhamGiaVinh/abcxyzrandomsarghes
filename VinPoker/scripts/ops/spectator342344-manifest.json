@@ -88,5 +88,6 @@
       "path": "deno.json",
       "sha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0"
     }
-  ]
+  ],
+  "sourceBaseSha": "883131bd15a62620886fbbec2008c93b0b67aa5a"
 }
