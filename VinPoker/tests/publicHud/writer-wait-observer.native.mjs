@@ -2,9 +2,17 @@
 // artificial sleep is not a source-writer arm or a qualification measurement.
 import assert from 'node:assert/strict';
 import {writeFileSync} from 'node:fs';
+import {execFileSync} from 'node:child_process';
 import {pgbench} from './nativeDb.mjs';
 import {writerWaitDiagnosticEnabled} from './scale.write.protocol.mjs';
 assert.equal(writerWaitDiagnosticEnabled(process.env),true);
+const phases=JSON.parse(execFileSync('python3',['tests/publicHud/writer.phase.observer.py','--self-test'],{
+ encoding:'utf8',stdio:'pipe',env:{...process.env,PGHOST:'127.0.0.1',PGPORT:'54322',PGUSER:'postgres',PGDATABASE:process.env.PUBLIC_HUD_LOCAL_DATABASE},
+}));
+writeFileSync('output/hud-scale/writer-phase-observer-native.json',JSON.stringify(phases,null,2));
+assert.equal(phases.qualification,false);
+assert.equal(phases.rows.length,3);
+assert.ok(phases.rows.every(row=>row.phasesMs.self_test>=10),'Prepared-command timing lost sleep duration');
 const result=pgbench('SELECT pg_sleep(0.01);\n',{orderedTransactions:true});
 const observation=result.waitDiagnostic;
 const sleepSamples=observation?.samples?.filter(row=>row.backends.some(backend=>backend.waitEvent==='PgSleep')).length??0;

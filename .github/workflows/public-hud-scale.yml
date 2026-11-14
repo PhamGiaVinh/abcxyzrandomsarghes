@@ -153,6 +153,7 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: node --test tests/publicHud/scale.write.diagnostic.test.mjs
       - run: python3 tests/publicHud/writer.wait.observer.test.py
+      - run: python3 tests/publicHud/writer.phase.observer.test.py
       - name: Install real clock probe browser
         if: inputs.clock_ui_probe
         run: npx playwright install --with-deps chromium
