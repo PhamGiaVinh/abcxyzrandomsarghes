@@ -35,3 +35,10 @@ test('repair accepts only observed v15 bundle identity and pins explicit import 
 
 test('observed15 repair deploys once with explicit import map before verified batch1',async()=>{const f=fixture(undefined,true);assert.deepEqual(await f.run(),{version:16,batch:'1'});assert.deepEqual(f.writes,['0','1']);});
 test('prefixed seven-file closure keeps exact bytes and rejects mixed roots',()=>{const dir=mkdtempSync(join(tmpdir(),'spectator-prefix-test-'));for(const file of manifest.edgeFiles){const dest=join(dir,'VinPoker',file.path);mkdirSync(dirname(dest),{recursive:true});copyFileSync(join(root,file.path),dest);}verifyDownloaded(dir,manifest);copyFileSync(join(root,'deno.json'),join(dir,'deno.json'));assert.throws(()=>verifyDownloaded(dir,manifest));});
+
+ test('readonly bundle inventory exposes shapes and hashes without metadata values',async()=>{
+ const {summarizeBundleForm,validateInspectionBase}=await import('./spectator342344-edge-release.mjs');
+ const form=new FormData();form.append('metadata',JSON.stringify({importMap:'PRIVATE_MAP_CONTENT',nested:{private:'PRIVATE_VALUE'}}));form.append('file',new Blob(['source']), 'index.ts');
+ const result=await summarizeBundleForm(form),serialized=JSON.stringify(result);assert.ok(!serialized.includes('PRIVATE'));assert.deepEqual(result[0].metadataKeys,['importMap','nested']);assert.equal(result[1].bytes,6);assert.equal(result[1].name,'index.ts');
+ assert.throws(()=>validateInspectionBase({version:15}));
+});

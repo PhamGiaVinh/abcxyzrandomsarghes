@@ -6,7 +6,7 @@ on:
       - 'VinPoker/scripts/ops/spectator342344-edge-release*'
   workflow_dispatch:
     inputs:
-      operation: {description: Deploy candidate or restore verified prior code, type: choice, required: true, default: deploy, options: [deploy, repair-bundle, restore-prior]}
+      operation: {description: Deploy candidate or restore verified prior code, type: choice, required: true, default: deploy, options: [deploy, repair-bundle, restore-prior, inspect-bundle]}
       prior_release_run_id: {description: Prior release run containing the verified six-file backup, type: string, required: false}
       confirmation: {description: RELEASE_SPECTATOR_BATCH_<exact main SHA>, required: true, type: string}
 permissions: {contents: read, actions: read, pull-requests: read}

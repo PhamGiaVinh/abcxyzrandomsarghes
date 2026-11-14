@@ -34,6 +34,18 @@ export function verifyDownloaded(root,manifest){
  return base;
 }
 export function validateRepairBase(value){validatePriorEdge({...value,version:12,ezbr_sha256:PRIOR_EDGE.ezbr_sha256});assert.equal(value.version,15);assert.equal(value.ezbr_sha256,'14140eeff59f2fcef84127235f89a9e91deeaba1d14c294e8c881c11de8e03bf');}
+export async function summarizeBundleForm(form){
+ const parts=[];
+ for(const [field,value] of form.entries()){
+  if(typeof value==='string'){
+   const part={field,kind:'text',bytes:Buffer.byteLength(value),sha256:digest(value)};
+   if(field==='metadata'){const parsed=JSON.parse(value);assert.ok(parsed&&typeof parsed==='object'&&!Array.isArray(parsed));part.metadataKeys=Object.keys(parsed).sort();part.metadataShapes=Object.fromEntries(Object.entries(parsed).map(([key,item])=>[key,{type:Array.isArray(item)?'array':typeof item,bytes:Buffer.byteLength(JSON.stringify(item)),sha256:digest(JSON.stringify(item))}]));}
+   parts.push(part);
+  }else{const bytes=Buffer.from(await value.arrayBuffer());parts.push({field,kind:'file',name:value.name,bytes:value.size,type:value.type,sha256:digest(bytes),canonicalSha256:digest(bytes.toString('utf8').replace(/\r\n?/g,'\n'))});}
+ }
+ return parts;
+}
+export function validateInspectionBase(value){assert.equal(value.slug,name);assert.equal(value.version,18);assert.equal(value.status,'ACTIVE');assert.equal(value.verify_jwt,false);assert.equal(value.import_map,true);assert.equal(value.ezbr_sha256,'1f97018b2874c4ea9595582fe441ca2d7f7447c9a1c170ea65b42a6ac3b63e44');}
 export function verifyPhaseA(lines,manifest){
  const rows=lines.trim().split(/\r?\n/).map(line=>JSON.parse(line));
  assert.equal(rows.length,5);
@@ -96,7 +108,7 @@ export async function runEdgeRelease({management,cli,readDownloaded,manifest,ver
  }
 }
 async function main(){
- const operation=process.argv[2]??'deploy';assert.ok(['capture-prior','deploy','repair-bundle','restore-prior'].includes(operation));
+ const operation=process.argv[2]??'deploy';assert.ok(['capture-prior','deploy','repair-bundle','restore-prior','inspect-bundle'].includes(operation));
  const env=process.env;assert.equal(env.GITHUB_REPOSITORY,repo);assert.equal(env.GITHUB_REF,'refs/heads/main');assert.equal(env.GITHUB_EVENT_NAME,'workflow_dispatch');assert.equal(env.SUPABASE_PROJECT_REF,project);assert.ok(env.SUPABASE_ACCESS_TOKEN);
  assert.equal(env.CONFIRM_EDGE_RELEASE,operation==='restore-prior'?`RESTORE_SPECTATOR_PRIOR_CODE_${env.GITHUB_SHA}`:`RELEASE_SPECTATOR_BATCH_${env.GITHUB_SHA}`);
  const root=resolve(fileURLToPath(new URL('../..',import.meta.url))),pkg=loadPackage(root);
@@ -138,6 +150,13 @@ async function main(){
  if(operation==='restore-prior'){
   materializePrior(env.PRIOR_RELEASE_RUN_ID);
   await restorePriorCode({management,cli,priorRoot,readDownloaded,verifyDatabase,denied,report});return;
+ }
+ if(operation==='inspect-bundle'){
+  const before=await management('GET',`functions/${name}`);validateInspectionBase(before);verifySecret(await management('GET','secrets'),'0');await verifyDatabase();
+  const response=await fetch(`https://api.supabase.com/v1/projects/${project}/functions/${name}/body`,{headers:{Authorization:`Bearer ${env.SUPABASE_ACCESS_TOKEN}`,Accept:'multipart/form-data'},signal:AbortSignal.timeout(30000)});
+  assert.ok(response.ok);assert.match(response.headers.get('content-type')??'',/^multipart\//);const parts=await summarizeBundleForm(await response.formData());
+  const after=await management('GET',`functions/${name}`);validateInspectionBase(after);verifySecret(await management('GET','secrets'),'0');await verifyDatabase();
+  report({kind:'READ_ONLY_EDGE_BUNDLE_INVENTORY',version:after.version,ezbrSha256:after.ezbr_sha256,parts});return;
  }
  const beforeRuntime=await query(hostedRuntimeSql);
  await runEdgeRelease({manifest:pkg.manifest,management,cli,verifyDatabase,readDownloaded,denied,sourceRoot:root,repair:operation==='repair-bundle',report});
