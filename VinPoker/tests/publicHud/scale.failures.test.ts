@@ -1,5 +1,24 @@
 import {describe,it,expect} from 'vitest';
-import {classifyHudReadFailure,sanitizeWriterNestedPlans,writerCaptureFailureKind} from './scale.failures.mjs';
+import {classifyHudReadFailure,sanitizeWriterNestedPlans,writerCaptureFailureKind,sanitizeHudAttemptTrace,parseFixtureHudBarrier} from './scale.failures.mjs';
+it('keeps bounded barrier observations separate and missing state unknown',()=>{
+ const headers={'x-hud-fixture-blocked':'1','x-hud-fixture-barrier-from':'2026-11-14T12:00:00Z','x-hud-fixture-barrier-until':'2026-11-14T12:00:00.020Z','private':'PRIVATE'};
+ expect(parseFixtureHudBarrier(headers)).toEqual({blocked:true,from:1794657600000,until:1794657600020});
+ expect(parseFixtureHudBarrier({...headers,'x-hud-fixture-blocked':'0'})?.blocked).toBe(false);
+ for(const patch of [{'x-hud-fixture-blocked':'false'},{'x-hud-fixture-barrier-from':'bad'},{'x-hud-fixture-barrier-until':'2026-11-14T11:59:59Z'}])expect(parseFixtureHudBarrier({...headers,...patch})).toBeNull();
+ expect(parseFixtureHudBarrier({})).toBeNull();
+ expect(JSON.stringify(parseFixtureHudBarrier(headers))).not.toContain('PRIVATE');
+});
+it('retains only eight sanitized attempt snapshots including an unfinished request',()=>{
+ const attempts=Array.from({length:12},(_,i)=>({attempt:i+1,launchedAt:1000+i,state:'unavailable',url:'PRIVATE',body:'PRIVATE'}));
+ const rows=sanitizeHudAttemptTrace(attempts);
+ expect(rows).toHaveLength(8);expect(rows[0].attempt).toBe(5);
+ expect(rows[7]).toEqual({attempt:12,launchedAt:1011,state:'unavailable'});
+ attempts[11].state='current';expect(rows[7].state).toBe('unavailable');
+ expect(JSON.stringify(rows)).not.toContain('PRIVATE');
+ expect(sanitizeHudAttemptTrace([{headersAt:NaN,elapsedMs:-1,state:'PRIVATE',httpStatus:200,completedAt:1234}])).toEqual([{httpStatus:200,completedAt:1234}]);
+ expect(sanitizeHudAttemptTrace([{postgrest_transactionMs:12.5,postgrest_planMs:0,postgrest_responseMs:Infinity,serverTiming:'PRIVATE'}])).toEqual([{postgrest_planMs:0,postgrest_transactionMs:12.5}]);
+ expect(sanitizeHudAttemptTrace(null)).toEqual([]);
+});
 describe('safe HUD read failure diagnosis',()=>{
  it('separates preparation expiry, actual deadlines and caller cancellation',()=>{
   expect(classifyHudReadFailure({publicHudRevalidationExpired:true})).toBe('revalidation_budget_expired_in_wait');

@@ -1,5 +1,20 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {audienceEvidenceOnlyEnabled,writerOnlyQualificationEnabled} from './scale.write.protocol.mjs';
+test('writer-only confirmation requires canonical uninstrumented million-hand scope',()=>{
+ assert.equal(writerOnlyQualificationEnabled({}),false);
+ const env={PUBLIC_HUD_WRITER_ONLY_QUALIFICATION:'1',PUBLIC_HUD_WRITER_QUALIFICATION_METHOD:'canonical-hand-observers-paired-v1',PUBLIC_HUD_SCALE_HANDS:'1000000'};
+ assert.equal(writerOnlyQualificationEnabled(env),true);
+ for(const key of Object.keys(env))assert.throws(()=>writerOnlyQualificationEnabled({...env,[key]:'invalid'}));
+ for(const key of ['PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC','PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY'])assert.throws(()=>writerOnlyQualificationEnabled({...env,[key]:'1'}));
+});
+test('audience evidence-only mode is explicit and requires the unchanged full product workload',()=>{
+ assert.equal(audienceEvidenceOnlyEnabled({}),false);
+ const env={PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY:'1',PUBLIC_HUD_WRITER_QUALIFICATION_METHOD:'canonical-hand-observers-paired-v1',PUBLIC_HUD_SCALE_VIEWERS:'1000',PUBLIC_HUD_SCALE_SECONDS:'1800',PUBLIC_HUD_SCALE_HANDS:'1000000',PUBLIC_HUD_SCALE_TRANSPORT:'product_rpc'};
+ assert.equal(audienceEvidenceOnlyEnabled(env),true);
+ for(const key of Object.keys(env))assert.throws(()=>audienceEvidenceOnlyEnabled({...env,[key]:'invalid'}));
+ assert.throws(()=>audienceEvidenceOnlyEnabled({...env,PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC:'1'}));
+});
 import {writerDiagnosticAdminTarget} from './scale.write.native.mjs';
 import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,sourceBatchProfile,sourceBatchProbeEnabled,requireMatchedWriterQualification,writerWaitDiagnosticEnabled} from './scale.write.protocol.mjs';
 import {readFileSync} from 'node:fs';

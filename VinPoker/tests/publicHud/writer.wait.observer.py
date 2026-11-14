@@ -6,6 +6,44 @@ import re
 import subprocess
 import threading
 import time
+import math
+
+
+def parse_writer_command_timings(output):
+    """Diagnostic averages include warmup; never p95 or qualification evidence."""
+    labels = {
+        "BEGIN;": "begin",
+        "SET LOCAL request.jwt.claim.role='service_role';": "request_role",
+        "SET LOCAL ROLE service_role;": "database_role",
+        "SELECT public.fixture_complete_scale_hand_v1('10000000-0000-4000-8000-000000000001',2000000001);": "source_hand",
+        "COMMIT;": "commit",
+        "ROLLBACK;": "rollback",
+        "SELECT pg_sleep(0.01);": "observer_self_test",
+    }
+    rows = []
+    invalid = False
+    if not isinstance(output, str) or len(output) > 65536:
+        return {"available": False, "rows": [], "scope": "diagnostic_mean_including_warmup"}
+    section = output.split("statement latencies in milliseconds and failures:\n")
+    if len(section) != 2:
+        return {"available": False, "rows": [], "scope": "diagnostic_mean_including_warmup"}
+    for line in section[1].splitlines():
+        if not line.strip():
+            continue
+        match = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)\s+([0-9]+)\s+(.+?)\s*", line)
+        if not match or match[3] not in labels:
+            invalid = True
+            continue
+        latency, failures, label = float(match[1]), int(match[2]), labels[match[3]]
+        if not math.isfinite(latency) or latency > 30000 or failures > 220 or any(row["command"] == label for row in rows):
+            invalid = True
+            continue
+        rows.append({"command": label, "meanMs": latency, "failures": failures})
+    expected = [["begin", "request_role", "database_role", "source_hand", ending] for ending in ("commit", "rollback")]
+    expected.append(["observer_self_test"])
+    available = not invalid and [row["command"] for row in rows] in expected
+    return {"available": available, "rows": rows if available else [],
+            "scope": "diagnostic_mean_including_warmup"}
 
 
 def database_container_target():

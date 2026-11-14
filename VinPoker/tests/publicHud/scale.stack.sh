@@ -5,7 +5,7 @@ repo_root="$(pwd)"
 for forbidden in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD VERCEL_TOKEN; do
   if [[ -n "${!forbidden:-}" ]]; then echo 'Remote credential present in isolated load job' >&2; exit 1; fi
 done
-node --input-type=module -e "import {pendingSourceProbeEnabled,sourceBatchProbeEnabled,writerWaitDiagnosticEnabled} from './tests/publicHud/scale.write.protocol.mjs';pendingSourceProbeEnabled(process.env);sourceBatchProbeEnabled(process.env);writerWaitDiagnosticEnabled(process.env);"
+node --input-type=module -e "import {pendingSourceProbeEnabled,sourceBatchProbeEnabled,writerWaitDiagnosticEnabled,audienceEvidenceOnlyEnabled,writerOnlyQualificationEnabled} from './tests/publicHud/scale.write.protocol.mjs';pendingSourceProbeEnabled(process.env);sourceBatchProbeEnabled(process.env);writerWaitDiagnosticEnabled(process.env);audienceEvidenceOnlyEnabled(process.env);writerOnlyQualificationEnabled(process.env);"
 node --test tests/publicHud/scale.postgrest-metrics.test.mjs
 test_root="$(mktemp -d -t vinpoker-hud-stack-XXXXXXXX)"
 project_id="hud-scale-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
@@ -90,6 +90,13 @@ if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
   node tests/publicHud/writer-evidence.native.mjs >output/hud-scale/writer-evidence-validation.log 2>&1
 fi
 dropdb -h 127.0.0.1 -p 54322 -U postgres "$comparison_database"
+if [[ "${PUBLIC_HUD_WRITER_ONLY_QUALIFICATION:-0}" == '1' ]]; then
+ # writer-evidence.native has already enforced the original strict pair gates.
+ # Require its real receipt, never a diagnostic receipt or audience result.
+ test -s output/hud-scale/writer-matched-observers.json.qualified.json
+ echo 'Strict uninstrumented writer scope complete; no audience or full-load qualification.'
+ exit 0
+fi
 if [[ "${PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC:-0}" == '1' ]]; then
  # All original pair statistics and failures remain in the diagnostic receipt.
  # Do not admit viewers or manufacture an HTTP/qualification result.
@@ -160,5 +167,9 @@ if [[ "${PUBLIC_HUD_CLOCK_UI_PROBE:-0}" == 1 ]]; then
 fi
 ulimit -n 16384
 node tests/publicHud/scale.http-ws.mjs
+if [[ "${PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY:-0}" == 1 ]]; then
+ echo 'AUDIENCE_EVIDENCE_ONLY_NEVER_QUALIFIES' >&2
+ exit 1
+fi
 node tests/publicHud/scale.rollback-runtime.mjs
 docker stats --no-stream --format '{{json .}}' >output/hud-scale/container-resources.jsonl

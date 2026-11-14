@@ -34,6 +34,14 @@ on:
       - 'VinPoker/scripts/ops/operations-audience-scope.mjs'
   workflow_dispatch:
     inputs:
+      writer_only_qualification:
+        description: 'Strict uninstrumented writer gates only; no audience/full-load claim'
+        type: boolean
+        default: false
+      audience_evidence_only:
+        description: 'Full audience evidence after writer grade; ALWAYS FAILS, never qualifies'
+        type: boolean
+        default: false
       source_batch_probe:
         description: 'Explicit isolated pending344/source-batch mode; requires pending_source_probe'
         type: boolean
@@ -114,15 +122,17 @@ jobs:
       run:
         working-directory: VinPoker
     env:
+      PUBLIC_HUD_WRITER_ONLY_QUALIFICATION: ${{ inputs.writer_only_qualification && '1' || '0' }}
+      PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY: ${{ inputs.audience_evidence_only && '1' || '0' }}
       PUBLIC_HUD_SOURCE_BATCH_PROBE: ${{ inputs.source_batch_probe && '1' || '0' }}
       PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC: ${{ inputs.writer_wait_diagnostic && '1' || '0' }}
       PUBLIC_HUD_WRITER_READER_SMOKE: ${{ inputs.writer_reader_smoke && '1' || '0' }}
       PUBLIC_HUD_PENDING_SOURCE_PROBE: ${{ inputs.pending_source_probe && '1' || '0' }}
       PUBLIC_HUD_SOURCE_GENERATION_PROBE: ${{ inputs.source_generation_probe && '1' || '0' }}
-      PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || inputs.history_scale || '100' }}
+      PUBLIC_HUD_SCALE_HANDS: ${{ (inputs.qualification || inputs.audience_evidence_only) && '1000000' || inputs.history_scale || '100' }}
       PUBLIC_HUD_WRITER_QUALIFICATION_METHOD: ${{ inputs.writer_method || 'startup' }}
-      PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.connection_probe) && '1000' || '10' }}
-      PUBLIC_HUD_SCALE_SECONDS: ${{ inputs.qualification && '1800' || inputs.diagnostic_seconds || '30' }}
+      PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.audience_evidence_only || inputs.connection_probe) && '1000' || '10' }}
+      PUBLIC_HUD_SCALE_SECONDS: ${{ (inputs.qualification || inputs.audience_evidence_only) && '1800' || inputs.diagnostic_seconds || '30' }}
       PUBLIC_HUD_SCALE_TRANSPORT: ${{ inputs.hud_transport || 'product_rpc' }}
       PUBLIC_HUD_SCALE_EDGE_PARALLELISM: ${{ inputs.edge_parallelism || '16' }}
       PUBLIC_HUD_SCALE_EDGE_POLICY: ${{ inputs.edge_policy || 'per_worker' }}
@@ -130,6 +140,12 @@ jobs:
       PUBLIC_HUD_CLOCK_UI_PROBE: ${{ inputs.clock_ui_probe && '1' || '0' }}
       NODE_OPTIONS: --max-old-space-size=4096
     steps:
+      - name: Reject writer-only combined with full audience qualification
+        if: inputs.writer_only_qualification && inputs.qualification
+        run: exit 1
+      - name: Reject evidence-only capture combined with qualification
+        if: inputs.audience_evidence_only && inputs.qualification
+        run: exit 1
       - name: Reject diagnostic transport for full qualification
         if: inputs.hud_transport != '' && inputs.hud_transport != 'product_rpc' && inputs.qualification
         run: exit 1
@@ -145,6 +161,7 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: node --test tests/publicHud/scale.write.diagnostic.test.mjs
       - run: python3 tests/publicHud/writer.wait.observer.test.py
+      - run: python3 tests/publicHud/writer.phase.observer.test.py
       - name: Install real clock probe browser
         if: inputs.clock_ui_probe
         run: npx playwright install --with-deps chromium

@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
 import {currentWriterIdentity,writerSourceFunctions as sourceFunctions} from './scale.write.identity.mjs';
 import {sql,jsonSql} from './nativeDb.mjs';
 import {measureFixtureWriterTransactions} from './scale.write.native.mjs';
@@ -87,7 +88,26 @@ try{
     if(profilePath)setObservers(baselineObservers);
     sql('DROP TRIGGER hud_hand_changed ON public.tournament_hands;');
    }
-   try{measurements[mode]=measureFixtureWriterTransactions({commit:true,orderedTransactions:true});}
+   try{
+    measurements[mode]=measureFixtureWriterTransactions({commit:true,orderedTransactions:true});
+    if(process.env.PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC==='1'){
+     // Separate transactions under THIS arm's observer profile, before its
+     // finally block restores the candidate. Never replace graded samples.
+     assert.equal(cleanupOwned().ownedHandsRemoved,220);
+     assert.deepEqual(queue(),queueBefore);
+     measurements[mode].commandRoundTrips=JSON.parse(execFileSync('python3',['tests/publicHud/writer.phase.observer.py'],{
+      encoding:'utf8',maxBuffer:512*1024,stdio:'pipe',
+      env:{...process.env,PGHOST:'127.0.0.1',PGPORT:'54322',PGUSER:'postgres',PGDATABASE:database},
+     }));
+     assert.equal(measurements[mode].commandRoundTrips.qualification,false);
+     assert.equal(measurements[mode].commandRoundTrips.rows.length,220);
+     if(profilePath)assert.deepEqual(observers(),mode==='withoutHudMarker'?baselineObservers:candidateObservers,'Phase observer arm changed');
+     writeFileSync(process.env.PUBLIC_HUD_WRITER_CONTROL_REPORT+`.phase-${pair+1}-${mode}.json`,JSON.stringify({
+      qualification:false,pair:pair+1,arm:mode,identity,observerProfile:profilePath?(mode==='withoutHudMarker'?'canonical-baseline':'candidate'):'marker-only',
+      commandRoundTrips:measurements[mode].commandRoundTrips,
+     },null,2));
+    }
+   }
    finally{
     if(mode==='withoutHudMarker'){
      sql(trigger.definition+';');

@@ -9,6 +9,29 @@ exec(compile(pathlib.Path(__file__).with_name("writer.wait.observer.py").read_te
 
 
 class ObserverSafety(unittest.TestCase):
+    def test_command_timing_is_bounded_allowlisted_and_not_a_percentile(self):
+        parse = scope["parse_writer_command_timings"]
+        header = "statement latencies in milliseconds and failures:\n"
+        commands = ["BEGIN;", "SET LOCAL request.jwt.claim.role='service_role';",
+                    "SET LOCAL ROLE service_role;",
+                    "SELECT public.fixture_complete_scale_hand_v1('10000000-0000-4000-8000-000000000001',2000000001);",
+                    "COMMIT;"]
+        text = header + "\n".join("  1.250  0  " + command for command in commands) + "\n"
+        result = parse(text)
+        self.assertTrue(result["available"])
+        self.assertEqual(result["scope"], "diagnostic_mean_including_warmup")
+        self.assertEqual(result["rows"][-1], {"command": "commit", "meanMs": 1.25, "failures": 0})
+        self.assertNotIn("fixture_complete", str(result))
+        for malformed in (text + "1.0 0 SELECT private_token;", text + "1.0 0 COMMIT;",
+                          text.replace("1.250", "NaN", 1), text.replace("1.250", "30001", 1),
+                          text.replace("  0  BEGIN", "  221  BEGIN"), text.replace("COMMIT;", ""),
+                          text + header, "x" * 65537, "", None):
+            rejected = parse(malformed)
+            self.assertFalse(rejected["available"])
+            self.assertEqual(rejected["rows"], [])
+            self.assertNotIn("private_token", str(rejected))
+        self.assertTrue(parse(header + " 10.100 0 SELECT pg_sleep(0.01);\n")["available"])
+
     def test_stop_drains_pending_frame_without_busy_polling(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)

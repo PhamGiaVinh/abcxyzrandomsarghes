@@ -10,6 +10,25 @@ export function classifyEdgeFailure(body){
  return 'unknown';
 }
 // Allowlisted diagnostics only. The caller retains every original failure gate.
+export function parseFixtureHudBarrier(headers){
+ const flag=headers?.['x-hud-fixture-blocked'];
+ const from=Date.parse(headers?.['x-hud-fixture-barrier-from']??'');
+ const until=Date.parse(headers?.['x-hud-fixture-barrier-until']??'');
+ if(!['0','1'].includes(flag)||!Number.isSafeInteger(from)||from<0||!Number.isSafeInteger(until)||until<from)return null;
+ return {from,until,blocked:flag==='1'};
+}
+export function sanitizeHudAttemptTrace(attempts){
+ if(!Array.isArray(attempts))return [];
+ return attempts.slice(-8).map(value=>{
+  const row={};
+  for(const key of ['attempt','launchedAt','headersAt','completedAt','httpStatus','upstreamMs','proxyMs','elapsedMs',
+   'postgrest_jwtMs','postgrest_parseMs','postgrest_planMs','postgrest_transactionMs','postgrest_responseMs']){
+   const n=value?.[key];if(typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=Number.MAX_SAFE_INTEGER)row[key]=n;
+  }
+  if(['current','updating','warming','unavailable','revoked','unknown'].includes(value?.state))row.state=value.state;
+  return row;
+ });
+}
 export function classifyHudReadFailure(error){
  if(error?.publicHudRevalidationExpired===true)return 'revalidation_budget_expired_in_wait';
  if(error?.publicHudDeadline===true)return error.publicHudRevalidationPhase==='rpc'?'revalidation_budget_expired_in_rpc':'physical_rpc_deadline';

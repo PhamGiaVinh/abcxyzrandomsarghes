@@ -1,19 +1,20 @@
 import {beforeEach,it,expect,vi} from 'vitest';
-const mocked=vi.hoisted(()=>({files:new Map(),code:{sha:'a'.repeat(40),manifestSha256:'b'.repeat(64),fixtureInputsSha256:'c'.repeat(64),sourceFunctionsSha256:'d'.repeat(64)},grade:vi.fn()}));
+const mocked=vi.hoisted(()=>({files:new Map(),code:{sha:'a'.repeat(40),manifestSha256:'b'.repeat(64),fixtureInputsSha256:'c'.repeat(64),sourceFunctionsSha256:'d'.repeat(64)},grade:vi.fn(),diagnostic:vi.fn()}));
 vi.mock('node:fs',async importOriginal=>{
  const actual=await importOriginal<typeof import('node:fs')>();
  const readFileSync=(file:string)=>{if(!mocked.files.has(file))throw Error('ENOENT');return JSON.stringify(mocked.files.get(file));};
  return {...actual,readFileSync,default:{...actual,readFileSync}};
 });
 vi.mock('./scale.write.identity.mjs',()=>({currentWriterCodeIdentity:()=>mocked.code}));
-vi.mock('./scale.write.protocol.mjs',()=>({requireMatchedWriterQualification:(report,expected,options)=>mocked.grade(report,expected,options)}));
-import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
+vi.mock('./scale.write.protocol.mjs',()=>({requireMatchedWriterQualification:(report,expected,options)=>mocked.grade(report,expected,options),audienceEvidenceOnlyEnabled:()=>process.env.PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY==='1',matchedWriterEvidenceOnlyReceipt:(...args)=>mocked.diagnostic(...args)}));
+import {readMatchedWriterQualification,readMatchedWriterEvidenceOnly} from './scale.write.qualification.mjs';
 const rawPath='output/hud-scale/writer-matched-observers.json';
 const receiptPath=rawPath+'.qualified.json';
 const expected=()=>({...mocked.code,runId:'123',runAttempt:'2',database:'vinpoker_hud_test_pair_123_2',sourceHands:1000000});
 beforeEach(()=>{
  vi.stubEnv('GITHUB_RUN_ID','123');vi.stubEnv('GITHUB_RUN_ATTEMPT','2');vi.stubEnv('PUBLIC_HUD_SCALE_HANDS','1000000');
  vi.stubEnv('PUBLIC_HUD_SOURCE_GENERATION_PROBE','0');
+ vi.stubEnv('PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY','0');
  mocked.files.clear();mocked.files.set(rawPath,{identity:expected()});
  mocked.grade.mockReset().mockImplementation((report,identity)=>{
   expect(report.identity).toEqual(identity);
@@ -48,3 +49,25 @@ it.each(['failed pair','failed pooled'])('propagates grading rejection: %s',mess
  mocked.grade.mockImplementation(()=>{throw Error(message);});expect(()=>readMatchedWriterQualification(1000000)).toThrow(message);
 });
 it('rejects an inconsistent fixture count',()=>{expect(()=>readMatchedWriterQualification(100)).toThrow();});
+it.each([true,false])('evidence-only never enters qualification even if writer passed=%s',passed=>{
+ vi.stubEnv('PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY','1');
+ mocked.files.get(receiptPath).statistics.passed=passed;
+ expect(()=>readMatchedWriterQualification(1000000)).toThrow('Evidence-only capture cannot qualify');
+ expect(mocked.grade).not.toHaveBeenCalled();
+});
+it('keeps failed writer statistics in a separate independently checked evidence receipt',()=>{
+ const evidencePath=rawPath+'.evidence-only.json';
+ const receipt={kind:'MATCHED_WRITER_EVIDENCE_ONLY_NEVER_QUALIFIES',fullLoadQualification:false,identity:expected(),statistics:{passed:false,overheadPercent:19}};
+ mocked.diagnostic.mockReset().mockImplementation((report,identity)=>{expect(report.identity).toEqual(identity);return receipt;});
+ mocked.files.set(evidencePath,structuredClone(receipt));
+ expect(()=>readMatchedWriterEvidenceOnly(1000000)).toThrow('Explicit evidence-only mode required');
+ vi.stubEnv('PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY','1');
+ expect(readMatchedWriterEvidenceOnly(1000000)).toEqual(receipt);
+ expect(mocked.grade).not.toHaveBeenCalled();
+ for(const key of ['kind','fullLoadQualification','identity','statistics']){
+  mocked.files.set(evidencePath,{...receipt,[key]:'wrong'});
+  expect(()=>readMatchedWriterEvidenceOnly(1000000)).toThrow('Evidence-only writer receipt differs');
+ }
+ mocked.files.set(evidencePath,receipt);mocked.files.get(rawPath).identity.sha='foreign';
+ expect(()=>readMatchedWriterEvidenceOnly(1000000)).toThrow();
+});

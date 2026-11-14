@@ -52,6 +52,7 @@ END $$;
 CREATE FUNCTION public.fixture_scale_amend_ready_v1(p_operation uuid)
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE receipt jsonb; entity uuid; ready boolean; v text;
+ ready_observed timestamptz; barrier_from timestamptz; barrier_until timestamptz; blocked boolean;
 BEGIN
  IF auth.role() IS DISTINCT FROM 'service_role' THEN RAISE EXCEPTION 'forbidden' USING ERRCODE='42501';END IF;
  SELECT response INTO STRICT receipt FROM spectator_projection_v2.fixture_source_operations WHERE operation_id=p_operation;
@@ -70,9 +71,21 @@ BEGIN
    AND (SELECT count(*) FROM tracker_analytics_v1.hand_contributions c WHERE c.hand_id=entity AND c.version=v)=(receipt->>'expectedContributions')::integer
    AND NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.hand_contributions c WHERE c.hand_id=entity AND c.version=v AND c.source_fingerprint<>receipt->>'fingerprint');
  END IF;
- -- Diagnostic clock follows the exact readiness snapshot; not a new gate.
- PERFORM set_config('response.headers',jsonb_build_array(jsonb_build_object(
-  'X-Hud-Fixture-Observed-At',clock_timestamp()::text))::text,true);
+ -- Keep the original readiness clock. The following diagnostic query has a
+ -- separate snapshot: its time interval must never stand in for a viewer read.
+ ready_observed:=clock_timestamp();barrier_from:=clock_timestamp();
+ SELECT EXISTS(SELECT 1 FROM tracker_analytics_v1.job_players
+   WHERE player_id='30000000-0000-4000-8000-000000000001'::uuid AND hard_block)
+  OR EXISTS(SELECT 1 FROM tracker_analytics_v1.visibility_barriers b
+   JOIN tracker_analytics_v1.tournament_totals t ON t.tournament_id=b.tournament_id
+   WHERE t.player_id='30000000-0000-4000-8000-000000000001'::uuid AND t.version=v)
+ INTO blocked;
+ barrier_until:=clock_timestamp();
+ PERFORM set_config('response.headers',jsonb_build_array(
+  jsonb_build_object('X-Hud-Fixture-Observed-At',ready_observed::text),
+  jsonb_build_object('X-Hud-Fixture-Barrier-From',barrier_from::text),
+  jsonb_build_object('X-Hud-Fixture-Barrier-Until',barrier_until::text),
+  jsonb_build_object('X-Hud-Fixture-Blocked',CASE WHEN blocked THEN '1' ELSE '0' END))::text,true);
  RETURN ready;
 END $$;
 REVOKE ALL ON FUNCTION public.fixture_scale_amend_once_v1(uuid,uuid,text),public.fixture_scale_amend_ready_v1(uuid) FROM PUBLIC,anon,authenticated;

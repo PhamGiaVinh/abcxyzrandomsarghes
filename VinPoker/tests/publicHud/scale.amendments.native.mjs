@@ -7,6 +7,7 @@ import {pathToFileURL} from 'node:url';
 import {build} from 'esbuild';
 import {sql,jsonSql,service} from './nativeDb.mjs';
 import {nativeWorkerClient} from './nativeRpc.mjs';
+import {parseFixtureHudBarrier} from './scale.failures.mjs';
 
 const temp=mkdtempSync(join(tmpdir(),'hud-amendment-worker-'));
 await build({entryPoints:['supabase/functions/public-hud-projector-v1/worker.ts'],outfile:join(temp,'worker.mjs'),bundle:true,platform:'node',format:'esm',logLevel:'silent'});
@@ -22,13 +23,20 @@ sql(readFileSync('tests/publicHud/scale.amendments.fixture.sql','utf8'));
 await drain();
 const hand='20000000-0000-4000-8000-000000000001';
 const kinds=['correct','void','restore','verify','revoke','reverify','result_create','result_edit','result_revoke','result_reverify'];
-const samples=[];
+const samples=[],barrierObservations=[];
 const readiness=operation=>{
  const probe=jsonSql(`${service}WITH checked AS MATERIALIZED (
   SELECT public.fixture_scale_amend_ready_v1('${operation}') AS ready)
   SELECT jsonb_build_object('ready',ready,'headers',current_setting('response.headers')::jsonb,'after',clock_timestamp()) FROM checked;`);
- const observedAt=Date.parse(probe.headers[0]['X-Hud-Fixture-Observed-At']);
+ assert.ok(Array.isArray(probe.headers)&&probe.headers.length===4,'PostgREST header array required');
+ for(const header of probe.headers)assert.ok(Object.keys(header).length===1&&typeof Object.values(header)[0]==='string','PostgREST accepts only single-key string header objects');
+ const allHeaders=Object.assign({},...probe.headers);assert.equal(Object.keys(allHeaders).length,4,'Repeated diagnostic header');
+ const observedAt=Date.parse(allHeaders['X-Hud-Fixture-Observed-At']);
  assert.ok(Number.isFinite(observedAt)&&observedAt<=Date.parse(probe.after),'Readiness clock must follow its snapshot');
+ const headers=Object.fromEntries(Object.entries(allHeaders).map(([key,value])=>[key.toLowerCase(),value]));
+ const barrier=parseFixtureHudBarrier(headers);assert.ok(barrier,'Missing bounded barrier observation');
+ assert.ok(observedAt<=barrier.from&&barrier.until<=Date.parse(probe.after),'Separate barrier snapshot must follow readiness and precede response');
+ barrierObservations.push({ready:probe.ready,...barrier});
  return probe.ready;
 };
 let revision;
@@ -42,8 +50,10 @@ for(const kind of kinds){
  revision=value.sourceRevision;
  await drain();
  assert.equal(readiness(operation),true);
+ assert.equal(barrierObservations.at(-1).blocked,false,'Drained fixture must have no remaining HUD barrier');
  samples.push({kind,operation,sourceRevision:value.sourceRevision,ready:true});
 }
+assert.ok(barrierObservations.some(value=>value.blocked),'Withdrawal fixture must exercise an actual HUD barrier');
 for(const role of ['anon','authenticated']){
  assert.throws(()=>sql(`SET ROLE ${role};SELECT public.fixture_scale_amend_once_v1('${randomUUID()}','${hand}','correct');`),/permission denied/);
  assert.throws(()=>sql(`SET ROLE ${role};SELECT public.fixture_scale_amend_ready_v1('${samples[0].operation}');`),/permission denied/);
