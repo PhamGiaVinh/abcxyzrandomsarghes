@@ -61,8 +61,28 @@ jobs:
         env:
           RELEASE_SOURCE_ROOT: ${{ github.workspace }}/candidate/VinPoker
         run: node VinPoker/scripts/ops/spectator342344-atomic-postgres.mjs
+  real-cron:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Build pinned real pg_cron1.6.4 on isolated PostgreSQL17
+        run: docker build -t spectator-cron-test -f VinPoker/scripts/ops/spectator342344-cron.Dockerfile .
+      - name: Exercise actual extension ACL, serialization, rollback and competing changes
+        env:
+          CRON_TEST_CONTAINER: spectator-cron-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          docker run -d --name "$CRON_TEST_CONTAINER" -e POSTGRES_USER=cron_admin -e POSTGRES_PASSWORD=isolated-fixture-only -e POSTGRES_DB=postgres spectator-cron-test -c shared_preload_libraries=pg_cron -c cron.database_name=postgres -c cron.launch_active_jobs=off
+          for i in {1..60}; do if docker exec "$CRON_TEST_CONTAINER" pg_isready -U cron_admin -d postgres; then break; fi; sleep 1; done
+          node VinPoker/scripts/ops/spectator342344-real-cron.mjs
+      - name: Remove isolated fixture
+        if: always()
+        run: docker rm -f spectator-cron-${{ github.run_id }} || true
   validate:
-    needs: [exact-controller, atomic-postgres]
+    needs: [exact-controller, atomic-postgres, real-cron]
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.apply342344 == true
     runs-on: ubuntu-24.04
     timeout-minutes: 10
