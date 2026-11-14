@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/spectator342344-edge-release.yml'
       - 'VinPoker/scripts/ops/spectator342344-edge-release*'
+      - 'VinPoker/scripts/ops/spectator342344-edge-api-transport.test.mjs'
   workflow_dispatch:
     inputs:
       operation: {description: Deploy candidate or restore verified prior code, type: choice, required: true, default: deploy, options: [deploy, repair-bundle, restore-prior, inspect-bundle]}
@@ -29,6 +30,11 @@ jobs:
         env:
           RELEASE_SOURCE_ROOT: ${{ github.workspace }}/VinPoker
         run: node --test VinPoker/scripts/ops/spectator342344-edge-release.test.mjs
+      - name: Verify actual pinned CLI multipart uploads against loopback fake API
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/VinPoker
+          SPECTATOR_TEST_CLI: ${{ runner.temp }}/spectator-cli/node_modules/.bin/supabase
+        run: node VinPoker/scripts/ops/spectator342344-edge-api-transport.test.mjs
   release:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     needs: edge-controls

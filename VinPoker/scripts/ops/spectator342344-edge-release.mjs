@@ -33,7 +33,7 @@ export function verifyDownloaded(root,manifest){
  for(const file of manifest.edgeFiles){assert.equal(digest(readFileSync(resolve(base,file.path),'utf8').replace(/\r\n?/g,'\n')),file.sha256,'Downloaded runtime source drift');}
  return base;
 }
-export function validateRepairBase(value){validatePriorEdge({...value,version:12,ezbr_sha256:PRIOR_EDGE.ezbr_sha256});assert.equal(value.version,15);assert.equal(value.ezbr_sha256,'14140eeff59f2fcef84127235f89a9e91deeaba1d14c294e8c881c11de8e03bf');}
+export function validateRepairBase(value){validatePriorEdge({...value,version:12,ezbr_sha256:PRIOR_EDGE.ezbr_sha256});assert.equal(value.version,18);assert.equal(value.ezbr_sha256,'1f97018b2874c4ea9595582fe441ca2d7f7447c9a1c170ea65b42a6ac3b63e44');}
 export async function summarizeBundleForm(form){
  const parts=[];
  for(const [field,value] of form.entries()){
@@ -72,11 +72,18 @@ export const hostedRuntimeSql=`BEGIN READ ONLY;SET LOCAL statement_timeout='5s';
  'batchCalls',COALESCE((SELECT sum(calls)::bigint FROM extensions.pg_stat_statements WHERE userid='service_role'::regrole AND query LIKE '%pgrst_source%' AND query ~ 'get_public_spectator_projection_sources_v2["[:space:]]*\\(' AND query NOT LIKE '%pg_stat_statements%'),0),
  'lastResponseId',COALESCE((SELECT max(id) FROM net._http_response),0),
  'responses',COALESCE((SELECT json_agg(row_to_json(r)) FROM(SELECT id,status_code,left(content,32768) AS content FROM net._http_response ORDER BY id DESC LIMIT 20)r),'[]'::json))::text;COMMIT;`;
+export function stageApiSource(sourceRoot,files){
+ const stage=mkdtempSync(join(tmpdir(),'spectator-api-source-'));
+ for(const file of files){const bytes=readFileSync(resolve(sourceRoot,file.path));assert.equal(digest(bytes.toString('utf8').replace(/\r\n?/g,'\n')),file.sha256);const dest=resolve(stage,file.path);mkdirSync(dirname(dest),{recursive:true});writeFileSync(dest,bytes);}
+ const vendor='supabase/functions/_shared/vendor/tslib-2.8.1.mjs';assert.ok(files.some(f=>f.path===vendor));
+ mkdirSync(resolve(stage,'supabase'),{recursive:true});writeFileSync(resolve(stage,'supabase/config.toml'),`project_id = "spectator-reviewed-release"\n[functions.${name}]\nenabled = true\nverify_jwt = false\nstatic_files = ["./${vendor.slice('supabase/'.length)}"]\n`);
+ return stage;
+}
 export async function restorePriorCode({management,cli,priorRoot,readDownloaded,verifyDatabase,denied,report=()=>{}}){
  try{
  verifyDownloaded(priorRoot,{edgeFiles:priorFiles});await verifyDatabase();
  await management('POST','secrets',[{name:'PUBLIC_SPECTATOR_SOURCE_BATCH',value:'0'}]);verifySecret(await management('GET','secrets'),'0');
- cli(['functions','deploy',name,'--project-ref',project,'--no-verify-jwt','--workdir',priorRoot,'--import-map',resolve(priorRoot,'deno.json')]);
+ const staged=stageApiSource(priorRoot,priorFiles);cli(['functions','deploy',name,'--project-ref',project,'--no-verify-jwt','--use-api','--workdir',staged,'--import-map',resolve(staged,'deno.json')]);
  const meta=await management('GET',`functions/${name}`);assert.equal(meta.slug,name);assert.equal(meta.status,'ACTIVE');assert.equal(meta.verify_jwt,false);assert.equal(meta.import_map,true);assert.ok(meta.version>12);
  await readDownloaded({edgeFiles:priorFiles});const stable=await management('GET',`functions/${name}`);assert.equal(stable.version,meta.version);assert.equal(stable.ezbr_sha256,meta.ezbr_sha256);verifySecret(await management('GET','secrets'),'0');assert.equal(await denied(),401);await verifyDatabase();
  report({kind:'VERIFIED_PRIOR_V12_CODE_REDEPLOYED_AS_NEW_VERSION',version:meta.version,ezbrSha256:meta.ezbr_sha256,batch:'0',sourceCommit:'unknown'});
@@ -94,8 +101,8 @@ export async function runEdgeRelease({management,cli,readDownloaded,manifest,ver
  try{
   await verifyDatabase();const base=await meta();if(repair){validateRepairBase(base);verifySecret(await management('GET','secrets'),'0');}else validatePriorEdge(base);
   phase='batch-zero';changed=true;await flag('0');
-  phase='deploy';cli(['functions','deploy',name,'--project-ref',project,'--no-verify-jwt','--import-map',resolve(sourceRoot,'deno.json')]);
-  const first=await meta();assert.equal(first.slug,name);assert.equal(first.status,'ACTIVE');assert.equal(first.verify_jwt,false);assert.equal(first.import_map,true);assert.ok(Number.isInteger(first.version)&&first.version>(repair?15:12));assert.match(first.ezbr_sha256,/^[a-f0-9]{64}$/);
+  phase='deploy';const staged=stageApiSource(sourceRoot,manifest.edgeFiles);cli(['functions','deploy',name,'--project-ref',project,'--no-verify-jwt','--use-api','--workdir',staged,'--import-map',resolve(staged,'deno.json')]);
+  const first=await meta();assert.equal(first.slug,name);assert.equal(first.status,'ACTIVE');assert.equal(first.verify_jwt,false);assert.equal(first.import_map,true);assert.ok(Number.isInteger(first.version)&&first.version>(repair?18:12));assert.match(first.ezbr_sha256,/^[a-f0-9]{64}$/);
   phase='verify-deployed-source';await readDownloaded(manifest);verifySecret(await management('GET','secrets'),'0');
   const stable=await meta();assert.equal(stable.version,first.version);assert.equal(stable.ezbr_sha256,first.ezbr_sha256);assert.equal(await denied(),401);await verifyDatabase();
   phase='batch-one';await flag('1');const after=await meta();assert.equal(after.version,first.version);assert.equal(after.ezbr_sha256,first.ezbr_sha256);await verifyDatabase();assert.equal(await denied(),401);
