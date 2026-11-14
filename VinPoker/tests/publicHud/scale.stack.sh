@@ -5,7 +5,7 @@ repo_root="$(pwd)"
 for forbidden in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD VERCEL_TOKEN; do
   if [[ -n "${!forbidden:-}" ]]; then echo 'Remote credential present in isolated load job' >&2; exit 1; fi
 done
-node --input-type=module -e "import {pendingSourceProbeEnabled,sourceBatchProbeEnabled,writerWaitDiagnosticEnabled} from './tests/publicHud/scale.write.protocol.mjs';pendingSourceProbeEnabled(process.env);sourceBatchProbeEnabled(process.env);writerWaitDiagnosticEnabled(process.env);"
+node --input-type=module -e "import {pendingSourceProbeEnabled,sourceBatchProbeEnabled,writerWaitDiagnosticEnabled,audienceEvidenceOnlyEnabled} from './tests/publicHud/scale.write.protocol.mjs';pendingSourceProbeEnabled(process.env);sourceBatchProbeEnabled(process.env);writerWaitDiagnosticEnabled(process.env);audienceEvidenceOnlyEnabled(process.env);"
 node --test tests/publicHud/scale.postgrest-metrics.test.mjs
 test_root="$(mktemp -d -t vinpoker-hud-stack-XXXXXXXX)"
 project_id="hud-scale-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
@@ -160,5 +160,9 @@ if [[ "${PUBLIC_HUD_CLOCK_UI_PROBE:-0}" == 1 ]]; then
 fi
 ulimit -n 16384
 node tests/publicHud/scale.http-ws.mjs
+if [[ "${PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY:-0}" == 1 ]]; then
+ echo 'AUDIENCE_EVIDENCE_ONLY_NEVER_QUALIFIES' >&2
+ exit 1
+fi
 node tests/publicHud/scale.rollback-runtime.mjs
 docker stats --no-stream --format '{{json .}}' >output/hud-scale/container-resources.jsonl

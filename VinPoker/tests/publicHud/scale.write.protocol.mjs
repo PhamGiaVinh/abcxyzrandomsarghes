@@ -21,6 +21,29 @@ export function writerWaitDiagnosticEnabled(env){
  }
  return flag==='1';
 }
+export function audienceEvidenceOnlyEnabled(env){
+ const flag=env.PUBLIC_HUD_AUDIENCE_EVIDENCE_ONLY??'0';
+ assert.ok(['0','1'].includes(flag),'Invalid audience evidence-only mode');
+ if(flag==='1'){
+  assert.equal(env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD,'canonical-hand-observers-paired-v1');
+  assert.equal(env.PUBLIC_HUD_SCALE_VIEWERS,'1000');
+  assert.equal(env.PUBLIC_HUD_SCALE_SECONDS,'1800');
+  assert.equal(env.PUBLIC_HUD_SCALE_HANDS,'1000000');
+  assert.notEqual(env.PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC,'1','Instrumented writer cannot supply audience evidence');
+  assert.equal(env.PUBLIC_HUD_SCALE_TRANSPORT,'product_rpc');
+ }
+ return flag==='1';
+}
+// Preserves the recomputed failed writer grade. This receipt cannot qualify,
+// including when the writer happens to pass on this particular run.
+export function matchedWriterEvidenceOnlyReceipt(report,expectedIdentity,{sourceGenerationProbe=false}={}){
+ assert.ok(!report?.pairs?.some(pair=>Object.values(pair.measurements??{}).some(arm=>'waitDiagnostic' in arm)),'Instrumented writer observation cannot supply audience evidence');
+ assert.equal(report?.sourceGenerationCandidate??null,sourceGenerationProbe?sourceGeneration342Profile.migration:null);
+ validateCanonicalWriterObservers(report?.observerProfile,{sourceGenerationProbe});
+ return {kind:'MATCHED_WRITER_EVIDENCE_ONLY_NEVER_QUALIFIES',fullLoadQualification:false,
+  method:matchedWriterProtocol.version,identity:expectedIdentity,
+  statistics:validateMatchedWriterEvidence(report,expectedIdentity),scope:matchedWriterProtocol.scope};
+}
 export function pendingSourceProbeEnabled(env){
  const flag=env.PUBLIC_HUD_PENDING_SOURCE_PROBE??'0';
  assert.ok(['0','1'].includes(flag),'Invalid pending source probe');

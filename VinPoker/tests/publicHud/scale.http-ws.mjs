@@ -10,8 +10,8 @@ import {handIncludesWrite,projectionIncludesWrite,settleScopedFeltRead,coveringT
 import {createLocalHttpTransport} from './scale.http.mjs';
 import {readBoundedMetrics,parsePostgrestServerTiming} from './scale.postgrest-metrics.mjs';
 import {maximumSample,summaryApiReport} from './scale.summary.mjs';
-import {readMatchedWriterQualification} from './scale.write.qualification.mjs';
-import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,sourceBatchProfile,sourceBatchProbeEnabled} from './scale.write.protocol.mjs';
+import {readMatchedWriterQualification,readMatchedWriterEvidenceOnly} from './scale.write.qualification.mjs';
+import {sourceGeneration342Profile,pendingSourceProfile,pendingSourceProbeEnabled,sourceBatchProfile,sourceBatchProbeEnabled,audienceEvidenceOnlyEnabled} from './scale.write.protocol.mjs';
 import {beginHudRestoration,recordHudRestoration,setHudRestorationDeadline,hudRestorationFailure,committedHistoryWithdrawalDenial} from './scale.restoration.mjs';
 import {classifyEdgeFailure,classifyHudReadFailure,classifyTableReadFailure,sanitizeHudAttemptTrace,parseFixtureHudBarrier} from './scale.failures.mjs';
 import {tableFailureSample,overviewGenerationSample} from './scale.table-trace.mjs';
@@ -196,13 +196,15 @@ const restorationReadinessDiagnostics=[];
 const reports=[],sourceWriterBenchmark=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).writer;
 const writerMethod=process.env.PUBLIC_HUD_WRITER_QUALIFICATION_METHOD??'startup';
 assert.ok(['startup','canonical-hand-observers-paired-v1'].includes(writerMethod),'Unknown writer grading method');
-let writerQualification=null;
-const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,...(sourceGenerationProbe?{sourceGenerationCandidate:sourceGeneration342Profile}:{}),...(pendingSourceProbe?{pendingSourceCandidate:pendingSourceProfile}:{}),...(sourceBatchProbe?{sourceBatchCandidate:sourceBatchProfile}:{}),qualification:state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,hudReadinessFailureSamples,tableFailureSamples,overviewGenerationTrace,amendmentBarrierTrace,
+const audienceEvidenceOnly=audienceEvidenceOnlyEnabled(process.env);
+let writerQualification=null,writerDiagnostic=null;
+const save=(state)=>writeFileSync('output/hud-scale/http-ws.json',JSON.stringify({kind:'REAL_LOCAL_HTTP_SUPABASE_WEBSOCKET_POSTGRESQL',productionCapacityClaim:false,hudTransport,productTransport:hudTransport==='product_rpc',sourceWriterBenchmark,writerMethod,writerQualification,audienceEvidenceOnly,writerDiagnostic,...(sourceGenerationProbe?{sourceGenerationCandidate:sourceGeneration342Profile}:{}),...(pendingSourceProbe?{pendingSourceCandidate:pendingSourceProfile}:{}),...(sourceBatchProbe?{sourceBatchCandidate:sourceBatchProfile}:{}),qualification:!audienceEvidenceOnly&&state==='passed'&&hudTransport==='product_rpc'&&viewers===1000&&targetDuration===1800,status:state,reports,restorationReadinessDiagnostics,hudFailureSamples,hudReadinessFailureSamples,tableFailureSamples,overviewGenerationTrace,amendmentBarrierTrace,
  partial:state==='failed'?{incomplete:true,restorationFailure,errors:stats.errors,transportErrors:stats.transportErrors,rpcOutcomes,runtimeFailures,hudFailureKinds,tableFailureKinds,requestAccounting,transportTimings:timingReport(),summaryApi:summaryApiReport(stats.summaryHttp),logicalHudSamples:stats.summary.length,observedLogicalHudP95Ms:percentile(stats.summary,.95),tableSamples:stats.realtime.length,observedTableP95Ms:percentile(stats.realtime,.95),snapshotSamples:stats.snapshot.length,observedSnapshotP95Ms:percentile(stats.snapshot,.95),sourceWrites:stats.sourceWrites}:undefined},null,2));
 save('running');
 process.on('uncaughtExceptionMonitor',()=>save('failed'));
 if(writerMethod==='canonical-hand-observers-paired-v1'){
- writerQualification=readMatchedWriterQualification(JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).handsPerPlayer);
+ const hands=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8')).handsPerPlayer;
+ if(audienceEvidenceOnly)writerDiagnostic=readMatchedWriterEvidenceOnly(hands);else writerQualification=readMatchedWriterQualification(hands);
  save('running');
 }
 if(viewers===1000&&targetDuration===1800){
@@ -770,7 +772,9 @@ for(const scenario of ['concentrated','distributed','overview']){
 if(viewers===1000&&targetDuration===1800){
  const seed=JSON.parse(readFileSync('output/hud-scale/seed.json','utf8'));
  assert.equal(seed.handsPerPlayer,1_000_000);
- if(writerMethod==='canonical-hand-observers-paired-v1')writerQualification=readMatchedWriterQualification(seed.handsPerPlayer);
+ if(writerMethod==='canonical-hand-observers-paired-v1'){
+  if(audienceEvidenceOnly)writerDiagnostic=readMatchedWriterEvidenceOnly(seed.handsPerPlayer);else writerQualification=readMatchedWriterQualification(seed.handsPerPlayer);
+ }
  else assert.ok(seed.writer.p95OverheadPercent<=10,'Fixture source transaction marking overhead > 10%');
 }
 if(sourceBatchProbe){
@@ -778,4 +782,6 @@ if(sourceBatchProbe){
  const snapshot=JSON.parse(stdout.trim()),calls=Number(snapshot.calls);assert.deepEqual(snapshot.statsInfo,sourceBatchStatsAtStart,'Batch usage counter epoch/deallocation changed');assert.ok(Number.isSafeInteger(calls)&&calls>sourceBatchCallsAtStart,'Audience must actually exercise the batch RPC');
  writeFileSync('output/hud-scale/source-batch-usage.json',JSON.stringify({sourceMode:'batch',before:sourceBatchCallsAtStart,after:calls,observedAdditionalCalls:calls-sourceBatchCallsAtStart,statsInfo:snapshot.statsInfo,scope:"Presence during the workload, not per-scenario or per-job attribution",productionChanged:false},null,2));
 }
-assert.equal(reports.length,3);save('passed');
+assert.equal(reports.length,3);
+assert.equal(audienceEvidenceOnly,false,'AUDIENCE_EVIDENCE_ONLY_NEVER_QUALIFIES');
+save('passed');
