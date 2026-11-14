@@ -26,9 +26,10 @@ with tempfile.TemporaryDirectory(prefix='vinpoker-hud-pgbench-') as directory:
  source.write_text(sys.stdin.read())
  observer=start_writer_observer(root) if ${waitDiagnostic?'True':'False'} else None
  try:
-  result=subprocess.run(['pgbench','-n','-M','prepared','-c','1','-j','1','-t','220','-f',str(source),'-l','--log-prefix='+str(root/'latency')],capture_output=True,text=True,env=writer_observer_env('vinpoker_hud_writer_probe') if observer else None)
+  result=subprocess.run(['pgbench','-n','-M','prepared','-c','1','-j','1','-t','220','-f',str(source),'-l','--log-prefix='+str(root/'latency')]+(['-r'] if observer else []),capture_output=True,text=True,env=writer_observer_env('vinpoker_hud_writer_probe') if observer else None)
  finally:
   wait_evidence=finish_writer_observer(observer,root) if observer else None
+ if observer: wait_evidence['commandTimings']=parse_writer_command_timings(result.stdout)
  if result.returncode: raise RuntimeError(result.stderr)
  records=[]
  for log in sorted(root.glob('latency.*')):

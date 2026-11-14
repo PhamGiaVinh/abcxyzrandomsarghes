@@ -30,3 +30,6 @@ assert.ok(bracketed>=2,'Container reader lacks complete frames bracketed by smok
 assert.equal(observation?.available,true,'Writer wait sampler did not produce evidence');
 assert.equal(observation.exitedBeforeStop,false,'Writer wait sampler exited early');
 assert.ok(sleepSamples>0,'Sampler did not observe the reserved backend wait');
+assert.equal(observation.commandTimings?.available,true,'Per-command diagnostic mean was not captured');
+assert.deepEqual(observation.commandTimings.rows.map(row=>row.command),['observer_self_test']);
+assert.ok(observation.commandTimings.rows[0].meanMs>=10,'Sleep command timing lost its milliseconds unit');
