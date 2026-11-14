@@ -39,6 +39,26 @@ export function pausedSql(){
 export function classifyPaused(row){
  assert.ok(row?.paused===true&&row.hudPreserved===true&&row.leasesDrained===true,'Dispatcher/lease precondition failed');
 }
+export function inspectOutcome(sourceRoot,transport){
+ const pkg=loadPackage(sourceRoot),observed=[];
+ for(const candidate of pkg.entries){
+  let receipt='unavailable';
+  try{
+   const row=transport.json(receiptSql({...candidate,hash:candidate.sha256}));
+   receipt=row.count===1&&row.exact===true?'committed-exact':row.count===0?'not-recorded':'drift';
+  }catch{}
+  observed.push({version:candidate.version,receipt});
+ }
+ const committed=observed.filter(x=>x.receipt==='committed-exact');
+ const phase=committed.length?Number(committed.at(-1).version.slice(-3)):null;
+ let objects='not-inspected';
+ if(phase!==null){
+  try{classifyPostcheck(transport.json(postcheckSql(pkg,phase)));objects='verified';}catch{objects='not-verified';}
+ }
+ const complete=observed.every(x=>['committed-exact','not-recorded'].includes(x.receipt));
+ const prefix=complete&&observed.every((x,i)=>x.receipt!=='committed-exact'||observed.slice(0,i).every(y=>y.receipt==='committed-exact'));
+ return {observed,currentObjectPhase:phase,objects,receiptObservationComplete:complete,committedPrefixProved:prefix};
+}
 
 // The protected workflow must validate recovery, source identity, catalog and
 // connection, pause the dispatcher, and drain in-flight requests before calling.
@@ -56,22 +76,7 @@ export function executePackage(sourceRoot,transport,report=()=>{}){
    classifyPostcheck(transport.json(postcheckSql(pkg,Number(entry.version.slice(-3)))));
    if(entry===pkg.entries.at(-1))classifyPaused(transport.json(pausedSql()));
   }catch{
-   const observed=[];
-   for(const candidate of pkg.entries){
-    let receipt='unavailable';
-    try{
-     const row=transport.json(receiptSql({...candidate,hash:candidate.sha256}));
-     receipt=row.count===1&&row.exact===true?'committed-exact':row.count===0?'not-recorded':'drift';
-    }catch{}
-    observed.push({version:candidate.version,receipt});
-   }
-   const committed=observed.filter(x=>x.receipt==='committed-exact');
-   const phase=committed.length?Number(committed.at(-1).version.slice(-3)):null;
-   let objects='not-inspected';
-   if(phase!==null){
-    try{classifyPostcheck(transport.json(postcheckSql(pkg,phase)));objects='verified';}catch{objects='not-verified';}
-   }
-   report({kind:'STOP_NO_RETRY_NO_RESUME',failedAt:entry.version,observed,currentObjectPhase:phase,objects});
+   report({kind:'STOP_NO_RETRY_NO_RESUME',failedAt:entry.version,...inspectOutcome(sourceRoot,transport)});
    throw Error('Spectator release requires partial-outcome review');
   }
   report({kind:'COMMITTED_EXACT_OBJECTS_VERIFIED',version:entry.version,sha256:entry.sha256});

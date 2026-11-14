@@ -8,7 +8,7 @@ import {canonicalSqlText,buildAtomicMigrationQuery} from './ops-1359-release-gat
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const hash=value=>createHash('sha256').update(value).digest('hex');
 // This module prepares exact SQL only. It has no database or network transport.
-export const MANIFEST_SHA256='99366a7165bbbb58df61c5ae5d355b289f487368ee4512e6abd3100b48bd70fb';
+export const MANIFEST_SHA256='b03ce894d202339e69e47d21498c7ed118b85d0c60494a1fd8db7503474af7d2';
 export function loadPackage(sourceRoot){
  const bytes=canonicalSqlText(readFileSync(resolve(root,'scripts/ops/spectator342344-manifest.json')));
  assert.equal(hash(bytes),MANIFEST_SHA256,'Reviewed manifest differs');
@@ -18,6 +18,7 @@ export function loadPackage(sourceRoot){
  assert.deepEqual(manifest.migrations.map(x=>x.version),['20270128000342','20270128000343','20270128000344']);
  assert.equal(manifest.automaticRetry,false);
  assert.equal(hash(canonicalSqlText(readFileSync(resolve(root,'../',manifest.builder.path)))),manifest.builder.sha256,'Atomic builder drift');
+ assert.equal(hash(canonicalSqlText(readFileSync(resolve(root,manifest.dispatcher.currentFixture.path)))),manifest.dispatcher.currentFixture.sha256,'Captured dispatcher fixture drift');
  const entries=manifest.migrations.map(item=>{
   assert.equal(item.action,'APPLY');
   assert.match(item.name,/^[a-z0-9_]+$/);

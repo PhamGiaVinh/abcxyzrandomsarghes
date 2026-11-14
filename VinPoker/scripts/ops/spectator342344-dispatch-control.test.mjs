@@ -40,6 +40,8 @@ test('worker drift after verified DB commits prevents resume',async()=>{
  const f=fixture({edgeDrift:true});await assert.rejects(f.run);
  assert.equal(f.writes.length,3);assert.equal(f.resumes.length,0);assert.equal(f.paused,true);
  assert.equal(f.events.at(-1).phase,'verify-prior-worker');
+ assert.deepEqual(f.events.at(-1).observed.map(x=>x.receipt),['committed-exact','committed-exact','committed-exact']);
+ assert.equal(f.events.at(-1).objects,'verified');
 });
 test('lost pause ownership and untrusted resume token are rejected',async()=>{
  const f=fixture({lostPause:true});await assert.rejects(f.run);assert.equal(f.writes.length,0);
@@ -51,4 +53,7 @@ test('only exact actual v12 deployment metadata is accepted; request errors stop
  const env={SUPABASE_PROJECT_REF:'orlesggcjamwuknxwcpk',SUPABASE_ACCESS_TOKEN:'synthetic-unit-only'};
  await verifyPriorEdge(env,async(url,init)=>{assert.equal(url,'https://api.supabase.com/v1/projects/orlesggcjamwuknxwcpk/functions/public-spectator-projector-v2');assert.ok(init.signal);return{status:200,json:async()=>PRIOR_EDGE};});
  await assert.rejects(()=>verifyPriorEdge(env,async()=>({status:403,json:async()=>PRIOR_EDGE})));
+});
+test('drain observes both startup RPCs as well as claim/publication lifecycle',()=>{
+ for(const name of ['absorb_public_spectator_generations_v2','flush_public_spectator_broadcast_v2','claim_public_spectator_projection_v2','get_public_spectator_projection_source_v2','publish_public_spectator_projection_v2','fail_public_spectator_projection_v2'])assert.ok(drainSql().includes(name));
 });

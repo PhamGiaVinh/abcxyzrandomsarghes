@@ -17,7 +17,7 @@ assert.ok(!['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'].some(key=>proc
 const root=resolve(process.env.RELEASE_SOURCE_ROOT),pkg=loadPackage(root);
 assert.equal(execFileSync('git',['-C',root,'rev-parse','HEAD'],{encoding:'utf8'}).trim(),pkg.manifest.referenceProductSha);
 process.chdir(root);
-const {initialize,sql,jsonSql}=await import(pathToFileURL(resolve(root,'tests/publicHud/nativeDb.mjs')));
+const {initialize,sql,jsonSql,sqlAsync,service}=await import(pathToFileURL(resolve(root,'tests/publicHud/nativeDb.mjs')));
 sql('CREATE SCHEMA extensions; CREATE EXTENSION pgcrypto WITH SCHEMA extensions;');
 initialize();
 for(const file of ['tests/publicHud/spectator-generation.fixture.sql','tests/publicHud/scale-runtime.fixture.sql',
@@ -77,9 +77,9 @@ for(const table of ['source_nonblocking_original_v1','source_pending_original_v1
 console.log('SPECTATOR342344_NATIVE_ATOMIC_ROLLBACK_RECEIPTS_REPLAY_ACL_PASS');
 // The scheduler API below is a recording double. PostgreSQL executes the real
 // guard/row-version/transaction SQL; this is NOT pg_cron or HTTP delivery proof.
-const dispatchStart=original.indexOf('CREATE OR REPLACE FUNCTION public.dispatch_public_spectator_projection_v2()');
-const dispatchEnd=original.indexOf('REVOKE ALL ON FUNCTION public.dispatch_public_spectator_projection_v2()',dispatchStart);
-assert.ok(dispatchStart>=0&&dispatchEnd>dispatchStart);sql(original.slice(dispatchStart,dispatchEnd));
+// Current production definition captured read-only2026-11-15; no secret literal.
+// Historical pending source differs, so it must not masquerade as this preimage.
+sql(readFileSync(new URL('./spectator342344-dispatcher-current.fixture.sql',import.meta.url),'utf8'));
 assert.equal(sql("SELECT md5(pg_get_functiondef('public.dispatch_public_spectator_projection_v2()'::regprocedure));"),'cf705ee6551a85a61724228ede8f7945');
 sql(`CREATE SCHEMA cron;CREATE TABLE cron.job(jobid bigint PRIMARY KEY,jobname text,schedule text,database text,username text,command text,active boolean);
  INSERT INTO cron.job VALUES(52,'public-spectator-v2-dispatch','1 second','postgres','postgres','SELECT public.dispatch_public_spectator_projection_v2()',true),
@@ -98,4 +98,14 @@ assert.equal(sql('SELECT active FROM cron.job WHERE jobid=52;'),'f');
 assert.deepEqual(jsonSql(drainSql()),{leaseCount:0,queuedRequests:0,activeCalls:0});
 sql("INSERT INTO net.http_request_queue(url) VALUES('https://orlesggcjamwuknxwcpk.supabase.co/functions/v1/public-spectator-projector-v2');");
 assert.equal(jsonSql(drainSql()).queuedRequests,1);
+sql('DELETE FROM net.http_request_queue;');
+for(const rpc of ['absorb_public_spectator_generations_v2','flush_public_spectator_broadcast_v2']){
+ const running=sqlAsync(`${service}SELECT public.${rpc}((SELECT 100 FROM pg_sleep(2)));`);
+ let observed=false;
+ for(let i=0;i<30;i++){
+  if(jsonSql(drainSql()).activeCalls>0){observed=true;break;}
+  await new Promise(resolve=>setTimeout(resolve,25));
+ }
+ assert.ok(observed,'Startup RPC must prevent a quiet-drain observation');await running;
+}
 console.log('SPECTATOR342344_NATIVE_DISPATCH_GUARDS_WITH_SCHEDULER_DOUBLE_PASS');

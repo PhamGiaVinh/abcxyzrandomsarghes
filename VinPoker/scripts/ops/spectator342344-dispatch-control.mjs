@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {loadPackage,preflightSql,classifyPreflight} from './spectator342344-release-plan.mjs';
 import {validateLedger} from './spectator342344-release-context.mjs';
-import {executePackage,pausedSql,classifyPaused} from './spectator342344-protected-apply.mjs';
+import {executePackage,pausedSql,classifyPaused,inspectOutcome} from './spectator342344-protected-apply.mjs';
 
 const dispatchDefinition='cf705ee6551a85a61724228ede8f7945';
 const workerUrl='https://orlesggcjamwuknxwcpk.supabase.co/functions/v1/public-spectator-projector-v2';
@@ -36,7 +36,7 @@ export function drainSql(){
  'leaseCount',(SELECT count(*) FROM spectator_projection_v2.work_groups WHERE claimed_until>clock_timestamp()),
  'queuedRequests',(SELECT count(*) FROM net.http_request_queue WHERE url='${workerUrl}'),
  'activeCalls',(SELECT count(*) FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND datname=current_database() AND state='active'
- AND query~'(claim_public_spectator_projection_v2|get_public_spectator_projection_source_v2|publish_public_spectator_projection_v2|fail_public_spectator_projection_v2|dispatch_public_spectator_projection_v2)'))::text;COMMIT;`;
+ AND query~'(absorb_public_spectator_generations_v2|flush_public_spectator_broadcast_v2|claim_public_spectator_projection_v2|get_public_spectator_projection_source_v2|publish_public_spectator_projection_v2|fail_public_spectator_projection_v2|dispatch_public_spectator_projection_v2)'))::text;COMMIT;`;
 }
 export async function releaseDatabase({mode,sourceRoot,transport,verifyPriorEdge,report=()=>{},sleep=ms=>new Promise(r=>setTimeout(r,ms)),now=()=>performance.now()}){
  assert.ok(['plan','apply'].includes(mode));
@@ -65,8 +65,13 @@ export async function applyAfterVerifiedPlan({sourceRoot,transport,verifyPriorEd
    assert.ok(state.paused===true&&state.hudPreserved===true,'Dispatcher changed during drain');
    const drain=transport.json(drainSql());
    for(const field of ['leaseCount','queuedRequests','activeCalls'])assert.ok(Number.isInteger(drain[field])&&drain[field]>=0,'Invalid drain observation');
-   // The pinned dispatcher has an8s HTTP timeout. An empty pg_net queue plus
-   //12s quiet time covers requests already dequeued;343 also guards live leases.
+   // Observed quiescence, not proof that every hosted HTTP request ended.
+   // Recovered v12 uses an awaited5s server RPC deadline (including absorb/flush)
+   // and aborts each RPC at its remaining budget. Caller8s timeout alone is NOT
+   // server cancellation. Observe all DB RPCs/queue/leases for12quietseconds.
+   // Arbitrarily late delivery remains possible:343's exclusive table lock and
+   // active-lease guard reject a racing claim; exact fenced replies and the
+   // unchanged individual getter keep late v12 execution compatible after apply.
    const quiet=state.leasesDrained===true&&drain.leaseCount===0&&drain.queuedRequests===0&&drain.activeCalls===0;
    if(!quiet)quietSince=now();
    if(quiet&&now()-quietSince>=12000)break;
@@ -84,7 +89,7 @@ export async function applyAfterVerifiedPlan({sourceRoot,transport,verifyPriorEd
  }catch{
   let dispatcher='unavailable';
   try{dispatcher={paused:transport.json(pausedSql()).paused,exactActive:transport.json(activeSql()).exact};}catch{}
-  report({kind:'SPECTATOR342344_PHASE_STOP_NO_AUTOMATIC_RETRY_OR_RESUME',phase,dispatcher});
+  report({kind:'SPECTATOR342344_PHASE_STOP_NO_AUTOMATIC_RETRY_OR_RESUME',phase,dispatcher,...inspectOutcome(sourceRoot,transport)});
   throw Error('Protected spectator phase stopped; inspect receipts and dispatcher state');
  }
 }

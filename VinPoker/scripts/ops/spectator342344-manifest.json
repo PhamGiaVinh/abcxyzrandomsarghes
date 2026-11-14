@@ -40,7 +40,12 @@
   "dispatcher": {
     "jobId": 52,
     "name": "public-spectator-v2-dispatch",
-    "schedule": "1 second"
+    "schedule": "1 second",
+    "currentFixture": {
+      "path": "scripts/ops/spectator342344-dispatcher-current.fixture.sql",
+      "sha256": "10712fd81eb3767470c30489ebc9a9e95c45e55bddbb614ad163b6071d213b68",
+      "provenance": "Actual current production function definition, read-only capture2026-11-15; metadata hash cf705ee6551a85a61724228ede8f7945; not historical-schema proof"
+    }
   },
   "preserveDispatcherJobIds": [
     55
