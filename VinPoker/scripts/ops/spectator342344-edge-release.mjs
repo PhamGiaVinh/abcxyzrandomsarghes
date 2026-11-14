@@ -16,14 +16,24 @@ export function verifySecret(rows,flag){
  assert.ok(['0','1'].includes(flag));const values=rows.filter(r=>r.name==='PUBLIC_SPECTATOR_SOURCE_BATCH');
  assert.equal(values.length,1);assert.ok([flag,digest(flag)].includes(values[0].value),'Batch configuration not verified');
 }
-export function verifyDownloaded(root,manifest){
- const paths=[];function walk(dir){for(const item of readdirSync(dir,{withFileTypes:true})){
-  const file=join(dir,item.name);assert.ok(!item.isSymbolicLink());if(item.isDirectory())walk(file);else{assert.ok(item.isFile());paths.push(relative(root,file).replaceAll('\\','/'));}
- }}
- walk(join(root,'supabase','functions'));walk(join(root,'src'));paths.push('deno.json');
- assert.deepEqual(paths.sort(),manifest.edgeFiles.map(f=>f.path).sort(),'Downloaded closure differs');
- for(const file of manifest.edgeFiles){const path=resolve(root,file.path);assert.ok(lstatSync(path).isFile());assert.equal(digest(readFileSync(path,'utf8').replace(/\r\n?/g,'\n')),file.sha256,'Downloaded runtime source drift');}
+export function normalizeDownloadedPaths(paths){
+ assert.ok(paths.length>0);const prefixed=paths.some(p=>p.startsWith('VinPoker/'));
+ if(prefixed)assert.ok(paths.every(p=>p.startsWith('VinPoker/')),'Mixed download roots rejected');
+ const normalized=paths.map(p=>{assert.ok(!p.startsWith('/')&&!/^[A-Za-z]:/.test(p)&&!p.includes('\\')&&!p.split('/').some(x=>!x||x==='.'||x==='..'),'Unsafe downloaded path');const normalized=prefixed?p.slice('VinPoker/'.length):p;assert.ok(!normalized.startsWith('VinPoker/'),'Nested download prefix rejected');return normalized;});
+ assert.equal(new Set(normalized).size,normalized.length,'Downloaded path collision');return normalized;
 }
+export function verifyDownloaded(root,manifest){
+ assert.ok(!lstatSync(root).isSymbolicLink());const paths=[];
+ function walk(dir){for(const item of readdirSync(dir,{withFileTypes:true})){
+  const file=join(dir,item.name);assert.ok(!item.isSymbolicLink(),'Downloaded symlink rejected');if(item.isDirectory())walk(file);else{assert.ok(item.isFile());paths.push(relative(root,file).replaceAll('\\','/'));}
+ }}
+ walk(root);const normalized=normalizeDownloadedPaths(paths);
+ assert.deepEqual([...normalized].sort(),manifest.edgeFiles.map(f=>f.path).sort(),'Downloaded closure differs');
+ const base=paths[0].startsWith('VinPoker/')?join(root,'VinPoker'):root;
+ for(const file of manifest.edgeFiles){assert.equal(digest(readFileSync(resolve(base,file.path),'utf8').replace(/\r\n?/g,'\n')),file.sha256,'Downloaded runtime source drift');}
+ return base;
+}
+export function validateRepairBase(value){validatePriorEdge({...value,version:12,ezbr_sha256:PRIOR_EDGE.ezbr_sha256});assert.equal(value.version,15);assert.equal(value.ezbr_sha256,'14140eeff59f2fcef84127235f89a9e91deeaba1d14c294e8c881c11de8e03bf');}
 export function verifyPhaseA(lines,manifest){
  const rows=lines.trim().split(/\r?\n/).map(line=>JSON.parse(line));
  assert.equal(rows.length,5);
@@ -54,7 +64,7 @@ export async function restorePriorCode({management,cli,priorRoot,readDownloaded,
  try{
  verifyDownloaded(priorRoot,{edgeFiles:priorFiles});await verifyDatabase();
  await management('POST','secrets',[{name:'PUBLIC_SPECTATOR_SOURCE_BATCH',value:'0'}]);verifySecret(await management('GET','secrets'),'0');
- cli(['functions','deploy',name,'--project-ref',project,'--no-verify-jwt','--workdir',priorRoot]);
+ cli(['functions','deploy',name,'--project-ref',project,'--no-verify-jwt','--workdir',priorRoot,'--import-map',resolve(priorRoot,'deno.json')]);
  const meta=await management('GET',`functions/${name}`);assert.equal(meta.slug,name);assert.equal(meta.status,'ACTIVE');assert.equal(meta.verify_jwt,false);assert.equal(meta.import_map,true);assert.ok(meta.version>12);
  await readDownloaded({edgeFiles:priorFiles});const stable=await management('GET',`functions/${name}`);assert.equal(stable.version,meta.version);assert.equal(stable.ezbr_sha256,meta.ezbr_sha256);verifySecret(await management('GET','secrets'),'0');assert.equal(await denied(),401);await verifyDatabase();
  report({kind:'VERIFIED_PRIOR_V12_CODE_REDEPLOYED_AS_NEW_VERSION',version:meta.version,ezbrSha256:meta.ezbr_sha256,batch:'0',sourceCommit:'unknown'});
@@ -65,15 +75,15 @@ export async function restorePriorCode({management,cli,priorRoot,readDownloaded,
  }
 
 }
-export async function runEdgeRelease({management,cli,readDownloaded,manifest,verifyDatabase,denied,report=()=>{}}){
+export async function runEdgeRelease({management,cli,readDownloaded,manifest,verifyDatabase,denied,sourceRoot,repair=false,report=()=>{}}){
  let phase='preflight',changed=false;
  const meta=()=>management('GET',`functions/${name}`);
  const flag=async value=>{await management('POST','secrets',[{name:'PUBLIC_SPECTATOR_SOURCE_BATCH',value}]);verifySecret(await management('GET','secrets'),value);};
  try{
-  await verifyDatabase();validatePriorEdge(await meta());
+  await verifyDatabase();const base=await meta();if(repair){validateRepairBase(base);verifySecret(await management('GET','secrets'),'0');}else validatePriorEdge(base);
   phase='batch-zero';changed=true;await flag('0');
-  phase='deploy';cli(['functions','deploy',name,'--project-ref',project,'--no-verify-jwt']);
-  const first=await meta();assert.equal(first.slug,name);assert.equal(first.status,'ACTIVE');assert.equal(first.verify_jwt,false);assert.equal(first.import_map,true);assert.ok(Number.isInteger(first.version)&&first.version>12);assert.match(first.ezbr_sha256,/^[a-f0-9]{64}$/);
+  phase='deploy';cli(['functions','deploy',name,'--project-ref',project,'--no-verify-jwt','--import-map',resolve(sourceRoot,'deno.json')]);
+  const first=await meta();assert.equal(first.slug,name);assert.equal(first.status,'ACTIVE');assert.equal(first.verify_jwt,false);assert.equal(first.import_map,true);assert.ok(Number.isInteger(first.version)&&first.version>(repair?15:12));assert.match(first.ezbr_sha256,/^[a-f0-9]{64}$/);
   phase='verify-deployed-source';await readDownloaded(manifest);verifySecret(await management('GET','secrets'),'0');
   const stable=await meta();assert.equal(stable.version,first.version);assert.equal(stable.ezbr_sha256,first.ezbr_sha256);assert.equal(await denied(),401);await verifyDatabase();
   phase='batch-one';await flag('1');const after=await meta();assert.equal(after.version,first.version);assert.equal(after.ezbr_sha256,first.ezbr_sha256);await verifyDatabase();assert.equal(await denied(),401);
@@ -86,7 +96,7 @@ export async function runEdgeRelease({management,cli,readDownloaded,manifest,ver
  }
 }
 async function main(){
- const operation=process.argv[2]??'deploy';assert.ok(['capture-prior','deploy','restore-prior'].includes(operation));
+ const operation=process.argv[2]??'deploy';assert.ok(['capture-prior','deploy','repair-bundle','restore-prior'].includes(operation));
  const env=process.env;assert.equal(env.GITHUB_REPOSITORY,repo);assert.equal(env.GITHUB_REF,'refs/heads/main');assert.equal(env.GITHUB_EVENT_NAME,'workflow_dispatch');assert.equal(env.SUPABASE_PROJECT_REF,project);assert.ok(env.SUPABASE_ACCESS_TOKEN);
  assert.equal(env.CONFIRM_EDGE_RELEASE,operation==='restore-prior'?`RESTORE_SPECTATOR_PRIOR_CODE_${env.GITHUB_SHA}`:`RELEASE_SPECTATOR_BATCH_${env.GITHUB_SHA}`);
  const root=resolve(fileURLToPath(new URL('../..',import.meta.url))),pkg=loadPackage(root);
@@ -108,24 +118,29 @@ async function main(){
  const denied=async()=>{const r=await fetch(`https://${project}.supabase.co/functions/v1/${name}`,{method:'POST',signal:AbortSignal.timeout(10000)});return r.status;};
  const report=event=>console.log(JSON.stringify(event));
  const priorRoot=resolve(env.RUNNER_TEMP,'spectator-prior-v12');
- if(operation==='capture-prior'){
-  validatePriorEdge(await management('GET',`functions/${name}`));await verifyDatabase();
-  const rawPrior=mkdtempSync(join(tmpdir(),'spectator-prior-download-'));cli(['functions','download',name,'--project-ref',project,'--use-api','--workdir',rawPrior]);verifyDownloaded(rawPrior,{edgeFiles:priorFiles});
-  for(const file of priorFiles){const dest=resolve(priorRoot,file.path);mkdirSync(dirname(dest),{recursive:true});writeFileSync(dest,readFileSync(resolve(rawPrior,file.path)));}
-  validatePriorEdge(await management('GET',`functions/${name}`));
-  report({kind:'VERIFIED_PRIOR_V12_SIX_FILE_BACKUP',version:12,sourceCommit:'unknown'});return;
- }
- if(operation==='restore-prior'){
-  assert.match(env.PRIOR_RELEASE_RUN_ID??'',/^\d+$/);const old=gh(`actions/runs/${env.PRIOR_RELEASE_RUN_ID}`);assert.equal(old.workflow_id,run.workflow_id);assert.equal(old.actor.login,'PhamGiaVinh');assert.equal(old.head_branch,'main');assert.equal(old.event,'workflow_dispatch');assert.equal(old.status,'completed');
-  const items=gh(`actions/runs/${env.PRIOR_RELEASE_RUN_ID}/artifacts`).artifacts.filter(a=>a.name===`spectator-prior-v12-${env.PRIOR_RELEASE_RUN_ID}`&&!a.expired);assert.equal(items.length,1);
+ const materializePrior=priorRunId=>{
+  assert.match(priorRunId??'',/^\d+$/);const old=gh(`actions/runs/${priorRunId}`);assert.equal(old.workflow_id,run.workflow_id);assert.equal(old.actor.login,'PhamGiaVinh');assert.equal(old.head_branch,'main');assert.equal(old.event,'workflow_dispatch');assert.equal(old.status,'completed');
+  const items=gh(`actions/runs/${priorRunId}/artifacts`).artifacts.filter(a=>a.name===`spectator-prior-v12-${priorRunId}`&&!a.expired);assert.equal(items.length,1);
   const bytes=execFileSync('gh',['api',`repos/${repo}/actions/artifacts/${items[0].id}/zip`],{timeout:30000,maxBuffer:4*1024*1024,stdio:['ignore','pipe','pipe']});assert.equal('sha256:'+digest(bytes),items[0].digest);
   const backupZip=join(mkdtempSync(join(tmpdir(),'spectator-prior-')),'source.zip');writeFileSync(backupZip,bytes);
   const paths=execFileSync('unzip',['-Z1',backupZip],{encoding:'utf8'}).trim().split('\n');assert.deepEqual(paths.sort(),priorFiles.map(f=>f.path).sort());
   for(const file of priorFiles){const content=execFileSync('unzip',['-p',backupZip,file.path],{maxBuffer:2*1024*1024});assert.equal(digest(content.toString('utf8').replace(/\r\n?/g,'\n')),file.sha256);const dest=resolve(priorRoot,file.path);mkdirSync(dirname(dest),{recursive:true});writeFileSync(dest,content);}
+  verifyDownloaded(priorRoot,{edgeFiles:priorFiles});
+ };
+ if(operation==='capture-prior'){
+  if(env.OPERATION==='repair-bundle'){validateRepairBase(await management('GET',`functions/${name}`));verifySecret(await management('GET','secrets'),'0');await verifyDatabase();materializePrior('43626793959');report({kind:'VERIFIED_ORIGINAL_PRIOR_V12_ARTIFACT_REUSED',originatingRun:43626793959,sourceCommit:'unknown'});return;}
+  validatePriorEdge(await management('GET',`functions/${name}`));await verifyDatabase();
+  const rawPrior=mkdtempSync(join(tmpdir(),'spectator-prior-download-'));cli(['functions','download',name,'--project-ref',project,'--use-api','--workdir',rawPrior]);const priorBase=verifyDownloaded(rawPrior,{edgeFiles:priorFiles});
+  for(const file of priorFiles){const dest=resolve(priorRoot,file.path);mkdirSync(dirname(dest),{recursive:true});writeFileSync(dest,readFileSync(resolve(priorBase,file.path)));}
+  validatePriorEdge(await management('GET',`functions/${name}`));
+  report({kind:'VERIFIED_PRIOR_V12_SIX_FILE_BACKUP',version:12,sourceCommit:'unknown'});return;
+ }
+ if(operation==='restore-prior'){
+  materializePrior(env.PRIOR_RELEASE_RUN_ID);
   await restorePriorCode({management,cli,priorRoot,readDownloaded,verifyDatabase,denied,report});return;
  }
  const beforeRuntime=await query(hostedRuntimeSql);
- await runEdgeRelease({manifest:pkg.manifest,management,cli,verifyDatabase,readDownloaded,denied,report});
+ await runEdgeRelease({manifest:pkg.manifest,management,cli,verifyDatabase,readDownloaded,denied,sourceRoot:root,repair:operation==='repair-bundle',report});
  for(let i=0;i<3;i++){await new Promise(r=>setTimeout(r,5000));const observed=classifyHostedRuntime(beforeRuntime,await query(hostedRuntimeSql));report({kind:'SPECTATOR_HOSTED_RUNTIME_OBSERVATION',...observed});if(observed.state==='hosted-batch-observed')break;}
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(()=>{console.error('SPECTATOR_EDGE_RELEASE_STOP_RAW_DETAILS_WITHHELD');process.exitCode=1;});
