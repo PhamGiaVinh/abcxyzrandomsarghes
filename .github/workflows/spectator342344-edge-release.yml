@@ -7,7 +7,7 @@ on:
       - 'VinPoker/scripts/ops/spectator342344-edge-api-transport.test.mjs'
   workflow_dispatch:
     inputs:
-      operation: {description: Deploy candidate or restore verified prior code, type: choice, required: true, default: deploy, options: [deploy, repair-bundle, restore-prior, inspect-bundle, inspect-prior]}
+      operation: {description: Deploy candidate or restore verified prior code, type: choice, required: true, default: deploy, options: [deploy, repair-bundle, restore-prior, inspect-bundle, inspect-prior, activate-verified]}
       prior_release_run_id: {description: Prior release run containing the verified six-file backup, type: string, required: false}
       confirmation: {description: RELEASE_SPECTATOR_BATCH_<exact main SHA>, required: true, type: string}
 permissions: {contents: read, actions: read, pull-requests: read}
@@ -53,7 +53,7 @@ jobs:
           test "$("$RUNNER_TEMP/spectator-cli/node_modules/.bin/supabase" --version)" = 2.101.0
           echo "$RUNNER_TEMP/spectator-cli/node_modules/.bin" >>"$GITHUB_PATH"
       - name: Capture verified prior source before any production change
-        if: inputs.operation == 'deploy' || inputs.operation == 'repair-bundle'
+        if: inputs.operation == 'deploy' || inputs.operation == 'repair-bundle' || inputs.operation == 'activate-verified'
         env:
           GH_TOKEN: ${{ github.token }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASEACCESSTOKEN }}
@@ -62,7 +62,7 @@ jobs:
           OPERATION: ${{ inputs.operation }}
         run: node VinPoker/scripts/ops/spectator342344-edge-release.mjs capture-prior
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: inputs.operation == 'deploy' || inputs.operation == 'repair-bundle'
+        if: inputs.operation == 'deploy' || inputs.operation == 'repair-bundle' || inputs.operation == 'activate-verified'
         with:
           name: spectator-prior-v12-${{ github.run_id }}
           path: ${{ runner.temp }}/spectator-prior-v12
