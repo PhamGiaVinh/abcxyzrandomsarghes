@@ -18,9 +18,9 @@ export function verifySecret(rows,flag){
  assert.equal(values.length,1);assert.ok([flag,digest(flag)].includes(values[0].value),'Batch configuration not verified');
 }
 export function normalizeDownloadedPaths(paths){
- assert.ok(paths.length>0);const prefixed=paths.some(p=>p.startsWith('VinPoker/'));
- if(prefixed)assert.ok(paths.every(p=>p.startsWith('VinPoker/')),'Mixed download roots rejected');
- const normalized=paths.map(p=>{assert.ok(!p.startsWith('/')&&!/^[A-Za-z]:/.test(p)&&!p.includes('\\')&&!p.split('/').some(x=>!x||x==='.'||x==='..'),'Unsafe downloaded path');const normalized=prefixed?p.slice('VinPoker/'.length):p;assert.ok(!normalized.startsWith('VinPoker/'),'Nested download prefix rejected');return normalized;});
+ assert.ok(paths.length>0);const prefix=['VinPoker/','source/'].find(value=>paths.some(p=>p.startsWith(value)))??'';
+ if(prefix)assert.ok(paths.every(p=>p.startsWith(prefix)),'Mixed download roots rejected');
+ const normalized=paths.map(p=>{assert.ok(!p.startsWith('/')&&!/^[A-Za-z]:/.test(p)&&!p.includes('\\')&&!p.split('/').some(x=>!x||x==='.'||x==='..'),'Unsafe downloaded path');const normalized=prefix?p.slice(prefix.length):p;assert.ok(!['VinPoker/','source/'].some(value=>normalized.startsWith(value)),'Nested download prefix rejected');return normalized;});
  assert.equal(new Set(normalized).size,normalized.length,'Downloaded path collision');return normalized;
 }
 export function verifyDownloaded(root,manifest){
@@ -30,7 +30,7 @@ export function verifyDownloaded(root,manifest){
  }}
  walk(root);const normalized=normalizeDownloadedPaths(paths);
  assert.deepEqual([...normalized].sort(),manifest.edgeFiles.map(f=>f.path).sort(),'Downloaded closure differs');
- const base=paths[0].startsWith('VinPoker/')?join(root,'VinPoker'):root;
+ const prefix=['VinPoker','source'].find(value=>paths[0].startsWith(value+'/'));const base=prefix?join(root,prefix):root;
  for(const file of manifest.edgeFiles){assert.equal(digest(readFileSync(resolve(base,file.path),'utf8').replace(/\r\n?/g,'\n')),file.sha256,'Downloaded runtime source drift');}
  return base;
 }
