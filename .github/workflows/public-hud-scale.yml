@@ -2,6 +2,15 @@ name: Public HUD isolated real HTTP and WebSocket load
 on:
   workflow_call:
     inputs:
+      source_batch_probe:
+        type: boolean
+        default: false
+      pending_source_probe:
+        type: boolean
+        default: false
+      source_generation_probe:
+        type: boolean
+        default: false
       qualification:
         type: boolean
         default: false
@@ -25,6 +34,26 @@ on:
       - 'VinPoker/scripts/ops/operations-audience-scope.mjs'
   workflow_dispatch:
     inputs:
+      source_batch_probe:
+        description: 'Explicit isolated pending344/source-batch mode; requires pending_source_probe'
+        type: boolean
+        default: false
+      writer_wait_diagnostic:
+        description: 'Read-only wait/host-pressure observation; writer-only, never qualification'
+        type: boolean
+        default: false
+      writer_reader_smoke:
+        description: 'Reader lifecycle only before fixture seed; requires writer_wait_diagnostic, never qualification'
+        type: boolean
+        default: false
+      pending_source_probe:
+        description: 'Explicit isolated pending-source outcome; requires source_generation_probe'
+        type: boolean
+        default: false
+      source_generation_probe:
+        description: 'Explicit isolated migration342 candidate; default historical workload unchanged'
+        type: boolean
+        default: false
       writer_method:
         description: 'Prospective completed-hand marking benchmark; old runs unchanged'
         type: choice
@@ -85,6 +114,11 @@ jobs:
       run:
         working-directory: VinPoker
     env:
+      PUBLIC_HUD_SOURCE_BATCH_PROBE: ${{ inputs.source_batch_probe && '1' || '0' }}
+      PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC: ${{ inputs.writer_wait_diagnostic && '1' || '0' }}
+      PUBLIC_HUD_WRITER_READER_SMOKE: ${{ inputs.writer_reader_smoke && '1' || '0' }}
+      PUBLIC_HUD_PENDING_SOURCE_PROBE: ${{ inputs.pending_source_probe && '1' || '0' }}
+      PUBLIC_HUD_SOURCE_GENERATION_PROBE: ${{ inputs.source_generation_probe && '1' || '0' }}
       PUBLIC_HUD_SCALE_HANDS: ${{ inputs.qualification && '1000000' || inputs.history_scale || '100' }}
       PUBLIC_HUD_WRITER_QUALIFICATION_METHOD: ${{ inputs.writer_method || 'startup' }}
       PUBLIC_HUD_SCALE_VIEWERS: ${{ (inputs.qualification || inputs.connection_probe) && '1000' || '10' }}
@@ -110,6 +144,7 @@ jobs:
           version: 2.101.0
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: node --test tests/publicHud/scale.write.diagnostic.test.mjs
+      - run: python3 tests/publicHud/writer.wait.observer.test.py
       - name: Install real clock probe browser
         if: inputs.clock_ui_probe
         run: npx playwright install --with-deps chromium

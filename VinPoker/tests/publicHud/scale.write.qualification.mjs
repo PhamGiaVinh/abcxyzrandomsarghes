@@ -10,9 +10,10 @@ export function readMatchedWriterQualification(handsPerPlayer){
  const expected={...currentWriterCodeIdentity(),runId,runAttempt,database:`vinpoker_hud_test_pair_${runId}_${runAttempt}`,sourceHands:handsPerPlayer};
  const report=JSON.parse(readFileSync('output/hud-scale/writer-matched-observers.json','utf8'));
  const receipt=JSON.parse(readFileSync('output/hud-scale/writer-matched-observers.json.qualified.json','utf8'));
- const recomputed=requireMatchedWriterQualification(report,expected);
+ const sourceGenerationProbe=process.env.PUBLIC_HUD_SOURCE_GENERATION_PROBE==='1';
+ const recomputed=requireMatchedWriterQualification(report,expected,{sourceGenerationProbe});
  assert.equal(receipt.kind,'MATCHED_WRITER_SCOPE_QUALIFICATION_ONLY');
  assert.equal(receipt.fullLoadQualification,false);
- for(const key of ['method','identity','statistics','scope'])assert.deepEqual(receipt[key],recomputed[key],`Writer receipt ${key} differs`);
+ for(const key of ['method','identity','statistics','scope',...(sourceGenerationProbe?['sourceGenerationCandidate']:[])])assert.deepEqual(receipt[key],recomputed[key],`Writer receipt ${key} differs`);
  return recomputed;
 }

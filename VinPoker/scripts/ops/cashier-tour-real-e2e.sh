@@ -15,6 +15,26 @@ reentry_fault_mode="${LOCAL_REENTRY_FAULT_MODE:-failure-injection}"
 audience_count="${LOCAL_OPERATIONS_AUDIENCE:-0}"
 audience_model="${LOCAL_OPERATIONS_AUDIENCE_MODEL:-grid-detail-stress}"
 operations_rest_pool="${LOCAL_OPERATIONS_REST_POOL:-10}"
+diagnostic_scope="${LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE:-none}"
+source_generation_probe="${LOCAL_SOURCE_GENERATION_PROBE:-0}"
+pending_source_probe="${LOCAL_PENDING_SOURCE_PROBE:-0}"
+source_batch_probe="${LOCAL_SOURCE_BATCH_PROBE:-0}"
+if [[ "$source_batch_probe" != 0 && "$source_batch_probe" != 1 ]] ||
+   [[ "$source_batch_probe" == 1 && ( "$pending_source_probe" != 1 || "$diagnostic_scope" != none ) ]]; then
+  echo 'Source batch candidate requires isolated full pending-source probe' >&2;exit 1
+fi
+if [[ "$pending_source_probe" != 0 && "$pending_source_probe" != 1 ]] ||
+   [[ "$pending_source_probe" == 1 && ( "$source_generation_probe" != 1 || "$diagnostic_scope" != none ) ]]; then
+  echo 'Pending source candidate requires isolated full source-generation probe' >&2;exit 1
+fi
+if [[ "$source_generation_probe" != 0 && "$source_generation_probe" != 1 ]] ||
+   [[ "$source_generation_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$prize_close_probe" != 1 || "$reentry_fault_mode" != healthy ) ]]; then
+  echo 'Source generation candidate requires isolated current full-source healthy audience mode' >&2;exit 1
+fi
+case "$diagnostic_scope" in none|cashier-payment|dealer-checkin) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
+if [[ "$diagnostic_scope" != none && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$reentry_fault_mode" != healthy || "$redraw_probe" != 0 || "$prize_close_probe" != 1 ) ]]; then
+  echo 'Targeted diagnostics require isolated current full34 healthy source preparation and audience; only unrelated scenario execution is skipped' >&2;exit 1
+fi
 if [[ "$operations_rest_pool" != 10 && "$operations_rest_pool" != 20 ]] ||
    [[ "$operations_rest_pool" == 20 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" != 1000 ) ]]; then
   echo 'Pool comparison requires explicit isolated1000 operational mode' >&2;exit 1
@@ -1379,6 +1399,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
   --env LOCAL_OPERATIONS_AUDIENCE="$audience_count" \
   --env LOCAL_OPERATIONS_AUDIENCE_MODEL="$audience_model" \
+  --env LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE="$diagnostic_scope" \
   --env PLAYWRIGHT_BASE_URL='http://localhost:8080' \
   --env LOCAL_SUPABASE_URL="http://$browser_gateway:8000" \
   --env LOCAL_SUPABASE_ANON_KEY="$anon_key" \
@@ -1634,6 +1655,57 @@ AUDIENCE_REALTIME_RECEIPT
     { printf "COMMENT ON DATABASE postgres IS 'vinpoker-operational-schema-fence-disposable';\nSET vinpoker.isolated_schema_fence='cashier-current-schema-v1';\n";
       cat "$repo_root/supabase/pending-tests/operations_schema_freeze_fixture.sql"; } |
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
+    if [[ "$source_generation_probe" == 1 ]]; then
+      # Only this owned disposable stack, before admission and catalog freeze.
+      docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "DO \$\$ BEGIN
+       IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+       OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND NOT frozen AND admission_at IS NULL)
+       THEN RAISE EXCEPTION 'generation342_requires_owned_unadmitted_fixture';END IF;END \$\$;"
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+        <"$repo_root/supabase/migrations/20270128000342_nonblocking_spectator_source_generation.sql"
+      docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT jsonb_build_object(
+       'kind','ISOLATED_SOURCE_GENERATION_342_CANDIDATE','qualification',false,'productionChanged',false,
+       'migration','20270128000342_nonblocking_spectator_source_generation.sql',
+       'originalBodyMd5',original_body_md5,'candidateBodyMd5',candidate_body_md5)
+       FROM spectator_projection_v2.source_nonblocking_original_v1;" \
+        >"$repo_root/output/operations-latency/operations-source-generation-candidate-http.json"
+      if [[ "$pending_source_probe" == 1 ]]; then
+        # Same owned, unadmitted fixture. Never alter the default/342-only path.
+        docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+          <"$repo_root/supabase/migrations/20270128000343_spectator_pending_source_outcome.sql"
+        docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "DO \$\$ BEGIN
+         IF NOT EXISTS(SELECT 1 FROM spectator_projection_v2.source_pending_original_v1 s
+          WHERE s.original_definition_hash='0557076e4866159dc1095c5257ceb7c6'
+          AND md5(replace(pg_get_functiondef(s.signature::regprocedure),chr(13),''))=s.candidate_definition_hash)
+         THEN RAISE EXCEPTION 'source_pending_candidate_runtime_drift';END IF;END \$\$;
+         SELECT jsonb_build_object('kind','ISOLATED_PENDING_SOURCE_FENCED_CANDIDATE','qualification',false,'productionChanged',false,
+          'migration','20270128000343_spectator_pending_source_outcome.sql',
+          'originalDefinitionMd5',original_definition_hash,'candidateDefinitionMd5',candidate_definition_hash)
+         FROM spectator_projection_v2.source_pending_original_v1;" \
+          >"$repo_root/output/operations-latency/operations-source-pending-candidate-http.json"
+        if [[ "$source_batch_probe" == 1 ]]; then
+          node --input-type=module - "$repo_root" <<'BATCH_SOURCE_HASH'
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {createHash} from 'node:crypto';import {pathToFileURL} from 'node:url';
+const root=process.argv[2];const {sourceBatchProfile}=await import(pathToFileURL(root+'/tests/publicHud/scale.write.protocol.mjs'));
+const sql=readFileSync(root+'/supabase/migrations/'+sourceBatchProfile.migration,'utf8');
+assert.equal(createHash('sha256').update(sql.replace(/\r\n?/g,'\n')).digest('hex'),sourceBatchProfile.sqlSha256);
+BATCH_SOURCE_HASH
+          docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+            <"$repo_root/supabase/migrations/20270128000344_spectator_bounded_source_batch.sql"
+          node --input-type=module - "$db_container" "$repo_root/output/operations-latency/operations-source-batch-candidate-http.json" "$repo_root" <<'BATCH_SOURCE_METADATA'
+import assert from 'node:assert/strict';import {execFileSync} from 'node:child_process';import {writeFileSync} from 'node:fs';import {pathToFileURL} from 'node:url';
+const {sourceBatchProfile}=await import(pathToFileURL(process.argv[4]+'/tests/publicHud/scale.write.protocol.mjs'));
+const query=`SELECT jsonb_build_object('bodyMd5',md5(replace(prosrc,chr(13),'')),
+ 'metadata',proowner='postgres'::regrole AND prosecdef AND provolatile='s' AND proconfig=ARRAY['search_path=""']::text[]
+ AND proacl::text='{postgres=X/postgres,service_role=X/postgres}')
+ FROM pg_proc WHERE oid='public.get_public_spectator_projection_sources_v2(jsonb)'::regprocedure;`;
+const actual=JSON.parse(execFileSync('docker',['exec',process.argv[2],'psql','-X','-Atq','-v','ON_ERROR_STOP=1','-U','postgres','-d','postgres','-c',query],{encoding:'utf8'}));
+assert.equal(actual.bodyMd5,sourceBatchProfile.bodyMd5);assert.equal(actual.metadata,true);
+writeFileSync(process.argv[3],JSON.stringify({kind:'ISOLATED_OPERATIONAL_SOURCE_BATCH_CANDIDATE',...sourceBatchProfile,...actual,qualification:false,productionChanged:false},null,2));
+BATCH_SOURCE_METADATA
+        fi
+      fi
+    fi
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
     node --input-type=module - "$test_root/isolated-status.json" "$repo_root/output/operations-latency/operations-schema-readiness-http.json" <<'CURRENT_SCHEMA_HTTP_READY'
 import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
@@ -1702,6 +1774,123 @@ fi
 # Validate the fresh46-attendance fixture before the first browser handover.
 # Later checkout stages intentionally make those attendances ineligible.
 if [[ "$schema_mode" == current && "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
+if [[ "$diagnostic_scope" != none ]]; then
+  loaded_phase_checkpoint "targeted-$diagnostic_scope-start"
+  if [[ "$diagnostic_scope" == cashier-payment ]]; then
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'TARGETED_PAYMENT_FIXTURE'
+BEGIN;
+DO $$ BEGIN
+ IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
+ OR NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ OR EXISTS(SELECT 1 FROM public.tournaments WHERE id BETWEEN 'a3000000-0000-4000-8000-000000000004' AND 'a3000000-0000-4000-8000-000000000013')
+ OR EXISTS(SELECT 1 FROM public.game_tables WHERE id::text LIKE 'ac710000-0000-4000-8000-%')
+ OR (SELECT count(*) FROM generate_series(1,100) n WHERE NOT EXISTS(
+   SELECT 1 FROM public.game_tables g WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.table_number=n))<30
+ THEN RAISE EXCEPTION 'targeted_payment_requires_empty_owned_fixture'; END IF;
+END $$;
+INSERT INTO public.centerpoint_tournament_ops_release(id,enabled,allowed_club_ids)
+VALUES(true,true,ARRAY['a2000000-0000-4000-8000-000000000001'::uuid])
+ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded.allowed_club_ids;
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
+SELECT ('a3000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+ 'a2000000-0000-4000-8000-000000000001','Targeted Cashier payment TEST '||n,
+ 'registering','registering',now(),6000000,600000,0,false,0,0 FROM generate_series(4,13)n;
+WITH slots AS(
+ SELECT n table_number FROM generate_series(1,100)n
+ WHERE NOT EXISTS(SELECT 1 FROM public.game_tables g WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.table_number=n)
+ ORDER BY n LIMIT 30
+), numbered AS(SELECT row_number() OVER(ORDER BY table_number) n,table_number FROM slots)
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+SELECT ('ac710000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+ 'a2000000-0000-4000-8000-000000000001','Targeted Cashier payment TEST '||n,
+ table_number,'tournament','inactive','available' FROM numbered;
+COMMIT;
+TARGETED_PAYMENT_FIXTURE
+    # Original requests only: observe lock waits without changing source functions,
+    # budgets or actor claims. Preserve a browser failure before any conservation gate.
+    node "$repo_root/scripts/ops/operations-lock-diagnostics.mjs" "$db_container" "$repo_root/output/operations-latency/targeted-payment-locks-http.json" "$source_sha" >"$test_root/targeted-payment-lock-observer-private.log" 2>&1 &
+    payment_lock_sampler_pid=$!
+    targeted_observer_ready=false
+    for _ in {1..30};do
+      if ! kill -0 "$payment_lock_sampler_pid" 2>/dev/null;then wait "$payment_lock_sampler_pid";exit 1;fi
+      if node -e 'try{process.exit(JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8")).phase==="ready"?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/targeted-payment-locks-http.json";then targeted_observer_ready=true;break;fi
+      sleep 1
+    done
+    [[ "$targeted_observer_ready" == true ]]
+    targeted_browser_status=0
+    run_browser_proof '' '' 'targeted canonical Cashier payment reproduction across ten fresh tours$' || targeted_browser_status=$?
+    targeted_observer_stop_status=0
+    kill -TERM "$payment_lock_sampler_pid" || targeted_observer_stop_status=$?
+    targeted_observer_status=0
+    wait "$payment_lock_sampler_pid" || targeted_observer_status=$?
+    payment_lock_sampler_pid=''
+    if [[ "$targeted_browser_status" != 0 ]];then exit "$targeted_browser_status";fi
+    [[ "$targeted_observer_stop_status" == 0 && "$targeted_observer_status" == 0 ]]
+    docker exec -i "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      >"$repo_root/output/operations-latency/targeted-payment-conservation-http.json" <<'TARGETED_PAYMENT_CONSERVATION'
+WITH tours AS(SELECT id FROM public.tournaments WHERE club_id='a2000000-0000-4000-8000-000000000001' AND name LIKE 'Targeted Cashier payment TEST %'),
+ regs AS(SELECT r.* FROM public.tournament_registrations r JOIN tours t ON t.id=r.tournament_id),
+ moves AS(SELECT m.* FROM public.cashier_buyin_movements m JOIN regs r ON r.id=m.registration_id WHERE m.direction='in' AND m.purpose='buyin')
+SELECT jsonb_build_object('kind','TARGETED_PAYMENT_CANONICAL_CONSERVATION','qualification',false,
+ 'tours',(SELECT count(*) FROM tours),'registrations',(SELECT count(*) FROM regs),
+ 'confirmedPaid',(SELECT count(*) FROM regs WHERE status='confirmed' AND cashier_paid_at IS NOT NULL),
+ 'movements',(SELECT count(*) FROM moves),'cash',(SELECT sum(applied_amount) FROM moves),
+ 'entries',(SELECT count(*) FROM public.tournament_entries e JOIN tours t ON t.id=e.tournament_id),
+ 'activeSeats',(SELECT count(*) FROM public.tournament_seats s JOIN tours t ON t.id=s.tournament_id WHERE s.is_active),
+ 'seatedChips',(SELECT sum(s.chip_count) FROM public.tournament_seats s JOIN tours t ON t.id=s.tournament_id WHERE s.is_active));
+TARGETED_PAYMENT_CONSERVATION
+    node --input-type=module - "$repo_root/output/operations-latency/targeted-payment-conservation-http.json" <<'TARGETED_PAYMENT_ASSERT'
+import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
+const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
+for(const [k,v]of Object.entries({tours:10,registrations:200,confirmedPaid:200,movements:200,cash:1320000000,entries:200,activeSeats:200,seatedChips:4000000}))assert.equal(r[k],v,k);
+TARGETED_PAYMENT_ASSERT
+  else
+    run_browser_proof '' '' 'real check-in HTTP commit, independent observation, exact retry and tenant boundary$'
+    targeted_checkin_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
+      (SELECT count(*) FROM public.dealer_attendance a JOIN public.dealers d ON d.id=a.dealer_id WHERE d.club_id='a2000000-0000-4000-8000-000000000001' AND a.status='checked_in' AND a.current_state='available'),
+      (SELECT count(*) FROM public.table_operation_receipts WHERE operation_type='operator_check_in_dealer_v1'),
+      (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000002'),
+      (SELECT count(*) FROM public.dealer_attendance WHERE dealer_id='ad400000-0000-4000-8000-000000000003' AND status='checked_in');")"
+    [[ "$targeted_checkin_state" == "$checkin_dealer_count|$((checkin_dealer_count + 1))|0|1" ]]
+  fi
+  loaded_phase_checkpoint "targeted-$diagnostic_scope-end"
+  targeted_minimum_hold=false
+  for _ in {1..35};do
+    kill -0 "$audience_pid"
+    if node -e 'const a=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.exit(a.phase==="ready"&&a.activeDurationMs>=30000?0:1)' "$repo_root/output/operations-latency/operations-audience-http.json";then targeted_minimum_hold=true;break;fi
+    sleep 1
+  done
+  [[ "$targeted_minimum_hold" == true ]]
+  kill -TERM "$audience_pid"
+  targeted_audience_status=0
+  wait "$audience_pid" || targeted_audience_status=$?
+  audience_pid=''
+  if [[ -n "${db_pressure_pid:-}" ]];then kill -TERM "$db_pressure_pid";wait "$db_pressure_pid";db_pressure_pid='';fi
+  kill -TERM "$clock_flush_pid";wait "$clock_flush_pid";clock_flush_pid=''
+  targeted_after="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c 'SELECT ops_load_fixture_v1.catalog_fingerprint();')"
+  node --input-type=module - "$repo_root/output/operations-latency" "$diagnostic_scope" "$audience_count" "$source_sha" "$targeted_after" "$targeted_audience_status" "$source_generation_probe" <<'TARGETED_FINAL_RECEIPT'
+import assert from'node:assert/strict';import{readFileSync,writeFileSync}from'node:fs';
+const [dir,scope,count,sha,after,audienceExit,sourceGenerationProbe='0']=process.argv.slice(2),read=name=>JSON.parse(readFileSync(dir+'/'+name,'utf8'));
+const audience=read('operations-audience-http.json'),fence=read('operations-schema-freeze-http.json'),clock=read('clock-candidate-broadcast-http.json');
+const runtime=read('operations-candidate-package-http.json');
+const sourceGenerationCandidate=sourceGenerationProbe==='1'?read('operations-source-generation-candidate-http.json'):null;
+if(sourceGenerationCandidate){assert.equal(sourceGenerationCandidate.kind,'ISOLATED_SOURCE_GENERATION_342_CANDIDATE');assert.match(sourceGenerationCandidate.candidateBodyMd5,/^[a-f0-9]{32}$/);}
+assert.equal(runtime.pendingReentryTransportApplied,true);assert.equal(runtime.correctionMigrationApplied,true);
+// These selected cases create no completed hands. Preserve the audience's full
+// qualification result unchanged; only its healthy concurrent reads are a
+// prerequisite here. The default full suite still requires every delivery gate.
+assert.ok(['cashier-payment','dealer-checkin'].includes(scope));
+assert.equal(audience.viewers,Number(count));
+for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.equal(audience.checks[key],true,key);
+assert.equal(audience.phase,Object.values(audience.checks).every(v=>v===true)?'passed':'failed');
+assert.equal(Number(audienceExit),audience.phase==='passed'?0:1);
+assert.equal(fence.before,after);assert.equal(clock.phase,'stopped');assert.equal(clock.failures,0);
+fence.after=after;fence.unchanged=true;fence.phase='unchanged-through-targeted-audience';writeFileSync(dir+'/operations-schema-freeze-http.json',JSON.stringify(fence,null,2));
+writeFileSync(dir+'/targeted-operations-result-http.json',JSON.stringify({kind:'TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE',phase:'passed',scope,sha,viewers:Number(count),runtimeScope:'base31 plus healthy reentry, Undo and prize-close source preparation as in historical failures',schemaUnchanged:true,audienceContinuous:true,sourceGenerationCandidate,fullAudiencePhase:audience.phase,fullAudienceChecks:audience.checks,qualification:false,productionChanged:false,limits:'Only the selected diagnostic case ran with healthy concurrent audience reads. No hand-delivery qualification: full audience checks are preserved separately. Does not replace full operations/HUD qualification, prove historical failure cause, or exercise the clock business flow.'},null,2));
+TARGETED_FINAL_RECEIPT
+  exit 0
+fi
 run_browser_proof
 echo "BROWSER_PROOF: real Chromium rendered the seated Cashier row through local Auth and Data API without interception"
 if [[ "$schema_mode" == current ]]; then
@@ -2309,7 +2498,7 @@ if [[ "$operations_candidate_probe" == 1 ]]; then
     hud_prepared=false
     for ((hud_wait=0;hud_wait<130;hud_wait++)); do
       if ! kill -0 "$hud_projector_pid" 2>/dev/null; then echo 'Isolated HUD preparation stopped before readiness' >&2;wait "$hud_projector_pid";exit 1;fi
-      if node -e 'try{const v=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));process.exit(v.phase==="serving"&&v.readsEnabled===true&&v.shadow?.passed===true&&v.spectatorReady===true&&v.spectatorFailed===0?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/operations-hud-backfill-http.json"; then hud_prepared=true;break;fi
+      if node -e 'try{const fs=require("node:fs"),v=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));let batch=true;if(process.argv[2]==="1"){const a=JSON.parse(fs.readFileSync(process.argv[3],"utf8"));batch=v.spectatorSourceMode==="batch"&&v.sourceBatchModeVerified===true&&a.sha===v.sha&&a.phase==="ready"&&a.spectatorSourceMode==="batch"&&a.sourceBatchModeVerified===true&&a.servingSourceBatchRpcCalls>0;}process.exit(batch&&v.phase==="serving"&&v.readsEnabled===true&&v.shadow?.passed===true&&v.spectatorReady===true&&v.spectatorFailed===0?0:1)}catch{process.exit(1)}' "$repo_root/output/operations-latency/operations-hud-backfill-http.json" "$source_batch_probe" "$repo_root/output/operations-latency/operations-audience-http.json"; then hud_prepared=true;break;fi
       sleep 1
     done
     [[ "$hud_prepared" == true ]]
@@ -2563,6 +2752,12 @@ const root=process.argv[2],read=name=>JSON.parse(readFileSync(root+'/'+name,'utf
 const backfill=read('operations-hud-backfill-http.json'),browser=read('cashier-http-public-hud-ui-http.json');
 assert.equal(backfill.phase,'stopped');assert.equal(backfill.readsEnabled,true);assert.equal(backfill.shadow.passed,true);assert.equal(backfill.finalShadow.passed,true);assert.equal(backfill.controls.uniqueApplied,2);assert.equal(backfill.controls.complete,true);assert.equal(browser.phase,'passed');
 assert.equal(backfill.spectatorReady,true);assert.equal(backfill.spectatorFailed,0);
+if(process.env.LOCAL_SOURCE_BATCH_PROBE==='1'){
+ assert.equal(backfill.spectatorSourceMode,'batch');assert.equal(backfill.sourceBatchModeVerified,true);
+ const audience=read('operations-audience-http.json');
+ assert.equal(audience.sha,backfill.sha);assert.equal(audience.phase,'passed');
+ assert.equal(audience.checks.sourceBatchModeAndServingUsage,true,'Actual shared-queue audience worker must prove serving batch RPC usage');
+}
 assert.ok(Object.values(browser.checks).every(value=>value===true));
 const pkg=read('operations-candidate-package-http.json');assert.equal(pkg.phase,'all-operational-stages-passed');
 pkg.hudReads=true;pkg.hudWorker=true;pkg.backfillComplete=true;pkg.preparedHudBrowser='passed';

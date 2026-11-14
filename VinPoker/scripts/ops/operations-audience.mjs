@@ -16,6 +16,13 @@ assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
 assert.equal(process.env.LOCAL_OPERATIONS_REALTIME,'1');
 assert.equal(process.env.LOCAL_OPERATIONS_CANDIDATE_PROBE,'1');
 assert.equal(process.env.LOCAL_CLOCK_CANDIDATE_PROBE??'0','0');
+const sourceBatchFlag=process.env.LOCAL_SOURCE_BATCH_PROBE??'0';
+assert.ok(['0','1'].includes(sourceBatchFlag),'Invalid audience source batch mode');
+if(sourceBatchFlag==='1'){
+ assert.equal(process.env.LOCAL_PENDING_SOURCE_PROBE,'1');assert.equal(process.env.LOCAL_SOURCE_GENERATION_PROBE,'1');
+ assert.equal(process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE??'none','none');
+}
+const spectatorSourceMode=sourceBatchFlag==='1'?'batch':'single';
 const viewers=Number(process.env.LOCAL_OPERATIONS_AUDIENCE);
 assert.ok([10,1000].includes(viewers),'Explicit bounded isolated audience required');
 const workloadModel=process.env.LOCAL_OPERATIONS_AUDIENCE_MODEL??'grid-detail-stress';
@@ -71,6 +78,7 @@ const lagTimer=setInterval(()=>{const at=Date.now(),lagMs=Math.max(0,at-previous
 const requestCounts={snapshot:0,table:0,clock:0},snapshotSectionCounts={tables:0,ranking:0,payout:0};let maxSnapshotTableIds=0;
 const handshakeEvents={},handshakeFailureSamples=[];
 let stopping=false,phase='starting',readyAt=null,endedAt=null,connectedAtStop=null,checks=null,workerCalls=0,workerPublished=0,oracleReadCalls=0;
+let sourceBatchModeVerified=false,sourceBatchRpcCalls=0,servingSourceBatchRpcCalls=0;
 const stopHandshakeDiagnostics=observeAudienceHandshake(status.API_URL,value=>{
  if(stopping)return;
  const key=[value.event,value.httpStatus??'none',value.kind??'none'].join(':');handshakeEvents[key]=(handshakeEvents[key]??0)+1;
@@ -87,7 +95,7 @@ const headers={apikey:status.ANON_KEY,Authorization:`Bearer ${status.ANON_KEY}`,
 const report=()=>{writeFileSync(reportFile+'.tmp',JSON.stringify({
  kind:'REAL_HTTP_WEBSOCKET_MIXED_OPERATIONAL_AUDIENCE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,workloadModel,
  generationEvidence:selected?generationEvidence.report():null,oracleReadCalls,
- handDelivery:selected?handEvidence.report():null,
+ handDelivery:selected?handEvidence.report({diagnostics:phase==='passed'||phase==='failed'}):null,
  selectionNonce:handSelection?.nonce??null,
  selectionReady:selected&&handSelection?clients.filter(c=>c.online&&c.ready&&c.clockReady&&c.observedSession===handSelection.sessionId&&c.tableId===handSelection.tableId).length:0,
  selectionReadiness:selected?audienceSelectionReadiness(clients,handSelection):null,
@@ -95,7 +103,7 @@ const report=()=>{writeFileSync(reportFile+'.tmp',JSON.stringify({
  requestCounts,snapshotSectionCounts,maxSnapshotTableIds,
  phase,viewers,connected:clients.filter(c=>c.online).length,initialReady:clients.filter(c=>c.ready).length,
  observersWithLaterTableRevision:clients.filter(c=>c.changes>0).length,
- readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,socketEvents,socketFailureSamples,handshakeEvents,handshakeFailureSamples,workerRpcFailures,workerJobFailures,
+ readyAt,activeDurationMs:readyAt?(endedAt??Date.now())-readyAt:0,connectedAtStop,checks,workerCalls,workerPublished,spectatorSourceMode,sourceBatchModeVerified,sourceBatchRpcCalls,servingSourceBatchRpcCalls,errors,failureKinds,failureSamples,subscriptionStatuses,joinFailureKinds,socketEvents,socketFailureSamples,handshakeEvents,handshakeFailureSamples,workerRpcFailures,workerJobFailures,
  admissionMaxNewViewersPerSecond:50,generatorFiles:{...fdLimits,open:readdirSync('/proc/self/fd').length},
  distributions:Object.fromEntries(Object.entries(timings).map(([name,values])=>[name,dist(values)])),
  serverTiming:Object.fromEntries(Object.entries(timingParts).map(([name,values])=>[name,dist(values)])),
@@ -123,6 +131,7 @@ const worker=track((async()=>{
   try{
    const result=await loaded.worker.processPublicSpectatorJobs({rpc:async(name,args)=>{
     const left=deadline-Date.now();if(left<=0)throw Error('worker_deadline');
+    if(name==='get_public_spectator_projection_sources_v2'){sourceBatchRpcCalls++;if(phase==='ready'&&!stopping)servingSourceBatchRpcCalls++;}
     const rpcStartedAt=Date.now();let result;
     try{result=await service.rpc(name,args).abortSignal(AbortSignal.timeout(left));}
     catch(cause){if(workerBoundaryFailures.length<20)workerBoundaryFailures.push({at:Date.now(),startedAt:rpcStartedAt,elapsedMs:Date.now()-rpcStartedAt,remainingBudgetAtStartMs:left,...audienceWorkerFailure(name,null),...audienceFailure(cause)});throw cause;}
@@ -133,7 +142,8 @@ const worker=track((async()=>{
      workerRpcFailures[key]=(workerRpcFailures[key]??0)+1;
     }
     return result;
-   }},deadline);
+   }},deadline,spectatorSourceMode);
+   assert.equal(result.sourceMode,spectatorSourceMode,'Actual audience worker source mode');sourceBatchModeVerified=true;
    workerCalls++;workerPublished+=result.results.filter(r=>r.published).length;
    for(const row of result.results)if(row.error){
     fail('worker_job');const kind=['source_failed','publish_failed','deadline_exceeded'].includes(row.error)?row.error:'unknown';
@@ -262,11 +272,13 @@ try{
    const full=state.detailFull||!state.clockReady;state.detailFull=false;
    state.lastDetailFull=full;state.detailFullReads=(state.detailFullReads??0)+(full?1:0);recordAudienceDetailEvent(state,'dispatch');
    const started=Date.now();let physicalFailure=false;
+   const readTiming={pendingAt:state.detailDispatchedPendingAt??started,dispatchAt:started,headersAt:null,bodyReadyAt:null};
    state.detailStartedAt=started;state.detailInFlight=true;state.detailStarted=(state.detailStarted??0)+1;
    // The table reader owns its physical5s deadline. Do not pass the clock's
    // timeout as a caller signal and misclassify a real table deadline as cancel.
-   const physicalRead=loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal,async(url,init)=>{requestCounts.table++;const response=await fetch(url,init);observeTiming(full?'table-clock':'table',response.headers);return response;},full?'table-clock':'table');
+   const physicalRead=loaded.table.readPublicTableRequest(status.API_URL,status.ANON_KEY,tour,state.tableId,controller.signal,async(url,init)=>{requestCounts.table++;const response=await fetch(url,init);readTiming.headersAt=Date.now();observeTiming(full?'table-clock':'table',response.headers);return response;},full?'table-clock':'table');
    const tableRead=physicalRead.then(reply=>{
+    readTiming.bodyReadyAt=Date.now();
     if(full){assert.ok(reply.data?.table&&Array.isArray(reply.data.clock),'Canonical table-clock bundle required');reply={...reply,data:reply.data.table};}
     timings.table.push(Date.now()-started);return reply;
    }).catch(cause=>{
@@ -298,7 +310,7 @@ try{
     state.detailAccepted=(state.detailAccepted??0)+1;recordAudienceDetailEvent(state,'accepted');
     // Consumer visibility requires both the table and any full clock read,
     // plus current scope/epoch fences. Transport completion alone is earlier.
-    handEvidence.observe(i,{tournamentId:tour,tableId:state.tableId},reply.data,Date.now());
+    handEvidence.observe(i,{tournamentId:tour,tableId:state.tableId},reply.data,Date.now(),readTiming);
     if(state.revision!==reply.data.sourceGeneration){
      if(readyAt&&state.revision!==null){state.changes++;generationEvidence.record(i,reply.data.sourceGeneration,Date.now());}
      state.revision=reply.data.sourceGeneration;
@@ -362,6 +374,7 @@ try{
  while(!stopping&&!clients.every(c=>c.online&&c.ready&&c.clockReady)&&Date.now()-start<90000)await sleep(100);
  assert.equal(clients.length,viewers);assert.ok(clients.every(c=>c.online&&c.ready&&c.clockReady),'Audience did not become ready');
  assert.equal(Object.keys(errors).length,0,'Audience startup errors');
+ if(sourceBatchFlag==='1'){assert.equal(sourceBatchModeVerified,true);assert.ok(sourceBatchRpcCalls>0,'Actual batch source RPC required before audience admission');}
  readyAt=Date.now();phase='ready';report();
  while(!stopping)await sleep(100);
 }catch(cause){fail('audience_lifecycle');diagnostic('audience_lifecycle',cause);stopping=true;process.exitCode=1;}
@@ -375,6 +388,7 @@ finally{
  await Promise.all(clients.map(async({client})=>{await client.removeAllChannels();client.realtime.disconnect();}));
  await worker;await oracle;await Promise.allSettled([...pending]);if(selected)await captureGeneration();
  checks={zeroErrors:Object.keys(errors).length===0,atLeast30Seconds:readyAt!==null&&endedAt-readyAt>=30000,allViewers:clients.length===viewers&&connectedAtStop===viewers,
+  ...(sourceBatchFlag==='1'?{sourceBatchModeAndServingUsage:sourceBatchModeVerified&&sourceBatchRpcCalls>0&&servingSourceBatchRpcCalls>0}:{}),
   allSawLaterTableRevision:clients.every(c=>c.ready&&c.changes>0),tableP95Within3Seconds:timings.table.length>=viewers&&dist(timings.table).p95Ms<=3000,
   ...(selected?{
    markerToScopedDetailP95Within3Seconds:timings.markerToScopedDetail.length>=viewers&&dist(timings.markerToScopedDetail).p95Ms<=3000,

@@ -21,7 +21,10 @@ const digest=value=>createHash('sha256').update(value).digest('hex');
 const inspect=()=>JSON.parse(execFileSync('docker',['inspect',name],{encoding:'utf8',stdio:['ignore','pipe','pipe']}))[0];
 if(mode==='capture'){
  let value;
- const secrets=parseEnv(readFileSync(root+'/workers.env','utf8'));
+ const {PUBLIC_SPECTATOR_SOURCE_BATCH:batchFlag,...secrets}=parseEnv(readFileSync(root+'/workers.env','utf8'));
+ // The mode flag is not a credential. Keep every credential readiness check;
+ // actual mode consumption is verified by the authenticated worker preflight.
+ assert.ok(['0','1'].includes(batchFlag));
  for(let attempt=0;attempt<120;attempt++){
   try{const candidate=inspect();if(Object.values(secrets).every(secret=>secret.length>=32&&candidate.Config.Env.some(item=>item.includes(secret)))){value=candidate;break;}}catch{}
   await new Promise(resolve=>setTimeout(resolve,250));

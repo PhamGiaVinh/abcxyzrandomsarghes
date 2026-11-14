@@ -5,6 +5,8 @@ repo_root="$(pwd)"
 for forbidden in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD VERCEL_TOKEN; do
   if [[ -n "${!forbidden:-}" ]]; then echo 'Remote credential present in isolated load job' >&2; exit 1; fi
 done
+node --input-type=module -e "import {pendingSourceProbeEnabled,sourceBatchProbeEnabled,writerWaitDiagnosticEnabled} from './tests/publicHud/scale.write.protocol.mjs';pendingSourceProbeEnabled(process.env);sourceBatchProbeEnabled(process.env);writerWaitDiagnosticEnabled(process.env);"
+node --test tests/publicHud/scale.postgrest-metrics.test.mjs
 test_root="$(mktemp -d -t vinpoker-hud-stack-XXXXXXXX)"
 project_id="hud-scale-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 serve_pid=''
@@ -43,6 +45,7 @@ for fn in public-player-hud public-hud-projector-v1 public-spectator-projector-v
 done
 printf 'PUBLIC_HUD_WORKER_SECRET=%s\nPUBLIC_SPECTATOR_WORKER_SECRET=%s\n' "$(openssl rand -hex 32)" "$(openssl rand -hex 32)" >"$test_root/workers.env"
 printf 'PUBLIC_HUD_ISOLATE_DIAGNOSTICS=isolated-hud-runtime-diagnostics-v1\n' >>"$test_root/workers.env"
+printf 'PUBLIC_SPECTATOR_SOURCE_BATCH=%s\n' "${PUBLIC_HUD_SOURCE_BATCH_PROBE:-0}" >>"$test_root/workers.env"
 exclude='imgproxy,logflare,mailpit,postgres-meta,storage-api,studio,supavisor,vector'
 supabase start --workdir "$test_root" --exclude "$exclude" >"$test_root/start.log" 2>&1
 docker inspect "supabase_db_$project_id" >/dev/null
@@ -67,6 +70,15 @@ comparison_database="vinpoker_hud_test_pair_${GITHUB_RUN_ID:-local}_${GITHUB_RUN
 createdb -h 127.0.0.1 -p 54322 -U postgres --template=template0 "$comparison_database"
 psql -h 127.0.0.1 -p 54322 -U postgres -d "$comparison_database" -w -X -qAt -v ON_ERROR_STOP=1 \
  -c "COMMENT ON DATABASE \"$comparison_database\" IS 'vinpoker-hud-writer-control-disposable';" >/dev/null
+if [[ "${PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC:-0}" == '1' ]]; then
+ PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= \
+  node tests/publicHud/writer-wait-observer.native.mjs
+fi
+if [[ "${PUBLIC_HUD_WRITER_READER_SMOKE:-0}" == '1' ]]; then
+ dropdb -h 127.0.0.1 -p 54322 -U postgres "$comparison_database"
+ echo 'Reader lifecycle smoke only; no fixture seed, writer arms, audience or qualification.'
+ exit 0
+fi
 PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_WRITER_DIAGNOSTIC=isolated-comparison-admin PUBLIC_HUD_SCALE_SEED_REPORT="$repo_root/output/hud-scale/writer-isolated-seed.json" \
  node tests/publicHud/scale.seed.mjs >output/hud-scale/writer-isolated-seed.log 2>&1
 PUBLIC_HUD_LOCAL_DATABASE="$comparison_database" PUBLIC_HUD_ISOLATED_STACK= PUBLIC_HUD_WRITER_CONTROL=isolated-native-only PUBLIC_HUD_WRITER_OBSERVER_CANONICAL=pre019 \
@@ -78,14 +90,35 @@ if [[ -n "${GITHUB_RUN_ID:-}" ]]; then
   node tests/publicHud/writer-evidence.native.mjs >output/hud-scale/writer-evidence-validation.log 2>&1
 fi
 dropdb -h 127.0.0.1 -p 54322 -U postgres "$comparison_database"
+if [[ "${PUBLIC_HUD_WRITER_WAIT_DIAGNOSTIC:-0}" == '1' ]]; then
+ # All original pair statistics and failures remain in the diagnostic receipt.
+ # Do not admit viewers or manufacture an HTTP/qualification result.
+ echo 'Writer-only wait observation complete; no audience or qualification.'
+ exit 0
+fi
 claim_database="vinpoker_hud_test_claim_${GITHUB_RUN_ID:-local}_${GITHUB_RUN_ATTEMPT:-1}"
 createdb -h 127.0.0.1 -p 54322 -U postgres "$claim_database"
 PUBLIC_HUD_LOCAL_DATABASE="$claim_database" PUBLIC_HUD_ISOLATED_STACK= \
  PUBLIC_HUD_CLAIM_SOURCE_REPORT="$repo_root/output/hud-scale/claim-source.json" \
  node tests/publicHud/claim-source.native.mjs --initialize
 dropdb -h 127.0.0.1 -p 54322 -U postgres "$claim_database"
+export PUBLIC_HUD_GENERATION_INDEX_REPORT="$repo_root/output/hud-scale/compact-generation-index.json"
 node tests/publicHud/scale.seed.mjs >output/hud-scale/seed-progress.log 2>&1
-PUBLIC_HUD_GENERATION_INDEX_REPORT="$repo_root/output/hud-scale/compact-generation-index.json" node tests/publicHud/compact-generation-index.native.mjs
+if [[ "${PUBLIC_HUD_SOURCE_GENERATION_PROBE:-0}" == 1 ]]; then
+  # The historical migration probe requires its original writer preimage;
+  # candidate seed ran it synchronously before342, with all guards intact.
+  node --input-type=module <<'JS'
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const report=JSON.parse(readFileSync(process.env.PUBLIC_HUD_GENERATION_INDEX_REPORT,'utf8'));
+assert.equal(report.kind,'NATIVE_COMPACT_GENERATION_LOOKUP_INDEX_NOT_WRITER_QUALIFICATION');
+assert.deepEqual(report.checks,['actual-generic-lookup-uses-partial-index','source-generations-unchanged','writer-OID-definition-and-table-owner-ACL-RLS-preserved','duplicate-apply-denied','reverse-absence-and-definition-drift-denied','exact-reverse-and-transactional-original-index-preservation']);
+assert.equal(report.plan.index,'idx_compact_generation_lookup_v1');
+assert.equal(report.productionChanged,false);
+JS
+else
+  node tests/publicHud/compact-generation-index.native.mjs
+fi
 node tests/publicHud/enqueue-writes.native.mjs >output/hud-scale/enqueue-write-contract.json
 node tests/publicHud/enqueue-writes.recovery.native.mjs >output/hud-scale/enqueue-write-recovery.json
 PUBLIC_HUD_SOURCE_WRITE_REPORT="$repo_root/output/hud-scale/source-write-idempotency.json" node tests/publicHud/source-writes.native.mjs
@@ -110,6 +143,9 @@ PUBLIC_HUD_AMENDMENT_NATIVE_REPORT="$repo_root/output/hud-scale/amendment-native
 node tests/publicHud/scale.sources.native.mjs
 PUBLIC_HUD_VISIBILITY_WAKE_REPORT="$repo_root/output/hud-scale/visibility-wake.json" node tests/publicHud/visibility-wake.native.mjs --already-applied
 node tests/publicHud/scale.sql-profile.mjs
+if [[ "${PUBLIC_HUD_SCALE_VIEWERS:-10}" == 1000 && "${PUBLIC_HUD_SCALE_SECONDS:-30}" == 30 ]]; then
+  node tests/publicHud/history-current-profile.native.mjs
+fi
 supabase functions serve --workdir "$test_root" --env-file "$test_root/workers.env" --no-verify-jwt >"$test_root/serve.log" 2>&1 &
 serve_pid=$!
 node tests/publicHud/scale.edge-runtime.mjs capture "$test_root" "$project_id"

@@ -1,6 +1,16 @@
 import {it,expect,vi} from 'vitest';
 import {instrumentSpectatorWorker,parseSpectatorTrace,summarizeSpectatorTrace} from './scale.spectator-trace.mjs';
 const event={batch:'12345678-1234-1234-1234-123456789abc',rpc:'publish_public_spectator_projection_v2',component:'tables',startedAt:10,endedAt:20,outcome:'published'};
+it('forwards explicit source mode through short-run instrumentation',async()=>{
+ const source='export async function processPublicSpectatorJobs(client,deadline,sourceMode="single"){await client.rpc("get_public_spectator_projection_sources_v2",{});return {sourceMode};}';
+ const worker=await import(/* @vite-ignore */ 'data:text/javascript,'+encodeURIComponent(instrumentSpectatorWorker(source)));
+ const log=vi.spyOn(console,'log').mockImplementation(()=>{});
+ try{
+  const result=await worker.processPublicSpectatorJobs({rpc:vi.fn().mockResolvedValue({data:[],error:null})},Date.now()+5000,'batch');
+  expect(result.sourceMode).toBe('batch');
+  expect(parseSpectatorTrace(log.mock.calls.map(([line])=>line).join('\n')).map(row=>row.rpc)).toEqual(['get_public_spectator_projection_sources_v2']);
+ }finally{log.mockRestore();}
+});
 it('keeps only allowlisted fields and drops malformed or unrelated log records',()=>{
  const log=['secret outside trace','VINPOKER_SPECTATOR_RPC_TRACE '+JSON.stringify({...event,authorization:'never export'}),'VINPOKER_SPECTATOR_RPC_TRACE invalid','VINPOKER_SPECTATOR_RPC_TRACE '+JSON.stringify({...event,rpc:'unknown'})].join('\n');
  expect(parseSpectatorTrace(log)).toEqual([event]);
@@ -60,4 +70,14 @@ it('pairs publications only with later successful flushes in the same batch',()=
 });
 it('keeps empty trace unavailable rather than reporting zero latency',()=>{
  expect(summarizeSpectatorTrace([]).publishAckToNextSuccessfulFlushStart).toEqual({samples:0,p95Ms:null,maxMs:null});
+});
+it('measures observed overlap and claim queue without borrowing another batch claim',()=>{
+ const claim={...event,rpc:'claim_public_spectator_projection_v2',component:null,outcome:'ok',startedAt:0,endedAt:10};
+ const source={...event,rpc:'get_public_spectator_projection_source_v2',outcome:'ok',startedAt:15,endedAt:30};
+ const second='87654321-1234-1234-1234-123456789abc';
+ const value=summarizeSpectatorTrace([claim,source,{...source,batch:second,startedAt:25,endedAt:40}]).workerBatches;
+ expect(value.observed).toBe(2);expect(value.maxObservedOverlappingBatches).toBe(2);
+ expect(value.claimAckToSourceStart).toEqual({samples:1,p95Ms:5,maxMs:5});expect(value.unpairedSources).toBe(1);
+ expect(summarizeSpectatorTrace([claim,source,{...source,batch:second,startedAt:30,endedAt:40}]).workerBatches.maxObservedOverlappingBatches).toBe(1);
+ expect(summarizeSpectatorTrace([]).workerBatches.maxObservedOverlappingBatches).toBeNull();
 });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {basename,dirname} from 'node:path';
-import {configureIsolatedPostgrestPool} from './isolated-postgrest-pool.mjs';
+import {configureIsolatedPostgrestPool,isolatedStartupFailure,isolatedStartupState} from './isolated-postgrest-pool.mjs';
 const [container,statusPath,reportPath]=process.argv.slice(2);
 assert.equal(process.platform,'linux');
 assert.equal(process.env.CASHIER_SCHEMA_MODE,'current');
@@ -24,13 +24,21 @@ const receipt=await configureIsolatedPostgrestPool('supabase_rest_'+project,'sup
 const status=JSON.parse(readFileSync(statusPath,'utf8'));assert.equal(status.API_URL,'http://127.0.0.1:54321');
 assert.ok(typeof status.ANON_KEY==='string'&&status.ANON_KEY.length>32,'Anonymous readiness key missing');
 let ready=false;const startedAt=Date.now(),deadline=startedAt+15000;
-const startup={attempts:0,httpStatusCounts:{},transportFailures:0,ready:false,elapsedMs:0};
+const startup={attempts:0,httpStatusCounts:{},transportFailures:0,transportClasses:{},ready:false,elapsedMs:0};
 while(Date.now()<deadline&&!ready){
  startup.attempts++;
- try{const response=await fetch(status.API_URL+'/rest/v1/',{headers:{apikey:status.ANON_KEY,Authorization:'Bearer '+status.ANON_KEY},signal:AbortSignal.timeout(1000)});startup.httpStatusCounts[response.status]=(startup.httpStatusCounts[response.status]??0)+1;ready=response.ok;await response.body?.cancel();}catch{startup.transportFailures++;/* No credentials, response bodies or raw errors exported. */}
+ try{const response=await fetch(status.API_URL+'/rest/v1/',{headers:{apikey:status.ANON_KEY,Authorization:'Bearer '+status.ANON_KEY},signal:AbortSignal.timeout(1000)});startup.httpStatusCounts[response.status]=(startup.httpStatusCounts[response.status]??0)+1;ready=response.ok;await response.body?.cancel();}catch(error){startup.transportFailures++;const kind=isolatedStartupFailure(error);startup.transportClasses[kind]=(startup.transportClasses[kind]??0)+1;}
  if(!ready)await new Promise(resolve=>setTimeout(resolve,250));
 }
 startup.ready=ready;startup.elapsedMs=Date.now()-startedAt;
+if(!ready){
+ // After the original readiness deadline only; no restart, extended wait or bypass.
+ startup.containers={};
+ for(const component of ['rest','kong']){
+  try{startup.containers[component]=isolatedStartupState(JSON.parse(docker(['inspect','supabase_'+component+'_'+project,'--format','{{json .State}}'])));}
+  catch{startup.containers[component]={available:false};}
+ }
+}
 // Retain failed startup evidence as well; this is never audience/latency proof.
 writeFileSync(reportPath,JSON.stringify({...receipt,startup,qualification:false,productionChanged:false},null,2));
 assert.ok(ready,'Isolated PostgREST schema startup failed');

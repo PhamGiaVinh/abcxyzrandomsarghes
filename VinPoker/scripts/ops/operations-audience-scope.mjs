@@ -135,7 +135,7 @@ export function audienceGatewayConfig(text,{allowImplicitLimits=false}={}){
 
 export function audienceWorkerFailure(name,error){
  const operations=['absorb_public_spectator_generations_v2','flush_public_spectator_broadcast_v2','claim_public_spectator_projection_v2','get_public_spectator_projection_source_v2','publish_public_spectator_projection_v2','fail_public_spectator_projection_v2'];
- const reasons=['lease_expired','forbidden','invalid_limit'];
+ const reasons=['lease_expired','source_pending','forbidden','invalid_limit'];
  return {operation:operations.includes(name)?name:'unknown',reason:reasons.includes(error?.message)?error.message:'unknown'};
 }
 
@@ -238,6 +238,10 @@ export function observeAudienceSubscriptions(client,onStatus){
 const detailEvents=new Set(['selection','visibility','invalidate','request','dispatch','clock-commit','fenced','accepted','rejected']);
 export function recordAudienceDetailEvent(state,event,now=Date.now()){
  if(!detailEvents.has(event))throw Error('Unknown detail diagnostic event');
+ // Observational only: preserve the first coalesced request, never move timers.
+ if(['selection','visibility','invalidate'].includes(event))state.detailPendingAt=undefined;
+ if(event==='request'&&state.detailPendingAt===undefined)state.detailPendingAt=now;
+ if(event==='dispatch'){state.detailDispatchedPendingAt=state.detailPendingAt??now;state.detailPendingAt=undefined;}
  const trace=state.detailTrace??=[];
  trace.push({event,at:now,epoch:state.epoch??0,clockReady:state.clockReady===true,full:state.lastDetailFull===true});
  if(trace.length>12)trace.shift();

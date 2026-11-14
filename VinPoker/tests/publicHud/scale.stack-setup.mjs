@@ -1,4 +1,5 @@
-import {readFileSync} from 'node:fs';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {sourceBatchProbeEnabled} from './scale.write.protocol.mjs';
 import {execFileSync} from 'node:child_process';
 import {parseEnv as parse} from 'node:util';
 import {sql} from './nativeDb.mjs';
@@ -46,6 +47,15 @@ if(!response.ok){
 // Production jobs belong to postgres. Keep Vault/database provisioning under
 // supabase_admin, but create cron jobs from the existing postgres connection.
 if(sql('SELECT current_user;')!=='postgres')throw Error('Production-matching cron owner required');
+if(sourceBatchProbeEnabled(process.env)){
+ const checked=await fetch(status.API_URL+'/functions/v1/public-spectator-projector-v2',{
+  method:'POST',headers:{apikey:status.ANON_KEY,Authorization:'Bearer '+secrets.PUBLIC_SPECTATOR_WORKER_SECRET,'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(10000),
+ });
+ if(!checked.ok)throw Error('Isolated batch worker preflight HTTP '+checked.status);
+ const value=await checked.json();
+ if(value.sourceMode!=='batch'||!Number.isInteger(value.claimed)||value.claimed<0||value.claimed>50||!Number.isInteger(value.processed)||value.processed<0||value.processed>value.claimed)throw Error('Isolated worker did not consume batch mode');
+ writeFileSync('output/hud-scale/source-batch-mode.json',JSON.stringify({kind:'ISOLATED_BATCH_MODE_CONSUMER_PREFLIGHT',sourceMode:value.sourceMode,actualModeVerified:true,claimed:value.claimed,processed:value.processed,productionChanged:false,qualification:false},null,2));
+}
 sql(`SELECT cron.schedule('public-hud-projection-v1-dispatch','1 second','SELECT public.dispatch_public_hud_projection_v1()');
  SELECT cron.schedule('public-spectator-v2-dispatch','1 second','SELECT public.dispatch_public_spectator_projection_v2()');`);
 const scheduleReady=sql(`SELECT count(*)=2 AND bool_and(active AND schedule='1 second' AND

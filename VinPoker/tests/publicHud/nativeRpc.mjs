@@ -7,6 +7,7 @@ const signatures={
  absorb_public_spectator_generations_v2:['p_limit'],flush_public_spectator_broadcast_v2:['p_limit'],
  claim_public_spectator_projection_v2:['p_limit'],
  get_public_spectator_projection_source_v2:['p_tournament_id','p_component','p_fencing_token'],
+ get_public_spectator_projection_sources_v2:['p_jobs'],
  publish_public_spectator_projection_v2:['p_tournament_id','p_component','p_group_key','p_fencing_token','p_source_vector','p_payload'],
  fail_public_spectator_projection_v2:['p_tournament_id','p_component','p_group_key','p_fencing_token','p_error'],
 };
