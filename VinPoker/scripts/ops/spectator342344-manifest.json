@@ -44,5 +44,44 @@
   },
   "preserveDispatcherJobIds": [
     55
+  ],
+  "ledger": {
+    "rows": 814,
+    "identitySha256": "1d1022e140fa4c513b6b2466014bd39f077392bac66cb4e777f1808ab17bba50",
+    "kind": "VERSION_NAME_IDENTITY_NOT_HISTORICAL_SCHEMA_PROOF",
+    "captureWindowUtc": {
+      "after": "2026-11-14T16:50:53Z",
+      "before": "2026-11-14T17:14:59Z"
+    }
+  },
+  "edgeFiles": [
+    {
+      "path": "supabase/functions/public-spectator-projector-v2/index.ts",
+      "sha256": "85a128d9dcd45c0b4229fe9ad79c2bfb95bdc7f4c95ca672a264cc51c0e05281"
+    },
+    {
+      "path": "supabase/functions/public-spectator-projector-v2/worker.ts",
+      "sha256": "e5c44144abca7ca7ca8fd73dc307a9e77c1b45d765cdb3b7cfe666899795d82c"
+    },
+    {
+      "path": "supabase/functions/public-spectator-projector-v2/sourceBatch.ts",
+      "sha256": "405e7e06e3864c804dc264d9109a6acd6c3d84985178c035a04a5bff70fed2f1"
+    },
+    {
+      "path": "supabase/functions/_shared/publicSpectatorReducer.ts",
+      "sha256": "e37dc20ba3a6abe1520efdfb069479abfb30ba7f7e555d66eb5e17c999b66365"
+    },
+    {
+      "path": "supabase/functions/_shared/vendor/tslib-2.8.1.mjs",
+      "sha256": "c38da5dd6da6281964435002ce204cd586634fe3bdfb24a0ee116f48cf3292e9"
+    },
+    {
+      "path": "src/lib/tracker-poker/handStateCore.ts",
+      "sha256": "de51b02dac7cd329c6768bc9510fc7bb09c3c31fd49d46f6eb9b1cd811c728ae"
+    },
+    {
+      "path": "deno.json",
+      "sha256": "4318412df06f18476b113e627e442c1a8daef2ed77beaf55e8be5e16f4d6f9c0"
+    }
   ]
 }

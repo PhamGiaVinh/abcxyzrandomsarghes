@@ -20,7 +20,7 @@ jobs:
         working-directory: controls
         env:
           RELEASE_SOURCE_ROOT: ${{ github.workspace }}/candidate/VinPoker
-        run: node --test VinPoker/scripts/ops/spectator342344-release-plan.test.mjs VinPoker/scripts/ops/spectator342344-protected-apply.test.mjs
+        run: node --test VinPoker/scripts/ops/spectator342344-release-plan.test.mjs VinPoker/scripts/ops/spectator342344-protected-apply.test.mjs VinPoker/scripts/ops/spectator342344-release-context.test.mjs
   atomic-postgres:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

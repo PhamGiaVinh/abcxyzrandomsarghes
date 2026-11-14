@@ -8,7 +8,7 @@ import {canonicalSqlText,buildAtomicMigrationQuery} from './ops-1359-release-gat
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
 const hash=value=>createHash('sha256').update(value).digest('hex');
 // This module prepares exact SQL only. It has no database or network transport.
-export const MANIFEST_SHA256='975608e9d4a0b74fe45432a16a5aaddea3fe6d9f79e090c6346e05f67a1f3b04';
+export const MANIFEST_SHA256='99366a7165bbbb58df61c5ae5d355b289f487368ee4512e6abd3100b48bd70fb';
 export function loadPackage(sourceRoot){
  const bytes=canonicalSqlText(readFileSync(resolve(root,'scripts/ops/spectator342344-manifest.json')));
  assert.equal(hash(bytes),MANIFEST_SHA256,'Reviewed manifest differs');
@@ -30,6 +30,13 @@ export function loadPackage(sourceRoot){
   assert.equal(hash(atomic),item.atomicSha256,'Atomic wrapper drift');
   return {...item,source,atomic};
  });
+ assert.equal(manifest.edgeFiles.length,7,'Exact Edge closure required');
+ for(const file of manifest.edgeFiles){
+  assert.ok(!file.path.includes('..')&&!file.path.startsWith('/'),'Edge path escaped');
+  const path=resolve(sourceRoot,file.path),stat=lstatSync(path);
+  assert.ok(stat.isFile()&&!stat.isSymbolicLink(),'Regular Edge source required');
+  assert.equal(hash(canonicalSqlText(readFileSync(path))),file.sha256,'Edge closure drift');
+ }
  return {manifest,entries};
 }
 
