@@ -103,13 +103,14 @@ jobs:
       - name: Verify fresh recovery provenance and download metadata only
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
           RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
           RECOVERY_BASE_SHA: ${{ inputs.recovery_base_sha }}
         run: |
           set -euo pipefail
           [[ "$RECOVERY_RUN_ID" =~ ^[0-9]+$ ]]
           [[ "$RECOVERY_BASE_SHA" =~ ^[a-f0-9]{40}$ ]]
-          test "$RECOVERY_BASE_SHA" = "$GITHUB_SHA"
+          node controls/VinPoker/scripts/ops/spectator342344-github.mjs
           run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID")"
           test "$(jq -r .workflow_id <<<"$run")" = "$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/floor-v3-recovery-backup.yml" --jq .id)"
           test "$(jq -r .event <<<"$run")" = workflow_dispatch
@@ -136,7 +137,7 @@ jobs:
           RELEASE_SHA: '${{ inputs.release_sha }}'
           SOURCE_CHECKOUT_SHA: '${{ inputs.release_sha }}'
           SOURCE_PR: '1646'
-          SOURCE_PR_BASE_SHA: '${{ github.sha }}'
+          SOURCE_PR_BASE_SHA: '883131bd15a62620886fbbec2008c93b0b67aa5a'
           MANIFEST_SHA256: '${{ inputs.manifest_sha256 }}'
           RECOVERY_BASE_SHA: '${{ inputs.recovery_base_sha }}'
           INITIAL_ACTOR: '${{ github.actor }}'

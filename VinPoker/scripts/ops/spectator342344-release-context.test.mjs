@@ -21,7 +21,7 @@ function approved(){
   SUPABASE_PROJECT_REF:'orlesggcjamwuknxwcpk',PGHOST:'aws-1-ap-southeast-2.pooler.supabase.com',PGPORT:'5432',
   PGUSER:'postgres.orlesggcjamwuknxwcpk',PGDATABASE:'postgres',PGSSLMODE:'require',PGPASSWORD:'synthetic-unit-only',
   RECOVERY_BASE_SHA:controller,GITHUB_EVENT_NAME:'workflow_dispatch',GITHUB_REPOSITORY:'PhamGiaVinh/abcxyzrandomsarghes',
-  MANIFEST_SHA256,SOURCE_PR:'1646',SOURCE_PR_BASE_SHA:controller,CONFIRM_SPECTATOR_PACKAGE:`APPLY_SPECTATOR_342_344_${sha}`};
+  MANIFEST_SHA256,SOURCE_PR:'1646',SOURCE_PR_BASE_SHA:manifest.sourceBaseSha,CONFIRM_SPECTATOR_PACKAGE:`APPLY_SPECTATOR_342_344_${sha}`};
  const recovery={schemaVersion:1,kind:'vinpoker-restore-verification',sourceSha:controller,isolatedRestore:'PASS',tableCountMatch:'PASS',
   databaseOwnerAndEffectiveAclMatch:true,productionMutation:false,ciphertextSha256:'a'.repeat(64),snapshotAt:new Date(now-60000).toISOString()};
  return{env,recovery,observed:{controllerSha:controller,sourceSha:sha},now};
