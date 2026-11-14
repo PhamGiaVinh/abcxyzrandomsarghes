@@ -1,0 +1,166 @@
+name: Spectator342344 protected release controls
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/spectator342344-protected-release.yml'
+      - 'VinPoker/scripts/ops/spectator342344-*'
+  workflow_dispatch:
+    inputs:
+      apply342344: {description: Apply the exact reviewed package; default OFF, required: true, default: false, type: boolean}
+      release_sha: {description: Exact reviewed product SHA, required: true, type: string}
+      manifest_sha256: {description: Exact reviewed manifest digest, required: true, type: string}
+      recovery_run_id: {description: Successful fresh encrypted backup and isolated restore run, required: true, type: string}
+      recovery_base_sha: {description: Current main revision that created the recovery, required: true, type: string}
+      confirmation: {description: APPLY_SPECTATOR_342_344_<release_sha>, required: true, type: string}
+permissions: {contents: read, actions: read, checks: read, pull-requests: read}
+concurrency: {group: vinpoker-production-database-release, cancel-in-progress: false}
+jobs:
+  exact-controller:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {path: controls}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: 71d20fcefaf2c104b0a4cf9e35011b527c1a6882, path: candidate}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Exact package and uncertain-outcome rejection tests
+        working-directory: controls
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/candidate/VinPoker
+        run: node --test VinPoker/scripts/ops/spectator342344-release-plan.test.mjs VinPoker/scripts/ops/spectator342344-protected-apply.test.mjs VinPoker/scripts/ops/spectator342344-release-context.test.mjs VinPoker/scripts/ops/spectator342344-dispatch-control.test.mjs VinPoker/scripts/ops/spectator342344-github.test.mjs
+  atomic-postgres:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vinpoker_hud_test_release_${{ github.run_id }}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PUBLIC_HUD_LOCAL_DATABASE: vinpoker_hud_test_release_${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {path: controls}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: 71d20fcefaf2c104b0a4cf9e35011b527c1a6882, path: candidate}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Real PostgreSQL atomic rollback, exact receipt, duplicate and ACL checks
+        working-directory: controls
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/candidate/VinPoker
+        run: node VinPoker/scripts/ops/spectator342344-atomic-postgres.mjs
+  validate:
+    needs: [exact-controller, atomic-postgres]
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.apply342344 == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ github.sha }}', path: controls}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ inputs.release_sha }}', path: candidate}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Authenticate exact owner dispatch, source PR and required source checks
+        working-directory: controls
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: node VinPoker/scripts/ops/spectator342344-github.mjs
+      - name: Offline source and catalog checks without production credentials
+        working-directory: candidate/VinPoker
+        run: node scripts/security/check-migration-catalog.mjs
+  apply:
+    needs: validate
+    environment: dealer-swing-production-critical
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ github.sha }}', path: controls}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ inputs.release_sha }}', path: candidate}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Revalidate authenticated release provenance after protected approval
+        working-directory: controls
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: node VinPoker/scripts/ops/spectator342344-github.mjs
+      - name: Verify fresh recovery provenance and download metadata only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+          RECOVERY_BASE_SHA: ${{ inputs.recovery_base_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$RECOVERY_RUN_ID" =~ ^[0-9]+$ ]]
+          [[ "$RECOVERY_BASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$RECOVERY_BASE_SHA" = "$GITHUB_SHA"
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID")"
+          test "$(jq -r .workflow_id <<<"$run")" = "$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/floor-v3-recovery-backup.yml" --jq .id)"
+          test "$(jq -r .event <<<"$run")" = workflow_dispatch
+          test "$(jq -r .status <<<"$run")" = completed
+          test "$(jq -r .conclusion <<<"$run")" = success
+          test "$(jq -r .actor.login <<<"$run")" = "$GITHUB_REPOSITORY_OWNER"
+          test "$(jq -r .triggering_actor.login <<<"$run")" = "$GITHUB_REPOSITORY_OWNER"
+          test "$(jq -r .head_branch <<<"$run")" = main
+          test "$(jq -r .head_sha <<<"$run")" = "$RECOVERY_BASE_SHA"
+          artifacts="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID/artifacts")"
+          artifact="$(jq -ce --arg name "floor-v3-restore-verification-$RECOVERY_RUN_ID" '[.artifacts[]|select(.name==$name and .expired==false and .size_in_bytes>0)]|if length==1 then .[0] else error("missing recovery") end' <<<"$artifacts")"
+          mkdir "$RUNNER_TEMP/spectator342344-recovery"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$(jq -r .id <<<"$artifact")/zip" >"$RUNNER_TEMP/spectator342344-recovery.zip"
+          test "$(unzip -Z1 "$RUNNER_TEMP/spectator342344-recovery.zip")" = recovery-verification.json
+          test "$(sha256sum "$RUNNER_TEMP/spectator342344-recovery.zip" | cut -d " " -f1)" = "$(jq -r .digest <<<"$artifact" | sed "s/^sha256://")"
+          unzip -q "$RUNNER_TEMP/spectator342344-recovery.zip" -d "$RUNNER_TEMP/spectator342344-recovery"
+          echo "RECOVERY_RECEIPT_PATH=$RUNNER_TEMP/spectator342344-recovery/recovery-verification.json" >>"$GITHUB_ENV"
+          active="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?per_page=100" --jq '.workflow_runs[]|select((.id|tostring)!=env.GITHUB_RUN_ID)|select(.event=="workflow_dispatch")|select(.status=="in_progress" or .status=="waiting" or .status=="queued")|select(.name|test("database|migration|recovery|protected.*apply|release|Activate reviewed spectator";"i"))|.id')"
+          test -z "$active"
+      - name: Exact bounded database phase and verified prior-worker resume
+        working-directory: controls/VinPoker
+        env:
+          RELEASE_SOURCE_ROOT: '${{ github.workspace }}/candidate/VinPoker'
+          RELEASE_SHA: '${{ inputs.release_sha }}'
+          SOURCE_CHECKOUT_SHA: '${{ inputs.release_sha }}'
+          SOURCE_PR: '1646'
+          SOURCE_PR_BASE_SHA: '${{ github.sha }}'
+          MANIFEST_SHA256: '${{ inputs.manifest_sha256 }}'
+          RECOVERY_BASE_SHA: '${{ inputs.recovery_base_sha }}'
+          INITIAL_ACTOR: '${{ github.actor }}'
+          TRIGGERING_ACTOR: '${{ github.triggering_actor }}'
+          REPOSITORY_OWNER: '${{ github.repository_owner }}'
+          SUPABASE_PROJECT_REF: '${{ secrets.SUPABASE_PROJECT_REF }}'
+          SUPABASE_ACCESS_TOKEN: '${{ secrets.SUPABASEACCESSTOKEN }}'
+          PGHOST: aws-1-ap-southeast-2.pooler.supabase.com
+          PGPORT: '5432'
+          PGUSER: postgres.orlesggcjamwuknxwcpk
+          PGDATABASE: postgres
+          PGSSLMODE: require
+          PGPASSWORD: '${{ secrets.SUPABASE_DB_PASSWORD }}'
+          CONFIRM_SPECTATOR_PACKAGE: '${{ inputs.confirmation }}'
+        run: |
+          set -euo pipefail
+          node scripts/ops/spectator342344-production.mjs plan | tee "$RUNNER_TEMP/spectator342344-plan.txt"
+          node scripts/ops/spectator342344-production.mjs apply | tee "$RUNNER_TEMP/spectator342344-apply.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: spectator342344-receipts-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/spectator342344-plan.txt
+            ${{ runner.temp }}/spectator342344-apply.txt
+          if-no-files-found: warn
+          retention-days: 30
