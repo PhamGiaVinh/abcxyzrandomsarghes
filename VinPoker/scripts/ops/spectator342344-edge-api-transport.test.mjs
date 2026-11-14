@@ -17,9 +17,10 @@ for(const [label,files] of [['candidate',loadPackage(root).manifest.edgeFiles],[
  const work=mkdtempSync(join(tmpdir(),'spectator-api-transport-'));
  for(const file of files){const dest=join(work,file.path);mkdirSync(dirname(dest),{recursive:true});const bytes=label==='candidate'?readFileSync(join(root,file.path)):execFileSync('git',['show','6fa88c1428146948b5cb74dbcf3efc38aabe5879:VinPoker/'+file.path],{cwd:root});writeFileSync(dest,bytes);}
  mkdirSync(join(work,'supabase'),{recursive:true});writeFileSync(join(work,'supabase/config.toml'),'project_id = "transport-fixture"\n');
- let calls=0,failure=null;
+ let calls=0,projectReads=0,failure=null;
  const server=createServer(async(req,res)=>{try{
-  assert.equal(req.method,'POST');assert.equal(req.url,`/v1/projects/${project}/functions/deploy?slug=${slug}`);assert.match(req.headers.authorization??'',/^Bearer sbp_0+$/);
+  if(req.method==='GET'&&req.url===`/v1/projects/${project}`){assert.ok(++projectReads<=2);res.writeHead(200,{'content-type':'application/json'});res.end(JSON.stringify({id:project,name:'transport-fixture',organization_id:'synthetic-org',organization_slug:'synthetic-org',region:'ap-southeast-1',status:'ACTIVE_HEALTHY'}));return;}
+  assert.equal(req.method,'POST',`Unexpected fake API request ${req.method} ${req.url}`);assert.equal(req.url,`/v1/projects/${project}/functions/deploy?slug=${slug}`);assert.match(req.headers.authorization??'',/^Bearer sbp_0+$/);
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const form=await new Response(Buffer.concat(chunks),{headers:{'content-type':req.headers['content-type']}}).formData();
   const meta=JSON.parse(form.get('metadata'));assert.equal(meta.import_map_path,'deno.json');assert.equal(meta.entrypoint_path,`supabase/functions/${slug}/index.ts`);assert.equal(meta.verify_jwt,false);
