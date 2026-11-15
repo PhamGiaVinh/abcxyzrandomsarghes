@@ -5,6 +5,24 @@ import type { DealerAssignment, NextDealerPrediction } from "@/hooks/useDealerSw
 import DealerSwingSummaryStrip from "../dealer-swing/DealerSwingSummaryStrip";
 
 describe("empty live-table priority lane", () => {
+  it.each([true, false])("removes stale closed-table actions and OT summary (horizontal=%s)", (horizontal) => {
+    const assignment = { id: "old", table_id: "physical-23", table_session_id: "closed-session", status: "assigned",
+      released_at: null, overtime_started_at: "2026-11-15T10:00:00Z" } as DealerAssignment;
+    const onSwing = vi.fn(), onAssign = vi.fn(), onSendToBreak = vi.fn();
+    render(<AttentionQueue horizontal={horizontal} assignments={[assignment]} dealers={[]}
+      tables={[{ id: "physical-23", table_name: "Bàn 23", status: "inactive", table_session_id: null }]}
+      tableAssignmentMap={{ "physical-23": assignment }}
+      timelineByTableId={{ "physical-23": { minutesLeft: -100, isOverdue: true, showNextDealerSoon: true } }}
+      nextDealerMap={{}} scheduleByTableId={{ "physical-23": { slot0: { id: "old-slot", assignment_id: "old", is_shortage: true } } } as any}
+      nowMs={Date.parse("2026-11-16T10:00:00Z")} autoSwingEnabled={false}
+      onAssign={onAssign} onSwing={onSwing} onSendToBreak={onSendToBreak} />);
+    expect(screen.queryByText(/OT \+|Thiếu dealer|Chưa có dealer kế/)).not.toBeInTheDocument();
+    expect(screen.getByText(/0\/0 bàn có dealer/)).toBeInTheDocument();
+    expect(screen.getByText(/Không có OT/)).toBeInTheDocument();
+    expect(onSwing).not.toHaveBeenCalled();
+    expect(onAssign).not.toHaveBeenCalled();
+    expect(onSendToBreak).not.toHaveBeenCalled();
+  });
   it.each([false, true])("known replacement does not hide overdue state; healthy current session stays green (overdue=%s)", (overdue) => {
     const onSwing = vi.fn();
     const assignment = { id: "assignment", table_id: "physical-23", table_session_id: "session-23", status: "assigned", overtime_started_at: null } as DealerAssignment;

@@ -30,11 +30,12 @@ export default function AttentionQueue({
   timelineByTableId, nextDealerMap, scheduleByTableId, nowMs, autoSwingEnabled, horizontal,
   onSwing, onAssign, onPlanNext, onSendToBreak, onFocusTable,
 }: Props) {
-  const { criticalItems, warningItems, totalCount } = useAttentionQueue({
+  const { items, criticalItems, warningItems, totalCount } = useAttentionQueue({
     assignments, tables, dealers, tableAssignmentMap,
     timelineByTableId, nextDealerMap, scheduleByTableId, nowMs,
   });
   const [expanded, setExpanded] = useState(false);
+  const otZero = !items.some((item) => item.type === "ot");
   const { activeTables, assignedTables } = dealerTableCoverage(tables ?? [], assignments);
   const overdueTables = (tables ?? []).filter(table => table.status === "active"
     && !!table.table_session_id
@@ -67,7 +68,6 @@ export default function AttentionQueue({
   // ══════════════════════ LANE MODE (full-width top) ══════════════════════
   if (horizontal) {
     if (totalCount === 0) {
-      const otZero = !assignments.some((a) => a.status === "assigned" && a.overtime_started_at);
       return (
         <div className="flex items-center gap-3 rounded-xl border border-success/30 bg-success/10 px-4 py-3 shadow-card">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-success/20 text-base font-bold text-success">✓</span>
@@ -114,7 +114,6 @@ export default function AttentionQueue({
 
   // ══════════════════════ COMPACT MODE (legacy right-rail) ══════════════════════
   if (totalCount === 0) {
-    const otZero = !assignments.some((a) => a.status === "assigned" && a.overtime_started_at);
     return (
       <div className="border border-success/30 bg-success/10 rounded-sm px-3 py-2.5">
         <div className="flex items-center gap-1.5 mb-1.5">
