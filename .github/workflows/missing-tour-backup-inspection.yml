@@ -68,11 +68,11 @@ jobs:
           ref: ${{ inputs.target_sha }}
       - name: Install existing pinned age client
         run: bash VinPoker/scripts/ops/install-recovery-age.sh
-      - name: Download only retained November 8 ciphertext
+      - name: Download only oldest retained November 7 ciphertext
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          artifact-ids: '13619948643'
-          run-id: '42485718252'
+          artifact-ids: '13575290575'
+          run-id: '42373584563'
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/missing-tour-ciphertext
           merge-multiple: true
@@ -87,7 +87,7 @@ jobs:
           test "$count" = 1
           cipher="$(find "$artifact" -maxdepth 1 -type f -name 'floor-v3-recovery-*.tar.gz.age' -print -quit)"
           actual="$(sha256sum "$cipher" | cut -d' ' -f1)"
-          test "$actual" = c235230809cb37d91eee6f3c9d96de7a954d647b9f8abb4159fdcdefe9f26e52
+          test "$actual" = 3c9caf25231582967c0bc0bef61eba7da65565aeea09d292017bc900e8c4610e
           bash scripts/ops/verify-floor-v3-recovery.sh "$artifact" --inspect-missing-tour-metadata
       - name: Retain metadata counts and hashes only
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
