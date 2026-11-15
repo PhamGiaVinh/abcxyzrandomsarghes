@@ -1,0 +1,102 @@
+name: Inspect missing tournament metadata in retained encrypted backup
+on:
+  pull_request:
+    paths:
+      - .github/workflows/missing-tour-backup-inspection.yml
+      - VinPoker/scripts/ops/inspect-missing-tour-backup.mjs
+      - VinPoker/scripts/ops/inspect-missing-tour-backup.test.mjs
+      - VinPoker/scripts/ops/verify-floor-v3-recovery.sh
+  workflow_dispatch:
+    inputs:
+      target_sha:
+        description: Exact reviewed main SHA; offline metadata inspection only
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+concurrency:
+  group: missing-tour-backup-inspection
+  cancel-in-progress: false
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: synthetic-offline-inspection
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Validate exact inspection workflow with pinned actionlint
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --output "$RUNNER_TEMP/actionlint.tar.gz" https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz
+          echo "023070a287cd8cccd71515fedc843f1985bf96c436b7effaecce67290e7e0757  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check --strict
+          tar --extract --gzip --file "$RUNNER_TEMP/actionlint.tar.gz" --directory "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" .github/workflows/missing-tour-backup-inspection.yml
+      - name: Check scoped decoder and unchanged recovery contracts
+        working-directory: VinPoker
+        env:
+          MISSING_TOUR_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          bash -n scripts/ops/verify-floor-v3-recovery.sh
+          node --test scripts/ops/inspect-missing-tour-backup.test.mjs scripts/ops/floor-v3-recovery-workflow.test.mjs
+  inspect:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: dealer-swing-production-critical
+    steps:
+      - name: Require owner dispatch on exact reviewed main
+        env:
+          TARGET: ${{ inputs.target_sha }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING: ${{ github.triggering_actor }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          test "$TARGET" = "$GITHUB_SHA"
+          test "$ACTOR" = "$OWNER"
+          test "$TRIGGERING" = "$OWNER"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.target_sha }}
+      - name: Install existing pinned age client
+        run: bash VinPoker/scripts/ops/install-recovery-age.sh
+      - name: Download only retained November 8 ciphertext
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          artifact-ids: '13619948643'
+          run-id: '42485718252'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/missing-tour-ciphertext
+          merge-multiple: true
+      - name: Verify fixed recovery point and decode offline
+        working-directory: VinPoker
+        env:
+          FLOOR_BACKUP_AGE_IDENTITY: ${{ secrets.CASHIER_BACKUP_AGE_IDENTITY }}
+        run: |
+          set -euo pipefail
+          artifact="$RUNNER_TEMP/missing-tour-ciphertext"
+          count="$(find "$artifact" -maxdepth 1 -type f -name 'floor-v3-recovery-*.tar.gz.age' | wc -l)"
+          test "$count" = 1
+          cipher="$(find "$artifact" -maxdepth 1 -type f -name 'floor-v3-recovery-*.tar.gz.age' -print -quit)"
+          actual="$(sha256sum "$cipher" | cut -d' ' -f1)"
+          test "$actual" = c235230809cb37d91eee6f3c9d96de7a954d647b9f8abb4159fdcdefe9f26e52
+          bash scripts/ops/verify-floor-v3-recovery.sh "$artifact" --inspect-missing-tour-metadata
+      - name: Retain metadata counts and hashes only
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: missing-tour-backup-inspection-${{ github.run_id }}
+          path: ${{ runner.temp }}/missing-tour-backup-inspection.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Clean private local material
+        if: always()
+        run: |
+          rm -rf -- "$RUNNER_TEMP/missing-tour-ciphertext" "$RUNNER_TEMP/floor-v3-restore-$GITHUB_RUN_ID"
