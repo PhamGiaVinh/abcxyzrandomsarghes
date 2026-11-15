@@ -63,11 +63,15 @@ export function useAttentionQueue({
 }: UseAttentionQueueProps): AttentionQueueResult {
   return useMemo(() => {
     const items: AttentionItem[] = [];
+    const liveTables = (tables ?? []).filter((table) => table.status === "active" && !!table.table_session_id);
+    const liveAssignments = assignments.filter((assignment) => assignment.status === "assigned"
+      && !assignment.released_at
+      && liveTables.some((table) => table.id === assignment.table_id
+        && table.table_session_id === assignment.table_session_id));
 
     // Missing schedule/prediction is not proof of coverage. Use the same exact
     // session coverage as the summary; never offer an action for raw inventory.
-    for (const table of tables ?? []) {
-      if (table.status !== "active" || !table.table_session_id) continue;
+    for (const table of liveTables) {
       if (dealerTableCoverage([table], assignments).assignedTables !== 0) continue;
       items.push({
         id: `empty-${table.table_session_id}`,
@@ -82,8 +86,7 @@ export function useAttentionQueue({
     }
 
     // ── 1. OT — confirmed overtime_started_at ──
-    for (const a of assignments) {
-      if (a.status !== "assigned") continue;
+    for (const a of liveAssignments) {
       if (!a.overtime_started_at) continue;
 
       const otSec = Math.floor((nowMs - new Date(a.overtime_started_at).getTime()) / 1000);
@@ -110,7 +113,7 @@ export function useAttentionQueue({
 
     // ── 2. Break due ──
     for (const d of dealers ?? []) {
-      const assignment = assignments.find((a) => a.attendance_id === d.id && a.status === "assigned");
+      const assignment = liveAssignments.find((a) => a.attendance_id === d.id);
       let w: number;
       if (assignment?.assigned_at) {
         w = Math.max(0, Math.floor((nowMs - new Date(assignment.assigned_at).getTime()) / 60000));
@@ -136,12 +139,13 @@ export function useAttentionQueue({
     }
 
     // ── 3. Shortage — rotation schedule slot-0 flagged is_shortage ──
-    for (const t of tables ?? []) {
+    for (const t of liveTables) {
       const slot0 = scheduleByTableId?.[t.id]?.slot0;
       if (!slot0?.is_shortage) continue;
+      const a = liveAssignments.find((assignment) => assignment.table_id === t.id);
+      if (slot0.assignment_id && slot0.assignment_id !== a?.id) continue;
 
       const tableName = t.table_name ?? "??";
-      const a = tableAssignmentMap[t.id];
       const dueMs = a?.swing_due_at ? new Date(a.swing_due_at).getTime() : null;
       const reliefMs = slot0.planned_relief_at ? new Date(slot0.planned_relief_at).getTime() : null;
       // OT minutes the sitting dealer will absorb: planned relief vs swing due
@@ -167,10 +171,13 @@ export function useAttentionQueue({
 
     // ── 4. Missing next dealer ──
     if (nextDealerMap) {
-      for (const t of tables ?? []) {
+      for (const t of liveTables) {
+        const assignment = liveAssignments.find((current) => current.table_id === t.id);
+        if (!assignment) continue;
         // Automation owns the plan when a live slot-0 schedule row exists —
         // skip the manual "missing next dealer" nag for that table.
-        if (scheduleByTableId?.[t.id]?.slot0) continue;
+        const slot0 = scheduleByTableId?.[t.id]?.slot0;
+        if (slot0 && (!slot0.assignment_id || slot0.assignment_id === assignment.id)) continue;
         const tl = timelineByTableId[t.id];
         if (!tl?.showNextDealerSoon) continue;
         const pred = nextDealerMap[t.id];
