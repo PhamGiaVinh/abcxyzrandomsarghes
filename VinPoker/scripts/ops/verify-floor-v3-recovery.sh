@@ -3,7 +3,7 @@ set -euo pipefail
 
 artifact_dir="${1:-}"
 rehearsal_mode="${2:-}"
-[[ -z "$rehearsal_mode" || "$rehearsal_mode" == '--hud-full34-rehearsal' ]] || exit 64
+[[ -z "$rehearsal_mode" || "$rehearsal_mode" == '--hud-full34-rehearsal' || "$rehearsal_mode" == '--inspect-missing-tour-metadata' ]] || exit 64
 if [[ -z "$artifact_dir" ]]; then
   echo "Encrypted recovery artifact directory is required" >&2
   exit 64
@@ -76,6 +76,21 @@ done
   echo "Decrypted recovery member checksum failed" >&2
   exit 1
 }
+if [[ "$rehearsal_mode" == '--inspect-missing-tour-metadata' ]]; then
+  # Offline archive decoding only: never execute restored SQL or start a database.
+  node --input-type=module -e 'import {preload,VERSION} from "./scripts/deploy/preload-postgres-dump-image.mjs"; preload(VERSION);'
+  readonly inspection_image='docker.io/supabase/postgres@sha256:69e57a409628a809e3778a4d176eb97e32d7c961131ac025b77ad094c0b2d49e'
+  if ! docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+    --user "$(id -u):$(id -g)" --entrypoint pg_restore \
+    --mount "type=bind,src=$payload_root,dst=/recovery,readonly" "$inspection_image" \
+    --data-only --schema=public --table=tournaments --file=- /recovery/database.dump \
+    >"$test_root/tournaments-data.sql" 2>"$test_root/inspection-private.log"; then
+    echo 'Offline tournament archive decoding failed; private output withheld' >&2
+    exit 1
+  fi
+  node scripts/ops/inspect-missing-tour-backup.mjs "$test_root/tournaments-data.sql" "${RUNNER_TEMP}/missing-tour-backup-inspection.json"
+  exit 0
+fi
 database_context_verified=false
 if grep -Fxq 'database_context_version=1' "$payload_root/metadata.txt"; then
   test -s "$payload_root/database-context.json"
