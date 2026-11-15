@@ -27,6 +27,17 @@ describe('Layout unread availability',()=>{
   render(<MemoryRouter initialEntries={[route]}><Layout/></MemoryRouter>);
   expect(screen.getByRole('button',{name:'Install test'})).toBeTruthy();
  });
+ it.each(['/dealer-swing','/dealer-swing/'])('keeps personal registration errors out of Dealer Swing controls on %s',(route)=>{
+  render(<MemoryRouter initialEntries={[route]}><Layout/></MemoryRouter>);
+  const notice=screen.getByTestId('registration-placement');
+  expect(notice).toHaveTextContent('inline');
+  expect(notice.closest('main')).not.toBeNull();
+  expect(notice.closest('nav')).toBeNull();
+ });
+ it('retains the floating player registration entry on the schedule',()=>{
+  render(<MemoryRouter initialEntries={['/']}><Layout/></MemoryRouter>);
+  expect(screen.getByTestId('registration-placement')).toHaveTextContent('floating');
+ });
  it('keeps the DM registration notice in content, not floating over the composer',()=>{
   render(<MemoryRouter initialEntries={['/dm/test-peer']}><Layout/></MemoryRouter>);
   const notice=screen.getByTestId('registration-placement');
