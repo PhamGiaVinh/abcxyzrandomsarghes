@@ -19,7 +19,7 @@
   "functions": [
     {
       "name": "assign-dealer",
-      "version": 146,
+      "version": 153,
       "verifyJwt": false,
       "ezbrSha256": "3cc1ed481a8d97131a303cb7bc4d876120b8c4eb3c303713b9257f28837f78df",
       "files": [
@@ -218,7 +218,7 @@
     },
     {
       "name": "cashier-lookup-player",
-      "version": 53,
+      "version": 60,
       "verifyJwt": true,
       "ezbrSha256": "75c022b0fbbb3c49aa8605bc137a8c45882af571cdd33aa7fa3f3eb74c2ab181",
       "files": [
@@ -268,7 +268,7 @@
     },
     {
       "name": "checkout-dealer",
-      "version": 99,
+      "version": 106,
       "verifyJwt": true,
       "ezbrSha256": "4df5f6919a2434f8510e727d1507cf9bf4f3302f4b04047b8607a06d94eb84ea",
       "files": [
@@ -475,7 +475,7 @@
     },
     {
       "name": "mass-assign",
-      "version": 110,
+      "version": 117,
       "verifyJwt": true,
       "ezbrSha256": "0ca510bf504f4439d30e65a480afd02fd5159bb9cf22b4179eb85dca56e57f17",
       "files": [
@@ -698,7 +698,7 @@
     },
     {
       "name": "ops-club-accounts",
-      "version": 18,
+      "version": 25,
       "verifyJwt": true,
       "ezbrSha256": "b70aa3f9e48d066a154d888c36b77d15895471d2ebf5b5f7ab67618c849f7710",
       "files": [
@@ -748,7 +748,7 @@
     },
     {
       "name": "process-swing",
-      "version": 377,
+      "version": 384,
       "verifyJwt": false,
       "ezbrSha256": "197bd5e3fb4b7e06a5bd169804a54124f0a440815ac2ba362d0c12994cd8e056",
       "files": [
@@ -1086,7 +1086,7 @@
     },
     {
       "name": "tournament-live-update",
-      "version": 73,
+      "version": 80,
       "verifyJwt": true,
       "ezbrSha256": "c39657b83c317cc724807a9295f288182eb88978ef3e2b2553d934a563d7b383",
       "files": [
