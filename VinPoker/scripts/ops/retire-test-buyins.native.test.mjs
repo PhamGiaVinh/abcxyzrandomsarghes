@@ -35,12 +35,15 @@ test('actual restored PG17 schema: exact cancellation, rollback, evidence, retry
  INSERT INTO public.clubs(id,owner_id,name,region,bot_enabled) VALUES('${club}','${actor}','Cleanup TEST','TEST',false);`);
  const ids=Array.from({length:5},()=>randomUUID()).sort();
  const tourIds=ids.map(()=>randomUUID());
+ function currentScope(){
+  const rows=JSON.parse(ok("SELECT jsonb_agg(jsonb_build_object('hash',encode(sha256(convert_to(id::text,'UTF8')),'hex'),'md5',md5(to_jsonb(r)::text)) ORDER BY id) FROM public.tournament_registrations r"));
+  return source.replace(scopePattern,`INSERT INTO cleanup_scope(id_hash,before_md5) VALUES\n${rows.map(r=>`('${r.hash}','${r.md5}')`).join(',\n')};\nDO $cleanup$`);
+ }
  function reset(){
   ok(`TRUNCATE public.audit_logs,public.tournament_registrations CASCADE;
    INSERT INTO public.tournament_registrations(id,tournament_id,player_id,club_id,buy_in,total_pay,reference_code,status,confirmed_at,confirmed_by,transfer_proof_submitted,transfer_proof_image_url)
    VALUES ${ids.map((id,i)=>`('${id}','${tourIds[i]}','${actor}','${club}',1000,1100,'CLEANUP-TEST-${i}','${i===4?'pending':'confirmed'}',${i===4?'NULL':"'2026-07-01'::timestamptz"},${i===4?'NULL':`'${actor}'::uuid`},${i<2},${i<2?"'PRIVATE_TEST_PROOF_MARKER'":'NULL'})`).join(',')};`);
-  const rows=JSON.parse(ok("SELECT jsonb_agg(jsonb_build_object('hash',encode(sha256(convert_to(id::text,'UTF8')),'hex'),'md5',md5(to_jsonb(r)::text)) ORDER BY id) FROM public.tournament_registrations r"));
-  return source.replace(scopePattern,`INSERT INTO cleanup_scope(id_hash,before_md5) VALUES\n${rows.map(r=>`('${r.hash}','${r.md5}')`).join(',\n')};\nDO $cleanup$`);
+  return currentScope();
  }
  const context=`SELECT set_config('vinpoker.test_cleanup.project','orlesggcjamwuknxwcpk',true),
  set_config('vinpoker.test_cleanup.reviewed_sha','${'a'.repeat(40)}',true),
@@ -51,6 +54,33 @@ test('actual restored PG17 schema: exact cancellation, rollback, evidence, retry
  let sql=reset(),before=snapshot();
  assert.match(query(sql).stderr,/TEST_CLEANUP_REVIEWED_CONTEXT_REQUIRED/u);
  assert.equal(snapshot(),before);assert.equal(auditCount(),0);
+
+ reset();ok(`UPDATE public.tournament_registrations SET price_snapshot='{}'::jsonb WHERE id='${ids[4]}'`);
+ sql=currentScope();before=snapshot();
+ assert.match(query(authorized(sql)).stderr,/TEST_CLEANUP_SOURCE_OR_DEPENDENCY_CHANGED/u);
+ assert.equal(snapshot(),before);assert.equal(auditCount(),0);
+
+ sql=reset();
+ ok(`INSERT INTO public.tournaments(id,club_id,name,status,live_status) VALUES('${tourIds[4]}','${club}','Recreated metadata TEST','active','playing')`);
+ before=snapshot();assert.match(query(authorized(sql)).stderr,/TEST_CLEANUP_SOURCE_OR_DEPENDENCY_CHANGED/u);
+ assert.equal(snapshot(),before);assert.equal(auditCount(),0);
+ // Leave that recreated tournament intact; later fixtures use another missing ID.
+ tourIds[4]=randomUUID();
+
+ sql=reset();
+ const invokeAsync=input=>{
+  const p=spawn('psql',['-X','-qAt','-v','ON_ERROR_STOP=1'],{stdio:['pipe','ignore','pipe']});let error='';p.stderr.on('data',v=>error+=v);
+  const done=new Promise(resolve=>p.on('close',status=>resolve({status,error})));p.stdin.end(input);return done;
+ };
+ // Deterministic test-only pause after the real advisory lock; production SQL has no sleep.
+ const pauseAnchor="PERFORM pg_advisory_xact_lock(hashtextextended('owner-confirmed-legacy-test-buyins-20261116',0));";
+ assert.equal(sql.split(pauseAnchor).length,2);
+ const first=invokeAsync(authorized(sql).replace(pauseAnchor,pauseAnchor+' PERFORM pg_sleep(0.5);'));
+ const second=invokeAsync(authorized(sql));
+ const concurrent=await Promise.all([first,second]);
+ assert.equal(concurrent.filter(r=>r.status===0).length,1);assert.equal(auditCount(),5);
+ assert.match(concurrent.find(r=>r.status!==0).error,/TEST_CLEANUP_SOURCE_OR_DEPENDENCY_CHANGED|lock timeout/u);
+ sql=reset();before=snapshot();
  for(const invalid of [authorized(sql).replace("'orlesggcjamwuknxwcpk'","'wrong-project'"),authorized(sql).replace("'PhamGiaVinh'","'another-actor'"),authorized(sql).replace(`'${'a'.repeat(40)}'`,"'invalid-sha'")]){
   assert.match(query(invalid).stderr,/TEST_CLEANUP_REVIEWED_CONTEXT_REQUIRED/u);
   assert.equal(snapshot(),before);assert.equal(auditCount(),0);
