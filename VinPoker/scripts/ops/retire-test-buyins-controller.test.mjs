@@ -27,7 +27,10 @@ function transport(outputs,{fail=false}={}){
 }
 test('authenticated exact source/recovery/protected reviewer context and fixed SQL accepted',()=>{
  const f=fixture();validateExecution(f.env,f.receipt,f.evidence,f.now);
- assert.match(buildWriteSql(f.env.RELEASE_SHA),/TEST_CLEANUP_INVENTORY_CHANGED/u);
+ const sql=buildWriteSql(f.env.RELEASE_SHA);
+ assert.match(sql,/TEST_CLEANUP_INVENTORY_CHANGED/u);
+ assert.ok(sql.indexOf("SET LOCAL statement_timeout='10s'")<sql.indexOf('DO $inventory_guard$'));
+ assert.ok(sql.indexOf("SET LOCAL TIME ZONE 'Asia/Ho_Chi_Minh'")<sql.indexOf('DO $inventory_guard$'));
 });
 test('wrong actor/tenant/source, expired recovery and weakened protection fail before write',()=>{
  const mutations=[

@@ -23,7 +23,7 @@ test('actual restored PG17 schema: exact cancellation, rollback, evidence, retry
  assert.equal(process.env.PGDATABASE,'vinpoker_ops_test_cleanup');
  assert.equal(process.env.PGUSER,'postgres');
  for(const key of ['PGHOSTADDR','PGSERVICE','PGSERVICEFILE','PGOPTIONS'])assert.ok(!process.env[key]);
- const query=sql=>spawnSync('psql',['-X','-qAt','-v','ON_ERROR_STOP=1'],{input:sql,encoding:'utf8'});
+ const query=sql=>spawnSync('psql',['-X','-qAt','-v','ON_ERROR_STOP=1'],{input:"SET TIME ZONE 'Asia/Ho_Chi_Minh';\n"+sql,encoding:'utf8'});
  const ok=sql=>{const r=query(sql);assert.equal(r.status,0,r.stderr);return r.stdout.trim();};
  assert.equal(ok("SELECT current_setting('server_version_num')::int BETWEEN 170000 AND 179999"),'t');
  assert.equal(ok('SELECT count(*) FROM public.tournament_registrations'),'0');
@@ -117,7 +117,7 @@ test('actual restored PG17 schema: exact cancellation, rollback, evidence, retry
   assert.match(query(invalid).stderr,/TEST_CLEANUP_REVIEWED_CONTEXT_REQUIRED/u);
   assert.equal(snapshot(),before);assert.equal(auditCount(),0);
  }
- ok(buildWriteSql('a'.repeat(40)).replace(scopePattern,sql.match(scopePattern)[0]));
+ ok("SET TIME ZONE 'Pacific/Honolulu';\n"+buildWriteSql('a'.repeat(40)).replace(scopePattern,sql.match(scopePattern)[0]));
  const after=JSON.parse(snapshot());
  assert.ok(after.every(r=>r.status==='cancelled'));
  const fixturePairs=[...sql.matchAll(/\('([a-f0-9]{64})','([a-f0-9]{32})'\)/gu)].map(m=>`('${m[1]}','${m[2]}')`).join(',');

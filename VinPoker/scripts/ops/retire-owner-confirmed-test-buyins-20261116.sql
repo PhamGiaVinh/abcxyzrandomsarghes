@@ -3,6 +3,8 @@
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='10s';
+-- Canonical preimage serialization matches the inspected source session.
+SET LOCAL TIME ZONE 'Asia/Ho_Chi_Minh';
 -- Serialize maintenance before acquiring a SHARE lock; otherwise two cleaners
 -- could block the AFTER trigger's table-lock upgrade while awaiting each other.
 SELECT pg_advisory_xact_lock(hashtextextended('owner-confirmed-legacy-test-buyins-20261116',0));

@@ -8,9 +8,9 @@ import {validateContext,psqlEnvironment} from './floor-37-47-protected-apply.mjs
 
 export const repository='PhamGiaVinh/abcxyzrandomsarghes';
 export const project='orlesggcjamwuknxwcpk';
-export const sqlSha256='52389fb00451f59673fb41a66df2db4c9780076de399c1358d0c4fa64dc66696';
+export const sqlSha256='8e5d654afab9f0b0967f6a911fa48f4790cd6e37f2172bf40121da0cf9dff914';
 export const confirmation='CANCEL_EXACT_5_LEGACY_TEST_BUYINS_KEEP_EVIDENCE';
-export const inventorySql="select jsonb_build_object(\n'triggers',(select jsonb_agg(jsonb_build_object('definition',pg_get_triggerdef(t.oid),'enabled',t.tgenabled,'functionMd5',md5(pg_get_functiondef(t.tgfoid))) order by t.tgname) from pg_trigger t where t.tgrelid='public.tournament_registrations'::regclass and not t.tgisinternal),\n'references',(select jsonb_agg(jsonb_build_object('table',c.conrelid::regclass::text,'definition',pg_get_constraintdef(c.oid),'validated',c.convalidated,'deferrable',c.condeferrable) order by c.conrelid::regclass::text,c.conname) from pg_constraint c where c.contype='f' and c.confrelid='public.tournament_registrations'::regclass),\n'auditTriggers',(select count(*) from pg_trigger where tgrelid='public.audit_logs'::regclass and not tgisinternal),\n'registrationColumns',(select jsonb_agg(jsonb_build_object('name',attname,'type',format_type(atttypid,atttypmod),'notNull',attnotnull) order by attnum) from pg_attribute where attrelid='public.tournament_registrations'::regclass and attnum>0 and not attisdropped),\n'auditColumns',(select jsonb_agg(jsonb_build_object('name',attname,'type',format_type(atttypid,atttypmod),'notNull',attnotnull) order by attnum) from pg_attribute where attrelid='public.audit_logs'::regclass and attnum>0 and not attisdropped)) as inventory";
+export const inventorySql="select jsonb_build_object(\n'triggers',(select jsonb_agg(jsonb_build_object('definition',pg_get_triggerdef(t.oid),'enabled',t.tgenabled,'functionMd5',md5(pg_get_functiondef(t.tgfoid))) order by t.tgname) from pg_trigger t where t.tgrelid='public.tournament_registrations'::regclass and not t.tgisinternal),\n'references',(select jsonb_agg(jsonb_build_object('table',c.conrelid::regclass::text,'definition',pg_get_constraintdef(c.oid),'validated',c.convalidated,'deferrable',c.condeferrable) order by c.conrelid::regclass::text COLLATE \"C\",c.conname COLLATE \"C\") from pg_constraint c where c.contype='f' and c.confrelid='public.tournament_registrations'::regclass),\n'auditTriggers',(select count(*) from pg_trigger where tgrelid='public.audit_logs'::regclass and not tgisinternal),\n'registrationColumns',(select jsonb_agg(jsonb_build_object('name',attname,'type',format_type(atttypid,atttypmod),'notNull',attnotnull) order by attnum) from pg_attribute where attrelid='public.tournament_registrations'::regclass and attnum>0 and not attisdropped),\n'auditColumns',(select jsonb_agg(jsonb_build_object('name',attname,'type',format_type(atttypid,atttypmod),'notNull',attnotnull) order by attnum) from pg_attribute where attrelid='public.audit_logs'::regclass and attnum>0 and not attisdropped)) as inventory";
 export const expectedInventory=JSON.parse(readFileSync(new URL('./retire-test-buyins-inventory.json',import.meta.url),'utf8'));
 const sourcePath=new URL('./retire-owner-confirmed-test-buyins-20261116.sql',import.meta.url);
 export function loadSql(){
@@ -23,7 +23,7 @@ export function outcomeSql(runId,sourceSha){
  assert.match(String(runId),/^\d+$/u);
  assert.match(sourceSha,/^[a-f0-9]{40}$/u);
  const values=targets().map(([id,before])=>`('${id}','${before}')`).join(',');
- return `BEGIN READ ONLY;SET LOCAL statement_timeout='5s';
+ return `BEGIN READ ONLY;SET LOCAL statement_timeout='5s';SET LOCAL TIME ZONE 'Asia/Ho_Chi_Minh';
  WITH targets(hash,before_md5) AS(VALUES ${values}),selected AS(
  SELECT r.*,t.before_md5 FROM public.tournament_registrations r JOIN targets t ON t.hash=encode(sha256(convert_to(r.id::text,'UTF8')),'hex'))
  SELECT jsonb_build_object('rows',(SELECT count(*) FROM selected),
@@ -70,7 +70,7 @@ export function validateExecution(env,receipt,evidence,now=Date.now()){
 export function buildWriteSql(sha){
  assert.match(sha,/^[a-f0-9]{40}$/u);
  const expected=JSON.stringify(expectedInventory).replaceAll("'","''");
- return loadSql().replace('BEGIN;',`BEGIN;
+ return loadSql().replace("SET LOCAL TIME ZONE 'Asia/Ho_Chi_Minh';",`SET LOCAL TIME ZONE 'Asia/Ho_Chi_Minh';
  DO $inventory_guard$ BEGIN IF (${inventorySql}) IS DISTINCT FROM '${expected}'::jsonb
  THEN RAISE EXCEPTION 'TEST_CLEANUP_INVENTORY_CHANGED'; END IF;END $inventory_guard$;
  SELECT set_config('vinpoker.test_cleanup.project','${project}',true),set_config('vinpoker.test_cleanup.reviewed_sha','${sha}',true),set_config('vinpoker.test_cleanup.approved_owner','PhamGiaVinh',true);`);
