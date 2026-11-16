@@ -3,6 +3,9 @@
 BEGIN;
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='10s';
+-- Serialize maintenance before acquiring a SHARE lock; otherwise two cleaners
+-- could block the AFTER trigger's table-lock upgrade while awaiting each other.
+SELECT pg_advisory_xact_lock(hashtextextended('owner-confirmed-legacy-test-buyins-20261116',0));
 -- Stabilize absent tournament metadata; abort rather than wait on active writers.
 LOCK TABLE public.tournaments IN SHARE MODE;
 CREATE TEMP TABLE cleanup_scope(id_hash text PRIMARY KEY,before_md5 text NOT NULL,before_image jsonb) ON COMMIT DROP;
@@ -20,7 +23,6 @@ BEGIN
   OR current_setting('vinpoker.test_cleanup.reviewed_sha',true) !~ '^[a-f0-9]{40}$'
   OR current_setting('vinpoker.test_cleanup.approved_owner',true) IS DISTINCT FROM 'PhamGiaVinh'
  THEN RAISE EXCEPTION 'TEST_CLEANUP_REVIEWED_CONTEXT_REQUIRED'; END IF;
- PERFORM pg_advisory_xact_lock(hashtextextended('owner-confirmed-legacy-test-buyins-20261116',0));
  IF (SELECT count(*) FROM cleanup_scope)<>5 THEN RAISE EXCEPTION 'TEST_CLEANUP_SCOPE_INVALID'; END IF;
  -- Locks fence in-flight row/FK operations, not hypothetical future writers.
  -- Controlled execution must exclude operations on these retired TEST records.

@@ -72,14 +72,44 @@ test('actual restored PG17 schema: exact cancellation, rollback, evidence, retry
   const p=spawn('psql',['-X','-qAt','-v','ON_ERROR_STOP=1'],{stdio:['pipe','ignore','pipe']});let error='';p.stderr.on('data',v=>error+=v);
   const done=new Promise(resolve=>p.on('close',status=>resolve({status,error})));p.stdin.end(input);return done;
  };
- // Deterministic test-only pause after the real advisory lock; production SQL has no sleep.
- const pauseAnchor="PERFORM pg_advisory_xact_lock(hashtextextended('owner-confirmed-legacy-test-buyins-20261116',0));";
+ // Establish the first worker's real table/advisory locks before starting its rival.
+ // Production SQL has no sleep; this test-only pause creates the upgrade race.
+ const pauseAnchor='LOCK TABLE public.tournaments IN SHARE MODE;';
  assert.equal(sql.split(pauseAnchor).length,2);
- const first=invokeAsync(authorized(sql).replace(pauseAnchor,pauseAnchor+' PERFORM pg_sleep(0.5);'));
+ const first=invokeAsync("SET application_name='cleanup_test_first';"+authorized(sql).replace(pauseAnchor,pauseAnchor+' SELECT pg_sleep(0.7);'));
+ const firstDeadline=Date.now()+2500;
+ while(ok("SELECT count(*) FROM pg_stat_activity WHERE application_name='cleanup_test_first' AND wait_event='PgSleep'")==='0'){
+  assert.ok(Date.now()<firstDeadline,'first maintenance lock barrier absent');await new Promise(r=>setTimeout(r,40));
+ }
  const second=invokeAsync(authorized(sql));
  const concurrent=await Promise.all([first,second]);
+ assert.equal(concurrent[0].status,0,concurrent[0].error);
  assert.equal(concurrent.filter(r=>r.status===0).length,1);assert.equal(auditCount(),5);
  assert.match(concurrent.find(r=>r.status!==0).error,/TEST_CLEANUP_SOURCE_OR_DEPENDENCY_CHANGED|lock timeout/u);
+
+ sql=reset();
+ ok(`INSERT INTO public.payment_settlements(tournament_registration_id,club_id,amount,outcome) VALUES('${ids[4]}','${club}',0,'dismissed')`);
+ before=snapshot();
+ assert.match(query(authorized(sql)).stderr,/TEST_CLEANUP_SOURCE_OR_DEPENDENCY_CHANGED/u);
+ assert.equal(snapshot(),before);assert.equal(auditCount(),0);
+ assert.equal(ok('SELECT count(*) FROM public.payment_settlements'),'1');
+
+ sql=reset();
+ const afterLoop='IF n<>5 THEN';assert.equal(sql.split(afterLoop).length,2);
+ const maintenance=invokeAsync("SET application_name='cleanup_test_fk_maintenance';"+authorized(sql).replace(afterLoop,'PERFORM pg_sleep(2.5); '+afterLoop));
+ const maintenanceDeadline=Date.now()+2500;
+ while(ok("SELECT count(*) FROM pg_stat_activity WHERE application_name='cleanup_test_fk_maintenance' AND wait_event='PgSleep'")==='0'){
+  assert.ok(Date.now()<maintenanceDeadline);await new Promise(r=>setTimeout(r,40));
+ }
+ const fkWriter=invokeAsync(`SET application_name='cleanup_test_fk_writer';INSERT INTO public.payment_settlements(tournament_registration_id,club_id,amount,outcome) VALUES('${ids[4]}','${club}',0,'dismissed');`);
+ const fkDeadline=Date.now()+2000;
+ while(ok("SELECT count(*) FROM pg_stat_activity WHERE application_name='cleanup_test_fk_writer' AND wait_event_type='Lock'")==='0'){
+  assert.ok(Date.now()<fkDeadline,'real FK insert did not wait for row lock');await new Promise(r=>setTimeout(r,40));
+ }
+ assert.equal((await maintenance).status,0);assert.equal((await fkWriter).status,0);
+ assert.equal(auditCount(),5);assert.equal(ok('SELECT count(*) FROM public.payment_settlements'),'1');
+ assert.equal(ok(`SELECT status FROM public.tournament_registrations WHERE id='${ids[4]}'`),'cancelled');
+ console.log('FK_WRITER_WAITED_THEN_REFERENCED_PRESERVED_CANCELLED_ROW_AFTER_COMMIT_NOT_PERMANENT_EXCLUSION');
  sql=reset();before=snapshot();
  for(const invalid of [authorized(sql).replace("'orlesggcjamwuknxwcpk'","'wrong-project'"),authorized(sql).replace("'PhamGiaVinh'","'another-actor'"),authorized(sql).replace(`'${'a'.repeat(40)}'`,"'invalid-sha'")]){
   assert.match(query(invalid).stderr,/TEST_CLEANUP_REVIEWED_CONTEXT_REQUIRED/u);
