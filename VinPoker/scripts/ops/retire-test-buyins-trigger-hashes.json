@@ -1,0 +1,15 @@
+{
+  "public.update_updated_at_column": "3210625d1c794f6db7b3c3defc5984dd",
+  "public.trg_tour_reg_player_count": "1c58d56c9702c7233d855ca34444c17e",
+  "private.multi_day_payout_row_fence_v1": "666f92f52d4b4a861baab11316aa8394",
+  "private.lock_main_event_registration210": "937e861bea1e5773967e40a6cb3826ad",
+  "private.satellite_registration_cutoff_v1": "12107ee2c3137db34916e77161803045",
+  "private.satellite_offline_source_guard_v1": "d3192ea7966ea58b6772fca1af556d3d",
+  "public.cashier_paid_registration_guard_v1": "8d3e54ad9e74157ca30557c7754d1979",
+  "public.cashier_registration_columns_guard_v1": "99925e76e5b1e81de9148a607ba51318",
+  "private.multi_day_registration_event_fence_v1": "2aa08dc3464d3adf3ece6e4d5822031b",
+  "private.satellite_target_registration_fence_v1": "c4ab2c5f356294ec5af499f740140acf",
+  "private.satellite_voucher_registration_delete_v1": "e2c874f27c847b6128193eef59dd8425",
+  "public.cashier_tour_registration_insert_guard_v1": "3bd3470d86ca961e9951b5784954b167",
+  "private.satellite_locked_registration_evidence_v1": "97cb3984220a4334e16a629a5d24f8b4"
+}
