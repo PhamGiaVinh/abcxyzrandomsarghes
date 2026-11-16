@@ -1,0 +1,59 @@
+name: Legacy TEST buy-in cleanup restored-schema qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/test-buyin-cleanup-qualification.yml'
+      - '.github/workflows/test-buyin-cleanup-apply.yml'
+      - 'VinPoker/scripts/ops/retire-owner-confirmed-test-buyins-20261116.sql'
+      - 'VinPoker/scripts/ops/retire-test-buyins*'
+      - 'VinPoker/scripts/ops/restore-schema-test-baseline.mjs'
+permissions: {actions: read, contents: read}
+jobs:
+  restored-schema:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: synthetic-test-cleanup
+          POSTGRES_DB: vinpoker_ops_test_cleanup
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: synthetic-test-cleanup
+      PGDATABASE: vinpoker_ops_test_cleanup
+      SCHEMA_ARTIFACT_DIR: /tmp/test-buyin-cleanup-schema
+      SCHEMA_ARTIFACT_SHA256: 35fc93f15fac55fe63386f06b5da7ea497e5e68aadb5168616c11cca202f66e7
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Download existing owner-approved schema capture, no production credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/$GITHUB_REPOSITORY/actions/runs/43471170552 > "$RUNNER_TEMP/capture.json"
+          gh api repos/$GITHUB_REPOSITORY/actions/artifacts/14062030756 > "$RUNNER_TEMP/artifact.json"
+          gh run download 43471170552 --repo "$GITHUB_REPOSITORY" --name live-public-schema --dir "$SCHEMA_ARTIFACT_DIR"
+      - name: Verify immutable capture provenance and schema digest
+        working-directory: VinPoker
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          import {validateCapture} from './scripts/ops/floor345-fresh-baseline.mjs';
+          import {validateArtifactDirectory} from './scripts/deploy/validate-live-public-schema-artifact.mjs';
+          import assert from 'node:assert/strict';
+          validateCapture(JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/capture.json')),JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/artifact.json')));
+          assert.equal(validateArtifactDirectory(process.env.SCHEMA_ARTIFACT_DIR).schemaSha256,process.env.SCHEMA_ARTIFACT_SHA256);
+          JS
+      - name: Restore actual schema into empty isolated PostgreSQL only
+        working-directory: VinPoker
+        run: node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Verify live trigger identities and cleanup transaction behavior
+        working-directory: VinPoker
+        env:
+          TEST_BUYIN_CLEANUP_PG: '1'
+        run: node --test scripts/ops/retire-test-buyins-controller.test.mjs scripts/ops/retire-test-buyins.native.test.mjs

@@ -1,0 +1,284 @@
+{
+  "triggers": [
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER cashier_paid_registration_guard BEFORE UPDATE ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION cashier_paid_registration_guard_v1()",
+      "functionMd5": "8d3e54ad9e74157ca30557c7754d1979"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER cashier_registration_columns_guard BEFORE UPDATE ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION cashier_registration_columns_guard_v1()",
+      "functionMd5": "99925e76e5b1e81de9148a607ba51318"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER cashier_tour_registration_insert_guard BEFORE INSERT ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION cashier_tour_registration_insert_guard_v1()",
+      "functionMd5": "3bd3470d86ca961e9951b5784954b167"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER main_event_registration_parent210 BEFORE INSERT OR UPDATE OF tournament_id ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION private.lock_main_event_registration210()",
+      "functionMd5": "937e861bea1e5773967e40a6cb3826ad"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER multi_day_registration_event_fence_v1 BEFORE INSERT OR UPDATE ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION private.multi_day_registration_event_fence_v1()",
+      "functionMd5": "2aa08dc3464d3adf3ece6e4d5822031b"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER multi_day_registration_payout_fence_v1 BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION private.multi_day_payout_row_fence_v1()",
+      "functionMd5": "666f92f52d4b4a861baab11316aa8394"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER satellite_locked_registration_evidence_v1 BEFORE UPDATE ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION private.satellite_locked_registration_evidence_v1()",
+      "functionMd5": "97cb3984220a4334e16a629a5d24f8b4"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER satellite_offline_source_guard_v1 BEFORE INSERT ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION private.satellite_offline_source_guard_v1()",
+      "functionMd5": "d3192ea7966ea58b6772fca1af556d3d"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER satellite_registration_cutoff_v1 BEFORE INSERT OR DELETE OR UPDATE ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION private.satellite_registration_cutoff_v1()",
+      "functionMd5": "12107ee2c3137db34916e77161803045"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER satellite_target_registration_fence_v1 BEFORE INSERT ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION private.satellite_target_registration_fence_v1()",
+      "functionMd5": "c4ab2c5f356294ec5af499f740140acf"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER satellite_voucher_registration_delete_v1 BEFORE DELETE ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION private.satellite_voucher_registration_delete_v1()",
+      "functionMd5": "e2c874f27c847b6128193eef59dd8425"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER tour_reg_player_count AFTER UPDATE ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION trg_tour_reg_player_count()",
+      "functionMd5": "1c58d56c9702c7233d855ca34444c17e"
+    },
+    {
+      "enabled": "O",
+      "definition": "CREATE TRIGGER trg_treg_updated_at BEFORE UPDATE ON public.tournament_registrations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()",
+      "functionMd5": "3210625d1c794f6db7b3c3defc5984dd"
+    }
+  ],
+  "references": [
+    {
+      "table": "cashier_buyin_movements",
+      "validated": true,
+      "deferrable": false,
+      "definition": "FOREIGN KEY (registration_id) REFERENCES tournament_registrations(id)"
+    },
+    {
+      "table": "cashier_refund_requests",
+      "validated": true,
+      "deferrable": false,
+      "definition": "FOREIGN KEY (registration_id) REFERENCES tournament_registrations(id)"
+    },
+    {
+      "table": "payment_settlements",
+      "validated": true,
+      "deferrable": false,
+      "definition": "FOREIGN KEY (tournament_registration_id) REFERENCES tournament_registrations(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "satellite_redemption_reversals",
+      "validated": true,
+      "deferrable": false,
+      "definition": "FOREIGN KEY (registration_id) REFERENCES tournament_registrations(id)"
+    },
+    {
+      "table": "satellite_ticket_value_transfers",
+      "validated": true,
+      "deferrable": false,
+      "definition": "FOREIGN KEY (registration_id) REFERENCES tournament_registrations(id)"
+    },
+    {
+      "table": "satellite_tickets",
+      "validated": true,
+      "deferrable": false,
+      "definition": "FOREIGN KEY (registration_id) REFERENCES tournament_registrations(id)"
+    },
+    {
+      "table": "seat_draw_receipts",
+      "validated": true,
+      "deferrable": false,
+      "definition": "FOREIGN KEY (registration_id) REFERENCES tournament_registrations(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "tournament_entries",
+      "validated": true,
+      "deferrable": false,
+      "definition": "FOREIGN KEY (registration_id) REFERENCES tournament_registrations(id) ON DELETE SET NULL"
+    }
+  ],
+  "auditColumns": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "notNull": true
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "notNull": false
+    },
+    {
+      "name": "actor_id",
+      "type": "uuid",
+      "notNull": false
+    },
+    {
+      "name": "action",
+      "type": "text",
+      "notNull": true
+    },
+    {
+      "name": "entity_type",
+      "type": "text",
+      "notNull": false
+    },
+    {
+      "name": "entity_id",
+      "type": "uuid",
+      "notNull": false
+    },
+    {
+      "name": "payload",
+      "type": "jsonb",
+      "notNull": false
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "notNull": true
+    }
+  ],
+  "auditTriggers": 0,
+  "registrationColumns": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "notNull": true
+    },
+    {
+      "name": "tournament_id",
+      "type": "uuid",
+      "notNull": true
+    },
+    {
+      "name": "player_id",
+      "type": "uuid",
+      "notNull": true
+    },
+    {
+      "name": "club_id",
+      "type": "uuid",
+      "notNull": false
+    },
+    {
+      "name": "buy_in",
+      "type": "bigint",
+      "notNull": true
+    },
+    {
+      "name": "platform_fixed_fee",
+      "type": "bigint",
+      "notNull": true
+    },
+    {
+      "name": "total_pay",
+      "type": "bigint",
+      "notNull": true
+    },
+    {
+      "name": "reference_code",
+      "type": "text",
+      "notNull": true
+    },
+    {
+      "name": "transfer_proof_image_url",
+      "type": "text",
+      "notNull": false
+    },
+    {
+      "name": "transfer_proof_submitted",
+      "type": "boolean",
+      "notNull": true
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "notNull": true
+    },
+    {
+      "name": "committed_at",
+      "type": "timestamp with time zone",
+      "notNull": true
+    },
+    {
+      "name": "confirmed_at",
+      "type": "timestamp with time zone",
+      "notNull": false
+    },
+    {
+      "name": "confirmed_by",
+      "type": "uuid",
+      "notNull": false
+    },
+    {
+      "name": "cancelled_at",
+      "type": "timestamp with time zone",
+      "notNull": false
+    },
+    {
+      "name": "cancelled_by",
+      "type": "uuid",
+      "notNull": false
+    },
+    {
+      "name": "cancellation_reason",
+      "type": "text",
+      "notNull": false
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "notNull": true
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "notNull": true
+    },
+    {
+      "name": "used_free_rake",
+      "type": "boolean",
+      "notNull": true
+    },
+    {
+      "name": "source_entry_id",
+      "type": "uuid",
+      "notNull": false
+    },
+    {
+      "name": "price_snapshot",
+      "type": "jsonb",
+      "notNull": false
+    },
+    {
+      "name": "cashier_paid_at",
+      "type": "timestamp with time zone",
+      "notNull": false
+    },
+    {
+      "name": "cashier_seating_error",
+      "type": "text",
+      "notNull": false
+    }
+  ]
+}
