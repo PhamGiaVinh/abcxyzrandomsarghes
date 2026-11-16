@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {spawnSync,spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
+import {buildWriteSql,inventorySql,expectedInventory,outcomeSql} from './retire-test-buyins-controller.mjs';
 
 const source=readFileSync(new URL('./retire-owner-confirmed-test-buyins-20261116.sql',import.meta.url),'utf8');
 const action='owner_confirmed_legacy_test_buyin_retired_20261116';
@@ -29,6 +30,7 @@ test('actual restored PG17 schema: exact cancellation, rollback, evidence, retry
  assert.equal(ok("SELECT count(*) FROM pg_extension WHERE extname IN ('pg_net','pg_cron')"),'0');
  const actualGuards=JSON.parse(ok("SELECT jsonb_object_agg(n.nspname||'.'||p.proname,md5(pg_get_functiondef(p.oid))) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE p.oid IN(SELECT tgfoid FROM pg_trigger WHERE tgrelid='public.tournament_registrations'::regclass AND NOT tgisinternal)"));
  assert.deepEqual(actualGuards,JSON.parse(readFileSync(new URL('./retire-test-buyins-trigger-hashes.json',import.meta.url),'utf8')),'restored applicable triggers must match actual live function definitions');
+ assert.deepEqual(JSON.parse(ok(inventorySql)),expectedInventory,'full inspected trigger/FK/column inventory must match');
  const actor=randomUUID(),club=randomUUID();
  ok(`INSERT INTO auth.users(id) VALUES('${actor}');
  INSERT INTO public.profiles(user_id,display_name) VALUES('${actor}','Cleanup TEST owner');
@@ -115,9 +117,12 @@ test('actual restored PG17 schema: exact cancellation, rollback, evidence, retry
   assert.match(query(invalid).stderr,/TEST_CLEANUP_REVIEWED_CONTEXT_REQUIRED/u);
   assert.equal(snapshot(),before);assert.equal(auditCount(),0);
  }
- ok(authorized(sql));
+ ok(buildWriteSql('a'.repeat(40)).replace(scopePattern,sql.match(scopePattern)[0]));
  const after=JSON.parse(snapshot());
  assert.ok(after.every(r=>r.status==='cancelled'));
+ const fixturePairs=[...sql.matchAll(/\('([a-f0-9]{64})','([a-f0-9]{32})'\)/gu)].map(m=>`('${m[1]}','${m[2]}')`).join(',');
+ const observedOutcome=outcomeSql('999','a'.repeat(40)).replace(/WITH targets\(hash,before_md5\) AS\(VALUES [\s\S]*?\),selected AS\(/u,`WITH targets(hash,before_md5) AS(VALUES ${fixturePairs}),selected AS(`);
+ assert.deepEqual(JSON.parse(ok(observedOutcome)),{rows:5,preimages:0,cancelled:5,auditExact:5,inFlight:0});
  const strip=r=>{const v={...r};for(const k of ['status','cancelled_at','cancelled_by','cancellation_reason','updated_at'])delete v[k];return v;};
  assert.deepEqual(after.map(strip),JSON.parse(before).map(strip));assert.equal(auditCount(),5);
  const audit=ok(`SELECT jsonb_agg(payload) FROM public.audit_logs WHERE action='${action}'`);

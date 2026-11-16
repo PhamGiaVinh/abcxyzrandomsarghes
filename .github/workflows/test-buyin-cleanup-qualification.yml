@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/test-buyin-cleanup-qualification.yml'
+      - '.github/workflows/test-buyin-cleanup-apply.yml'
       - 'VinPoker/scripts/ops/retire-owner-confirmed-test-buyins-20261116.sql'
       - 'VinPoker/scripts/ops/retire-test-buyins*'
       - 'VinPoker/scripts/ops/restore-schema-test-baseline.mjs'
@@ -55,4 +56,4 @@ jobs:
         working-directory: VinPoker
         env:
           TEST_BUYIN_CLEANUP_PG: '1'
-        run: node --test scripts/ops/retire-test-buyins.native.test.mjs
+        run: node --test scripts/ops/retire-test-buyins-controller.test.mjs scripts/ops/retire-test-buyins.native.test.mjs

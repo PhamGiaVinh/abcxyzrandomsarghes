@@ -1,0 +1,79 @@
+name: Protected legacy TEST buy-in cleanup apply
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/test-buyin-cleanup-apply.yml'
+      - 'VinPoker/scripts/ops/retire-test-buyins*'
+      - 'VinPoker/scripts/ops/retire-owner-confirmed-test-buyins-20261116.sql'
+  workflow_dispatch:
+    inputs:
+      target_sha: {description: Exact reviewed merged main SHA, required: true, type: string}
+      recovery_run_id: {description: Fresh exact-main encrypted backup and isolated restore PASS run, required: true, type: string}
+      qualification_run_id: {description: Exact PR1664 head restored-schema qualification PASS run, required: true, type: string}
+      confirmation: {description: CANCEL_EXACT_5_LEGACY_TEST_BUYINS_KEEP_EVIDENCE, required: true, type: string}
+permissions: {contents: read, actions: read, pull-requests: read}
+concurrency: {group: vinpoker-production-database-release, cancel-in-progress: false}
+jobs:
+  controller:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Reject non-owner or inexact manual dispatch before protected credentials
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TARGET: ${{ inputs.target_sha }}
+          INITIAL: ${{ github.actor }}
+          TRIGGERING: ${{ github.triggering_actor }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$TARGET" = "$GITHUB_SHA"
+          test "$INITIAL" = "$OWNER"
+          test "$TRIGGERING" = "$OWNER"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - run: node --test VinPoker/scripts/ops/retire-test-buyins-controller.test.mjs
+  apply:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: controller
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: dealer-swing-production-critical
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Verify authenticated provenance and recovery then execute at most once
+        working-directory: VinPoker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.target_sha }}
+          SOURCE_CHECKOUT_SHA: ${{ inputs.target_sha }}
+          RECOVERY_BASE_SHA: ${{ inputs.target_sha }}
+          RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+          QUALIFICATION_RUN_ID: ${{ inputs.qualification_run_id }}
+          CONFIRM_TEST_BUYIN_CLEANUP: ${{ inputs.confirmation }}
+          INITIAL_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          PGHOST: aws-1-ap-southeast-2.pooler.supabase.com
+          PGPORT: '5432'
+          PGUSER: postgres.orlesggcjamwuknxwcpk
+          PGDATABASE: postgres
+          PGSSLMODE: require
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          node scripts/ops/retire-test-buyins-controller.mjs | tee "$RUNNER_TEMP/test-buyin-cleanup-result.jsonl"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: test-buyin-cleanup-result-${{ github.run_id }}
+          path: ${{ runner.temp }}/test-buyin-cleanup-result.jsonl
+          if-no-files-found: warn
+          retention-days: 30
