@@ -12,9 +12,12 @@ import { OPS_CASHIER_MUTATIONS_ENABLED } from "@/ops/opsMutations";
 import CashierCashflowPanel from "./CashierCashflowPanel";
 import TourRevenuePanel from "./TourRevenuePanel";
 import { startLiveReportRefresh } from "@/lib/liveReportRefresh";
+import { useOpsAuth } from '@/ops/auth/OpsAuthProvider';
+import OwnerAssistantPanel, { OWNER_ASSISTANT_ENABLED } from '@/components/finance/OwnerAssistantPanel';
 
 export default function OpsFinanceWorkspace() {
   const client = useSupabaseClient();
+  const { user, session } = useOpsAuth();
   const capabilities = useOpsCapabilities();
   const { selectedClubId } = useOpsWorkspace();
   const financeClubIds = capabilities.moduleClubIds("finance");
@@ -66,6 +69,9 @@ export default function OpsFinanceWorkspace() {
       blockedReason={capabilities.scopeError ?? (capabilities.loading ? null : !clubId ? "FINANCE_CLUB_SCOPE_REQUIRED" : state.clubId === clubId ? state.blockedReason : null)}
       onRefresh={() => { setRange(currentMonthFinanceRange()); setRevision((value) => value + 1); }}
     />
+    {OWNER_ASSISTANT_ENABLED && clubId && !capabilities.loading && !capabilities.scopeError && user && session
+      && (capabilities.isSuperAdmin || capabilities.scope.some(row => row.club_id === clubId && row.can_owner))
+      && <OwnerAssistantPanel key={`${user.id}:${clubId}`} client={client} clubId={clubId} clubName={clubName} actorId={user.id} sessionToken={session.access_token} />}
     {clubId && !capabilities.loading && !capabilities.scopeError && <TourRevenuePanel key={clubId} clubId={clubId} />}
     {clubId && OPS_CASHIER_MUTATIONS_ENABLED && <CashierCashflowPanel key={`${clubId}:${range.from}:${range.to}`} clubId={clubId} range={range} />}
   </>);

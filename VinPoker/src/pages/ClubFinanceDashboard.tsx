@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate } from "react-router-dom";
+import OwnerAssistantPanel, { OWNER_ASSISTANT_ENABLED } from '@/components/finance/OwnerAssistantPanel';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from "@/hooks/useAuth";
 import { formatVND } from "@/lib/format";
 import { exportToExcel } from "@/lib/exportExcel";
@@ -44,7 +46,7 @@ const tooltipStyle = {
 } as const;
 
 const ClubFinanceDashboard = () => {
-  const { isAdmin, isClubAdmin, isClubOwner } = useAuth();
+  const { isAdmin, isClubAdmin, isClubOwner, user, session } = useAuth();
   const [from, setFrom] = useState(rangeStartISO(30));
   const [to, setTo] = useState(todayISO());
   const [clubFilter, setClubFilter] = useState("all");
@@ -189,6 +191,9 @@ const ClubFinanceDashboard = () => {
         </div>
       </Card>
 
+      {OWNER_ASSISTANT_ENABLED && (isAdmin || isClubOwner) && user && session && <OwnerAssistantPanel
+        key={`${user.id}:${clubFilter}`} client={supabase} actorId={user.id} sessionToken={session.access_token}
+        clubId={clubFilter === 'all' ? null : clubFilter} clubName={clubs.find(c => c.id === clubFilter)?.name ?? ''} />}
       {error && (
         <Card className="p-4 border-destructive/40 bg-destructive/10 text-sm flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-destructive" /> {error}
