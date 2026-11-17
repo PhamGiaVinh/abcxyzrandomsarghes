@@ -3378,6 +3378,13 @@
     "recent": "今回の結果の取引",
     "noTransactions": "この範囲に取引はありません。",
     "sepayQuota": "SePay の読み取り制限に達しました。後ほどお試しください。自動再試行はしません。",
-    "displayLimit": "結果の最初の50件まで表示します。"
+    "displayLimit": "結果の最初の50件まで表示します。",
+    "liveTitle": "取引モニター",
+    "liveInterval": "10秒ごとに更新",
+    "liveScope": "VBackerでこのクラブに割り当てた最新50件のSePay取引。反映速度はwebhook・照合によります。更新時にGeminiは呼び出しません。",
+    "verified": "API確認済み",
+    "pendingVerification": "確認待ち",
+    "changed": "更新あり",
+    "unknownAmount": "金額不明"
   }
 }

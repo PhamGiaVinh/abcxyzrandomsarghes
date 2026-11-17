@@ -5,6 +5,7 @@ import i18n from '@/i18n';
 import OwnerAssistantPanel from './OwnerAssistantPanel';
 import { askOwnerAssistant } from './ownerAssistantRead';
 import type { AssistantRead } from './ownerAssistantRead';
+vi.mock('./OwnerBankFeed', () => ({ default: () => null }));
 vi.mock('./ownerAssistantRead', () => ({ askOwnerAssistant: vi.fn() }));
 const ask = vi.mocked(askOwnerAssistant);
 const base = { client: {} as never, clubId: 'club-a', clubName: 'Center Point', actorId: 'owner', sessionToken: 'session-test' };

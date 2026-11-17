@@ -3,7 +3,7 @@ import type { Database } from '@/integrations/supabase/types';
 import { parsePlan, record, VERSION } from '../../../supabase/functions/owner-sepay-assistant/contracts';
 import type { ReadEvidence } from '../../../supabase/functions/owner-sepay-assistant/sepayRead';
 
-export type AssistantRead = { question: string; plan: ReturnType<typeof parsePlan>; evidence: ReadEvidence | null };
+export type AssistantRead = { question: string; plan: ReturnType<typeof parsePlan>; evidence: ReadEvidence | null; answer?: string | null };
 const amount = (v: unknown) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 export async function askOwnerAssistant(client: SupabaseClient<Database>, clubId: string, question: string, signal: AbortSignal): Promise<AssistantRead> {
   const requestId = crypto.randomUUID();
@@ -36,5 +36,6 @@ export async function askOwnerAssistant(client: SupabaseClient<Database>, clubId
       || !['in', 'out'].includes(String(tx.direction)) || !amount(tx.amount)) throw new Error('SOURCE_UNAVAILABLE');
     seen.add(tx.id);
   }
-  return { question, plan, evidence: e as unknown as ReadEvidence };
+  if (body.answer !== null && body.answer !== undefined && (typeof body.answer !== 'string' || body.answer.length > 1200)) throw new Error('SOURCE_UNAVAILABLE');
+  return { question, plan, evidence: e as unknown as ReadEvidence, answer: typeof body.answer === 'string' && e.complete ? body.answer : null };
 }

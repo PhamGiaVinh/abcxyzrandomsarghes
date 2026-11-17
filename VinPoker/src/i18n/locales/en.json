@@ -3761,6 +3761,13 @@
     "recent": "Transactions in this result",
     "noTransactions": "No transactions in this scope.",
     "sepayQuota": "SePay is limiting read requests. Try later; requests are not retried automatically.",
-    "displayLimit": "Showing at most the first 50 transactions in this result."
+    "displayLimit": "Showing at most the first 50 transactions in this result.",
+    "liveTitle": "Live transaction monitor",
+    "liveInterval": "Refreshes every 10 seconds",
+    "liveScope": "Latest 50 SePay transactions assigned to this club in VBacker. Arrival depends on webhook/reconciliation; refreshing does not call Gemini.",
+    "verified": "API verified",
+    "pendingVerification": "Awaiting verification",
+    "changed": "Updated",
+    "unknownAmount": "Amount unknown"
   }
 }

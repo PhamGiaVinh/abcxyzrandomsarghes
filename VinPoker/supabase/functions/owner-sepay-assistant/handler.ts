@@ -1,5 +1,5 @@
 import { AssistantError, parseQuestion, record, UUID, VERSION } from './contracts.ts';
-import { planQuestion } from './geminiPlanner.ts';
+import { fillAnswer, planQuestion } from './geminiPlanner.ts';
 import { SePayReader } from './sepayRead.ts';
 
 export type Environment = {
@@ -73,8 +73,9 @@ export function createHandler(env: Environment, fetcher: typeof fetch = fetch) {
       if (!env.freeTierConfirmed || !env.geminiKey || !env.geminiModel) throw new AssistantError('FREE_TIER_NOT_CONFIGURED', 503);
       const reservation = record(await rpc('owner_sepay_reserve_request_v1', { p_actor_id: user.id, p_club_id: input.clubId, p_request_id: input.requestId }, true));
       if (reservation.allowed !== true) throw new AssistantError(reservation.duplicate === true ? 'REQUEST_ALREADY_USED' : 'RATE_LIMITED', reservation.duplicate === true ? 409 : 429);
-      const plan = await planQuestion(input.question, { apiKey: env.geminiKey, model: env.geminiModel, freeTierConfirmed: env.freeTierConfirmed }, signal, fetcher);
-      if (plan.intent === 'unsupported') return json({ version: VERSION, clubId: input.clubId, requestId: input.requestId, plan, evidence: null });
+      const planned = await planQuestion(input.question, { apiKey: env.geminiKey, model: env.geminiModel, freeTierConfirmed: env.freeTierConfirmed }, signal, fetcher);
+      const { plan } = planned;
+      if (plan.intent === 'unsupported') return json({ version: VERSION, clubId: input.clubId, requestId: input.requestId, plan, evidence: null, answer: null });
       await checkOwner();
       const token = await rpc('sepay_get_club_api_token', { p_club_id: input.clubId }, true);
       if (typeof token !== 'string' || !token) throw new AssistantError('SEPAY_NOT_CONNECTED', 409);
@@ -86,7 +87,13 @@ export function createHandler(env: Environment, fetcher: typeof fetch = fetch) {
       const finalConfig = record(await rpc('sepay_get_club_payment_config', { p_club_id: input.clubId }));
       if (finalConfig.error || finalConfig.is_active !== true || finalConfig.master_account_number !== config.master_account_number
         || finalConfig.has_api_token !== true) throw new AssistantError('SCOPE_CHANGED', 403);
-      return json({ version: VERSION, clubId: input.clubId, requestId: input.requestId, plan, evidence });
+      const money = (n: number) => `${new Intl.NumberFormat('vi-VN').format(n)} ₫`;
+      const answerScope = plan.intent === 'webhook_issues' ? 'Chỉ tính các giao dịch SePay đánh dấu webhook chưa thành công. '
+        : plan.intent === 'transactions' ? 'Chỉ tính các giao dịch trong kết quả truy vấn này; nếu có từ khóa tìm kiếm thì không phải tổng tài khoản. ' : '';
+      const answer = evidence.complete && evidence.totals && planned.answerTemplate ? answerScope + fillAnswer(planned.answerTemplate, {
+        from: evidence.from, to: evidence.to, incoming: money(evidence.totals.incoming), outgoing: money(evidence.totals.outgoing), net: money(evidence.totals.net),
+      }) : null;
+      return json({ version: VERSION, clubId: input.clubId, requestId: input.requestId, plan, evidence, answer });
     } catch (error) {
       if (controller.signal.aborted) return json({ error: 'REQUEST_TIMEOUT' }, 504);
       return error instanceof AssistantError ? json({ error: error.code }, error.status) : json({ error: 'SOURCE_UNAVAILABLE' }, 503);

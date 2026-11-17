@@ -20,6 +20,19 @@ This is a read-only banking assistant, not an accounting, payout or reconciliati
 - API offset pagination is fetched evidence, not an atomic bank snapshot or audited settlement.
   Webhook status describes the provider's transaction marker, not VBacker ingestion/ledger proof.
 
+Financial answer sentences are constrained to exact server-owned semantic templates. Gemini
+interprets the question/date/search and chooses a phrasing; it does not author unrestricted
+financial conclusions. The server fills verified figures and adds filtered-query scope labels.
+This constraint prevents swapping incoming/outgoing placeholders or fabricating conclusions.
+
+The live observation feed uses candidate migration 347, an owner-authenticated read of the latest
+50 SePay rows already assigned to the club in VBacker. It polls every 10 seconds while visible,
+coalesces overlapping reads, fences late actor/club/session responses and clears data on error.
+Only newly seen/changed rows flash once for 1.2 seconds; reduced-motion disables the animation.
+No Gemini calls occur for feed refresh. Ingestion/webhook/verification latency still applies;
+unassigned transfers are not disclosed or represented as missing bank money. Verification markers
+are distinct from settlement completion. This RPC/index is NOT natively qualified or deployed.
+
 The personal SePay MCP OAuth connection in Codex is not reused by the website. The web feature
 uses existing per-club Vault API credentials and official SePay API reads. No MCP token copying.
 

@@ -3374,6 +3374,13 @@
     "recent": "조회된 거래",
     "noTransactions": "이 범위에 거래가 없습니다.",
     "sepayQuota": "SePay 읽기 요청 한도에 도달했습니다. 나중에 시도하세요. 자동 재시도하지 않습니다.",
-    "displayLimit": "결과의 처음 50건까지만 표시합니다."
+    "displayLimit": "결과의 처음 50건까지만 표시합니다.",
+    "liveTitle": "거래 모니터",
+    "liveInterval": "10초마다 갱신",
+    "liveScope": "VBacker에서 이 클럽에 배정된 최근 SePay 거래 50건. 반영은 webhook 및 대사에 따라 달라지며 갱신 시 Gemini를 호출하지 않습니다.",
+    "verified": "API 확인됨",
+    "pendingVerification": "확인 대기",
+    "changed": "업데이트됨",
+    "unknownAmount": "금액 알 수 없음"
   }
 }

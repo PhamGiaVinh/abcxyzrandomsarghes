@@ -3761,6 +3761,13 @@
     "recent": "Giao dịch trong kết quả",
     "noTransactions": "Không có giao dịch trong phạm vi này.",
     "sepayQuota": "SePay đang giới hạn tốc độ đọc. Vui lòng thử lại sau; không tự gửi lại yêu cầu.",
-    "displayLimit": "Hiển thị tối đa 50 giao dịch đầu trong kết quả."
+    "displayLimit": "Hiển thị tối đa 50 giao dịch đầu trong kết quả.",
+    "liveTitle": "Giao dịch đang theo dõi",
+    "liveInterval": "Tự làm mới mỗi 10 giây",
+    "liveScope": "50 giao dịch SePay gần nhất đã gán cho CLB trong VBacker. Tốc độ xuất hiện còn phụ thuộc webhook/đối chiếu; không gọi Gemini khi làm mới.",
+    "verified": "Đã xác minh qua API",
+    "pendingVerification": "Chờ xác minh",
+    "changed": "Vừa cập nhật",
+    "unknownAmount": "Chưa rõ số tiền"
   }
 }

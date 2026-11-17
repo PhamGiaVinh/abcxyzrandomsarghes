@@ -3378,6 +3378,13 @@
     "recent": "本次结果中的交易",
     "noTransactions": "此范围内无交易。",
     "sepayQuota": "SePay 正在限制读取速度，请稍后重试。系统不会自动重试。",
-    "displayLimit": "最多显示本次结果的前 50 笔交易。"
+    "displayLimit": "最多显示本次结果的前 50 笔交易。",
+    "liveTitle": "交易监控",
+    "liveInterval": "每10秒刷新",
+    "liveScope": "VBacker 中已分配至本俱乐部的最近50笔SePay交易。到达时间取决于webhook和对账；刷新不调用Gemini。",
+    "verified": "API已验证",
+    "pendingVerification": "等待验证",
+    "changed": "刚刚更新",
+    "unknownAmount": "金额未知"
   }
 }

@@ -22,7 +22,7 @@ function fixture(options: { denied?: boolean; revoked?: boolean; quota?: boolean
     if (path.endsWith('/rpc/sepay_get_club_payment_config')) return json(config);
     if (path.endsWith('/rpc/owner_sepay_reserve_request_v1')) return json({ allowed: !options.duplicate, duplicate: !!options.duplicate });
     if (path.endsWith('/rpc/sepay_get_club_api_token')) return json('SEPAY_PRIVATE');
-    if (path.startsWith('https://generativelanguage.googleapis.com/')) return options.quota ? json({}, 429) : json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify(plan) }] } }] });
+    if (path.startsWith('https://generativelanguage.googleapis.com/')) return options.quota ? json({}, 429) : json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: JSON.stringify({ plan, answerTemplate: "Từ {{from}} đến {{to}}, tiền vào là {{incoming}}, tiền ra là {{outgoing}}. Chênh lệch vào trừ ra là {{net}}." }) }] } }] });
     const u = new URL(path);
     if (u.pathname === '/v2/bank-accounts') return json({ status: 'success', data: [{ id: actor, account_number: '12345678', active: 1 }], meta: { pagination: { has_more: false, current_page: 1, per_page: 100, total: 1, last_page: 1 } } });
     if (u.pathname === '/v2/transactions') return json({ status: 'success', data: [{ id: requestId, bank_account_id: actor, account_number: options.foreign ? '87654321' : '12345678', transaction_date: `${day} 01:00:00`, transfer_type: 'in', amount_in: 500000, amount_out: 0, code: null, webhook_success: 0, transaction_content: 'PAYER_PRIVATE', accumulated: 999999 }], meta: { pagination: { has_more: false, current_page: 1, per_page: 100, total: 1, last_page: 1 } } });

@@ -6,6 +6,7 @@ import type { Database } from '@/integrations/supabase/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { askOwnerAssistant, type AssistantRead } from './ownerAssistantRead';
+import OwnerBankFeed from './OwnerBankFeed';
 
 export const OWNER_ASSISTANT_ENABLED = import.meta.env.VITE_OWNER_SEPAY_ASSISTANT === 'true';
 const money = (n: number) => `${new Intl.NumberFormat('vi-VN').format(n)} ₫`;
@@ -51,7 +52,7 @@ export default function OwnerAssistantPanel({ client, clubId, clubName, actorId,
     : error === 'FORBIDDEN' || error === 'SCOPE_CHANGED' || error === 'UNAUTHORIZED' ? 'forbidden'
       : error === 'SEPAY_NOT_CONFIGURED' || error === 'SEPAY_NOT_CONNECTED' || error === 'ACCOUNT_SCOPE_AMBIGUOUS' ? 'connect'
         : error === 'ASSISTANT_NOT_ENABLED' || error === 'FREE_TIER_NOT_CONFIGURED' ? 'preparing' : 'unavailable';
-  return <section aria-labelledby={`${fieldId}-title`} className="overflow-hidden rounded-xl border border-primary/25 bg-card text-card-foreground">
+  return <section aria-labelledby={`${fieldId}-title`} className="operations-typography overflow-hidden rounded-xl border border-primary/25 bg-card text-card-foreground">
     <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border p-4 sm:p-5">
       <div><h2 id={`${fieldId}-title`} className="flex items-center gap-2 text-lg font-semibold"><MessageSquare className="h-5 w-5 text-primary" aria-hidden="true" />{t('ownerAssistant.title')}</h2>
         <p className="mt-1 text-sm text-muted-foreground">{clubId ? clubName : t('ownerAssistant.selectClub')}</p></div>
@@ -75,6 +76,7 @@ export default function OwnerAssistantPanel({ client, clubId, clubName, actorId,
           : error ? <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm">{t(`ownerAssistant.${errorKey}`)}</p>
             : !shown ? <div className="rounded-lg border border-dashed border-border px-4 py-8 text-sm leading-6 text-muted-foreground"><Wallet className="mb-3 h-6 w-6" aria-hidden="true" />{t('ownerAssistant.empty')}</div>
               : !evidence ? <p className="text-sm leading-6 text-muted-foreground">{t('ownerAssistant.unsupported')}</p> : <>
+                {shown.answer && <p className="mb-4 whitespace-pre-line rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm leading-6">{shown.answer}</p>}
                 <p className="mb-3 text-xs text-muted-foreground">SePay · •••• {evidence.accountLast4} · {evidence.from} → {evidence.to} · UTC+7</p>
                 {!evidence.complete ? <p className="text-sm text-amber-500">{t('ownerAssistant.partial')}</p> : evidence.totals && <dl className="grid gap-2 sm:grid-cols-2">
                   <Metric label={t('ownerAssistant.incoming')} value={money(evidence.totals.incoming)} icon="in" />
@@ -89,6 +91,7 @@ export default function OwnerAssistantPanel({ client, clubId, clubName, actorId,
               </>}
       </div>
     </div>
+    {clubId && actorId && sessionToken && <OwnerBankFeed client={client} clubId={clubId} scope={scope} />}
   </section>;
 }
 function Metric({ label, value, icon }: { label: string; value: string; icon?: 'in' | 'out' }) {
