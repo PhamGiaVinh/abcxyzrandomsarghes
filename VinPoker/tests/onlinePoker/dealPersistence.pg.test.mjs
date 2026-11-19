@@ -1129,17 +1129,19 @@ test('the shared server deal persists one native hand with consistent public and
     INSERT INTO online_satellite_private.round_tables(table_id,pilot_id) VALUES
     ${tables.map(id => `('${id}','${sharedPilot}')`).join(',')};`);
   assert.equal(level(tables[1], first).mode, 'waiting_for_round');
-  assert.equal(sql(`SELECT online_satellite_private.open_next_round('${sharedPilot}')`), '1');
+  sql(file('../../supabase/pending-migrations/20261119225000_online_satellite_open_round.sql'));
+  const openSharedRound = (actor, expected) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT public.open_online_satellite_round_v1('${sharedPilot}',${expected})`);
+  assert.throws(() => openSharedRound(third, 0), /SATELLITE_PILOT_MANAGER_REQUIRED/);
+  assert.deepEqual(openSharedRound(first, 0), { outcome: 'ok', roundNo: '1' });
+  assert.deepEqual(openSharedRound(first, 0), { outcome: 'stale', roundNo: '1' });
   for (const [i, id] of tables.entries()) {
     assert.equal(level(id, first).roundNo, '1');
     const receipt = await dealNextHand(admin, id, i === 0 ? null : first);
     assert.equal(receipt.ok, true, JSON.stringify(receipt));
     assert.equal(sql(`SELECT status FROM public.online_poker_hands WHERE id='${receipt.handId}'`), 'complete');
     assert.equal(level(id, first).mode, 'waiting_for_round');
-    if (i === 0) assert.throws(
-      () => sql(`SELECT online_satellite_private.open_next_round('${sharedPilot}')`),
-      /online_satellite_round_still_playing/,
-    );
+    if (i === 0) assert.deepEqual(openSharedRound(first, 1), { outcome: 'round_still_playing', roundNo: '1' });
   }
   assert.equal(sql(`SELECT count(*) FROM online_satellite_private.round_deals
     WHERE pilot_id='${sharedPilot}' AND round_no=1 AND hand_id IS NOT NULL`), '2');
