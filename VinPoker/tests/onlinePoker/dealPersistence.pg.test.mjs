@@ -729,6 +729,10 @@ test('the shared server deal persists one native hand with consistent public and
     [0, 0, 0, 0, 0, 0]);
   assert.deepEqual(json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}'; ${visibleSatellite}`),
     json(visibleSatellite));
+  assert.throws(() => sql(`DELETE FROM public.online_poker_hands WHERE id='${anteHand}'`),
+    /online_satellite_hand_history_is_retained/);
+  assert.throws(() => sql(`DELETE FROM public.online_poker_hand_seats WHERE hand_id='${anteHand}'`),
+    /online_satellite_hand_history_is_retained/);
   assert.equal(sql(`SET ROLE anon; SELECT count(*) FROM public.online_poker_tables WHERE id='${tableId}'`), '1');
   assert.equal(sql(`SELECT state->'seats'->1->>'deadAnte' FROM public.online_poker_hands WHERE id='${anteHand}'`), '4');
   assert.deepEqual(clockCommand(first, setupPilot, 3, true), { outcome: 'ok', revision: '4', running: true });
