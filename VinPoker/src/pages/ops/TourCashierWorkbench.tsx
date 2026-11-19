@@ -57,6 +57,12 @@ type Issue = { kind: "surplus" | "unmatched"; bank_transaction_id: string; amoun
 type Issues = { ok: boolean; sepay_unavailable: boolean; shown: number; rows: Issue[] };
 
 const formatMoney = (amount: number) => `${new Intl.NumberFormat("vi-VN").format(amount)} VND`;
+function parseCashCount(input: string): number | null {
+  const value = input.trim();
+  if (!/^\d+$/.test(value)) return null;
+  const amount = Number(value);
+  return Number.isSafeInteger(amount) ? amount : null;
+}
 const dateTime = (iso: string | null) => iso ? new Intl.DateTimeFormat("vi-VN", {
   day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
 }).format(new Date(iso)) : "Chưa có";
@@ -673,8 +679,8 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
           <input inputMode="numeric" value={countedCash} onChange={(event) => setCountedCash(event.target.value)} placeholder="VND"
             className="w-28 rounded-lg border border-white/15 bg-[#08110c] p-2 text-white" /></label>
         <button type="button" disabled={busy} onClick={() => {
-          const amount = countedCash.trim() === "" ? NaN : Number(countedCash);
-          if (!Number.isSafeInteger(amount) || amount < 0) { setError("Nhập số tiền thực đếm hợp lệ."); return; }
+          const amount = parseCashCount(countedCash);
+          if (amount === null) { setError("Nhập số tiền thực đếm hợp lệ."); return; }
           if (!window.confirm(`Chốt ca chung với tiền mặt thực đếm ${formatMoney(amount)}?`)) return;
           void mutate("cashier_close_shift_v1", { p_shift_id: shift.id, p_counted_cash: amount }, (result) => {
             setNotice(`Đã chốt ca. Chênh lệch: ${formatReportedMoney(result.variance_cash)}.`);
@@ -685,8 +691,8 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
           <input inputMode="numeric" value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} placeholder="Tiền đầu ca (VND)"
             className="ml-auto w-40 rounded-lg border border-white/15 bg-[#08110c] p-2 text-white" />
           <button type="button" disabled={busy || !worklist?.enabled} onClick={() => {
-            const amount = openingCash.trim() === "" ? NaN : Number(openingCash);
-            if (!Number.isSafeInteger(amount) || amount < 0) { setError("Nhập tiền đầu ca hợp lệ."); return; }
+            const amount = parseCashCount(openingCash);
+            if (amount === null) { setError("Nhập tiền đầu ca hợp lệ."); return; }
             void mutate("cashier_open_shift_v1", { p_club_id: clubId, p_opening_cash: amount }, () => {
               setNotice("Đã mở ca chung."); setOpeningCash("");
             });

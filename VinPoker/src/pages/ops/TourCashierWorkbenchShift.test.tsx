@@ -133,8 +133,10 @@ describe("closed Cashier shift correction", () => {
     const input = screen.getByPlaceholderText('Tiền đầu ca (VND)');
     fireEvent.click(button);
     expect(await screen.findByText('Nhập tiền đầu ca hợp lệ.')).toBeInTheDocument();
-    fireEvent.change(input,{target:{value:'   '}});
-    fireEvent.click(button);
+    for (const value of ['   ', '-1', '2.5', '1e3', '9007199254740992']) {
+      fireEvent.change(input,{target:{value}});
+      fireEvent.click(button);
+    }
     expect(mock.rpc.mock.calls.some(([name]) => name === 'cashier_open_shift_v1')).toBe(false);
     fireEvent.change(input,{target:{value:'0'}});
     fireEvent.click(button);
@@ -149,10 +151,16 @@ describe("closed Cashier shift correction", () => {
       render(<TourCashierWorkbench />);
       const button = await screen.findByRole('button',{name:'Chốt ca'});
       const input = screen.getByPlaceholderText('VND');
-      fireEvent.change(input,{target:{value:'  '}});
-      fireEvent.click(button);
+      for (const value of ['', '  ', '-1', '2.5', '1e3', '9007199254740992']) {
+        fireEvent.change(input,{target:{value}});
+        fireEvent.click(button);
+      }
       expect(await screen.findByText('Nhập số tiền thực đếm hợp lệ.')).toBeInTheDocument();
       expect(confirm).not.toHaveBeenCalled();
+      confirm.mockReturnValueOnce(false);
+      fireEvent.change(input,{target:{value:'25000'}});
+      fireEvent.click(button);
+      expect(mock.rpc.mock.calls.some(([name]) => name === 'cashier_close_shift_v1')).toBe(false);
       fireEvent.change(input,{target:{value:'0'}});
       fireEvent.click(button);
       await waitFor(() => expect(mock.rpc.mock.calls.some(([name,args]) =>
