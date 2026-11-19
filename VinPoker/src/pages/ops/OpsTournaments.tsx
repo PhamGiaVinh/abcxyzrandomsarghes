@@ -272,6 +272,7 @@ export default function OpsTournaments() {
         && activeClub && user && !authLoading && !tourReadError && (
           <OnlineSatellitePilotSetup
             key={JSON.stringify([user.id, sessionReadEpoch(session), activeClub])}
+            actorId={user.id}
             clubId={activeClub}
             destinations={allVMs.filter(tournament => tournament.statusKey !== "closed")}
           />

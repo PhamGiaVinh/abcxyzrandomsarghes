@@ -9,10 +9,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 const verifiedReceipt = z.object({ pilotId: z.string().uuid() });
+const savedIntent = z.object({
+  requestId: z.string().uuid(), destination: z.string().uuid(), cutoff: z.string(),
+  stack: z.number().int().positive(), seats: z.number().int().min(2).max(9),
+});
 const integer = (value: FormDataEntryValue | null) =>
   typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN;
 
-export default function OnlineSatellitePilotSetup({ clubId, destinations }: {
+function readIntent(key: string) {
+  const raw = sessionStorage.getItem(key);
+  return raw ? savedIntent.parse(JSON.parse(raw)) : null;
+}
+
+export default function OnlineSatellitePilotSetup({ actorId, clubId, destinations }: {
+  actorId: string;
   clubId: string;
   destinations: readonly { id: string; name: string }[];
 }) {
@@ -22,7 +32,10 @@ export default function OnlineSatellitePilotSetup({ clubId, destinations }: {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const inFlight = useRef(false);
-  const intent = useRef<{ fingerprint: string; requestId: string } | null>(null);
+  const storageKey = `online-satellite:pilot-create:${actorId}:${clubId}`;
+  const [draft] = useState(() => {
+    try { return readIntent(storageKey); } catch { return null; }
+  });
 
   useEffect(() => {
     const abort = new AbortController();
@@ -40,12 +53,13 @@ export default function OnlineSatellitePilotSetup({ clubId, destinations }: {
     event.preventDefault();
     if (!authorized || inFlight.current) return;
     const values = new FormData(event.currentTarget);
-    const destination = values.get("destination");
-    const cutoff = Date.parse(`${values.get("cutoff")}+07:00`);
+    const destination = String(values.get("destination") ?? "");
+    const localCutoff = String(values.get("cutoff") ?? "");
+    const cutoff = Date.parse(`${localCutoff}+07:00`);
     const stack = integer(values.get("stack"));
     const seats = integer(values.get("seats"));
     if (!destinations.some(tournament => tournament.id === destination)
-      || !Number.isFinite(cutoff) || cutoff <= Date.now()
+      || !Number.isFinite(cutoff)
       || !Number.isSafeInteger(stack) || stack <= 0 || stack > 2_147_483_647
       || !Number.isSafeInteger(seats) || seats < 2 || seats > 9) {
       setMessage("Chọn giải đích, thời hạn tương lai, chip dương và từ 2 đến 9 ghế.");
@@ -55,16 +69,30 @@ export default function OnlineSatellitePilotSetup({ clubId, destinations }: {
       p_club_id: clubId, p_destination_tournament_id: destination,
       p_registration_closes_at: new Date(cutoff).toISOString(), p_starting_stack: stack, p_seat_limit: seats,
     };
-    const fingerprint = JSON.stringify(input);
-    if (intent.current?.fingerprint !== fingerprint) {
-      intent.current = { fingerprint, requestId: crypto.randomUUID() };
+    let requestId: string;
+    try {
+      const prior = readIntent(storageKey);
+      if (prior?.destination === destination && prior.cutoff === localCutoff
+        && prior.stack === stack && prior.seats === seats) {
+        requestId = prior.requestId;
+      } else {
+        if (cutoff <= Date.now()) {
+          setMessage("Hạn đăng ký của giải mới phải ở tương lai.");
+          return;
+        }
+        requestId = crypto.randomUUID();
+        sessionStorage.setItem(storageKey, JSON.stringify({ requestId, destination, cutoff: localCutoff, stack, seats }));
+      }
+    } catch {
+      setMessage("Không lưu được mã yêu cầu an toàn trong tab này.");
+      return;
     }
     inFlight.current = true;
     setBusy(true);
     setMessage(null);
     try {
       const { data, error } = await client.rpc("create_online_satellite_pilot_v1" as never, {
-        ...input, p_request_id: intent.current.requestId,
+        ...input, p_request_id: requestId,
       } as never);
       if (error) throw error;
       setPilotId(verifiedReceipt.parse(data).pilotId);
@@ -88,7 +116,7 @@ export default function OnlineSatellitePilotSetup({ clubId, destinations }: {
       </div> : <form className="grid gap-3 sm:grid-cols-2" onSubmit={createPilot}>
         <div className="space-y-1">
           <Label htmlFor="satellite-pilot-target">Giải đích thử</Label>
-          <select id="satellite-pilot-target" name="destination" defaultValue="" required disabled={busy}
+          <select id="satellite-pilot-target" name="destination" defaultValue={draft?.destination ?? ""} required disabled={busy}
             className="min-h-11 w-full rounded-md border bg-background px-2">
             <option value="">Chọn giải trong CLB</option>
             {destinations.map(tournament => <option key={tournament.id} value={tournament.id}>{tournament.name}</option>)}
@@ -96,15 +124,15 @@ export default function OnlineSatellitePilotSetup({ clubId, destinations }: {
         </div>
         <div className="space-y-1">
           <Label htmlFor="satellite-pilot-cutoff">Hạn đăng ký (giờ Việt Nam)</Label>
-          <Input id="satellite-pilot-cutoff" name="cutoff" type="datetime-local" required disabled={busy} />
+          <Input id="satellite-pilot-cutoff" name="cutoff" type="datetime-local" defaultValue={draft?.cutoff} required disabled={busy} />
         </div>
         <div className="space-y-1">
           <Label htmlFor="satellite-pilot-stack">Chip thử mỗi người</Label>
-          <Input id="satellite-pilot-stack" name="stack" type="number" min="1" step="1" required disabled={busy} />
+          <Input id="satellite-pilot-stack" name="stack" type="number" min="1" step="1" defaultValue={draft?.stack} required disabled={busy} />
         </div>
         <div className="space-y-1">
           <Label htmlFor="satellite-pilot-seats">Số ghế trên một bàn</Label>
-          <Input id="satellite-pilot-seats" name="seats" type="number" min="2" max="9" step="1" required disabled={busy} />
+          <Input id="satellite-pilot-seats" name="seats" type="number" min="2" max="9" step="1" defaultValue={draft?.seats} required disabled={busy} />
         </div>
         <Button type="submit" disabled={busy || !destinations.length}>{busy ? "Đang tạo…" : "Tạo link đăng ký thử"}</Button>
       </form>}
