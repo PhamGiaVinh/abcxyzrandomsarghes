@@ -1597,7 +1597,7 @@ test('active checkout respects automatic OFF and rested replacement eligibility'
  }catch(error){phase+='-failed';report();throw error;}
 });
 
-test('current Floor deferred move reserves and cancels without joining an active hand',async({page})=>{
+test('current Floor deferred move reserves and cancels without joining an active hand',async({page,baseURL})=>{
  test.skip(process.env.LOCAL_OPERATIONS_DEFERRED_MOVE_ENABLED!=='1','Isolated stage after existing operational conservation proofs');test.setTimeout(120_000);
  let failedRpc:{name:string;status:number;code:string;messageSha256:string|null;classification:string}|null=null;
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
@@ -1610,8 +1610,9 @@ test('current Floor deferred move reserves and cancels without joining an active
  const intent=async(player:string,destinationId:string)=>{const tables=await roster(),source=tables.find(t=>t.seats.some(s=>s.player_id===player))!,destination=tables.find(t=>t.tournament_table_id===destinationId)!;expect(source).toBeTruthy();expect(destination).toBeTruthy();expect(source.control_mode).toBe('manual');const seat=source.seats.find(s=>s.player_id===player)!;expect(seat.entry_no).toBe(2);return {p_entry_id:seat.entry_id,p_from_tournament_table_id:source.tournament_table_id,p_from_table_session_id:source.table_session_id,p_to_tournament_table_id:destination.tournament_table_id,p_to_table_session_id:destination.table_session_id,p_to_seat_number:Array.from({length:9},(_,n)=>n+1).find(n=>!destination.seats.some(s=>s.seat_number===n))!,p_expected_source_revision:source.session_revision,p_expected_destination_revision:destination.session_revision,p_expected_source_epoch:source.control_epoch,p_expected_destination_epoch:destination.control_epoch,p_reason:'isolated deferred queue/cancel TEST',p_request_id:crypto.randomUUID()};};
  const readHand=async(handId:string)=>{const response=await fetch(api+'/rest/v1/hand_players?select=player_id,entry_number,seat_number,starting_stack&hand_id=eq.'+handId+'&order=seat_number',{headers,signal:AbortSignal.timeout(5000)});expect(response.ok).toBe(true);return response.json();};
  const rows:{queueMs:number;retryMs:number;pendingReadMs:number;cancelMs:number}[]=[];let phase='setup',race:unknown=null;
+ const backgroundReads: { tab: number; counts: Record<string,number>; peakRosterRequests: number }[] = [];
  const dist=(values:number[])=>{const sorted=[...values].sort((a,b)=>a-b);return {samples:sorted.length,p95Ms:sorted.length===20?sorted[18]:null,maxMs:sorted.at(-1)??null};};
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-deferred-queue-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_DEFERRED_MOVE_QUEUE_CANCEL_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failedRpc,rows,distributions:Object.fromEntries(['queueMs','retryMs','pendingReadMs','cancelMs'].map(k=>[k,dist(rows.map(r=>r[k as keyof typeof r]))])),race,qualification:false,limitations:'Twenty serial queue/cancel cycles by20real Auth operators against one canonical in-progress hand. Two paid players enter a fresh Tracker table before its exact session/epoch start. Every pending move retains source seats/chips and cannot join the active hand. Captured roster plus exact32 display patch is not full current reader qualification. This test does not finish/void a hand,apply a deferred move,measure UI/Realtime,or prove mixed1000viewer capacity.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-floor-deferred-queue-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_DEFERRED_MOVE_QUEUE_CANCEL_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failedRpc,rows,distributions:Object.fromEntries(['queueMs','retryMs','pendingReadMs','cancelMs'].map(k=>[k,dist(rows.map(r=>r[k as keyof typeof r]))])),race,backgroundReads,qualification:false,limitations:'Twenty serial queue/cancel cycles by20real Auth operators against one canonical in-progress hand. Two paid players enter a fresh Tracker table before its exact session/epoch start. Every pending move retains source seats/chips and cannot join the active hand. The two visible browsers observe one pending move with a deliberate roster transport delay. This does not measure move-to-render latency, full Tracker lifecycle or production capacity.'},null,2));
  try{
   const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {floorReadLoad:{gameTableIds:string[]}};
   const opened=await rpc(owner,'floor_open_tournament_table_v3',{p_tournament_id:tour,p_game_table_id:fixture.floorReadLoad.gameTableIds[1],p_control_mode:'tracker',p_request_id:crypto.randomUUID()});expect(opened.data.ok).toBe(true);const tableId=opened.data.tournament_table_id;
@@ -1635,6 +1636,53 @@ test('current Floor deferred move reserves and cancels without joining an active
   }
   phase='same-key-race';const move=await intent(staff[2].userId,tableId),answers=await Promise.all(Array.from({length:20},()=>rpc(staff[0].token,'move_player_seat_v5',move)));for(const answer of answers)expect(answer.data).toEqual(answers[0].data);expect(answers[0].data.queued).toBe(true);
   race={requests:20,identicalResults:true,latency:dist(answers.map(r=>r.ms))};expect((await rpc(owner,'get_floor_pending_tracker_moves_v1',{p_tournament_id:tour})).data).toHaveLength(1);
+  phase='two-visible-floor-screens';
+  expect(baseURL).toBeTruthy();
+  const observer = await page.context().browser()!.newContext();
+  try {
+    const secondPage = await observer.newPage();
+    await loginOwner(secondPage);
+    const tabs = [page, secondPage];
+    const targetUrl = new URL(`/ops/floor/tournaments/${tour}/tables?club=a2000000-0000-4000-8000-000000000001`, baseURL).href;
+    const readers = new Set([floorRosterRpc, 'get_floor_seatable_entries', 'get_floor_restorable_entries_v3', 'get_floor_pending_tracker_moves_v1']);
+    await Promise.all(tabs.map(async (tab, index) => {
+      const pendingReady = tab.waitForResponse(response => response.url().endsWith('/rpc/get_floor_pending_tracker_moves_v1')
+        && response.request().postDataJSON()?.p_tournament_id === tour);
+      await tab.goto(targetUrl);
+      const pendingSnapshot = await pendingReady;
+      expect(await pendingSnapshot.json()).toEqual(expect.arrayContaining([expect.objectContaining({
+        pending_move_id: answers[0].data.pending_move_id, status: 'pending',
+      })]));
+      const map = tab.getByTestId('floor-table-map-v3');
+      await expect(map).toBeVisible();
+      await expect(map).toHaveAttribute('aria-busy', 'false');
+      expect(await tab.evaluate(() => document.visibilityState)).toBe('visible');
+
+      const measurement = { tab: index + 1, counts: Object.fromEntries([...readers].map(name => [name, 0])), peakRosterRequests: 0 };
+      backgroundReads[index] = measurement;
+      const inFlight = new Set();
+      tab.on('request', request => {
+        const name = new URL(request.url()).pathname.split('/').at(-1)!;
+        if (!readers.has(name) || request.postDataJSON()?.p_tournament_id !== tour) return;
+        measurement.counts[name]++;
+        if (name === floorRosterRpc) {
+          inFlight.add(request);
+          measurement.peakRosterRequests = Math.max(measurement.peakRosterRequests, inFlight.size);
+        }
+      });
+      tab.on('requestfinished', request => { inFlight.delete(request); });
+      tab.on('requestfailed', request => { inFlight.delete(request); });
+      await tab.route(`**/rest/v1/rpc/${floorRosterRpc}`, async route => {
+        await new Promise(resolve => setTimeout(resolve, 4_400));
+        await route.continue();
+      }, { times: 1 });
+      await expect.poll(() => measurement.counts[floorRosterRpc], { timeout: 14_000 }).toBeGreaterThanOrEqual(2);
+      await expect(map).toHaveAttribute('aria-busy', 'false', { timeout: 12_000 });
+      expect(measurement.peakRosterRequests).toBe(1);
+    }));
+  } finally {
+    await observer.close();
+  }
   expect((await rpc(owner,'floor_cancel_pending_tracker_move_v1',{p_pending_move_id:answers[0].data.pending_move_id})).data.status).toBe('cancelled');expect(seats(await roster())).toEqual(before);expect(await readHand(handId)).toEqual(handBefore);
   for(const key of ['queueMs','retryMs','pendingReadMs','cancelMs'] as const)expect(dist(rows.map(r=>r[key])).p95Ms).toBeLessThanOrEqual(1000);phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
