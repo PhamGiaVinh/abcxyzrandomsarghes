@@ -317,7 +317,7 @@ test('the shared server deal persists one native hand with consistent public and
     await verifySatelliteRealtime({ sql, statusPath: realtimeFixture, first, spectator,
       practiceHand: practice.handId, satelliteHand: satellite.handId, secondaryHand: secondaryDeal.handId });
     const { withSatelliteEdgeHttp } = await import('./satelliteEdgeHttp.fixture.mjs');
-    await withSatelliteEdgeHttp(realtimeFixture, async ({ post, players, observeTable }) => {
+    await withSatelliteEdgeHttp(realtimeFixture, async ({ post, players, observeTable, apiUrl, anonKey }) => {
       const rejected = await post({ op: 'ping' }, 'invalid-fixture-token');
       assert.equal(rejected.status, 401);
       console.log('SATELLITE_DENO_HTTP_REAL_AUTH_ACCEPTANCE_PASS');
@@ -394,6 +394,13 @@ test('the shared server deal persists one native hand with consistent public and
       console.log('SATELLITE_RECONNECT_REST_SETTLED_THEN_WEBSOCKET_PASS', JSON.stringify({
         completedHands: expectedHands, recoveredMissedHands: 1, subsequentHandsDelivered: 1, chips: 200,
       }));
+      const { verifySatellitePlayBrowser } = await import('./satellitePlayBrowser.fixture.mjs');
+      await verifySatellitePlayBrowser({ apiUrl, anonKey, players, tableId: actionTable, post,
+        nextActor: (handId) => sql(`SELECT s.user_id FROM public.online_poker_hands h JOIN public.online_poker_seats s
+          ON s.table_id=h.table_id AND s.seat_no=h.to_act_seat WHERE h.id='${handId}'`),
+      });
+      assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${actionTable}' AND status='complete'`), '11');
+      assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${actionTable}'`), '200');
     });
     return;
   }

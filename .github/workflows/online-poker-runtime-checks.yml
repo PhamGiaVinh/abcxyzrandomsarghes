@@ -117,6 +117,7 @@ jobs:
         with:
           deno-version: v2.x
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - name: Verify real Realtime delivery for the disposable satellite
         env:
           PGHOST: 127.0.0.1

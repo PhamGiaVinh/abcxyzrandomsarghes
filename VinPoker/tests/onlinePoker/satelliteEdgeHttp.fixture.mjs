@@ -20,7 +20,7 @@ export async function withSatelliteEdgeHttp(statusPath, run) {
     const login = await player.auth.signInWithPassword({ email, password });
     const token = login.data.session?.access_token;
     assert.ok(token && !login.error, `Disposable Auth login failed: ${login.error?.code ?? 'unknown'}`);
-    return { actor: user.data.user.id, token };
+    return { actor: user.data.user.id, token, session: login.data.session };
   };
   const players = await Promise.all([loginPlayer(), loginPlayer()]);
 
@@ -88,7 +88,7 @@ export async function withSatelliteEdgeHttp(statusPath, run) {
     }
     assert.equal(response?.status, 200, `Disposable Edge ping failed: ${startError ?? child.exitCode ?? 'HTTP'}`);
     assert.deepEqual(await response.json(), { ok: true });
-    await run({ post, players, observeTable });
+    await run({ post, players, observeTable, apiUrl: status.API_URL, anonKey: status.ANON_KEY });
   } finally {
     child.kill();
     await exited;
