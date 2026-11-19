@@ -333,3 +333,18 @@ it("verifies again when PostgreSQL becomes ready after channel join", async () =
   expect(state.roster).toHaveBeenCalledTimes(3);
   expect(screen.getByText("TEST table 5", { exact: false })).toBeInTheDocument();
 });
+
+it("distinguishes a failed seatable list from a verified empty list and retries", async () => {
+  state.roster.mockResolvedValue({ ok: true, data: [table(1)] });
+  state.entries.mockResolvedValue({ ok: false, error: "TEST_SEATABLE_UNAVAILABLE" });
+  render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
+  fireEvent.click(await screen.findByTestId("floor-table-roster-card"));
+  fireEvent.click(await screen.findByTestId("floor-seat-row-1"));
+  expect(await screen.findByText("Chưa tải được danh sách người chơi.")).toBeInTheDocument();
+  expect(screen.queryByText("Mọi entry hợp lệ đã có ghế.")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Thêm vào ghế này" })).toBeDisabled();
+
+  state.entries.mockResolvedValue({ ok: true, data: [] });
+  fireEvent.click(screen.getByRole("button", { name: "Thử lại", exact: true }));
+  expect(await screen.findByText("Mọi entry hợp lệ đã có ghế.")).toBeInTheDocument();
+});
