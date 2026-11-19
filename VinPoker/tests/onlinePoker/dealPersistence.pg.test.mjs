@@ -1331,15 +1331,25 @@ test('the shared server deal persists one native hand with consistent public and
     WHERE destination_id='${sharedDestination}'`), '2');
   console.log('POSTGRES_SATELLITE_COMPLETE_ROUND_TEST_TICKETS_REDEEM_PASS');
   sql(file('../../supabase/pending-migrations/20261119233500_online_satellite_provision_two_tables.sql'));
-  const preparedPilot = 'ab510000-0000-4000-8000-000000000038';
-  sql(`INSERT INTO online_satellite_private.pilots VALUES
-    ('${preparedPilot}','${clubId}','${sharedDestination}','${first}','${preparedPilot}',now(),100,4);
-    INSERT INTO online_satellite_private.entries(pilot_id,player_user_id) VALUES
-    ${[first,second,third,spectator].map(actor => `('${preparedPilot}','${actor}')`).join(',')};`);
+  sql(`INSERT INTO public.club_members(club_id,player_user_id) VALUES
+    ${[first,second,third,spectator].map(actor => `('${clubId}','${actor}')`).join(',')};`);
+  const { pilotId: preparedPilot } = json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+    SELECT public.create_online_satellite_pilot_v1('${clubId}','${sharedDestination}',
+      'ab510000-0000-4000-8000-000000000038',clock_timestamp()+interval '1 day',100,4)`);
+  const registrationReceipt = actor => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT public.register_online_satellite_pilot_v1('${preparedPilot}')`);
+  const receipts = [first,second,third,spectator].map(registrationReceipt);
+  assert.ok(receipts.every(item => !item.idempotent));
+  assert.equal(new Set(receipts.map(item => item.entryId)).size, 4);
   const provisionPair = actor => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
     SELECT public.provision_online_satellite_two_tables_v1('${preparedPilot}',
       '[{"starts_at_second":0,"small_blind":5,"big_blind":10,"big_blind_ante":0}]',2)`);
   assert.throws(() => provisionPair(third), /SATELLITE_PILOT_MANAGER_REQUIRED/);
+  assert.throws(() => provisionPair(first), /SATELLITE_PILOT_REGISTRATION_STILL_OPEN/);
+  // Advance the test cutoff, keeping the registered entry rows and receipts.
+  sql(`UPDATE online_satellite_private.pilots SET registration_closes_at=clock_timestamp()-interval '1 second'
+    WHERE id='${preparedPilot}'`);
+  assert.deepEqual(registrationReceipt(second), { ...receipts[1], idempotent: true });
   const pair = provisionPair(first);
   assert.equal(pair.idempotent, false);
   assert.equal(new Set(pair.tableIds).size, 2);

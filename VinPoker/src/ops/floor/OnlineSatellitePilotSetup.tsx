@@ -135,7 +135,7 @@ export default function OnlineSatellitePilotSetup({ actorId, clubId, destination
           <Input id="satellite-pilot-stack" name="stack" type="number" min="1" step="1" defaultValue={draft?.stack} required disabled={busy} />
         </div>
         <div className="space-y-1">
-          <Label htmlFor="satellite-pilot-seats">Số ghế trên một bàn</Label>
+          <Label htmlFor="satellite-pilot-seats">Giới hạn người đăng ký</Label>
           <Input id="satellite-pilot-seats" name="seats" type="number" min="2" max="9" step="1" defaultValue={draft?.seats} required disabled={busy} />
         </div>
         <Button type="submit" disabled={busy || !destinations.length}>{busy ? "Đang tạo…" : "Tạo link đăng ký thử"}</Button>

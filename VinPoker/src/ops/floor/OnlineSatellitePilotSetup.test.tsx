@@ -43,7 +43,7 @@ it("recovers identical pilot settings and request id after a reload", async () =
   fireEvent.change(screen.getByLabelText("Giải đích thử"), { target: { value: destination.id } });
   fireEvent.change(screen.getByLabelText("Hạn đăng ký (giờ Việt Nam)"), { target: { value: "2099-04-18T22:30" } });
   fireEvent.change(screen.getByLabelText("Chip thử mỗi người"), { target: { value: "10000" } });
-  fireEvent.change(screen.getByLabelText("Số ghế trên một bàn"), { target: { value: "9" } });
+  fireEvent.change(screen.getByLabelText("Giới hạn người đăng ký"), { target: { value: "9" } });
   fireEvent.click(create);
   expect(await screen.findByRole("alert")).toHaveTextContent("Chưa xác nhận được");
   expect(screen.queryByRole("link")).toBeNull();

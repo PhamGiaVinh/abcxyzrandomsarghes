@@ -85,7 +85,7 @@ function ScopedRegistration({ pilotId }: { pilotId: string }) {
         {details && <>
           <p>Giải đích: <strong>{details.destinationName}</strong></p>
           <p className="text-sm text-muted-foreground">
-            Một bàn, tối đa {details.seatLimit} ghế · {details.startingStack.toLocaleString("vi-VN")} chip thử
+            Tối đa {details.seatLimit} người đăng ký · {details.startingStack.toLocaleString("vi-VN")} chip thử
           </p>
           <p className="text-sm">Hạn đăng ký{" "}
             <time dateTime={details.registrationClosesAt}>
