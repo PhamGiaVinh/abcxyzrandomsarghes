@@ -519,8 +519,8 @@ test('the shared server deal persists one native hand with consistent public and
     const storedFacts = () => sql(`SELECT md5(jsonb_build_array(
       (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_hands t),
       (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_seats t),
-      (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_hand_seats t),
-      (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_hand_events t),
+      (SELECT jsonb_agg(to_jsonb(t) ORDER BY hand_id, seat_no) FROM public.online_poker_hand_seats t),
+      (SELECT jsonb_agg(to_jsonb(t) ORDER BY hand_id, event_seq) FROM public.online_poker_hand_events t),
       (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_hand_secrets t),
       (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_actions t),
       (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_chip_ledger t)
