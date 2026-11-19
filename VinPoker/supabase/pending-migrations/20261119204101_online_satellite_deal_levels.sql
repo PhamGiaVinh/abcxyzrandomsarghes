@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS online_satellite_private.table_clocks (
   pilot_id uuid NOT NULL UNIQUE REFERENCES online_satellite_private.pilots(id),
   elapsed_seconds numeric(20,6) NOT NULL DEFAULT 0 CHECK (elapsed_seconds >= 0 AND elapsed_seconds <> 'NaN'::numeric),
   running_since timestamptz CHECK (pg_catalog.isfinite(running_since)),
-  revision bigint NOT NULL DEFAULT 1 CHECK (revision > 0)
+  revision bigint NOT NULL DEFAULT 1 CHECK (revision > 0),
+  qualification_slots integer CHECK (qualification_slots BETWEEN 1 AND 9)
 );
 
 CREATE TABLE IF NOT EXISTS online_satellite_private.blind_levels (
@@ -48,6 +49,10 @@ AS $$
       ) THEN jsonb_build_object('mode', 'unavailable')
       WHEN c.running_since IS NULL OR c.running_since > statement_timestamp()
         THEN jsonb_build_object('mode', 'paused')
+      WHEN c.qualification_slots >= (
+        SELECT count(*) FROM public.online_poker_seats s
+        WHERE s.table_id=c.table_id AND s.user_id IS NOT NULL AND s.stack>0
+      ) THEN jsonb_build_object('mode', 'qualification_reached')
       ELSE jsonb_build_object(
         'mode', 'ready',
         'clockRevision', c.revision::text,

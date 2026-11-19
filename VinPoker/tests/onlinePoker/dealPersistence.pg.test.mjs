@@ -863,8 +863,8 @@ test('the shared server deal persists one native hand with consistent public and
     INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status) VALUES
       ${bubblePlayers.map(player => `('${bubbleTable}',${player.seat},'${player.playerId}',${player.stack},'sitting')`).join(',')};
     INSERT INTO online_satellite_private.blind_levels VALUES ('${bubblePilot}',0,5,10,0);
-    INSERT INTO online_satellite_private.table_clocks(table_id,pilot_id,running_since)
-      VALUES ('${bubbleTable}','${bubblePilot}',statement_timestamp());
+    INSERT INTO online_satellite_private.table_clocks(table_id,pilot_id,running_since,qualification_slots)
+      VALUES ('${bubbleTable}','${bubblePilot}',statement_timestamp(),2);
   `);
   const bubbleDeal = createHand({
     handId: bubbleHand, tableId: bubbleTable, handNo: 1, buttonSeat: 2, sb: 5n, bb: 10n,
@@ -898,6 +898,32 @@ test('the shared server deal persists one native hand with consistent public and
     handId: bubbleHand, handNo: '1', stateVersion: 3, status: 'complete', survivingCount: 1,
     eliminations: [{ seat: 2, startingStack: '10' }, { seat: 7, startingStack: '30' }],
   });
+  assert.deepEqual(level(bubbleTable), { mode: 'qualification_reached' });
+  const boundaryPilot = 'ab510000-0000-4000-8000-000000000026';
+  sql(`
+    INSERT INTO online_satellite_private.pilots VALUES
+      ('${boundaryPilot}','${clubId}','${destination}','${first}','${boundaryPilot}',now(),100,2);
+    INSERT INTO online_satellite_private.entries(pilot_id,player_user_id) VALUES
+      ('${boundaryPilot}','${first}'),('${boundaryPilot}','${second}');
+  `);
+  const boundary = json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+    SELECT public.provision_online_satellite_table_v1('${boundaryPilot}',
+    '[{"starts_at_second":0,"small_blind":5,"big_blind":10,"big_blind_ante":0}]',2)`);
+  assert.equal(clockCommand(first,boundaryPilot,1,true).outcome, 'ok');
+  const boundarySeats = json(`SELECT json_agg(json_build_object('seat',seat_no,'playerId',user_id) ORDER BY seat_no)
+    FROM public.online_poker_seats WHERE table_id='${boundary.tableId}'`);
+  const couldDeal = createHand({
+    handId: 'ab510000-0000-4000-8000-000000000027', tableId: boundary.tableId, handNo: 1,
+    buttonSeat: 1, sb: 5n, bb: 10n,
+  }, [...deck], boundarySeats.map(seat => ({ ...seat, stack: 100n })));
+  assert.equal(couldDeal.error, undefined);
+  const boundarySplit = serializeAuthoritative(couldDeal.state);
+  assert.throws(() => json(startStatement({
+    p_state: { ...boundarySplit.stateJson, satelliteLevel: { clockRevision: '2', levelStartSecond: '0' } },
+    p_deck: deck, p_board_future: boundarySplit.liveDeck, p_holes: boundarySplit.holes,
+    p_events: [], p_engine_version: ENGINE_VERSION, p_act_deadline: null, p_actor_user_id: first,
+  })), /online_satellite_qualification_reached/);
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${boundary.tableId}'`), '0');
   const reapPractice = 'ab510000-0000-4000-8000-000000000020';
   const missingBinding = 'ab510000-0000-4000-8000-000000000022';
   sql(`

@@ -25,12 +25,14 @@ export default function SatelliteBlindSchedule({ pilotId, onCreated }: {
     event.preventDefault();
     if (sending) return;
     const form = new FormData(event.currentTarget);
+    const slots = Number(form.get("qualificationSlots"));
     const levels = Array.from({ length: levelCount }, (_, index) =>
       Object.fromEntries(blindFields.map(([field]) => [field, Number(form.get(`${field}-${index}`))])));
-    if (levels.some((level, index) => Object.values(level).some(value => !Number.isSafeInteger(value) || value < 0)
+    if (!Number.isInteger(slots) || slots < 1 || slots > 9
+      || levels.some((level, index) => Object.values(level).some(value => !Number.isSafeInteger(value) || value < 0)
       || level.small_blind < 1 || level.big_blind <= level.small_blind
       || (index > 0 && level.starts_at_second <= levels[index - 1].starts_at_second))) {
-      setMessage("Nhập blind hợp lệ và mốc bắt đầu tăng dần.");
+      setMessage("Nhập số suất TEST, blind hợp lệ và mốc bắt đầu tăng dần.");
       return;
     }
     setSending(true);
@@ -39,6 +41,7 @@ export default function SatelliteBlindSchedule({ pilotId, onCreated }: {
       const { data, error } = await client.rpc("provision_online_satellite_table_v1" as never, {
         p_pilot_id: pilotId,
         p_levels: levels,
+        p_qualification_slots: slots,
       } as never);
       if (error) throw error;
       createdTable.parse(data);
@@ -52,6 +55,11 @@ export default function SatelliteBlindSchedule({ pilotId, onCreated }: {
 
   return <form className="space-y-4" onSubmit={submit}>
     <h2 className="text-lg font-semibold">Lịch blind</h2>
+    <label className="block space-y-1 text-sm">
+      <span>Số suất TEST</span>
+      <Input name="qualificationSlots" type="number" inputMode="numeric" min="1" max="9" step="1"
+        defaultValue={1} required disabled={sending} />
+    </label>
     {Array.from({ length: levelCount }, (_, index) => (
       <fieldset key={index} disabled={sending} className="grid grid-cols-2 gap-3 rounded-md border p-3">
         <legend className="px-1 text-sm font-medium">Level {index + 1}</legend>

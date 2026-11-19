@@ -94,7 +94,7 @@ it("sends the manager's full schedule and opens only the confirmed table", async
   fireEvent.click(screen.getByRole("button", { name: "Tạo bàn và khóa lịch" }));
   expect(await screen.findByRole("link", { name: "Vào bàn" })).toHaveAttribute("href", `/poker/table/${tableId}`);
   expect(rpc).toHaveBeenCalledWith("provision_online_satellite_table_v1", {
-    p_pilot_id: pilotId, p_levels: [
+    p_pilot_id: pilotId, p_qualification_slots: 1, p_levels: [
       { starts_at_second: 0, small_blind: 5, big_blind: 10, big_blind_ante: 0 },
       { starts_at_second: 60, small_blind: 10, big_blind: 20, big_blind_ante: 20 },
     ],

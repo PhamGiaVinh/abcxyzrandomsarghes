@@ -2,7 +2,9 @@
 -- The pilot's authoritative entries and starting stack determine the roster.
 BEGIN;
 
-CREATE FUNCTION public.provision_online_satellite_table_v1(p_pilot_id uuid, p_levels jsonb)
+CREATE FUNCTION public.provision_online_satellite_table_v1(
+  p_pilot_id uuid, p_levels jsonb, p_qualification_slots integer DEFAULT NULL
+)
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $$
@@ -12,6 +14,7 @@ DECLARE
   gate online_satellite_private.registration_gate%ROWTYPE;
   club_owner uuid;
   bound_table uuid;
+  bound_slots integer;
   first_sb bigint;
   first_bb bigint;
   entry_count int;
@@ -59,9 +62,10 @@ BEGIN
         GROUP BY starts_at_second HAVING count(*)>1) THEN
     RAISE EXCEPTION 'SATELLITE_PILOT_BAD_LEVELS' USING ERRCODE='22023';
   END IF;
-  SELECT table_id INTO bound_table FROM online_satellite_private.table_clocks WHERE pilot_id=pilot.id;
+  SELECT table_id,qualification_slots INTO bound_table,bound_slots
+  FROM online_satellite_private.table_clocks WHERE pilot_id=pilot.id;
   IF FOUND THEN
-    IF (
+    IF bound_slots IS DISTINCT FROM p_qualification_slots OR (
       SELECT jsonb_agg(to_jsonb(l) ORDER BY starts_at_second) FROM jsonb_to_recordset(p_levels)
         AS l(starts_at_second bigint, small_blind bigint, big_blind bigint, big_blind_ante bigint)
     ) IS DISTINCT FROM (
@@ -76,6 +80,9 @@ BEGIN
   IF entry_count NOT BETWEEN 2 AND pilot.seat_limit THEN
     RAISE EXCEPTION 'SATELLITE_PILOT_BAD_ROSTER' USING ERRCODE='23514';
   END IF;
+  IF p_qualification_slots IS NOT NULL AND p_qualification_slots NOT BETWEEN 1 AND entry_count THEN
+    RAISE EXCEPTION 'SATELLITE_PILOT_BAD_QUALIFICATION_SLOTS' USING ERRCODE='22023';
+  END IF;
   SELECT small_blind,big_blind INTO first_sb,first_bb FROM jsonb_to_recordset(p_levels)
     AS l(starts_at_second bigint,small_blind bigint,big_blind bigint)
     WHERE starts_at_second=0;
@@ -88,13 +95,14 @@ BEGIN
   INSERT INTO online_satellite_private.blind_levels
     SELECT pilot.id,l.* FROM jsonb_to_recordset(p_levels)
       AS l(starts_at_second bigint,small_blind bigint,big_blind bigint,big_blind_ante bigint);
-  INSERT INTO online_satellite_private.table_clocks(table_id,pilot_id) VALUES (bound_table,pilot.id);
+  INSERT INTO online_satellite_private.table_clocks(table_id,pilot_id,qualification_slots)
+    VALUES (bound_table,pilot.id,p_qualification_slots);
   UPDATE public.online_poker_tables SET is_satellite=true WHERE id=bound_table;
   RETURN jsonb_build_object('tableId',bound_table,'idempotent',false);
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.provision_online_satellite_table_v1(uuid,jsonb) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.provision_online_satellite_table_v1(uuid,jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.provision_online_satellite_table_v1(uuid,jsonb,integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.provision_online_satellite_table_v1(uuid,jsonb,integer) TO authenticated;
 
 COMMIT;

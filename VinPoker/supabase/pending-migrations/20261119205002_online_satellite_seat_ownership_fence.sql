@@ -41,7 +41,8 @@ BEGIN
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'online_satellite_table_binding_is_fixed' USING ERRCODE='23514';
   END IF;
-  IF OLD.table_id IS DISTINCT FROM NEW.table_id OR OLD.pilot_id IS DISTINCT FROM NEW.pilot_id THEN
+  IF OLD.table_id IS DISTINCT FROM NEW.table_id OR OLD.pilot_id IS DISTINCT FROM NEW.pilot_id
+    OR OLD.qualification_slots IS DISTINCT FROM NEW.qualification_slots THEN
     RAISE EXCEPTION 'online_satellite_table_binding_is_fixed' USING ERRCODE='23514';
   END IF;
   RETURN NEW;
@@ -55,7 +56,7 @@ CREATE TRIGGER trg_op_guard_satellite_seat
   BEFORE INSERT OR UPDATE OF table_id, seat_no, user_id, stack OR DELETE ON public.online_poker_seats
   FOR EACH ROW EXECUTE FUNCTION public.op_guard_satellite_seat();
 CREATE TRIGGER trg_keep_satellite_table_clock_binding
-  BEFORE UPDATE OF table_id, pilot_id OR DELETE ON online_satellite_private.table_clocks
+  BEFORE UPDATE OF table_id, pilot_id, qualification_slots OR DELETE ON online_satellite_private.table_clocks
   FOR EACH ROW EXECUTE FUNCTION online_satellite_private.keep_table_clock_binding();
 
 COMMIT;

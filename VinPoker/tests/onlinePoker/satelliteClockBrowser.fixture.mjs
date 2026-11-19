@@ -7,7 +7,7 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot }) {
   const statements = {
     get_online_satellite_table_v1: "public.get_online_satellite_table_v1((p->>'p_pilot_id')::uuid)",
     provision_online_satellite_table_v1:
-      "public.provision_online_satellite_table_v1((p->>'p_pilot_id')::uuid,p->'p_levels')",
+      "public.provision_online_satellite_table_v1((p->>'p_pilot_id')::uuid,p->'p_levels',(p->>'p_qualification_slots')::integer)",
     set_online_satellite_clock_v1:
       "public.set_online_satellite_clock_v1((p->>'p_pilot_id')::uuid,(p->>'p_expected_revision')::bigint,(p->>'p_running')::boolean)",
   };

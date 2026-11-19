@@ -32,6 +32,12 @@ BEGIN
   IF clock_row.running_since IS NULL OR deal_time < clock_row.running_since THEN
     RAISE EXCEPTION 'online_satellite_clock_not_running' USING ERRCODE = '23514';
   END IF;
+  IF clock_row.qualification_slots IS NOT NULL AND clock_row.qualification_slots >= (
+    SELECT count(*) FROM public.online_poker_seats s
+    WHERE s.table_id=NEW.table_id AND s.user_id IS NOT NULL AND s.stack>0
+  ) THEN
+    RAISE EXCEPTION 'online_satellite_qualification_reached' USING ERRCODE = '23514';
+  END IF;
   SELECT l.* INTO level_row FROM online_satellite_private.blind_levels l
     WHERE l.pilot_id = clock_row.pilot_id
       AND l.starts_at_second <= clock_row.elapsed_seconds
