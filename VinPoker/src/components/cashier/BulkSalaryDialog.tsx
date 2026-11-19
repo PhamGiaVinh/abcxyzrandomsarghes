@@ -24,12 +24,13 @@ import type { DealerRecord } from "@/hooks/useDealerManagement";
 // Guarded by a final confirm; writes go through the same RLS as the ✏️ edit dialog.
 
 const WORKING_DAYS_PER_MONTH = 26;
+const MAX_INTEGER_RATE_VND = 2_147_483_647;
 
-function parseVnd(s: string): number | null {
-  const digits = String(s ?? "").replace(/[^\d]/g, "");
-  if (!digits) return null;
-  const n = parseInt(digits, 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
+function parseVnd(input: string, max: number): number | null {
+  const value = input.trim();
+  if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)$/.test(value)) return null;
+  const amount = Number(value.replaceAll(".", ""));
+  return Number.isSafeInteger(amount) && amount > 0 && amount <= max ? amount : null;
 }
 const fmt = (n: number) => n.toLocaleString("vi-VN");
 
@@ -69,8 +70,11 @@ export function BulkSalaryDialog({
   );
   const selPt = selectedDealers.filter((d) => d.employment_type === "part_time");
   const selFt = selectedDealers.filter((d) => d.employment_type !== "part_time");
-  const ptHourly = parseVnd(ptHourlyInput);
-  const ftMonthly = parseVnd(ftMonthlyInput);
+  const ptHourly = parseVnd(ptHourlyInput, MAX_INTEGER_RATE_VND);
+  const ftMonthly = parseVnd(ftMonthlyInput, MAX_INTEGER_RATE_VND * WORKING_DAYS_PER_MONTH);
+  const invalidPt = selPt.length > 0 && ptHourlyInput.trim() !== "" && ptHourly === null;
+  const invalidFt = selFt.length > 0 && ftMonthlyInput.trim() !== "" && ftMonthly === null;
+  const invalidAmount = invalidPt || invalidFt;
   // Groups that will actually be written (selected + amount entered for their type).
   const willWritePt = ptHourly ? selPt.length : 0;
   const willWriteFt = ftMonthly ? selFt.length : 0;
@@ -100,6 +104,7 @@ export function BulkSalaryDialog({
 
   const applyAll = async () => {
     setConfirmOpen(false);
+    if (invalidAmount) return;
     if (willWritePt + willWriteFt === 0) {
       toast.error("Chưa chọn dealer hoặc chưa nhập mức lương.");
       return;
@@ -250,26 +255,26 @@ export function BulkSalaryDialog({
                 <div className="mb-1 text-[11px] text-muted-foreground">Lương giờ cho PT (VND/giờ)</div>
                 <Input
                   type="text" inputMode="numeric"
-                  value={ptHourlyInput}
+                  aria-label="Lương giờ cho PT" aria-invalid={invalidPt} value={ptHourlyInput}
                   onChange={(e) => setPtHourlyInput(e.target.value)}
                   placeholder="VD: 100000"
                   className="h-9 text-sm bg-card border-border"
                 />
                 <div className="mt-0.5 text-[10px] text-muted-foreground">
-                  {ptHourly ? `= ${fmt(ptHourly)}đ/giờ · áp cho ${selPt.length} PT đã chọn` : "Bỏ trống = không đổi PT"}
+                  {invalidPt ? "Nhập số VND nguyên dương trong giới hạn." : ptHourly ? `= ${fmt(ptHourly)}đ/giờ · áp cho ${selPt.length} PT đã chọn` : "Bỏ trống = không đổi PT"}
                 </div>
               </div>
               <div>
                 <div className="mb-1 text-[11px] text-muted-foreground">Lương tháng cho FT (VND/tháng)</div>
                 <Input
                   type="text" inputMode="numeric"
-                  value={ftMonthlyInput}
+                  aria-label="Lương tháng cho FT" aria-invalid={invalidFt} value={ftMonthlyInput}
                   onChange={(e) => setFtMonthlyInput(e.target.value)}
                   placeholder="VD: 9000000"
                   className="h-9 text-sm bg-card border-border"
                 />
                 <div className="mt-0.5 text-[10px] text-muted-foreground">
-                  {ftMonthly ? `= ${fmt(ftMonthly)}đ/tháng · áp cho ${selFt.length} FT đã chọn` : "Bỏ trống = không đổi FT"}
+                  {invalidFt ? "Nhập số VND nguyên dương trong giới hạn." : ftMonthly ? `= ${fmt(ftMonthly)}đ/tháng · áp cho ${selFt.length} FT đã chọn` : "Bỏ trống = không đổi FT"}
                 </div>
               </div>
             </div>
@@ -282,7 +287,7 @@ export function BulkSalaryDialog({
             </Button>
             <Button
               onClick={() => setConfirmOpen(true)}
-              disabled={saving || willWritePt + willWriteFt === 0}
+              disabled={saving || invalidAmount || willWritePt + willWriteFt === 0}
               className="bg-success text-success-foreground hover:bg-success/90"
             >
               {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
@@ -309,7 +314,7 @@ export function BulkSalaryDialog({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Huỷ</AlertDialogCancel>
-            <AlertDialogAction onClick={applyAll} className="bg-success text-success-foreground hover:bg-success/90">
+            <AlertDialogAction disabled={saving || invalidAmount} onClick={applyAll} className="bg-success text-success-foreground hover:bg-success/90">
               Áp lương
             </AlertDialogAction>
           </AlertDialogFooter>
