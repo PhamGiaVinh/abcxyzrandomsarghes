@@ -81,7 +81,7 @@ function startStatement(args) {
   `;
 }
 
-test('the shared server deal persists one native hand with consistent public and private state', async () => {
+test('the shared server deal persists one native hand with consistent public and private state', async (t) => {
   assert.equal(process.env.PGHOST, '127.0.0.1');
   const realtimeFixture = process.env.POKER_ISOLATED_REALTIME_STATUS;
   const database = realtimeFixture ? 'postgres' : 'online_poker_runtime_ci';
@@ -1137,7 +1137,22 @@ test('the shared server deal persists one native hand with consistent public and
   assert.deepEqual(openSharedRound(first, 0), { outcome: 'stale', roundNo: '1' });
   for (const [i, id] of tables.entries()) {
     assert.equal(level(id, first).roundNo, '1');
-    const receipt = await dealNextHand(admin, id, i === 0 ? null : first);
+    // Same deck as the verified blind all-in case above, so both tables end
+    // with exactly one survivor. Limit deterministic randomness to this fixture.
+    let roundSeed = 1977;
+    const rng = t.mock.method(crypto, 'getRandomValues', buffer => {
+      for (let index = 0; index < buffer.length; index++) {
+        roundSeed = (Math.imul(roundSeed, 1664525) + 1013904223) >>> 0;
+        buffer[index] = roundSeed;
+      }
+      return buffer;
+    });
+    let receipt;
+    try {
+      receipt = await dealNextHand(admin, id, i === 0 ? null : first);
+    } finally {
+      rng.mock.restore();
+    }
     assert.equal(receipt.ok, true, JSON.stringify(receipt));
     assert.equal(sql(`SELECT status FROM public.online_poker_hands WHERE id='${receipt.handId}'`), 'complete');
     assert.equal(level(id, first).mode, 'waiting_for_round');
