@@ -70,6 +70,7 @@ export interface PublicHandView {
   handId: string;
   tableId: string;
   handNo: number;
+  blinds?: { sb: string; bb: string; bigBlindAnte?: string };
   street: Street;
   /** revealed community cards only */
   board: string[];

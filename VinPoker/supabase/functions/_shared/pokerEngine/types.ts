@@ -56,7 +56,8 @@ export interface SeatState {
   startingStack: bigint;   // stack at the start of THIS hand
   stack: bigint;           // chips currently behind
   committed: bigint;       // chips put in on the CURRENT street (metadata)
-  totalCommitted: bigint;  // chips put in across ALL streets (side-pot math)
+  totalCommitted: bigint;  // chips put in across ALL streets, including any dead ante
+  deadAnte?: bigint;       // posted BBA; belongs to the main pot and cannot be refunded
   status: SeatStatus;
   hasActedThisRound: boolean;
   /** Right to RAISE this round. Cleared for already-acted seats by a sub-min all-in (no-reopen rule). */
@@ -100,6 +101,10 @@ export interface HandConfig {
   buttonSeat: number;
   sb: bigint;
   bb: bigint;
+  /** Explicit tournament option. The big blind is posted before this ante. */
+  bigBlindAnte?: bigint;
+  /** The physical BB that was selected when this hand was dealt. */
+  bigBlindAnteSeat?: number;
   /** STATE-SHAPE version (NOT a CAS counter). Bump when the HandState JSON shape changes. */
   schemaVersion: number;
   /**
@@ -110,6 +115,8 @@ export interface HandConfig {
    */
   blindPlacement?: TournamentBlindPlacement;
 }
+
+export const BBA_STATE_SCHEMA_VERSION = 2;
 
 export interface PotAward {
   potIndex: number;        // index into the side-pot list (0 = main pot)

@@ -57,6 +57,7 @@ export interface WireHandConfig {
   buttonSeat: number;
   sb: ChipString;
   bb: ChipString;
+  bigBlindAnte?: ChipString;
   schemaVersion: number;
 }
 

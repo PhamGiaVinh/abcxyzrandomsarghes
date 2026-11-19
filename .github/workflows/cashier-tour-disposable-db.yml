@@ -24,7 +24,10 @@ on:
       - "VinPoker/supabase/pending-tests/satellite_redeem_race_*.sql"
       - "VinPoker/supabase/pending-migrations/20270119000014_satellite_redemption_reversal_v1.sql"
       - "VinPoker/supabase/pending-tests/satellite_reversal_hand_disposable_setup.sql"
+      - "VinPoker/supabase/pending-tests/satellite_reversal_tracker_start_*.sql"
+      - "VinPoker/supabase/migrations/20270115000010_tracker_v3_hand_start_context.sql"
       - "VinPoker/supabase/pending-tests/satellite_redemption_reversal_v1.sql"
+      - "VinPoker/supabase/pending-tests/satellite_reversal_hand_lock.mjs"
       - "VinPoker/supabase/pending-tests/satellite_issue_secret_v1.sql"
       - "VinPoker/supabase/pending-tests/satellite_unmatched_funding_guard_v1.sql"
       - "VinPoker/supabase/pending-migrations/20260925092509_satellite_funding_preview_math_v1.sql"
@@ -363,4 +366,4 @@ jobs:
             -f supabase/pending-migrations/20270119000014_satellite_redemption_reversal_v1.sql
       - name: Assert audited Satellite correction and reversal
         working-directory: VinPoker
-        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f supabase/pending-tests/satellite_redemption_reversal_v1.sql
+        run: node supabase/pending-tests/satellite_reversal_hand_lock.mjs
