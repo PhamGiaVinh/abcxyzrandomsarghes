@@ -8,13 +8,16 @@ REVOKE ALL ON SCHEMA online_satellite_private FROM PUBLIC, anon, authenticated;
 
 CREATE TABLE IF NOT EXISTS online_satellite_private.registration_gate (
   club_id uuid PRIMARY KEY REFERENCES public.clubs(id),
-  enabled boolean NOT NULL DEFAULT false
+  enabled boolean NOT NULL DEFAULT false,
+  delegated_td_actor_id uuid REFERENCES auth.users(id),
+  delegated_by uuid REFERENCES auth.users(id),
+  CHECK ((delegated_td_actor_id IS NULL) = (delegated_by IS NULL))
 );
 CREATE TABLE IF NOT EXISTS online_satellite_private.pilots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   club_id uuid NOT NULL REFERENCES public.clubs(id),
   destination_tournament_id uuid NOT NULL REFERENCES public.tournaments(id),
-  owner_actor_id uuid NOT NULL REFERENCES auth.users(id),
+  created_by uuid NOT NULL REFERENCES auth.users(id),
   request_id uuid NOT NULL,
   registration_closes_at timestamptz NOT NULL,
   starting_stack integer NOT NULL CHECK (starting_stack > 0),
@@ -42,14 +45,24 @@ AS $$
 DECLARE
   v_actor uuid := auth.uid();
   v_owner uuid;
+  v_gate online_satellite_private.registration_gate%ROWTYPE;
   v_pilot online_satellite_private.pilots%ROWTYPE;
 BEGIN
   SELECT c.owner_id INTO v_owner FROM public.clubs c WHERE c.id=p_club_id FOR UPDATE;
-  IF v_actor IS NULL OR NOT FOUND OR v_owner IS DISTINCT FROM v_actor THEN
-    RAISE EXCEPTION 'SATELLITE_PILOT_OWNER_REQUIRED' USING ERRCODE='42501';
+  IF v_actor IS NULL OR NOT FOUND THEN
+    RAISE EXCEPTION 'SATELLITE_PILOT_NOT_AVAILABLE' USING ERRCODE='42501';
   END IF;
-  PERFORM 1 FROM online_satellite_private.registration_gate g WHERE g.club_id=p_club_id AND g.enabled FOR SHARE;
+  SELECT g.* INTO v_gate FROM online_satellite_private.registration_gate g
+    WHERE g.club_id=p_club_id AND g.enabled FOR SHARE;
   IF NOT FOUND THEN RAISE EXCEPTION 'SATELLITE_PILOT_NOT_AVAILABLE' USING ERRCODE='42501'; END IF;
+  IF v_owner IS DISTINCT FROM v_actor THEN
+    IF v_gate.delegated_td_actor_id IS DISTINCT FROM v_actor
+      OR v_gate.delegated_by IS DISTINCT FROM v_owner THEN
+      RAISE EXCEPTION 'SATELLITE_PILOT_MANAGER_REQUIRED' USING ERRCODE='42501';
+    END IF;
+    PERFORM 1 FROM public.club_floors f WHERE f.club_id=p_club_id AND f.user_id=v_actor FOR SHARE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'SATELLITE_PILOT_MANAGER_REQUIRED' USING ERRCODE='42501'; END IF;
+  END IF;
   IF p_request_id IS NULL OR p_registration_closes_at IS NULL
     OR NOT pg_catalog.isfinite(p_registration_closes_at)
     OR p_starting_stack IS NULL OR p_starting_stack <= 0
@@ -64,7 +77,7 @@ BEGIN
   SELECT p.* INTO v_pilot FROM online_satellite_private.pilots p
     WHERE p.club_id=p_club_id AND p.request_id=p_request_id;
   IF FOUND THEN
-    IF v_pilot.owner_actor_id IS DISTINCT FROM v_actor
+    IF v_pilot.created_by IS DISTINCT FROM v_actor
       OR v_pilot.destination_tournament_id IS DISTINCT FROM p_destination_tournament_id
       OR v_pilot.registration_closes_at IS DISTINCT FROM p_registration_closes_at
       OR v_pilot.starting_stack IS DISTINCT FROM p_starting_stack
@@ -76,7 +89,7 @@ BEGIN
       RAISE EXCEPTION 'SATELLITE_PILOT_BAD_CONFIGURATION' USING ERRCODE='22023';
     END IF;
     INSERT INTO online_satellite_private.pilots (
-      club_id, destination_tournament_id, owner_actor_id, request_id,
+      club_id, destination_tournament_id, created_by, request_id,
       registration_closes_at, starting_stack, seat_limit
     ) VALUES (
       p_club_id, p_destination_tournament_id, v_actor, p_request_id,
