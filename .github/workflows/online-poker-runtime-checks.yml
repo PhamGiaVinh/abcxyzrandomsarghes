@@ -117,7 +117,7 @@ jobs:
           if ! node --experimental-transform-types --test tests/onlinePoker/dealPersistence.pg.test.mjs; then
             db_container="$(docker ps -a --filter 'name=supabase_db_' --format '{{.Names}}')"
             if [[ "$db_container" =~ ^supabase_db_[a-zA-Z0-9_.-]+$ ]]; then
-              docker logs --tail 180 "$db_container" 2>&1 | grep -E 'FATAL:|PANIC:|ERROR:|server process|signal|database system' | tail -n 30 || true
+              docker logs --tail 1000 "$db_container" 2>&1 | grep -E 'PANIC:|ERROR:|server process|signal|terminated|reinitializing' | tail -n 50 || true
             fi
             exit 1
           fi
