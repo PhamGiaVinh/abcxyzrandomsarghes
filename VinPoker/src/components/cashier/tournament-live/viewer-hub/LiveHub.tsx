@@ -126,11 +126,14 @@ function LiveHubContent({
   const tableFreshness = publicSnapshot?.access === "public" && publicSnapshot.tournamentId === tournamentId
     ? publicSnapshot.sections.tables?.freshness
     : undefined;
-  const tablePublishedAt = realtimeEnabled && !networkError && tableFreshness?.state === "current"
-    ? tableFreshness.publishedAt
-    : null;
+  const tablePublishedAt = realtimeEnabled ? tableFreshness?.publishedAt : null;
   const publishedTime = tablePublishedAt ? Date.parse(tablePublishedAt) : NaN;
   const lastUpdated = Number.isFinite(publishedTime) ? new Date(publishedTime) : null;
+  const connectionNotice = realtimeEnabled && networkError && publicSnapshot?.access !== "revoked" && (
+    <div role="status" className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+      {lastUpdated ? "Mất kết nối tạm thời — đang giữ dữ liệu đã xác nhận gần nhất." : "Mất kết nối tạm thời — chưa có dữ liệu bàn đã xác minh."}
+    </div>
+  );
 
   // Public table-map picker (legacy stacked layout): which table to feature.
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
@@ -190,6 +193,7 @@ function LiveHubContent({
     return (
       <div className="space-y-3 sm:space-y-4 animate-in fade-in-0 duration-500 motion-reduce:animate-none">
         <LiveHubHeader title={title} clubName={clubName} clubId={clubId} subtitle={subtitle} liveTableCount={displayedLiveTableCount} guarantee={guarantee} buyIn={buyIn} startingStack={startingStack} lastUpdated={lastUpdated} onShare={onShare} />
+        {connectionNotice}
         <LiveStatsBar prizePool={prizePool} playersRemaining={playersRemaining} chipLeader={chipLeader} />
         <LiveTablesMap tables={displayedTables} activeTableId={featuredTableId} onSelect={setSelectedTableId} />
         <FeaturedTableCard
@@ -327,11 +331,7 @@ function LiveHubContent({
         <TrackerCardStyleToggle />
         {watch && <OrientationToggle value={effectiveOrientation} onChange={setOrientation} />}
       </div>
-      {realtimeEnabled && networkError && publicSnapshot?.access !== "revoked" && (
-        <div role="status" className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
-          Mất kết nối tạm thời — đang giữ dữ liệu đã xác nhận gần nhất.
-        </div>
-      )}
+      {connectionNotice}
       {realtimeEnabled && publicSnapshot?.access === "revoked" && (
         <div role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 px-3 py-8 text-center text-sm text-muted-foreground">
           Giải này không còn được công khai.
