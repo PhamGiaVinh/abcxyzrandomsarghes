@@ -1,0 +1,94 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import { dealNextHand } from '../../supabase/functions/_shared/pokerRuntime/dealNextHand.ts';
+
+const tableId = 'ab510000-0000-4000-8000-000000000001';
+const first = 'ab510000-0000-4000-8000-000000000002';
+const second = 'ab510000-0000-4000-8000-000000000003';
+
+function sql(source) {
+  const result = spawnSync('psql', ['-X', '-Atq', '-v', 'ON_ERROR_STOP=1'], {
+    encoding: 'utf8', input: source, timeout: 10_000,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
+function json(source) { return JSON.parse(sql(source)); }
+function file(path) { return readFileSync(new URL(path, import.meta.url), 'utf8'); }
+
+test('the shared server deal persists one native hand with consistent public and private state', async () => {
+  assert.equal(process.env.PGHOST, '127.0.0.1');
+  assert.equal(process.env.PGDATABASE, 'online_poker_runtime_ci');
+  assert.equal(sql('SELECT current_database()'), 'online_poker_runtime_ci');
+  assert.equal(sql("SELECT to_regclass('public.online_poker_tables') IS NULL"), 't');
+  sql(`
+    CREATE ROLE anon;
+    CREATE ROLE authenticated;
+    CREATE ROLE service_role BYPASSRLS;
+    CREATE SCHEMA auth;
+    CREATE TABLE auth.users(id uuid PRIMARY KEY);
+    CREATE TABLE public.clubs(id uuid PRIMARY KEY);
+    CREATE TYPE public.app_role AS ENUM ('super_admin');
+    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
+    CREATE FUNCTION public.has_role(uuid, public.app_role) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
+    CREATE FUNCTION public.update_updated_at_column() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at=now(); RETURN NEW; END $$;
+    ${file('../../supabase/migrations/20260817000000_online_poker_core.sql')}
+    ${file('../../supabase/migrations/20260820000000_online_poker_runtime_rpcs.sql')}
+    INSERT INTO auth.users VALUES ('${first}'), ('${second}');
+    INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
+    VALUES ('${tableId}','Disposable TEST',5,10,0,1000,100);
+    INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status)
+    VALUES ('${tableId}',2,'${first}',100,'sitting'), ('${tableId}',5,'${second}',100,'sitting');
+  `);
+
+  const reads = {
+    online_poker_tables: `SELECT row_to_json(t) FROM public.online_poker_tables t WHERE id='${tableId}'`,
+    online_poker_seats: `SELECT json_agg(s) FROM public.online_poker_seats s WHERE table_id='${tableId}'`,
+    online_poker_hands: `SELECT COALESCE((SELECT json_build_object('hand_no',hand_no,'button_seat',button_seat)
+      FROM public.online_poker_hands WHERE table_id='${tableId}' ORDER BY hand_no DESC LIMIT 1),'null'::json)`,
+  };
+  const admin = {
+    from(table) {
+      assert.ok(Object.hasOwn(reads, table));
+      const query = {
+        select: () => query, eq: () => query, order: () => query, limit: () => query,
+        maybeSingle: async () => ({ data: json(reads[table]), error: null }),
+        then: resolve => resolve({ data: json(reads[table]), error: null }),
+      };
+      return query;
+    },
+    async rpc(name, args) {
+      assert.equal(name, 'op_start_hand');
+      const payload = Buffer.from(JSON.stringify(args)).toString('hex');
+      const data = json(`
+        SET ROLE service_role;
+        WITH input AS (SELECT convert_from(decode('${payload}','hex'),'UTF8')::jsonb AS p)
+        SELECT public.op_start_hand(p->'p_state', p->'p_deck', p->'p_board_future', p->'p_holes',
+          p->'p_events', p->>'p_engine_version', (p->>'p_act_deadline')::timestamptz,
+          (p->>'p_actor_user_id')::uuid) FROM input;
+      `);
+      return { data, error: null };
+    },
+  };
+  assert.equal((await dealNextHand(admin, tableId, first)).reason, 'disabled');
+  assert.equal(sql('SELECT count(*) FROM public.online_poker_hands'), '0');
+  sql('UPDATE public.online_poker_config SET enabled=true');
+  const hand = await dealNextHand(admin, tableId, first);
+  assert.ok(hand.ok, JSON.stringify(hand));
+  assert.equal(hand.handNo, 1);
+  assert.equal(hand.buttonSeat, 2);
+  assert.equal((await dealNextHand(admin, tableId, null)).reason, 'already_active');
+  const state = json(`
+    SELECT json_build_object('count',count(*),'pot',max(pot),'publicSecret',
+      bool_or(state ? 'deck' OR EXISTS(
+        SELECT 1 FROM jsonb_array_elements(state->'seats') s WHERE s ? 'holeCards')))
+    FROM public.online_poker_hands;
+  `);
+  assert.deepEqual(state, { count: 1, pot: 15, publicSecret: false });
+  assert.equal(sql("SELECT count(*) FROM public.online_poker_hand_secrets"), '4');
+  assert.equal(sql("SELECT sum(stack+total_committed) FROM public.online_poker_hand_seats"), '200');
+  assert.equal(sql("SELECT has_function_privilege('authenticated','public.op_start_hand(jsonb,jsonb,jsonb,jsonb,jsonb,text,timestamptz,uuid)','EXECUTE')"), 'f');
+});
