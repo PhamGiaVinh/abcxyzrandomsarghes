@@ -234,5 +234,5 @@ it('catches up elapsed seconds when browser clock advances between ticks', async
 
   vi.setSystemTime(new Date(start.getTime() + 59_000));
   await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-  expect(screen.getByText('9:00')).toBeInTheDocument();
+  expect(screen.getByText('09:00')).toBeInTheDocument();
 });
