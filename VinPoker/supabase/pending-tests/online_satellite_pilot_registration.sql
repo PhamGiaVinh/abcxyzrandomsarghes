@@ -23,7 +23,9 @@ INSERT INTO public.club_members(club_id,player_user_id,member_card_id) VALUES
  ('ef200000-0000-4000-8000-000000000001','ef100000-0000-4000-8000-000000000005','TEST-5'),
  ('ef200000-0000-4000-8000-000000000001','ef100000-0000-4000-8000-000000000006','TEST-6'),
  ('ef200000-0000-4000-8000-000000000001','ef100000-0000-4000-8000-000000000007','TEST-7');
+COMMIT;
 
+BEGIN;
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','ef100000-0000-4000-8000-000000000001',true);
 DO $test$
@@ -146,3 +148,60 @@ BEGIN
   END IF;
 END $test$;
 ROLLBACK;
+
+-- Two real backend sessions submit the same account and pilot. The first
+-- holds its transaction until another backend is observed waiting on it.
+CREATE EXTENSION IF NOT EXISTS dblink;
+INSERT INTO online_satellite_private.registration_gate(club_id,enabled)
+VALUES ('ef200000-0000-4000-8000-000000000001',true);
+SET ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','ef100000-0000-4000-8000-000000000001',false);
+SELECT set_config('test.satellite_race_pilot',public.create_online_satellite_pilot_v1(
+  'ef200000-0000-4000-8000-000000000001','ef300000-0000-4000-8000-000000000001',
+  'ef900000-0000-4000-8000-000000000002',now()+interval '1 hour',10000,2)->>'pilotId',false);
+RESET ROLE;
+DO $test$
+DECLARE
+  v_pilot uuid := current_setting('test.satellite_race_pilot')::uuid;
+  v_query text := format('SELECT public.register_online_satellite_pilot_v1(%L)',v_pilot);
+  v_session text;
+  v_first_pid integer;
+  v_second_pid integer;
+  v_first jsonb;
+  v_second jsonb;
+  v_deadline timestamptz;
+BEGIN
+  FOREACH v_session IN ARRAY ARRAY['pilot-first','pilot-second'] LOOP
+    PERFORM public.dblink_connect(v_session,'hostaddr=127.0.0.1 port=5432 dbname=postgres user=postgres connect_timeout=3');
+    PERFORM public.dblink_exec(v_session,'BEGIN');
+    PERFORM public.dblink_exec(v_session,'SET LOCAL statement_timeout = ''10s''');
+    PERFORM public.dblink_exec(v_session,'SET LOCAL ROLE authenticated');
+    PERFORM public.dblink_exec(v_session,'SET LOCAL request.jwt.claim.sub = ''ef100000-0000-4000-8000-000000000005''');
+  END LOOP;
+  SELECT pid INTO STRICT v_first_pid FROM public.dblink('pilot-first','SELECT pg_backend_pid()') AS t(pid integer);
+  SELECT pid INTO STRICT v_second_pid FROM public.dblink('pilot-second','SELECT pg_backend_pid()') AS t(pid integer);
+  SELECT receipt INTO STRICT v_first FROM public.dblink('pilot-first',v_query) AS t(receipt jsonb);
+  IF public.dblink_send_query('pilot-second',v_query) <> 1 THEN
+    RAISE EXCEPTION 'second entry request did not start';
+  END IF;
+  v_deadline := clock_timestamp() + interval '5 seconds';
+  WHILE NOT v_first_pid = ANY(pg_blocking_pids(v_second_pid)) LOOP
+    IF clock_timestamp() >= v_deadline THEN
+      RAISE EXCEPTION 'duplicate registration did not wait for the first transaction';
+    END IF;
+    PERFORM pg_sleep(0.02);
+  END LOOP;
+  PERFORM public.dblink_exec('pilot-first','COMMIT');
+  SELECT receipt INTO STRICT v_second FROM public.dblink_get_result('pilot-second') AS t(receipt jsonb);
+  PERFORM 1 FROM public.dblink_get_result('pilot-second') AS t(receipt jsonb);
+  PERFORM public.dblink_exec('pilot-second','COMMIT');
+  IF v_first->>'entryId' IS NULL OR v_second->>'entryId' IS DISTINCT FROM v_first->>'entryId'
+    OR v_first->>'idempotent' IS DISTINCT FROM 'false'
+    OR v_second->>'idempotent' IS DISTINCT FROM 'true'
+    OR (SELECT count(*) FROM online_satellite_private.entries WHERE pilot_id=v_pilot) <> 1 THEN
+    RAISE EXCEPTION 'the two competing requests did not preserve one entry';
+  END IF;
+  PERFORM public.dblink_disconnect('pilot-first');
+  PERFORM public.dblink_disconnect('pilot-second');
+  RAISE NOTICE 'Observed second Satellite request blocked and replayed the single committed entry';
+END $test$;
