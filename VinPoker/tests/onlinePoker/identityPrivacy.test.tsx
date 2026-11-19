@@ -23,6 +23,17 @@ import {useTableHand,useTableMeta} from '@/lib/onlinePoker/useOnlinePoker';
 beforeEach(()=>{h.listeners=[];h.channelStatuses.clear();h.seatChanges.clear();vi.clearAllMocks();h.seats.mockReset().mockResolvedValue([]);h.getUser.mockResolvedValue({data:{user:{id:'actor-a'}},error:null});
  h.load.mockResolvedValue({wire:{config:{handId:'hand-a',handNo:1}},stateVersion:1});h.holes.mockResolvedValue({outcome:'ok',seat:1,cards:['As','Ah']});h.meta.mockResolvedValue({id:'table-a',name:'TABLE A',status:'open'});});
 afterEach(()=>{cleanup();vi.useRealTimers();});
+it('lets a slow seat read complete across polling ticks', async () => {
+ vi.useFakeTimers();
+ h.seats.mockImplementation(()=>new Promise(resolve=>setTimeout(()=>resolve([]),5000)));
+ const {result}=renderHook(()=>useTableHand('table-a'));
+ await act(async()=>{await vi.advanceTimersByTimeAsync(4000);});
+ expect(result.current.seatReadStatus).toBe('loading');
+ expect(h.seats).toHaveBeenCalledTimes(1);
+ expect((h.seats.mock.calls[0][1] as AbortSignal).aborted).toBe(false);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});
+ expect(result.current.seatReadStatus).toBe('ready');
+});
 it.each(['SUBSCRIBED','TIMED_OUT'])('rechecks seats on recovery after %s and ignores the old channel', async initialStatus => {
  h.seats.mockRejectedValue(new Error('temporary seat read failure'));
  const {result,rerender}=renderHook(({id})=>useTableHand(id),{initialProps:{id:'table-a'}});

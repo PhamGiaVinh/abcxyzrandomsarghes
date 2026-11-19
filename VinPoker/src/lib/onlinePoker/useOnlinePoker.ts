@@ -370,19 +370,38 @@ export function useTableHand(tableId: string): TableHandState {
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
   }, [tableId]);
 
-  // Load table seats + current host (live). Seats exist even with no active hand.
+  // Polling must not repeatedly cancel a slow authoritative seat read.
+  const seatRead = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    seatRead.current?.abort();
+    seatRead.current = null;
+  }, [tableId]);
   useEffect(() => {
-    if (!RUNTIME_LIVE) { setSeats([]); setHostUserId(null); return; }
+    if (!RUNTIME_LIVE || seatRead.current) return;
+    const issuedTable = tableScope.current;
+    const controller = new AbortController();
+    seatRead.current = controller;
+    const current = () => !controller.signal.aborted && issuedTable === tableScope.current;
+    void loadSeatsLive(tableId, controller.signal).then(loadedSeats => {
+      if (!current()) return;
+      setSeats(loadedSeats);
+      setSeatsOrigin(issuedTable);
+      setSeatFailure(null);
+    }).catch(() => {
+      if (current()) setSeatFailure(issuedTable);
+    }).finally(() => {
+      if (seatRead.current === controller) seatRead.current = null;
+      controller.abort();
+    });
+  }, [tableId, tick]);
+
+  // Load the current host independently of seat availability.
+  useEffect(() => {
+    if (!RUNTIME_LIVE) { setHostUserId(null); return; }
     let cancelled = false;
     const issuedTable=tableScope.current;
-    const controller = new AbortController();
-    void loadSeatsLive(tableId, controller.signal).then((s) => {
-      if (!cancelled && issuedTable === tableScope.current) { setSeats(s); setSeatsOrigin(issuedTable); setSeatFailure(null); }
-    }).catch(() => {
-      if (!cancelled && issuedTable === tableScope.current) setSeatFailure(issuedTable);
-    }).finally(() => controller.abort());
     loadTableHostLive(tableId).then((h) => { if (!cancelled) {setHostUserId(h);setHostOrigin(issuedTable);} }).catch(() => {});
-    return () => { cancelled = true; controller.abort(); };
+    return () => { cancelled = true; };
   }, [tableId, tick]);
 
   // Live realtime: re-pull on any change to this table's hands, seats OR table row
