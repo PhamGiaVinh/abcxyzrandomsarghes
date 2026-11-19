@@ -25,7 +25,7 @@ export interface AdminClient {
 
 export type DealReason =
   | 'table_not_found' | 'table_not_open' | 'seats_load_failed' | 'previous_hand_unavailable'
-  | 'not_enough_players' | 'could_not_start_hand' | 'already_active' | 'start_hand_failed';
+  | 'not_enough_players' | 'could_not_start_hand' | 'already_active' | 'disabled' | 'start_hand_failed';
 
 export type DealResult =
   | { ok: true; tableId: string; handId: string; handNo: number; buttonSeat: number }
@@ -119,6 +119,7 @@ export async function dealNextHand(
   });
   if (error) return { ok: false, tableId, reason: 'start_hand_failed' };
   if (data?.outcome === 'already_active') return { ok: false, tableId, reason: 'already_active' };
+  if (data?.outcome === 'disabled') return { ok: false, tableId, reason: 'disabled' };
   if (data?.outcome !== 'ok' || data.hand_id !== handId || data.state_version !== 0) {
     return { ok: false, tableId, reason: 'start_hand_failed' };
   }

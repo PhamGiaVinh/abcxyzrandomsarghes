@@ -24,15 +24,14 @@ import { retryFetch } from "../_shared/retry.ts";
 import { parseBody, z } from "../_shared/validate.ts";
 import { corsHeaders, handleOptions, jsonResp } from "../_shared/cors.ts";
 import { buildLog, newCid, now } from "./log.ts";
-import { nextHandPosition } from "../_shared/pokerRuntime/dealNextHand.ts";
+import { dealNextHand } from "../_shared/pokerRuntime/dealNextHand.ts";
 import {
-  applyAction, createHand, shuffledDeck, cryptoRng32,
+  applyAction,
   actionFromRequest, classifyActionError, toWireLegalActions,
 } from "../_shared/pokerEngine/index.ts";
 import {
   serializeAuthoritative, deserializeAuthoritative,
-  buildSeatInputs, buildHandConfig, actionToRow, privateView, ENGINE_VERSION,
-  type SeatRow,
+  actionToRow, privateView,
 } from "../_shared/pokerAdapter/index.ts";
 
 const ACT_TIMEOUT_SECS = 30;
@@ -195,70 +194,29 @@ async function handleStart(
   json: (d: unknown, s?: number) => Response,
   log: LogDone,
 ): Promise<Response> {
-  const tid = body.tableId;
-  const { data: table, error: tErr } = await admin
-    .from("online_poker_tables")
-    .select("id, sb, bb, max_seats, act_timeout_secs, status")
-    .eq("id", body.tableId).maybeSingle();
-  if (tErr || !table) { log("table_not_found", { table_id: tid, http: 404 }); return json({ error: "table_not_found" }, 404); }
-  if (table.status !== "open") { log("table_not_open", { table_id: tid, http: 409 }); return json({ error: "table_not_open" }, 409); }
-
-  const { data: seatRows, error: sErr } = await admin
-    .from("online_poker_seats")
-    .select("seat_no, user_id, stack, status")
-    .eq("table_id", body.tableId);
-  if (sErr) { log("seats_load_failed", { table_id: tid, http: 400 }); return json({ error: "seats_load_failed" }, 400); }
-
-  const seated = (seatRows ?? []).filter(
-    (r) => r.user_id && r.status === "sitting" && Number(r.stack) > 0,
-  ) as SeatRow[];
-  if (seated.length < 2) { log("not_enough_players", { table_id: tid, http: 409 }); return json({ error: "not_enough_players" }, 409); }
-
-  const { data: last, error: lastError } = await admin
-    .from("online_poker_hands")
-    .select("hand_no, button_seat")
-    .eq("table_id", body.tableId)
-    .order("hand_no", { ascending: false }).limit(1).maybeSingle();
-  const seatNos = seated.map((s) => s.seat_no).sort((a, b) => a - b);
-  const position = lastError ? null : nextHandPosition(last, seatNos);
-  if (!position) {
-    log("previous_hand_unavailable", { table_id: tid, http: 503 });
-    return json({ error: "previous_hand_unavailable" }, 503);
+  const tableId = body.tableId;
+  const result = await dealNextHand(admin, tableId, uid);
+  if (result.ok === true) {
+    log("ok", { table_id: tableId, hand_id: result.handId, http: 200 });
+    return json({ outcome: "ok", hand_id: result.handId, state_version: 0 }, 200);
   }
-  const { handNo, button } = position;
-
-  const handId = crypto.randomUUID();
-  const seatInputs = buildSeatInputs(seated);
-  const config = buildHandConfig({ id: table.id, sb: table.sb, bb: table.bb }, handId, handNo, button);
-  const originalDeck = shuffledDeck(cryptoRng32);
-
-  let built;
-  try {
-    built = createHand(config, [...originalDeck], seatInputs);
-  } catch (_e) {
-    log("could_not_start_hand", { table_id: tid, http: 400 });
-    return json({ error: "could_not_start_hand" }, 400); // G1: no engine message
+  if (result.reason === "already_active" || result.reason === "disabled") {
+    log(result.reason, { table_id: tableId, http: 200 });
+    return json({ outcome: result.reason }, 200);
   }
-  if (built.error) { log("could_not_start_hand", { table_id: tid, http: 400 }); return json({ error: "could_not_start_hand" }, 400); }
 
-  const split = serializeAuthoritative(built.state);
-  const deadline = built.state.toAct != null
-    ? new Date(Date.now() + (table.act_timeout_secs ?? ACT_TIMEOUT_SECS) * 1000).toISOString()
-    : null;
-
-  const { data, error } = await admin.rpc("op_start_hand", {
-    p_state: split.stateJson,
-    p_deck: originalDeck,
-    p_board_future: split.liveDeck,
-    p_holes: split.holes,
-    p_events: built.events.map((e) => ({ type: e.type, payload: e.payload })),
-    p_engine_version: ENGINE_VERSION,
-    p_act_deadline: deadline,
-    p_actor_user_id: uid,
-  });
-  if (error) { log("start_hand_failed", { table_id: tid, http: 400 }); return json({ error: "start_hand_failed" }, 400); }
-  log("ok", { table_id: tid, hand_id: handId, http: 200 });
-  return json(data, 200);
+  const statuses = {
+    table_not_found: 404,
+    table_not_open: 409,
+    seats_load_failed: 400,
+    not_enough_players: 409,
+    previous_hand_unavailable: 503,
+    could_not_start_hand: 400,
+    start_hand_failed: 400,
+  };
+  const status = statuses[result.reason];
+  log(result.reason, { table_id: tableId, http: status });
+  return json({ error: result.reason }, status);
 }
 
 async function handleSubmit(
