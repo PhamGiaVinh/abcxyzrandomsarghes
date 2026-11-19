@@ -1154,6 +1154,15 @@ test('the shared server deal persists one native hand with consistent public and
   assert.deepEqual(roundRead(first), { tables: 1, hands: 1, secondaryHand: 0 });
   assert.deepEqual(json(`SET ROLE anon; ${visibleRoundTables}`), { tables: 0, hands: 0, secondaryHand: 0 });
   console.log('POSTGRES_SATELLITE_SECONDARY_TABLE_ASSIGNED_READ_PASS');
+  sql(file('../../supabase/pending-migrations/20261119224500_online_satellite_round_reconnect.sql'));
+  const reconnectRound = actor => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT public.get_online_satellite_table_v1('${sharedPilot}')`);
+  assert.equal(reconnectRound(third).tableId, tables[1]);
+  assert.equal(reconnectRound(first).tableId, tables[0]);
+  assert.equal(reconnectRound(third).canPlay, true);
+  assert.equal(reconnectRound(third).clockRevision, reconnectRound(first).clockRevision);
+  assert.equal(Object.hasOwn(reconnectRound(third), 'qualificationReached'), false);
+  console.log('POSTGRES_SATELLITE_RECONNECT_ASSIGNED_ROUND_TABLE_PASS');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
