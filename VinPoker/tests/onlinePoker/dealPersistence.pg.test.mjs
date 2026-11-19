@@ -1284,6 +1284,24 @@ test('the shared server deal persists one native hand with consistent public and
     WHERE m.pilot_id='${preparedPilot}'`), { players:4, chips:400 });
   assert.equal(level(pair.tableIds[1],first).mode, 'paused');
   console.log('POSTGRES_SATELLITE_PROVISION_BALANCED_TWO_TABLES_PASS');
+  sql(file('../../supabase/pending-migrations/20261119234500_online_satellite_round_operations_state.sql'));
+  const operations = (actor, pilot) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT coalesce(public.get_online_satellite_round_operations_v1('${pilot}'),'null'::jsonb)`);
+  const prepared = operations(first, preparedPilot);
+  assert.equal(prepared.roundNo, '0');
+  assert.deepEqual(prepared.tables.map(table => table.tableId), pair.tableIds);
+  for (const table of prepared.tables) {
+    assert.equal(table.status, 'paused');
+    assert.equal(table.roundStatus, 'not_opened');
+    assert.deepEqual(table.seats.map(seat => seat.stack), ['100','100']);
+  }
+  assert.deepEqual(prepared.tables[1].seats.map(s => s.placementRevision), ['1','1']);
+  assert.equal(operations(third, preparedPilot), null);
+  const finalized = operations(first, sharedPilot);
+  assert.equal(finalized.roundNo, '1');
+  assert.deepEqual(finalized.tables.map(table => table.roundStatus), ['complete','complete']);
+  assert.ok(finalized.tables.every(table => table.status === 'closed'));
+  console.log('POSTGRES_SATELLITE_TD_ROUND_OPERATIONS_SCOPE_PASS');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });

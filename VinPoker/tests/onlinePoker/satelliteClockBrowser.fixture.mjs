@@ -6,6 +6,8 @@ import { createServer as createVite } from 'vite';
 export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketScenario, twoTablePilot }) {
   const statements = {
     get_online_satellite_table_v1: "public.get_online_satellite_table_v1((p->>'p_pilot_id')::uuid)",
+    get_online_satellite_round_operations_v1:
+      "public.get_online_satellite_round_operations_v1((p->>'p_pilot_id')::uuid)",
     provision_online_satellite_table_v1:
       "public.provision_online_satellite_table_v1((p->>'p_pilot_id')::uuid,p->'p_levels',(p->>'p_qualification_slots')::integer)",
     provision_online_satellite_two_tables_v1:
@@ -108,6 +110,7 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketSce
     await page.getByText('Đồng hồ đang chạy', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Mở vòng tiếp theo' }).click();
     await page.getByText('Đã mở vòng chơi.', { exact: true }).waitFor();
+    await page.getByText('Chờ chia ván', { exact: true }).nth(1).waitFor();
     assert.equal(sql(`SELECT count(*) FROM online_satellite_private.round_deals
       WHERE pilot_id='${twoTablePilot}' AND round_no=1 AND hand_id IS NULL`), '2');
     await page.reload();
