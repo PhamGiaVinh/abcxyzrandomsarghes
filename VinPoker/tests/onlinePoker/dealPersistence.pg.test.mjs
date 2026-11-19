@@ -317,10 +317,55 @@ test('the shared server deal persists one native hand with consistent public and
     await verifySatelliteRealtime({ sql, statusPath: realtimeFixture, first, spectator,
       practiceHand: practice.handId, satelliteHand: satellite.handId, secondaryHand: secondaryDeal.handId });
     const { withSatelliteEdgeHttp } = await import('./satelliteEdgeHttp.fixture.mjs');
-    await withSatelliteEdgeHttp(realtimeFixture, async ({ post }) => {
+    await withSatelliteEdgeHttp(realtimeFixture, async ({ post, players }) => {
       const rejected = await post({ op: 'ping' }, 'invalid-fixture-token');
       assert.equal(rejected.status, 401);
       console.log('SATELLITE_DENO_HTTP_REAL_AUTH_ACCEPTANCE_PASS');
+      const [td, guest] = players;
+      const hostClub = crypto.randomUUID();
+      const targetTour = crypto.randomUUID();
+      const actionPilot = crypto.randomUUID();
+      sql(`INSERT INTO public.clubs(id,owner_id) VALUES ('${hostClub}','${td.actor}');
+        INSERT INTO public.tournaments VALUES ('${targetTour}','${hostClub}','Disposable Edge action target');
+        INSERT INTO online_satellite_private.registration_gate(club_id,enabled) VALUES ('${hostClub}',true);
+        INSERT INTO online_satellite_private.pilots VALUES
+          ('${actionPilot}','${hostClub}','${targetTour}','${td.actor}','${actionPilot}',now(),100,2);
+        INSERT INTO online_satellite_private.entries(pilot_id,player_user_id,registered_at) VALUES
+          ('${actionPilot}','${td.actor}',now()-interval '2 seconds'),
+          ('${actionPilot}','${guest.actor}',now()-interval '1 second');`);
+      const actionTable = json(`SET ROLE authenticated; SET request.jwt.claim.sub='${td.actor}';
+        SELECT public.provision_online_satellite_table_v1('${actionPilot}',
+          '[{"starts_at_second":0,"small_blind":5,"big_blind":10,"big_blind_ante":0}]',1)`).tableId;
+      assert.equal(clockCommand(td.actor,actionPilot,1,true).outcome, 'ok');
+      const acknowledged = [];
+      const acted = new Set();
+      for (let i = 0; i < 8; i++) {
+        const started = await post({ op: 'start_hand', tableId: actionTable, idempotencyKey: crypto.randomUUID() });
+        const start = await started.json();
+        assert.equal(started.status, 200, `Edge start rejected: ${start.error ?? started.status}`);
+        const active = json(`SELECT json_build_object('actor',s.user_id,'seat',s.seat_no)
+          FROM public.online_poker_hands h JOIN public.online_poker_seats s
+            ON s.table_id=h.table_id AND s.seat_no=h.to_act_seat WHERE h.id='${start.hand_id}'`);
+        const participant = players.find(player => player.actor === active.actor);
+        assert.ok(participant);
+        const before = performance.now();
+        const response = await post({ op: 'submit_action', handId: start.hand_id, seat: active.seat,
+          type: 'fold', idempotencyKey: crypto.randomUUID() }, participant.token);
+        const receipt = await response.json();
+        acknowledged.push(performance.now()-before);
+        assert.equal(response.status, 200, `Edge action rejected: ${receipt.error ?? response.status}`);
+        assert.equal(receipt.ok, true);
+        assert.equal(receipt.stateVersion, 1);
+        acted.add(participant.actor);
+      }
+      assert.equal(acted.size, 2);
+      assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${actionTable}' AND status='complete'`), '8');
+      assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${actionTable}'`), '200');
+      acknowledged.sort((left,right) => left-right);
+      console.log('SATELLITE_EDGE_ACTION_HTTP_DIAGNOSTIC', JSON.stringify({
+        tables: 1, players: acted.size, completedHands: 8, completedAcks: acknowledged.length,
+        p95Ms: Math.round(acknowledged[Math.ceil(acknowledged.length * .95)-1]), chips: 200, capacityQualified: false,
+      }));
     });
     return;
   }

@@ -11,14 +11,18 @@ export async function withSatelliteEdgeHttp(statusPath, run) {
   assert.ok(status.ANON_KEY && status.SERVICE_ROLE_KEY, 'Disposable Auth keys unavailable');
   const auth = { persistSession: false, autoRefreshToken: false };
   const admin = createClient(status.API_URL, status.SERVICE_ROLE_KEY, { auth });
-  const player = createClient(status.API_URL, status.ANON_KEY, { auth });
-  const email = `satellite-${randomUUID()}@example.test`;
-  const password = randomUUID();
-  const user = await admin.auth.admin.createUser({ email, password, email_confirm: true });
-  assert.ok(user.data.user?.id && !user.error, `Disposable Auth create failed: ${user.error?.code ?? 'unknown'}`);
-  const login = await player.auth.signInWithPassword({ email, password });
-  const token = login.data.session?.access_token;
-  assert.ok(token && !login.error, `Disposable Auth login failed: ${login.error?.code ?? 'unknown'}`);
+  const loginPlayer = async () => {
+    const player = createClient(status.API_URL, status.ANON_KEY, { auth });
+    const email = `satellite-${randomUUID()}@example.test`;
+    const password = randomUUID();
+    const user = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+    assert.ok(user.data.user?.id && !user.error, `Disposable Auth create failed: ${user.error?.code ?? 'unknown'}`);
+    const login = await player.auth.signInWithPassword({ email, password });
+    const token = login.data.session?.access_token;
+    assert.ok(token && !login.error, `Disposable Auth login failed: ${login.error?.code ?? 'unknown'}`);
+    return { actor: user.data.user.id, token };
+  };
+  const players = await Promise.all([loginPlayer(), loginPlayer()]);
 
   const child = spawn('deno', [
     'run', '--allow-env', '--allow-net=127.0.0.1:54321,0.0.0.0:8000',
@@ -31,7 +35,7 @@ export async function withSatelliteEdgeHttp(statusPath, run) {
   const exited = new Promise(resolve => child.once('close', resolve));
   let startError;
   child.once('error', error => { startError = error.code; });
-  const post = (body, accessToken = token) => fetch('http://127.0.0.1:8000', {
+  const post = (body, accessToken = players[0].token) => fetch('http://127.0.0.1:8000', {
     method: 'POST',
     headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
     body: JSON.stringify(body), signal: AbortSignal.timeout(8_000),
@@ -45,7 +49,7 @@ export async function withSatelliteEdgeHttp(statusPath, run) {
     }
     assert.equal(response?.status, 200, `Disposable Edge ping failed: ${startError ?? child.exitCode ?? 'HTTP'}`);
     assert.deepEqual(await response.json(), { ok: true });
-    await run({ post, actor: user.data.user.id });
+    await run({ post, players });
   } finally {
     child.kill();
     await exited;
