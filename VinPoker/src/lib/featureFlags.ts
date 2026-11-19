@@ -1667,6 +1667,7 @@ export const FEATURES = {
    * false to instantly re-hide the whole portal (source objects stay, just unused by the UI).
    */
   staffApp: true,
+  staffFtPayslips: import.meta.env.VITE_STAFF_FT_PAYSLIPS_V1 === "true",
   /**
    * staffSelfSalary — the "Lương của tôi" screen inside the /staff portal (READ-ONLY),
    * parallel to `dealerSelfSalary` for the dealer app. Gates both the bottom-nav "Lương"
