@@ -34,3 +34,14 @@ it('retains entered values and shows an explicit unknown-outcome message on fail
 it('restores an unresolved journal draft after reload',()=>{
  verified();f.pendingInput={category:'misc',amountVnd:12345,incurredAt:'2026-10-30T12:00:00+07:00',description:'UNCONFIRMED TEST',paymentStatus:'unpaid',paymentSource:null};mount();expect((screen.getByLabelText('Số tiền') as HTMLInputElement).value).toBe('12345');expect((screen.getByLabelText('Ngày') as HTMLInputElement).value).toBe('2026-10-30');expect(screen.getByText(/Có lần ghi chưa xác minh/)).toBeTruthy();
 });
+
+it('keeps embedded expenses in the selected club and clears the scope after membership loss', () => {
+  f.clubs.push({id:'club-b',name:'LOCAL TEST B'});
+  const view = render(<MemoryRouter><ClubExpenses embedded scopedClubId="club-b" /></MemoryRouter>);
+  expect(f.read.mock.calls.at(-1)?.[1]).toBe('club-b');
+
+  f.clubs = f.clubs.filter((club) => club.id !== 'club-b');
+  view.rerender(<MemoryRouter><ClubExpenses embedded scopedClubId="club-b" /></MemoryRouter>);
+  expect(f.read.mock.calls.at(-1)?.[1]).toBeNull();
+  expect(screen.queryByRole('button', {name:'Ghi chi phí'})).toBeNull();
+});

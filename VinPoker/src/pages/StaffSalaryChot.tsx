@@ -55,7 +55,7 @@ function shiftYM(year: number, month: number, delta: number): { year: number; mo
   return { year: d.getFullYear(), month: d.getMonth() + 1 };
 }
 
-export default function StaffSalaryChot({ embedded }: { embedded?: boolean } = {}) {
+export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?: boolean; scopedClubId?: string } = {}) {
   const { loading: authLoading, user, isAdmin, isClubAdmin, isClubOwner } = useAuth();
   const [searchParams] = useSearchParams();
   const source = staffSalarySource();
@@ -69,9 +69,11 @@ export default function StaffSalaryChot({ embedded }: { embedded?: boolean } = {
   const { year, month } = ym;
 
   const clubsQuery = useSalaryClubs(source, allowed);
-  const clubs = useMemo(() => clubsQuery.data ?? [], [clubsQuery.data]);
-  const activeClubId = clubs.find((c) => c.id === clubId)?.id || clubs[0]?.id || null;
-  const activeClub = clubs.find((c) => c.id === activeClubId) ?? clubs[0] ?? null;
+  const clubs = useMemo(() => clubsQuery.isError ? [] : clubsQuery.data ?? [], [clubsQuery.data, clubsQuery.isError]);
+  const activeClubId = scopedClubId === undefined
+    ? (clubs.find((c) => c.id === clubId)?.id || clubs[0]?.id || null)
+    : clubs.find((club) => club.id === scopedClubId)?.id ?? null;
+  const activeClub = clubs.find((c) => c.id === activeClubId) ?? null;
 
   const monthQuery = useStaffSalaryMonth(source, activeClubId, year, month);
   const actions = useSalaryActions(source, activeClubId, year, month);
@@ -138,7 +140,7 @@ export default function StaffSalaryChot({ embedded }: { embedded?: boolean } = {
         <Card role="alert" className="p-6 border-border text-sm text-destructive">
           Không tải được danh sách CLB. <Button variant="outline" size="sm" onClick={() => void clubsQuery.refetch()}>Thử lại</Button>
         </Card>
-      ) : clubs.length === 0 ? (
+      ) : !activeClubId ? (
         <Card className="p-6 border-border text-sm text-muted-foreground">
           Bạn không có CLB nào để chốt lương (cần quyền chủ CLB hoặc kế toán CLB).
         </Card>
@@ -161,7 +163,7 @@ export default function StaffSalaryChot({ embedded }: { embedded?: boolean } = {
                   {activeClub?.name ?? "Chưa chọn CLB"} · {!view ? "chưa xác minh bảng lương" : hasRuns ? "số đã chốt (bất biến)" : "tạm tính (chưa chốt)"}
                 </p>
               </div>
-              {clubs.length > 1 && (
+              {scopedClubId === undefined && clubs.length > 1 && (
                 <div className="w-full sm:w-64">
                   <Select value={activeClubId ?? ""} onValueChange={setClubId}>
                     <SelectTrigger className="bg-background border-border">
