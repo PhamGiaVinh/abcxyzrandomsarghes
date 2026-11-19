@@ -1082,6 +1082,34 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT stack FROM public.online_poker_seats WHERE table_id='${missingBinding}' AND user_id='${first}'`), '100');
   assert.throws(() => sql(`UPDATE public.online_poker_seats SET user_id=NULL WHERE table_id='${missingBinding}'`),
     /online_satellite_roster_is_fixed/);
+  sql(file('../../supabase/pending-migrations/20261119222500_online_satellite_round_deal_fence.sql'));
+  const fast = 'ab510000-0000-4000-8000-000000000031';
+  const slow = 'ab510000-0000-4000-8000-000000000032';
+  sql(`INSERT INTO public.online_poker_tables(id,club_id,name,sb,bb,min_buyin,max_buyin,starting_stack_default,is_satellite)
+    VALUES ('${fast}','${clubId}','Disposable G04 fast table',5,10,0,1000,100,true),
+      ('${slow}','${clubId}','Disposable G04 slow table',5,10,0,1000,100,true);
+    INSERT INTO online_satellite_private.round_tables(table_id,pilot_id)
+    VALUES ('${fast}','${bubblePilot}'),('${slow}','${bubblePilot}');`);
+  const openRound = () => sql(`SELECT online_satellite_private.open_next_round('${bubblePilot}')`);
+  // Isolate the round trigger from the independent single-table level trigger.
+  // No production path disables the level check.
+  const fixtureRoundDeal = (table, round, status = 'complete') => `
+    INSERT INTO public.online_poker_hands(table_id,hand_no,status,state)
+    VALUES ('${table}',${round},'${status}',jsonb_build_object('satelliteRound','${round}'));`;
+  sql('ALTER TABLE public.online_poker_hands DISABLE TRIGGER trg_op_check_satellite_deal_level');
+  assert.equal(openRound(), '1');
+  sql(fixtureRoundDeal(fast, 1));
+  assert.throws(openRound, /online_satellite_round_still_playing/);
+  assert.throws(() => sql(fixtureRoundDeal(fast, 2)), /online_satellite_round_deal_not_available/);
+  sql(`BEGIN; ${fixtureRoundDeal(slow, 1)} ROLLBACK;`);
+  assert.throws(openRound, /online_satellite_round_still_playing/);
+  sql(fixtureRoundDeal(slow, 1));
+  assert.equal(openRound(), '2');
+  assert.throws(() => sql(fixtureRoundDeal(fast, 1)), /online_satellite_round_deal_not_available/);
+  sql('ALTER TABLE public.online_poker_hands ENABLE TRIGGER trg_op_check_satellite_deal_level');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands
+    WHERE table_id IN ('${fast}','${slow}') AND state ? 'satelliteRound'`), '0');
+  console.log('POSTGRES_SATELLITE_ROUND_WAIT_STALE_PERMIT_ROLLBACK_PASS');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
