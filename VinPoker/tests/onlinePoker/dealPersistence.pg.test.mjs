@@ -844,6 +844,11 @@ test('the shared server deal persists one native hand with consistent public and
     handId: provisionedDeal.handId, handNo: '1', stateVersion: 1, status: 'complete',
     survivingCount: 2, eliminations: [],
   });
+  sql(`UPDATE public.online_poker_seats SET status='sitting_out'
+    WHERE table_id='${setupReceipt.tableId}' AND user_id='${second}'`);
+  assert.equal(bubbleEvidence(first).survivingCount, 2, 'A status change cannot rewrite a settled hand');
+  sql(`UPDATE public.online_poker_seats SET status='sitting'
+    WHERE table_id='${setupReceipt.tableId}' AND user_id='${second}'`);
   const reapPractice = 'ab510000-0000-4000-8000-000000000020';
   const missingBinding = 'ab510000-0000-4000-8000-000000000022';
   sql(`

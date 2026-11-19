@@ -16,8 +16,18 @@ AS $$
   SELECT jsonb_build_object(
     'handId',id,'handNo',hand_no::text,'stateVersion',state_version,'status',status,
     'survivingCount', CASE WHEN status='complete' THEN (
-      SELECT count(*) FROM public.online_poker_seats s
-      WHERE s.table_id=latest.table_id AND s.status='sitting' AND s.stack>0
+      SELECT count(*)
+      FROM online_satellite_private.pilots pilot
+      JOIN online_satellite_private.entries entry ON entry.pilot_id=pilot.id
+      LEFT JOIN LATERAL (
+        SELECT seat.stack
+        FROM public.online_poker_hands previous
+        JOIN public.online_poker_hand_seats seat ON seat.hand_id=previous.id
+        WHERE previous.table_id=latest.table_id AND previous.status='complete'
+          AND previous.hand_no<=latest.hand_no AND seat.user_id=entry.player_user_id
+        ORDER BY previous.hand_no DESC LIMIT 1
+      ) observed ON true
+      WHERE pilot.id=p_pilot_id AND COALESCE(observed.stack,pilot.starting_stack)>0
     ) END,
     'eliminations', CASE WHEN status='complete' THEN COALESCE((
       SELECT jsonb_agg(jsonb_build_object('seat',s.seat_no,'startingStack',s.starting_stack::text)
