@@ -16,6 +16,7 @@ describe('explicit big-blind-first ante', () => {
     expect(events.find(event => event.type === 'blinds_posted')?.payload).toMatchObject({ bbSeat: 2, ante: '4' });
 
     const wire = serializeAuthoritative(state);
+    expect(wire.stateJson.config).toMatchObject({ schemaVersion: 2, bigBlindAnteSeat: 2 });
     const hydrated = deserializeAuthoritative(wire.stateJson, wire.liveDeck, wire.holes);
     expect(hydrated.config.bigBlindAnte).toBe(10n);
     expect(hydrated.seats.find(seat => seat.seat === 2)?.deadAnte).toBe(4n);
@@ -25,6 +26,25 @@ describe('explicit big-blind-first ante', () => {
     expect(folded.state.result?.refund).toEqual({ seat: 2, amount: 5n });
     expect(folded.state.result?.potTotal).toBe(14n);
     expect(totalChips(folded.state)).toBe(114n);
+  });
+
+  it('rejects a missing, moved or mislabeled persisted ante', () => {
+    const { state } = createHand({ ...config, bigBlindAnte: 10n }, makeDeck(), si([100n, 14n]));
+    const wire = serializeAuthoritative(state);
+    const load = (snapshot: typeof wire.stateJson) =>
+      deserializeAuthoritative(snapshot, wire.liveDeck, wire.holes);
+    const missing = structuredClone(wire.stateJson);
+    delete missing.seats[1].deadAnte;
+    expect(() => load(missing)).toThrow(/payer or amount/);
+    const wrongSeat = structuredClone(wire.stateJson);
+    wrongSeat.config.bigBlindAnteSeat = 1;
+    expect(() => load(wrongSeat)).toThrow(/payer or amount/);
+    const legacy = structuredClone(wire.stateJson);
+    legacy.config.schemaVersion = 1;
+    expect(() => load(legacy)).toThrow(/own hand schema/);
+    const noAnte = serializeAuthoritative(createHand(config, makeDeck(), si([100n, 100n])).state);
+    expect(noAnte.stateJson.config.schemaVersion).toBe(1);
+    expect(() => deserializeAuthoritative(noAnte.stateJson, noAnte.liveDeck, noAnte.holes)).not.toThrow();
   });
 
   it('leaves no ante when the big blind exhausts that stack', () => {

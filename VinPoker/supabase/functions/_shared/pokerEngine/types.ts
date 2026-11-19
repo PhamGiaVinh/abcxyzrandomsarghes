@@ -103,6 +103,8 @@ export interface HandConfig {
   bb: bigint;
   /** Explicit tournament option. The big blind is posted before this ante. */
   bigBlindAnte?: bigint;
+  /** The physical BB that was selected when this hand was dealt. */
+  bigBlindAnteSeat?: number;
   /** STATE-SHAPE version (NOT a CAS counter). Bump when the HandState JSON shape changes. */
   schemaVersion: number;
   /**
@@ -113,6 +115,8 @@ export interface HandConfig {
    */
   blindPlacement?: TournamentBlindPlacement;
 }
+
+export const BBA_STATE_SCHEMA_VERSION = 2;
 
 export interface PotAward {
   potIndex: number;        // index into the side-pot list (0 = main pot)

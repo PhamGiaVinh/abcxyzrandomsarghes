@@ -162,6 +162,7 @@ export interface WireHandConfig {
   sb: ChipString;
   bb: ChipString;
   bigBlindAnte?: ChipString;
+  bigBlindAnteSeat?: number;
   schemaVersion: number;
 }
 
@@ -269,6 +270,7 @@ function wirePublicFromView(view: PublicHandState): WirePublicHandState {
       sb: chipToString(view.config.sb),
       bb: chipToString(view.config.bb),
       ...(view.config.bigBlindAnte !== undefined ? { bigBlindAnte: chipToString(view.config.bigBlindAnte) } : {}),
+      ...(view.config.bigBlindAnteSeat !== undefined ? { bigBlindAnteSeat: view.config.bigBlindAnteSeat } : {}),
       schemaVersion: view.config.schemaVersion,
     },
     street: view.street,

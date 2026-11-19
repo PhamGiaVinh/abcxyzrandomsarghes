@@ -12,6 +12,7 @@ import {
   applyBettingAction, firstClockwiseFrom, nextActorAfter, validateAction,
 } from './betting.ts';
 import { computeSidePots, refundUncalled } from './pots.ts';
+import { BBA_STATE_SCHEMA_VERSION } from './types.ts';
 import { evaluateShowdown } from './showdown.ts';
 import {
   blindsPosted, boardRevealed, handComplete, handStarted, holeCardsDealt, potAwarded,
@@ -99,6 +100,10 @@ export function createHand(
   const blindPlacement = config.blindPlacement;
   const ante = config.bigBlindAnte ?? 0n;
   if (ante < 0n) throw new Error('big blind ante must be non-negative');
+  const schemaVersion = ante > 0n ? BBA_STATE_SCHEMA_VERSION : SCHEMA_VERSION;
+  if (config.schemaVersion !== undefined && config.schemaVersion !== schemaVersion) {
+    throw new Error('invalid hand schema version for ante format');
+  }
   const cfg: HandConfig = {
     handId: config.handId,
     tableId: config.tableId,
@@ -107,7 +112,7 @@ export function createHand(
     sb: config.sb,
     bb: config.bb,
     ...(ante > 0n ? { bigBlindAnte: ante } : {}),
-    schemaVersion: config.schemaVersion ?? SCHEMA_VERSION,
+    schemaVersion,
     ...(blindPlacement ? { blindPlacement } : {}),
   };
 
@@ -157,6 +162,7 @@ export function createHand(
 
   if (sbSeat) commit(state, sbSeat, sbSeat.stack < cfg.sb ? sbSeat.stack : cfg.sb);
   commit(state, bbSeat, bbSeat.stack < cfg.bb ? bbSeat.stack : cfg.bb);
+  if (ante > 0n) cfg.bigBlindAnteSeat = bbSeat.seat;
   const antePaid = bbSeat.stack < ante ? bbSeat.stack : ante;
   if (antePaid > 0n) {
     commit(state, bbSeat, antePaid);

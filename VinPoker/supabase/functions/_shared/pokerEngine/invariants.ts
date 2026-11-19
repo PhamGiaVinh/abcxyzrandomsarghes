@@ -54,7 +54,16 @@ export function checkInvariants(state: HandState, initialTotal?: bigint): string
       v.push(`seat ${s.seat}: in the hand with ${s.holeCards.length} hole cards (must be 2)`);
     }
   }
-  if (seats.filter(seat => (seat.deadAnte ?? 0n) > 0n).length > 1) v.push('more than one big blind ante payer');
+  const ante = state.config.bigBlindAnte ?? 0n;
+  if (ante > 0n) {
+    const payer = seats.find(seat => seat.seat === state.config.bigBlindAnteSeat);
+    const available = payer ? payer.startingStack - state.config.bb : 0n;
+    const expected = available <= 0n ? 0n : available < ante ? available : ante;
+    if (!payer || (payer.deadAnte ?? 0n) !== expected
+      || seats.some(seat => seat !== payer && (seat.deadAnte ?? 0n) !== 0n)) {
+      v.push('invalid big blind ante payer or amount');
+    }
+  }
 
   // ── pot sanity + conservation ──
   if (state.pot < 0n) v.push(`negative pot ${state.pot}`);

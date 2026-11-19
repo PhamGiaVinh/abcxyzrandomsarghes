@@ -15,7 +15,7 @@
 import type {
   Card, HandState, SeatState, SidePot, HandResult, PotAward,
 } from '../pokerEngine/types.ts';
-import { toWirePublicState, parseChip, checkInvariants } from '../pokerEngine/index.ts';
+import { BBA_STATE_SCHEMA_VERSION, SCHEMA_VERSION, toWirePublicState, parseChip, checkInvariants } from '../pokerEngine/index.ts';
 import type {
   WirePublicHandState, WirePublicSeat, WireSidePot, WireHandResult,
 } from '../pokerEngine/index.ts';
@@ -98,6 +98,19 @@ export function deserializeAuthoritative(
   liveDeck: Card[],
   holes: SeatHole[],
 ): HandState {
+  const version = wire.config.schemaVersion;
+  if (version !== SCHEMA_VERSION && version !== BBA_STATE_SCHEMA_VERSION) {
+    throw new Error('unsupported hand schema version');
+  }
+  if (version === BBA_STATE_SCHEMA_VERSION) {
+    if (wire.config.bigBlindAnte === undefined || parseChip(wire.config.bigBlindAnte) <= 0n
+      || !Number.isSafeInteger(wire.config.bigBlindAnteSeat)) {
+      throw new Error('missing big-blind ante configuration');
+    }
+  } else if (wire.config.bigBlindAnte !== undefined || wire.config.bigBlindAnteSeat !== undefined
+    || wire.seats.some(seat => seat.deadAnte !== undefined)) {
+    throw new Error('big-blind ante requires its own hand schema');
+  }
   const holesBySeat: Record<number, Card[]> = {};
   for (const h of holes) holesBySeat[h.seat] = h.cards;
 
@@ -110,6 +123,7 @@ export function deserializeAuthoritative(
       sb: parseChip(wire.config.sb),
       bb: parseChip(wire.config.bb),
       ...(wire.config.bigBlindAnte !== undefined ? { bigBlindAnte: parseChip(wire.config.bigBlindAnte) } : {}),
+      ...(wire.config.bigBlindAnteSeat !== undefined ? { bigBlindAnteSeat: wire.config.bigBlindAnteSeat } : {}),
       schemaVersion: wire.config.schemaVersion,
     },
     street: wire.street,
