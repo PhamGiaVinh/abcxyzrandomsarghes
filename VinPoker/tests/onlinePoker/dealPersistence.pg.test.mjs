@@ -1144,6 +1144,16 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT count(*) FROM online_satellite_private.round_deals
     WHERE pilot_id='${sharedPilot}' AND round_no=1 AND hand_id IS NOT NULL`), '2');
   console.log('POSTGRES_SHARED_SATELLITE_CLOCK_MANUAL_RUNNER_ROUND_PASS');
+  sql(file('../../supabase/pending-migrations/20261119224000_online_satellite_round_table_reads.sql'));
+  const visibleRoundTables = `SELECT json_build_object(
+    'tables', (SELECT count(*) FROM public.online_poker_tables WHERE id IN ('${tables.join("','")}')),
+    'hands', (SELECT count(*) FROM public.online_poker_hands WHERE table_id IN ('${tables.join("','")}')),
+    'secondaryHand', (SELECT count(*) FROM public.online_poker_hands WHERE table_id='${tables[1]}')); `;
+  const roundRead = actor => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}'; ${visibleRoundTables}`);
+  assert.deepEqual(roundRead(third), { tables: 1, hands: 1, secondaryHand: 1 });
+  assert.deepEqual(roundRead(first), { tables: 1, hands: 1, secondaryHand: 0 });
+  assert.deepEqual(json(`SET ROLE anon; ${visibleRoundTables}`), { tables: 0, hands: 0, secondaryHand: 0 });
+  console.log('POSTGRES_SATELLITE_SECONDARY_TABLE_ASSIGNED_READ_PASS');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
