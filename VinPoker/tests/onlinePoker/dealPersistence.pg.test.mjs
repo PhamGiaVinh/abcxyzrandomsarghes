@@ -712,6 +712,27 @@ test('the shared server deal persists one native hand with consistent public and
     json(visibleSatellite));
   assert.equal(sql(`SET ROLE anon; SELECT count(*) FROM public.online_poker_tables WHERE id='${tableId}'`), '1');
   assert.equal(sql(`SELECT state->'seats'->1->>'deadAnte' FROM public.online_poker_hands WHERE id='${anteHand}'`), '4');
+  const reapPractice = 'ab510000-0000-4000-8000-000000000020';
+  sql(`
+    ALTER TABLE public.online_poker_tables ADD COLUMN host_user_id uuid REFERENCES auth.users(id);
+    ALTER TABLE public.online_poker_seats ADD COLUMN last_seen_at timestamptz NOT NULL DEFAULT now();
+    ${archivedFunction('op_reap_stale_seats', '20260923000000_online_poker_seat_heartbeat.sql', 'historical-never-replay')}
+    REVOKE ALL ON FUNCTION public.op_reap_stale_seats(int) FROM PUBLIC;
+    GRANT EXECUTE ON FUNCTION public.op_reap_stale_seats(int) TO service_role;
+  `);
+  sql(file('../../supabase/pending-migrations/20261119205341_online_satellite_exclude_practice_reaper.sql'));
+  sql(`
+    INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default,host_user_id)
+    VALUES ('${reapPractice}','Disposable practice reaper TEST',5,10,0,1000,100,'${spectator}');
+    INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status,joined_at,last_seen_at)
+    VALUES ('${reapPractice}',1,'${spectator}',100,'sitting',now()-interval '2 hours',now()-interval '2 hours');
+    UPDATE public.online_poker_seats SET joined_at=now()-interval '2 hours',last_seen_at=now()-interval '2 hours'
+    WHERE table_id='${setupReceipt.tableId}';
+  `);
+  assert.deepEqual(json('SET ROLE service_role; SELECT public.op_reap_stale_seats(3600)'), { outcome: 'ok', reaped: 1 });
+  assert.equal(sql(`SELECT status FROM public.online_poker_seats WHERE table_id='${reapPractice}'`), 'empty');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_seats
+    WHERE table_id='${setupReceipt.tableId}' AND user_id IS NOT NULL AND stack=140`), '2');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
