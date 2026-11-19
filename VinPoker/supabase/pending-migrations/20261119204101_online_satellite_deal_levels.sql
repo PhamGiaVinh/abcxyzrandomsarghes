@@ -27,7 +27,7 @@ ALTER TABLE online_satellite_private.blind_levels ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON online_satellite_private.table_clocks, online_satellite_private.blind_levels
   FROM PUBLIC, anon, authenticated, service_role;
 
-CREATE FUNCTION public.op_read_satellite_deal_level(p_table_id uuid)
+CREATE FUNCTION public.op_read_satellite_deal_level(p_table_id uuid, p_actor_user_id uuid DEFAULT NULL)
 RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
@@ -35,6 +35,17 @@ AS $$
     SELECT CASE
       WHEN t.club_id IS DISTINCT FROM p.club_id OR l.starts_at_second IS NULL
         THEN jsonb_build_object('mode', 'unavailable')
+      WHEN p_actor_user_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM public.clubs club
+        LEFT JOIN online_satellite_private.registration_gate gate ON gate.club_id=club.id
+        WHERE club.id=p.club_id AND (
+          club.owner_id=p_actor_user_id OR (
+            gate.delegated_td_actor_id=p_actor_user_id AND gate.delegated_by=club.owner_id
+            AND EXISTS (SELECT 1 FROM public.club_floors f
+              WHERE f.club_id=club.id AND f.user_id=p_actor_user_id)
+          )
+        )
+      ) THEN jsonb_build_object('mode', 'unavailable')
       WHEN c.running_since IS NULL OR c.running_since > statement_timestamp()
         THEN jsonb_build_object('mode', 'paused')
       ELSE jsonb_build_object(
@@ -63,7 +74,7 @@ AS $$
   ) THEN 'unavailable' ELSE 'practice' END));
 $$;
 
-REVOKE ALL ON FUNCTION public.op_read_satellite_deal_level(uuid) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.op_read_satellite_deal_level(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.op_read_satellite_deal_level(uuid,uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.op_read_satellite_deal_level(uuid,uuid) TO service_role;
 
 COMMIT;

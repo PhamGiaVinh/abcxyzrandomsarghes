@@ -92,6 +92,7 @@ export async function dealNextHand(
 
   const { data: level, error: levelError } = await admin.rpc('op_read_satellite_deal_level', {
     p_table_id: tableId,
+    p_actor_user_id: actorUserId,
   });
   if (levelError || (level?.mode !== 'practice' && level?.mode !== 'ready')) {
     return { ok: false, tableId, reason: 'satellite_level_unavailable' };

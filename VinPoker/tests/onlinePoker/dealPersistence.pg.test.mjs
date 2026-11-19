@@ -161,9 +161,10 @@ test('the shared server deal persists one native hand with consistent public and
   sql(file('../../supabase/pending-migrations/20261119204831_online_satellite_private_table_reads.sql'));
   sql(`GRANT SELECT ON public.online_poker_tables, public.online_poker_seats,
     public.online_poker_hand_snapshots TO anon, authenticated`);
-  const level = (id = tableId) => {
+  const level = (id = tableId, actor = null) => {
     assert.match(id, /^[0-9a-f-]{36}$/);
-    return json(`SET ROLE service_role; SELECT public.op_read_satellite_deal_level('${id}')`);
+    if (actor !== null) assert.match(actor, /^[0-9a-f-]{36}$/);
+    return json(`SET ROLE service_role; SELECT public.op_read_satellite_deal_level('${id}',${actor ? `'${actor}'` : 'NULL'})`);
   };
   assert.deepEqual(level(), { mode: 'practice' });
   const clubId = 'ab510000-0000-4000-8000-000000000016';
@@ -258,7 +259,7 @@ test('the shared server deal persists one native hand with consistent public and
       return query;
     },
     async rpc(name, args) {
-      if (name === 'op_read_satellite_deal_level') return { data: level(args.p_table_id), error: null };
+      if (name === 'op_read_satellite_deal_level') return { data: level(args.p_table_id, args.p_actor_user_id), error: null };
       assert.equal(name, 'op_start_hand');
       const data = json(startStatement(args));
       return { data, error: null };
@@ -758,7 +759,9 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SET ROLE anon; SELECT count(*) FROM public.online_poker_tables WHERE id='${tableId}'`), '1');
   assert.equal(sql(`SELECT state->'seats'->1->>'deadAnte' FROM public.online_poker_hands WHERE id='${anteHand}'`), '4');
   assert.deepEqual(clockCommand(first, setupPilot, 3, true), { outcome: 'ok', revision: '4', running: true });
-  const provisionedDeal = await dealNextHand(admin, setupReceipt.tableId, null);
+  assert.equal((await dealNextHand(admin, setupReceipt.tableId, spectator)).reason, 'satellite_level_unavailable');
+  assert.equal((await dealNextHand(admin, setupReceipt.tableId, second)).reason, 'satellite_level_unavailable');
+  const provisionedDeal = await dealNextHand(admin, setupReceipt.tableId, first);
   assert.equal(provisionedDeal.ok, true, JSON.stringify(provisionedDeal));
   assert.deepEqual(clockCommand(first, setupPilot, 4, false), { outcome: 'ok', revision: '5', running: false });
   const reopenSatellite = (actor) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
