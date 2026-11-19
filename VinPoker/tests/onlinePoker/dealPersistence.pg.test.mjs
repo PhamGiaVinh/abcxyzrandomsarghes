@@ -733,6 +733,15 @@ test('the shared server deal persists one native hand with consistent public and
     /online_satellite_hand_history_is_retained/);
   assert.throws(() => sql(`DELETE FROM public.online_poker_hand_seats WHERE hand_id='${anteHand}'`),
     /online_satellite_hand_history_is_retained/);
+  sql(`GRANT SELECT, DELETE ON public.online_poker_hands, public.online_poker_hand_seats TO service_role`);
+  assert.throws(() => sql(`SET ROLE service_role; DELETE FROM public.online_poker_hands WHERE id='${anteHand}'`),
+    /online_satellite_hand_history_is_retained/);
+  assert.deepEqual(JSON.parse(sql(`BEGIN; SET LOCAL ROLE service_role;
+    WITH removed AS (DELETE FROM public.online_poker_hand_seats WHERE hand_id='${sideHand}' RETURNING 1)
+    SELECT json_build_object('practiceSeatsRemoved',count(*)) FROM removed;
+    DELETE FROM public.online_poker_hands WHERE id='${sideHand}';
+    ROLLBACK;`)), { practiceSeatsRemoved: 3 });
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE id='${sideHand}'`), '1');
   assert.equal(sql(`SET ROLE anon; SELECT count(*) FROM public.online_poker_tables WHERE id='${tableId}'`), '1');
   assert.equal(sql(`SELECT state->'seats'->1->>'deadAnte' FROM public.online_poker_hands WHERE id='${anteHand}'`), '4');
   assert.deepEqual(clockCommand(first, setupPilot, 3, true), { outcome: 'ok', revision: '4', running: true });

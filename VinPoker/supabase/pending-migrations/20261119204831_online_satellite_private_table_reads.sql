@@ -46,7 +46,7 @@ CREATE POLICY op_satellite_snapshot_scope ON public.online_poker_hand_snapshots
 -- Realtime DELETE records may bypass SELECT policies. Retain pilot history;
 -- a future retention path must account for the publication before deleting.
 CREATE FUNCTION online_satellite_private.retain_pilot_hand()
-RETURNS trigger LANGUAGE plpgsql SET search_path = ''
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $$
 DECLARE
   source_table uuid;
