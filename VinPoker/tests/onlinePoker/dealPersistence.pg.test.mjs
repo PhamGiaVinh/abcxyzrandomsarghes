@@ -145,6 +145,7 @@ test('the shared server deal persists one native hand with consistent public and
     ${registration.stdout}
   `);
   sql(file('../../supabase/pending-migrations/20261119204101_online_satellite_deal_levels.sql'));
+  sql(file('../../supabase/pending-migrations/20261119204315_online_satellite_deal_commit_fence.sql'));
   const level = () => json(`SET ROLE service_role; SELECT public.op_read_satellite_deal_level('${tableId}')`);
   assert.deepEqual(level(), { mode: 'practice' });
   const clubId = 'ab510000-0000-4000-8000-000000000016';
@@ -563,11 +564,32 @@ test('the shared server deal persists one native hand with consistent public and
   }, [...deck], [{ seat: 2, playerId: first, stack: 100n }, { seat: 5, playerId: second, stack: 14n }]);
   assert.equal(anteDeal.error, undefined);
   const anteSplit = serializeAuthoritative(anteDeal.state);
-  const anteReceipt = await admin.rpc('op_start_hand', {
+  const anteArgs = {
     p_state: anteSplit.stateJson, p_deck: deck, p_board_future: anteSplit.liveDeck,
     p_holes: anteSplit.holes, p_events: anteDeal.events.map(({ type, payload }) => ({ type, payload })),
     p_engine_version: ENGINE_VERSION, p_act_deadline: '2030-01-01T12:00:00Z', p_actor_user_id: null,
-  });
+  };
+  sql(`
+    UPDATE public.online_poker_tables SET club_id='${clubId}' WHERE id='${anteTable}';
+    INSERT INTO online_satellite_private.blind_levels VALUES ('${pilotId}',120,5,10,10);
+    INSERT INTO online_satellite_private.table_clocks(table_id,pilot_id,elapsed_seconds,running_since,revision)
+      VALUES ('${anteTable}','${pilotId}',120,statement_timestamp(),2);
+  `);
+  assert.throws(() => json(startStatement(anteArgs)), /online_satellite_stale_deal_level/);
+  const currentAnteArgs = {
+    ...anteArgs,
+    p_state: { ...anteArgs.p_state, satelliteLevel: { clockRevision: '2', levelStartSecond: '120' } },
+  };
+  assert.throws(() => json(startStatement(currentAnteArgs)), /online_satellite_deal_roster_invalid/);
+  sql(`INSERT INTO online_satellite_private.entries(pilot_id,player_user_id)
+    VALUES ('${pilotId}','${first}'), ('${pilotId}','${second}')`);
+  const staleAnteArgs = {
+    ...currentAnteArgs,
+    p_state: { ...currentAnteArgs.p_state, satelliteLevel: { clockRevision: '2', levelStartSecond: '60' } },
+  };
+  assert.throws(() => json(startStatement(staleAnteArgs)), /online_satellite_stale_deal_level/);
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${anteTable}'`), '0');
+  const anteReceipt = await admin.rpc('op_start_hand', currentAnteArgs);
   assert.equal(anteReceipt.data?.outcome, 'ok', JSON.stringify(anteReceipt));
   assert.equal(sql(`SELECT state_schema_version FROM public.online_poker_hands WHERE id='${anteHand}'`), '2');
   const fold = { type: 'fold', seat: 2 };
