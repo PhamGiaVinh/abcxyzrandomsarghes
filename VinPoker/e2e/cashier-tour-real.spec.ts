@@ -2282,23 +2282,31 @@ test('measures bounded Floor alerts on isolated PostgREST', async ({ page }) => 
   const oldTour = 'a3000000-0000-4000-8000-000000000001';
   const open = ['open', 'acknowledged', 'in_progress'];
   const columns = 'id,tournament_id,physical_table_id,hand_id,title,priority,status';
-  const observations: { status: number; requestBytes: number; responseBytes: number; ms: number }[] = [];
+  type Attempt = {
+    arm: 'baseline' | 'bounded'; sample: number;
+    status: number | null; requestBytes: number | null;
+    responseBytes: number | null; ms: number; transportFailure: boolean;
+  };
+  let attempt: Attempt | undefined;
   const makeReader = (actorToken: string) => createClient(api, anon, {
     auth: { persistSession: false, autoRefreshToken: false },
     global: {
       headers: { Authorization: `Bearer ${actorToken}` },
       fetch: async (input, init) => {
         const url = new URL(String(input));
-        const start = performance.now();
-        const response = await fetch(input, { ...init, signal: AbortSignal.timeout(3_000) });
-        const payload = await response.clone().arrayBuffer();
-        observations.push({
-          status: response.status,
-          requestBytes: Buffer.byteLength(url.pathname + url.search),
-          responseBytes: payload.byteLength,
-          ms: performance.now() - start,
-        });
-        return response;
+        const current = attempt;
+        if (current) current.requestBytes = Buffer.byteLength(url.pathname + url.search);
+        try {
+          const response = await fetch(input, { ...init, signal: AbortSignal.timeout(3_000) });
+          if (current) {
+            current.status = response.status;
+            current.responseBytes = (await response.clone().arrayBuffer()).byteLength;
+          }
+          return response;
+        } catch (error) {
+          if (current) current.transportFailure = true;
+          throw error;
+        }
       },
     },
   });
@@ -2356,8 +2364,18 @@ test('measures bounded Floor alerts on isolated PostgREST', async ({ page }) => 
   for (const size of [10, 100, 1000]) {
     const ids = [oldTour, ...Array.from({ length: size - 1 }, (_, index) =>
       'bd300000-0000-4000-8000-' + String(index + 1).padStart(12, '0'))];
-    const baselineStart = observations.length;
+    const responseSamples: Attempt[] = [];
     const errors = { baseline: 0, bounded: 0 };
+    const run = async (arm: Attempt['arm'], sample: number, read: () => Promise<void>) => {
+      const row: Attempt = { arm, sample, status: null, requestBytes: null, responseBytes: null, ms: 0, transportFailure: false };
+      const start = performance.now();
+      attempt = row;
+      try { await read(); } finally {
+        row.ms = performance.now() - start;
+        responseSamples.push(row);
+        attempt = undefined;
+      }
+    };
     for (let sample = 0; sample < 12; sample++) {
       const existing = async () => {
         const result = await reader.from('tracker_floor_alerts').select(columns)
@@ -2371,10 +2389,10 @@ test('measures bounded Floor alerts on isolated PostgREST', async ({ page }) => 
         else expect(result.data).toHaveLength(51);
       };
       // Alternate order to avoid giving either reader all the cold calls.
-      if (sample % 2 === 0) { await existing(); await candidate(); }
-      else { await candidate(); await existing(); }
+      if (sample % 2 === 0) { await run('baseline', sample, existing); await run('bounded', sample, candidate); }
+      else { await run('bounded', sample, candidate); await run('baseline', sample, existing); }
     }
-    scenarios.push({ size, errors, responseSamples: observations.slice(baselineStart) });
+    scenarios.push({ size, errors, responseSamples });
   }
   writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/, '-floor-alert-read-http.json'), JSON.stringify({
     kind: 'ISOLATED_FLOOR_ALERT_HTTP_COMPARISON',
