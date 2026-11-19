@@ -24,6 +24,7 @@ import { retryFetch } from "../_shared/retry.ts";
 import { parseBody, z } from "../_shared/validate.ts";
 import { corsHeaders, handleOptions, jsonResp } from "../_shared/cors.ts";
 import { buildLog, newCid, now } from "./log.ts";
+import { nextHandPosition } from "../_shared/pokerRuntime/dealNextHand.ts";
 import {
   applyAction, createHand, shuffledDeck, cryptoRng32,
   actionFromRequest, classifyActionError, toWireLegalActions,
@@ -218,13 +219,13 @@ async function handleStart(
     .select("hand_no, button_seat")
     .eq("table_id", body.tableId)
     .order("hand_no", { ascending: false }).limit(1).maybeSingle();
-  if (lastError) {
+  const seatNos = seated.map((s) => s.seat_no).sort((a, b) => a - b);
+  const position = lastError ? null : nextHandPosition(last, seatNos);
+  if (!position) {
     log("previous_hand_unavailable", { table_id: tid, http: 503 });
     return json({ error: "previous_hand_unavailable" }, 503);
   }
-  const handNo = Number(last?.hand_no ?? 0) + 1;
-  const seatNos = seated.map((s) => s.seat_no).sort((a, b) => a - b);
-  const button = nextButton(last?.button_seat ?? null, seatNos);
+  const { handNo, button } = position;
 
   const handId = crypto.randomUUID();
   const seatInputs = buildSeatInputs(seated);
@@ -366,11 +367,4 @@ async function handleLegal(
   const legal = toWireLegalActions(state, mine.seat);
   log("ok", { hand_id: hid, http: 200 });
   return json({ ok: true, legal, mySeat: mine.seat }, 200);
-}
-
-/** Next button seat clockwise after the previous button among seated seats. */
-function nextButton(prev: number | null, seatNos: number[]): number {
-  if (prev == null) return seatNos[0];
-  const after = seatNos.filter((s) => s > prev);
-  return after.length ? after[0] : seatNos[0];
 }

@@ -38,6 +38,19 @@ export function nextButton(prev: number | null, seatNos: number[]): number {
   return after.length ? after[0] : seatNos[0];
 }
 
+/** Both deal paths use the same confirmed hand sequence and clockwise rotation. */
+export function nextHandPosition(previous: { hand_no: unknown; button_seat: unknown } | null, seatNos: number[]) {
+  if (previous === null) return { handNo: 1, button: nextButton(null, seatNos) };
+  if (!previous || typeof previous !== 'object') return null;
+  const rawHandNo = previous.hand_no;
+  const handNo = typeof rawHandNo === 'number' || (typeof rawHandNo === 'string' && /^\d+$/.test(rawHandNo))
+    ? Number(rawHandNo) : NaN;
+  const button = previous.button_seat;
+  if (!Number.isSafeInteger(handNo) || handNo < 1 || handNo >= Number.MAX_SAFE_INTEGER
+    || typeof button !== 'number' || !Number.isInteger(button) || button < 1 || button > 10) return null;
+  return { handNo: handNo + 1, button: nextButton(button, seatNos) };
+}
+
 /**
  * Read the table + funded seats, advance the button, run the engine to build a hand, and
  * persist it via op_start_hand. Returns a discriminated result; never throws on a normal
@@ -71,10 +84,10 @@ export async function dealNextHand(
     .eq('table_id', tableId)
     .order('hand_no', { ascending: false }).limit(1).maybeSingle();
 
-  if (lastError) return { ok: false, tableId, reason: 'previous_hand_unavailable' };
-  const handNo = Number(last?.hand_no ?? 0) + 1;
   const seatNos = seated.map((s) => s.seat_no).sort((a, b) => a - b);
-  const button = nextButton(last?.button_seat ?? null, seatNos);
+  const position = lastError ? null : nextHandPosition(last, seatNos);
+  if (!position) return { ok: false, tableId, reason: 'previous_hand_unavailable' };
+  const { handNo, button } = position;
 
   const handId = crypto.randomUUID();
   const seatInputs = buildSeatInputs(seated);

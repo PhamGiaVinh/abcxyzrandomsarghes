@@ -7,7 +7,14 @@
 
 import { describe, it, expect } from 'vitest';
 import { runTableRunner } from '../../supabase/functions/_shared/pokerRuntime/tableRunner.ts';
-import { nextButton } from '../../supabase/functions/_shared/pokerRuntime/dealNextHand.ts';
+import { nextButton, nextHandPosition } from '../../supabase/functions/_shared/pokerRuntime/dealNextHand.ts';
+
+it('uses a confirmed first hand or rotates after a valid previous hand, refusing malformed history', () => {
+  expect(nextHandPosition(null, [2, 5])).toEqual({ handNo: 1, button: 2 });
+  expect(nextHandPosition({ hand_no: '7', button_seat: 5 }, [2, 5])).toEqual({ handNo: 8, button: 2 });
+  expect(nextHandPosition({ hand_no: null, button_seat: 2 }, [2, 5])).toBeNull();
+  expect(nextHandPosition({ hand_no: 7, button_seat: null }, [2, 5])).toBeNull();
+});
 
 interface Stage {
   enabled?: boolean;
