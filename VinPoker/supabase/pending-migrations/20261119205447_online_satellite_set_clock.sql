@@ -78,4 +78,32 @@ $$;
 REVOKE ALL ON FUNCTION public.set_online_satellite_clock_v1(uuid,bigint,boolean) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.set_online_satellite_clock_v1(uuid,bigint,boolean) TO authenticated;
 
+-- Scope the reconnect snapshot to the registered player or current club manager.
+CREATE FUNCTION public.get_online_satellite_table_v1(p_pilot_id uuid)
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT jsonb_build_object(
+    'tableId',t.id,'clockRevision',c.revision::text,'running',c.running_since IS NOT NULL,
+    'status',t.status,'canManage',access.can_manage,'canPlay',access.can_play
+  )
+  FROM online_satellite_private.pilots p
+  JOIN public.clubs club ON club.id=p.club_id
+  JOIN online_satellite_private.table_clocks c ON c.pilot_id=p.id
+  JOIN public.online_poker_tables t ON t.id=c.table_id AND t.club_id=p.club_id
+  LEFT JOIN online_satellite_private.registration_gate g ON g.club_id=p.club_id
+  CROSS JOIN (SELECT auth.uid() AS actor) caller
+  CROSS JOIN LATERAL (
+    SELECT COALESCE(caller.actor = club.owner_id OR (
+      caller.actor = g.delegated_td_actor_id AND g.delegated_by = club.owner_id
+      AND EXISTS (SELECT 1 FROM public.club_floors f WHERE f.club_id=p.club_id AND f.user_id=caller.actor)
+    ),false) AS can_manage,
+    EXISTS (SELECT 1 FROM online_satellite_private.entries e
+      WHERE e.pilot_id=p.id AND e.player_user_id=caller.actor) AS can_play
+  ) access
+  WHERE p.id=p_pilot_id AND caller.actor IS NOT NULL AND (access.can_manage OR access.can_play);
+$$;
+
+REVOKE ALL ON FUNCTION public.get_online_satellite_table_v1(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_online_satellite_table_v1(uuid) TO authenticated;
+
 COMMIT;

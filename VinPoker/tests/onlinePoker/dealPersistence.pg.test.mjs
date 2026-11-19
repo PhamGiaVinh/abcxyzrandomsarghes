@@ -258,6 +258,12 @@ test('the shared server deal persists one native hand with consistent public and
   const provisionedDeal = await dealNextHand(admin, setupReceipt.tableId, null);
   assert.equal(provisionedDeal.ok, true, JSON.stringify(provisionedDeal));
   assert.deepEqual(clockCommand(first, setupPilot, 4, false), { outcome: 'ok', revision: '5', running: false });
+  const reopenSatellite = (actor) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT COALESCE(public.get_online_satellite_table_v1('${setupPilot}'),'null'::jsonb)`);
+  assert.deepEqual(reopenSatellite(first), { tableId: setupReceipt.tableId, clockRevision: '5',
+    running: false, status: 'paused', canManage: true, canPlay: true });
+  assert.deepEqual(reopenSatellite(second), { ...reopenSatellite(first), canManage: false });
+  assert.equal(reopenSatellite(spectator), null);
   const provisionedContext = json(`SET ROLE service_role;
     SELECT public.op_load_action_context('${provisionedDeal.handId}')`);
   const provisionedState = deserializeAuthoritative(
