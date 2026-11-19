@@ -123,7 +123,7 @@ test('the shared server deal persists one native hand with consistent public and
     CREATE TRIGGER trg_op_close_empty AFTER UPDATE OF user_id ON public.online_poker_seats
     FOR EACH ROW WHEN (OLD.user_id IS NOT NULL AND NEW.user_id IS NULL)
     EXECUTE FUNCTION public.op_close_table_if_empty();
-    INSERT INTO auth.users VALUES ('${first}'), ('${second}'), ('${spectator}');
+    INSERT INTO auth.users(id) VALUES ('${first}'), ('${second}'), ('${spectator}');
     INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
     VALUES ('${tableId}','Disposable TEST',5,10,0,1000,100);
     INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status)
@@ -500,7 +500,7 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal((await admin.rpc('op_start_hand', ordinaryArgs)).data.detail, 'stale seat roster');
   assert.equal(sql(`SELECT stack FROM public.online_poker_seats WHERE table_id='${pausedTable}' AND seat_no=7`), '25');
   const third = 'ab510000-0000-4000-8000-000000000010';
-  sql(`INSERT INTO auth.users VALUES ('${third}');
+  sql(`INSERT INTO auth.users(id) VALUES ('${third}');
     UPDATE public.online_poker_seats SET user_id='${third}'
     WHERE table_id='${pausedTable}' AND seat_no=7`);
   assert.equal((await admin.rpc('op_start_hand', ordinaryArgs)).data.detail, 'stale seat roster');
