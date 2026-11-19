@@ -1206,6 +1206,12 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(reconnectRound(survivor.actor).tableId, tables[0]);
   assert.equal(roundRead(survivor.actor).secondaryHand, 0);
   console.log('POSTGRES_SATELLITE_ROUND_MOVE_CONSERVE_RECONNECT_PASS');
+  sql(file('../../supabase/pending-migrations/20261119232000_online_satellite_require_round_results.sql'));
+  assert.deepEqual(lockResult(first,sharedPilot), { outcome: 'round_result_required' });
+  assert.throws(() => lockResult(third,sharedPilot), /SATELLITE_PILOT_MANAGER_REQUIRED/);
+  assert.deepEqual(lockResult(first,boundaryPilot), { outcome: 'ok', idempotent: true, qualifiedCount: 2 });
+  assert.equal(sql(`SELECT count(*) FROM online_satellite_private.locked_results WHERE pilot_id='${sharedPilot}'`), '0');
+  console.log('POSTGRES_SATELLITE_ROUND_REJECTS_PARTIAL_RESULT_LOCK_PASS');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
