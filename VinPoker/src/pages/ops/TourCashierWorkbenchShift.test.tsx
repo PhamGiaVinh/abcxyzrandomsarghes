@@ -849,26 +849,29 @@ describe("closed Cashier shift correction", () => {
     const reads = () => mock.rpc.mock.calls.filter(([name]) => name === 'cashier_tour_worklist_v1');
     const initial = reads().length;
     const bootstrapReads = mock.tourIs.mock.calls.length;
-    const query = 'TEST-scan';
     vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});
     try {
-      for (let index = 1; index <= query.length; index++) {
-        fireEvent.change(scanner, {target:{value:query.slice(0,index)}});
-        await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      for (let scan = 0; scan < 20; scan++) {
+        const code = `TEST-scan-${scan}`;
+        const query = JSON.stringify({ receipt_code: code });
+        for (let index = 1; index <= query.length; index++) {
+          fireEvent.change(scanner, { target: { value: query.slice(0, index) } });
+          await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+        }
+        expect(reads()).toHaveLength(initial + scan);
+        fireEvent.keyDown(scanner, { key: 'Enter' });
+        await act(async () => {});
+        expect(reads()).toHaveLength(initial + scan + 1);
+        expect(reads().at(-1)?.[1]).toMatchObject({ p_query: code, p_bucket: 'all' });
       }
-      expect(reads()).toHaveLength(initial);
-      fireEvent.keyDown(scanner, {key:'Enter'});
-      await act(async () => {});
-      expect(reads()).toHaveLength(initial + 1);
-      expect(reads().at(-1)?.[1]).toMatchObject({p_query:query,p_bucket:'all'});
       await act(async () => { await vi.advanceTimersByTimeAsync(180); });
-      expect(reads()).toHaveLength(initial + 1);
+      expect(reads()).toHaveLength(initial + 20);
       expect(mock.tourIs).toHaveBeenCalledTimes(bootstrapReads);
       fireEvent.change(scanner, {target:{value:'search'}});
       await act(async () => { await vi.advanceTimersByTimeAsync(179); });
-      expect(reads()).toHaveLength(initial + 1);
+      expect(reads()).toHaveLength(initial + 20);
       await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-      expect(reads()).toHaveLength(initial + 2);
+      expect(reads()).toHaveLength(initial + 21);
       expect(reads().at(-1)?.[1]).toMatchObject({p_query:'search'});
     } finally { cleanup(); vi.useRealTimers(); }
   });
