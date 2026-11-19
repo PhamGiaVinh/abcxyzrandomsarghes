@@ -3,11 +3,15 @@ import { chromium } from '@playwright/test';
 import { createServer } from 'node:http';
 import { createServer as createVite } from 'vite';
 
-export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketScenario }) {
+export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketScenario, twoTablePilot }) {
   const statements = {
     get_online_satellite_table_v1: "public.get_online_satellite_table_v1((p->>'p_pilot_id')::uuid)",
     provision_online_satellite_table_v1:
       "public.provision_online_satellite_table_v1((p->>'p_pilot_id')::uuid,p->'p_levels',(p->>'p_qualification_slots')::integer)",
+    provision_online_satellite_two_tables_v1:
+      "public.provision_online_satellite_two_tables_v1((p->>'p_pilot_id')::uuid,p->'p_levels',(p->>'p_qualification_slots')::integer)",
+    open_online_satellite_round_v1:
+      "public.open_online_satellite_round_v1((p->>'p_pilot_id')::uuid,(p->>'p_expected_round')::bigint)",
     set_online_satellite_clock_v1:
       "public.set_online_satellite_clock_v1((p->>'p_pilot_id')::uuid,(p->>'p_expected_revision')::bigint,(p->>'p_running')::boolean)",
     get_my_online_satellite_result_v1: "public.get_my_online_satellite_result_v1((p->>'p_pilot_id')::uuid)",
@@ -94,6 +98,22 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketSce
     await participant.getByText('Đã tạo entry TEST tại giải đích.', { exact: true }).waitFor();
     assert.equal(entry(), firstEntry);
     console.log('CHROMIUM_SATELLITE_TICKET_ISSUE_LOST_REPLY_AND_REDEEM_DISTINCT_ACTORS_PASS');
+    await page.goto(fixtureUrl(actor, twoTablePilot));
+    await page.getByRole('checkbox', { name: /Tạo hai bàn TEST/ }).check();
+    await page.getByRole('spinbutton', { name: 'Số suất TEST', exact: true }).fill('2');
+    await page.getByRole('spinbutton', { name: 'Small blind', exact: true }).fill('5');
+    await page.getByRole('spinbutton', { name: 'Big blind', exact: true }).fill('10');
+    await page.getByRole('button', { name: 'Tạo bàn và khóa lịch' }).click();
+    await page.getByRole('button', { name: 'Chạy đồng hồ' }).click();
+    await page.getByText('Đồng hồ đang chạy', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Mở vòng tiếp theo' }).click();
+    await page.getByText('Đã mở vòng chơi.', { exact: true }).waitFor();
+    assert.equal(sql(`SELECT count(*) FROM online_satellite_private.round_deals
+      WHERE pilot_id='${twoTablePilot}' AND round_no=1 AND hand_id IS NULL`), '2');
+    await page.reload();
+    await page.getByRole('button', { name: 'Mở vòng tiếp theo' }).click();
+    await page.getByText('Còn bàn chưa hoàn tất vòng hiện tại.', { exact: true }).waitFor();
+    console.log('CHROMIUM_SATELLITE_PROVISION_TWO_TABLES_OPEN_ROUND_PASS');
   } finally {
     await browser?.close();
     await vite?.close();
