@@ -83,16 +83,24 @@ test('retry through the Edge handler returns the committed terminal action after
       return { data: stored.response, error: null };
     },
   };
-  const user = { auth: { getUser: async () => ({ data: { user: { id: actor } }, error: null }) } };
+  let requestActor = actor;
+  const user = { auth: { getUser: async () => ({ data: { user: { id: requestActor } }, error: null }) } };
   const handler = loadCreateAction((_url, key) => key === 'ANON_TEST' ? user : admin, [], undefined, dealNextHand, { engine, adapter });
-  const request = () => new Request('http://local.invalid/action', {
+  const request = (type = 'fold') => new Request('http://local.invalid/action', {
     method: 'POST', headers: { authorization: 'Bearer LOCAL_TEST_ONLY', 'content-type': 'application/json' },
-    body: JSON.stringify({ op: 'submit_action', handId, seat: 2, type: 'fold', idempotencyKey: 'terminal-fold-fixture' }),
+    body: JSON.stringify({ op: 'submit_action', handId, seat: 2, type, idempotencyKey: 'terminal-fold-fixture' }),
   });
   assert.equal((await handler(request())).status, 200);
   assert.equal(context.state.status, 'complete');
   const retry = await handler(request());
   assert.equal(retry.status, 200);
-  assert.equal((await retry.json()).stateVersion, 1);
+  assert.deepEqual(await retry.json(), { ok: true, handId, stateVersion: 1 });
+  const changedIntent = await handler(request('call'));
+  assert.equal(changedIntent.status, 409);
+  assert.equal(Object.hasOwn(await changedIntent.json(), 'view'), false);
+  requestActor = opponent;
+  const foreign = await handler(request());
+  assert.equal(foreign.status, 409);
+  assert.deepEqual(await foreign.json(), { ok: false, code: 'forbidden' });
   assert.equal(committed, 1);
 });

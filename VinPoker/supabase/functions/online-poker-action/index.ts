@@ -226,6 +226,37 @@ async function handleSubmit(
   log: LogDone,
 ): Promise<Response> {
   const hid = body.handId;
+  let action;
+  try {
+    action = actionFromRequest(body);
+  } catch {
+    log("bad_request", { hand_id: hid, http: 400 });
+    return json({ ok: false, code: "bad_request" }, 400);
+  }
+  const actionRow = actionToRow(action);
+  const readReceipt = async () => {
+    const { data, error } = await admin.from("online_poker_actions")
+      .select("user_id,hand_id,action,response")
+      .eq("idempotency_key", body.idempotencyKey)
+      .maybeSingle();
+    if (error) return { kind: "unavailable" } as const;
+    if (!data) return { kind: "missing" } as const;
+    const stored = data.action;
+    const response = data.response;
+    if (data.user_id !== uid || data.hand_id !== hid || !stored
+      || stored.type !== actionRow.type || stored.seat !== actionRow.seat || stored.amount !== actionRow.amount
+      || response?.outcome !== "ok" || response.hand_id !== hid
+      || !Number.isSafeInteger(response.state_version) || response.state_version < 1) {
+      return { kind: "conflict" } as const;
+    }
+    return { kind: "committed", stateVersion: response.state_version as number } as const;
+  };
+  const acknowledgeReceipt = (stateVersion: number, attempt: number) => {
+    // The original post-action view may have been superseded. The client
+    // already refreshes on a successful response without a view.
+    log("receipt_recovered", { hand_id: hid, attempt, http: 200 });
+    return json({ ok: true, handId: hid, stateVersion }, 200);
+  };
   for (let attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
     const tryNo = attempt + 1; // 1-based for human-readable logs
     const { data: ctx, error: lErr } = await admin.rpc("op_load_action_context", { p_hand_id: body.handId });
@@ -245,20 +276,16 @@ async function handleSubmit(
       return json({ error: "state_error" }, 500); // G1: no invariant message (may name a card)
     }
 
-    let action;
-    try {
-      action = actionFromRequest({
-        handId: body.handId, seat: body.seat, type: body.type,
-        amount: body.amount, idempotencyKey: body.idempotencyKey,
-      });
-    } catch (_e) {
-      log("bad_request", { hand_id: hid, attempt: tryNo, http: 400 });
-      return json({ ok: false, code: "bad_request" }, 400);
+    if (!state.seats.some(seat => seat.seat === body.seat && seat.playerId === uid)) {
+      log("forbidden", { hand_id: hid, attempt: tryNo, http: 409 });
+      return json({ ok: false, code: "forbidden" }, 409);
     }
 
     // Server-authoritative validation: the engine decides legality.
     const result = applyAction(state, action);
     if (result.error) {
+      const receipt = await readReceipt();
+      if (receipt.kind === "committed") return acknowledgeReceipt(receipt.stateVersion, tryNo);
       log(classifyActionError(result.error), { hand_id: hid, attempt: tryNo, http: 409 });
       return json({ ok: false, code: classifyActionError(result.error), message: result.error }, 409);
     }
@@ -271,7 +298,7 @@ async function handleSubmit(
     const { data: sub, error: subErr } = await admin.rpc("op_submit_action", {
       p_hand_id: body.handId,
       p_actor_user_id: uid,
-      p_action: actionToRow(action),
+      p_action: actionRow,
       p_new_state: split.stateJson,
       p_board_future: split.liveDeck,
       p_events: result.events.map((e) => ({ type: e.type, payload: e.payload })),
@@ -279,13 +306,31 @@ async function handleSubmit(
       p_act_deadline: deadline,
       p_idempotency_key: body.idempotencyKey,
     });
-    if (subErr) { log("submit_failed", { hand_id: hid, attempt: tryNo, http: 400 }); return json({ error: "submit_failed" }, 400); }
+    if (subErr) {
+      const receipt = await readReceipt();
+      if (receipt.kind === "committed") return acknowledgeReceipt(receipt.stateVersion, tryNo);
+      log("submit_failed", { hand_id: hid, attempt: tryNo, http: 400 });
+      return json({ error: "submit_failed" }, 400);
+    }
     if (sub?.outcome === "race_lost") { log("race_lost", { hand_id: hid, attempt: tryNo }); continue; } // re-load and retry
     if (sub?.outcome !== "ok") { log(sub?.outcome ?? "rejected", { hand_id: hid, attempt: tryNo, http: 409 }); return json({ ok: false, code: sub?.outcome ?? "rejected" }, 409); }
 
+    // PostgreSQL's legacy idempotency key is global. Confirm owner, hand and
+    // intent before returning a receipt or the locally reduced private view.
+    const receipt = await readReceipt();
+    if (receipt.kind === "conflict") {
+      log("idempotency_conflict", { hand_id: hid, attempt: tryNo, http: 409 });
+      return json({ ok: false, code: "idempotency_conflict" }, 409);
+    }
+    if (receipt.kind !== "committed") {
+      log("receipt_unavailable", { hand_id: hid, attempt: tryNo, http: 503 });
+      return json({ ok: false, code: "receipt_unavailable" }, 503);
+    }
+    if (receipt.stateVersion !== ctx.state_version + 1) return acknowledgeReceipt(receipt.stateVersion, tryNo);
+
     // Success: return the caller's OWN private view (own hole cards only).
     log("ok", { hand_id: hid, attempt: tryNo, http: 200 });
-    return json({ ok: true, handId: body.handId, stateVersion: sub.state_version, view: privateView(next, body.seat) }, 200);
+    return json({ ok: true, handId: hid, stateVersion: receipt.stateVersion, view: privateView(next, body.seat) }, 200);
   }
   log("race_lost", { hand_id: hid, attempt: MAX_CAS_RETRIES, http: 409 });
   return json({ ok: false, code: "race_lost" }, 409);
