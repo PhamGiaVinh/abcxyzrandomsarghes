@@ -184,12 +184,11 @@ export function TurnoutForecastPanel({
         <h3 className="font-display text-lg flex flex-wrap items-center gap-2">
           <TrendingUp className="h-4 w-4 text-primary" /> Dự báo lượng khách — giải sắp tới
           <span className="inline-flex items-center gap-0.5 rounded-full border border-warning/50 bg-warning/10 px-1.5 py-0.5 text-[9px] text-warning">
-            <FlaskConical className="h-2.5 w-2.5" /> Hypothesis · dự báo thống kê — chưa backtest đủ
+            <FlaskConical className="h-2.5 w-2.5" /> Giả thuyết
           </span>
         </h3>
         <p className="text-[11px] text-muted-foreground">
-          Học từ các giải đã chạy của club, chỉ dùng thông tin biết-trước-giải. Khác với "gợi ý từ giải tương tự" ở
-          Bước ⑥ — đây là mô hình hồi quy nhiều yếu tố. Cả hai đều KHÔNG phải cam kết.
+            Dự báo từ các giải đã chạy. Để dùng cho quyết định, cần ít nhất 12 giải và sai số thấp hơn cách dự báo tham chiếu trên các giải ngoài tập huấn luyện.
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           {csvSelected ? "Nguồn: CSV đang chọn" : "Nguồn: giải trên VBacker"} · {events.length} giải trong phạm vi
