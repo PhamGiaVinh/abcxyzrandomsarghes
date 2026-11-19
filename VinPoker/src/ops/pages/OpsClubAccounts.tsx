@@ -73,6 +73,7 @@ function ClubAccountScope({ clubId, capabilities, ownerClubs, setClubId }: {
   const [message, setMessage] = useState<string | null>(null);
   const active = useRef(false);
   const sequence = useRef(0);
+  const writeBusy = useRef(false);
 
   const load = useCallback(async () => {
     if (!clubId || !active.current) return;
@@ -103,49 +104,52 @@ function ClubAccountScope({ clubId, capabilities, ownerClubs, setClubId }: {
     return () => { active.current = false; sequence.current++; };
   }, [load]);
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (loading || !active.current) return;
-    if (!clubId || !email.trim()) {
-      return setMessage("Chọn CLB và nhập email nhân viên.");
-    }
+  const write = async (body: Record<string, string>, confirm: (data: Record<string, unknown>) => string | null) => {
+    if (writeBusy.current || !active.current) return;
+    writeBusy.current = true;
     setLoading(true);
     setMessage(null);
-    const { data, error } = await client.functions.invoke("ops-club-accounts", {
-      body: { action: "invite", club_id: clubId, email, operator_role: role },
-    });
-    if (!active.current) return;
-    setLoading(false);
-    if (error || !data?.status) {
-      return setMessage(
-        data?.error === "INVITE_CONFIGURATION_REQUIRED"
-          ? "Hệ thống gửi lời mời chưa được cấu hình. Liên hệ quản trị hệ thống."
-          : "Không gửi được lời mời. Kiểm tra lại email hoặc thử lại.",
-      );
+    try {
+      const { data, error } = await client.functions.invoke("ops-club-accounts", { body });
+      if (error || !data || typeof data !== "object") throw new Error("invite_outcome_unverified");
+      if (!active.current) return;
+      const confirmed = confirm(data);
+      if (!confirmed) throw new Error("invite_outcome_unverified");
+      setMessage(confirmed);
+    } catch {
+      if (active.current) setMessage("Chưa xác minh được kết quả. Kiểm tra danh sách trước khi thao tác lại.");
+    } finally {
+      if (active.current) {
+        await load();
+        setLoading(false);
+      }
+      writeBusy.current = false;
     }
-    setEmail("");
-    setMessage(
-      data.status === "INVITED" || data.status === "RESENT"
-        ? "Đã gửi email để nhân viên tự đặt mật khẩu. Quyền hiển thị ở trạng thái chờ xác nhận."
-        : "Tài khoản đã xác nhận: đã cấp đúng quyền CLB, không đổi mật khẩu.",
-    );
-    await load();
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!clubId || !email.trim()) return setMessage("Chọn CLB và nhập email nhân viên.");
+    await write({ action: "invite", club_id: clubId, email, operator_role: role }, data => {
+      if (typeof data.invite_id !== "string" || !data.invite_id) return null;
+      if ((data.status === "INVITED" || data.status === "RESENT") && data.invite_status === "pending") {
+        setEmail("");
+        return "Đã gửi email. Lời mời đang chờ nhân viên xác nhận.";
+      }
+      if ((data.status === "GRANTED_EXISTING" || data.status === "ALREADY_ACTIVE") && data.invite_status === "active") {
+        setEmail("");
+        return "Tài khoản đã có vai trò vận hành tại CLB này.";
+      }
+      return null;
+    });
   };
 
   const revoke = async (inviteId: string) => {
     if (loading || !rows?.some(row => row.id === inviteId && row.club_id === clubId && row.status !== "revoked")) return;
-    setLoading(true);
-    setMessage(null);
-    const { error } = await client.functions.invoke("ops-club-accounts", {
-      body: { action: "revoke", invite_id: inviteId },
-    });
-    if (!active.current) return;
-    setLoading(false);
-    if (error) return setMessage("Không thu hồi được quyền. Vui lòng thử lại.");
-    setMessage(
-      "Đã thu hồi quyền Floor/Cashier của CLB này. Tài khoản Auth không bị xóa.",
-    );
-    await load();
+    await write({ action: "revoke", invite_id: inviteId }, data =>
+      data.invite_id === inviteId && data.invite_status === "revoked"
+        && (data.status === "REVOKED" || data.status === "ALREADY_REVOKED")
+        ? "Lời mời hoặc vai trò tại CLB này đã được thu hồi." : null);
   };
 
   return (

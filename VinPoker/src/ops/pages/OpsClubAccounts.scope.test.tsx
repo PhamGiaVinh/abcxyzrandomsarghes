@@ -1,13 +1,30 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import OpsClubAccounts from "./OpsClubAccounts";
 
 const mock = vi.hoisted(() => ({ club: "a", user: "owner-a", read: vi.fn(), invoke: vi.fn() }));
+beforeEach(() => {
+  mock.club = "a";
+  mock.user = "owner-a";
+  mock.read.mockReset();
+  mock.invoke.mockReset();
+});
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
   const client = { from: () => ({ select: () => ({ eq: (_field: string, club: string) => ({ order: () => mock.read(club) }) }) }),
     functions: { invoke: mock.invoke } };
   return { useSupabaseClient: () => client };
+});
+
+it("does not report a revoke as confirmed when the response is for another invitation", async () => {
+  mock.club = "b";
+  mock.user = "owner-b";
+  mock.read.mockResolvedValue({ data: [{ id: "invite-b", club_id: "b", email_normalized: "b@example.test", operator_role: "cashier", status: "active" }], error: null });
+  mock.invoke.mockResolvedValue({ data: { status: "REVOKED", invite_status: "revoked", invite_id: "invite-a" }, error: null });
+  render(<MemoryRouter><OpsClubAccounts /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: "Thu hồi" }));
+  expect(await screen.findByText(/Chưa xác minh được kết quả/)).toBeVisible();
+  expect(mock.invoke).toHaveBeenCalledExactlyOnceWith("ops-club-accounts", { body: { action: "revoke", invite_id: "invite-b" } });
 });
 vi.mock("@/ops/auth/OpsAuthProvider", () => ({ useOpsAuth: () => ({ user: { id: mock.user }, session: null }) }));
 vi.mock("@/ops/auth/OpsCapabilityProvider", () => ({ useOpsCapabilities: () => ({
