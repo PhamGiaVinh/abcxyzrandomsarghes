@@ -28,6 +28,19 @@ function editablePayroll(){
     total_adjustments_vnd:0,tips_amount_vnd:0,bhxh_deduction_vnd:0,bhyt_deduction_vnd:0,bhtn_deduction_vnd:0,pit_deduction_vnd:0,net_pay_vnd:0,net_pay_after_tax_vnd:0}];
 }
 describe('payroll saved-state availability',()=>{
+  it('identifies current shift evidence without treating it as a saved payroll snapshot', async () => {
+    editablePayroll();
+    state.rows[0].shifts = [{ attendance_id: 'overnight-shift', check_in_time: '2026-11-18T16:00:00Z',
+      check_out_time: '2026-11-18T19:00:00Z', total_worked_minutes: 180, regular_minutes: 120,
+      overtime_minutes: 60, shift_hours: 3, regular_hours: 2, ot_hours: 1, is_overnight: true }];
+    state.saved.mockResolvedValue({ periodId: 'period', status: 'locked',
+      records: [{ ...state.rows[0], id: 'saved', club_id: 'club', period_id: 'period', status: 'pending' }] });
+    render(<DealerPayrollTab clubIds={['club']} clubs={[{id:'club',name:'TEST'}]} />);
+    fireEvent.click(await screen.findByText('Nguồn ca làm'));
+    expect(screen.getByText(/Phiếu đã lưu chưa có bản chụp từng ca/)).toBeVisible();
+    expect(screen.getByText('Mã ca overnight-shift')).toBeVisible();
+    expect(screen.getByText('Qua đêm · 120 phút thường · 60 phút OT')).toBeVisible();
+  });
   it.each(['full_time','part_time'] as const)('totals only visible %s rows in the section subtotal without changing period totals',async employment_type=>{
     editablePayroll();
     const base=state.rows[0];
