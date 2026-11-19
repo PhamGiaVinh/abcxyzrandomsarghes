@@ -1,8 +1,9 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const getDecisionEventState = vi.hoisted(() => vi.fn());
 const createDecisionPacket = vi.hoisted(() => vi.fn());
+const captureScope = vi.hoisted(() => ({ eventId: "event-1" }));
 
 vi.mock("@/lib/series-intelligence/decisionPacketRpc", () => ({
   createDecisionPacket,
@@ -20,7 +21,7 @@ vi.mock("@/lib/series-intelligence/useSeriesCapture", () => ({
     clubs: [{ id: "club-1", name: "Club test" }],
     clubId: "club-1",
     setClubId: vi.fn(),
-    events: [{ id: "event-1", name: "Main Event", club_id: "club-1", start_time: "2026-08-08T03:00:00.000Z", status: "scheduled" }],
+    events: [{ id: captureScope.eventId, name: "Main Event", club_id: "club-1", start_time: "2026-08-08T03:00:00.000Z", status: "scheduled" }],
     snapshots: [],
     decisions: [],
     campaigns: [],
@@ -39,6 +40,7 @@ import { DecisionRoomV1 } from "./DecisionRoomV1";
 
 afterEach(() => {
   cleanup();
+  captureScope.eventId = "event-1";
   vi.clearAllMocks();
 });
 
@@ -52,6 +54,26 @@ const state = {
 };
 
 describe("DecisionRoomV1", () => {
+  it("retains the selected event when an earlier response arrives late", async () => {
+    const old = { ...state, scoring: { ...state.scoring, blockReasons: ["old-event-reason"] } };
+    let finishOld: (result: { ok: true; value: typeof old }) => void;
+    getDecisionEventState.mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve; }));
+    const view = render(<DecisionRoomV1 />);
+    await waitFor(() => expect(getDecisionEventState).toHaveBeenCalledWith("event-1"));
+
+    captureScope.eventId = "event-2";
+    getDecisionEventState.mockResolvedValue({ ok: true, value: {
+      ...state, event: { ...state.event, eventId: "event-2" },
+      scoring: { ...state.scoring, blockReasons: ["current-event-reason"] },
+    } });
+    view.rerender(<DecisionRoomV1 />);
+    expect(await screen.findByText(/current-event-reason/)).toBeInTheDocument();
+    await act(async () => finishOld({ ok: true, value: old }));
+
+    expect(screen.getByText(/current-event-reason/)).toBeInTheDocument();
+    expect(screen.queryByText(/old-event-reason/)).not.toBeInTheDocument();
+  });
+
   it("does not display scoring from a different club's response", async () => {
     getDecisionEventState.mockResolvedValue({ ok: true, value: {
       ...state, event: { ...state.event, clubId: "another-club" },
