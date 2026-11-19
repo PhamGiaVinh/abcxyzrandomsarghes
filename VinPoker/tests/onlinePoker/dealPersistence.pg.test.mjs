@@ -254,40 +254,6 @@ test('the shared server deal persists one native hand with consistent public and
   assert.deepEqual(clockCommand(first, setupPilot, 1, false), { outcome: 'stale', revision: '2', running: true });
   assert.deepEqual(clockCommand(first, setupPilot, 2, false), { outcome: 'ok', revision: '3', running: false });
   assert.equal((await dealNextHand(admin, setupReceipt.tableId, null)).reason, 'table_not_open');
-  assert.deepEqual(clockCommand(first, setupPilot, 3, true), { outcome: 'ok', revision: '4', running: true });
-  const provisionedDeal = await dealNextHand(admin, setupReceipt.tableId, null);
-  assert.equal(provisionedDeal.ok, true, JSON.stringify(provisionedDeal));
-  assert.deepEqual(clockCommand(first, setupPilot, 4, false), { outcome: 'ok', revision: '5', running: false });
-  const reopenSatellite = (actor) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
-    SELECT COALESCE(public.get_online_satellite_table_v1('${setupPilot}'),'null'::jsonb)`);
-  assert.deepEqual(reopenSatellite(first), { tableId: setupReceipt.tableId, clockRevision: '5',
-    running: false, status: 'paused', canManage: true, canPlay: true });
-  assert.deepEqual(reopenSatellite(second), { ...reopenSatellite(first), canManage: false });
-  assert.equal(reopenSatellite(spectator), null);
-  const provisionedContext = json(`SET ROLE service_role;
-    SELECT public.op_load_action_context('${provisionedDeal.handId}')`);
-  const provisionedState = deserializeAuthoritative(
-    provisionedContext.state, provisionedContext.live_deck, provisionedContext.holes,
-  );
-  assert.equal(provisionedState.toAct, 1);
-  const provisionedFold = { type: 'fold', seat: 1 };
-  const provisionedSettled = applyAction(provisionedState, provisionedFold);
-  assert.equal(provisionedSettled.error, undefined);
-  const provisionedSplit = serializeAuthoritative(provisionedSettled.state);
-  const provisionedInput = Buffer.from(JSON.stringify({
-    action: actionToRow(provisionedFold), state: provisionedSplit.stateJson, deck: provisionedSplit.liveDeck,
-    events: provisionedSettled.events.map(({ type, payload }) => ({ type, payload })),
-  })).toString('hex');
-  const provisionedSubmit = `SET ROLE service_role;
-    WITH input AS (SELECT convert_from(decode('${provisionedInput}','hex'),'UTF8')::jsonb AS p)
-    SELECT public.op_submit_action('${provisionedDeal.handId}', '${first}', p->'action', p->'state',
-      p->'deck', p->'events', 0, NULL, 'disposable-g03-provisioned-fold') FROM input`;
-  assert.equal(json(provisionedSubmit).outcome, 'ok');
-  assert.equal(json(provisionedSubmit).outcome, 'ok');
-  assert.equal(sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${provisionedDeal.handId}'`), '1');
-  const provisionedStacks = () => json(`SELECT json_agg(stack ORDER BY seat_no)
-    FROM public.online_poker_seats WHERE table_id='${setupReceipt.tableId}'`);
-  assert.deepEqual(provisionedStacks(), [135,145]);
   const hand = await dealNextHand(admin, tableId, first);
   assert.ok(hand.ok, JSON.stringify(hand));
   assert.equal(hand.handNo, 1);
@@ -756,6 +722,40 @@ test('the shared server deal persists one native hand with consistent public and
     json(visibleSatellite));
   assert.equal(sql(`SET ROLE anon; SELECT count(*) FROM public.online_poker_tables WHERE id='${tableId}'`), '1');
   assert.equal(sql(`SELECT state->'seats'->1->>'deadAnte' FROM public.online_poker_hands WHERE id='${anteHand}'`), '4');
+  assert.deepEqual(clockCommand(first, setupPilot, 3, true), { outcome: 'ok', revision: '4', running: true });
+  const provisionedDeal = await dealNextHand(admin, setupReceipt.tableId, null);
+  assert.equal(provisionedDeal.ok, true, JSON.stringify(provisionedDeal));
+  assert.deepEqual(clockCommand(first, setupPilot, 4, false), { outcome: 'ok', revision: '5', running: false });
+  const reopenSatellite = (actor) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT COALESCE(public.get_online_satellite_table_v1('${setupPilot}'),'null'::jsonb)`);
+  assert.deepEqual(reopenSatellite(first), { tableId: setupReceipt.tableId, clockRevision: '5',
+    running: false, status: 'paused', canManage: true, canPlay: true });
+  assert.deepEqual(reopenSatellite(second), { ...reopenSatellite(first), canManage: false });
+  assert.equal(reopenSatellite(spectator), null);
+  const provisionedContext = json(`SET ROLE service_role;
+    SELECT public.op_load_action_context('${provisionedDeal.handId}')`);
+  const provisionedState = deserializeAuthoritative(
+    provisionedContext.state, provisionedContext.live_deck, provisionedContext.holes,
+  );
+  assert.equal(provisionedState.toAct, 1);
+  const provisionedFold = { type: 'fold', seat: 1 };
+  const provisionedSettled = applyAction(provisionedState, provisionedFold);
+  assert.equal(provisionedSettled.error, undefined);
+  const provisionedSplit = serializeAuthoritative(provisionedSettled.state);
+  const provisionedInput = Buffer.from(JSON.stringify({
+    action: actionToRow(provisionedFold), state: provisionedSplit.stateJson, deck: provisionedSplit.liveDeck,
+    events: provisionedSettled.events.map(({ type, payload }) => ({ type, payload })),
+  })).toString('hex');
+  const provisionedSubmit = `SET ROLE service_role;
+    WITH input AS (SELECT convert_from(decode('${provisionedInput}','hex'),'UTF8')::jsonb AS p)
+    SELECT public.op_submit_action('${provisionedDeal.handId}', '${first}', p->'action', p->'state',
+      p->'deck', p->'events', 0, NULL, 'disposable-g03-provisioned-fold') FROM input`;
+  assert.equal(json(provisionedSubmit).outcome, 'ok');
+  assert.equal(json(provisionedSubmit).outcome, 'ok');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${provisionedDeal.handId}'`), '1');
+  const provisionedStacks = () => json(`SELECT json_agg(stack ORDER BY seat_no)
+    FROM public.online_poker_seats WHERE table_id='${setupReceipt.tableId}'`);
+  assert.deepEqual(provisionedStacks(), [135,145]);
   const reapPractice = 'ab510000-0000-4000-8000-000000000020';
   sql(`
     ALTER TABLE public.online_poker_tables ADD COLUMN host_user_id uuid REFERENCES auth.users(id);
