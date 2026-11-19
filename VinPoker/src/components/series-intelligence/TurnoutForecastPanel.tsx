@@ -98,7 +98,7 @@ export function TurnoutForecastPanel({
 
   const ready = date.trim() !== "" && buyIn !== null && buyIn > 0;
   // Local datetime (never date-only) so the hour-slot feature matches the training rows' bucketing.
-  const eventDateTime = `${date}T${/^\d{2}:\d{2}$/.test(startTime) ? startTime : "19:00"}:00`;
+  const eventDateTime = `${date}T${/^\d{2}:\d{2}$/.test(startTime) ? startTime : "19:00"}:00+07:00`;
   const fc = useMemo(
     () =>
       ready
@@ -110,14 +110,14 @@ export function TurnoutForecastPanel({
         : null,
     [events, eventDateTime, buyIn, gtd, typeKeyword, seriesName, capacity, ready],
   );
-  const medianFee = useMemo(() => median(events.map((e) => e.fee)) ?? 0, [events]);
+  const medianFee = useMemo(() => median(events.map((e) => e.fee)), [events]);
 
   // Explicit forecast→overlay adapter feed (σ recovered from the forecast band; NO synthetic n anywhere).
   const feed = useMemo(() => forecastToOverlayFeed(fc, buyIn, override), [fc, buyIn, override]);
 
   // Bubble the feed up so the simulator below can offer "Dự báo" as a center source.
   useEffect(() => {
-    onForecastFeed?.(feed ? { ...feed, fee: medianFee } : null);
+    onForecastFeed?.(feed && medianFee !== null ? { ...feed, fee: medianFee } : null);
   }, [feed, medianFee, onForecastFeed]);
 
   const contributions = (fc?.coefContributions ?? []).filter((c) => Math.abs(c.impactPct) >= 1).slice(0, 8);
@@ -363,7 +363,7 @@ export function TurnoutForecastPanel({
 
               <Button
                 className="w-full gap-1.5"
-                disabled={!feed || gtd === null || gtd <= 0}
+                disabled={!feed || medianFee === null || gtd === null || gtd <= 0}
                 onClick={() => onViewOverlayWithForecast?.()}
                 title={gtd === null || gtd <= 0 ? "Nhập GTD dự kiến ở form bên trái trước" : undefined}
               >
@@ -374,7 +374,8 @@ export function TurnoutForecastPanel({
               )}
               {feed && (
                 <p className="text-center text-[10px] text-muted-foreground/80">
-                  fee mô phỏng = median toàn CLB ({formatVndShort(medianFee)} — giả định)
+                  {medianFee === null ? "Chưa đủ dữ liệu phí để mô phỏng overlay từ dự báo này."
+                    : `Phí mô phỏng lấy trung vị của mẫu (${formatVndShort(medianFee)} — giả định).`}
                 </p>
               )}
 

@@ -41,6 +41,15 @@ const oneEvent = () => {
   h.EVENTS = [ev(1, 200)];
 };
 
+it.each([null, 0, 100000])("preserves fee evidence when forwarding a forecast (%s)", (fee) => {
+  h.EVENTS = Array.from({ length: 12 }, (_, index) => ({ ...ev(index + 1, 200 + index), fee }));
+  const onForecastFeed = vi.fn();
+  render(<TurnoutForecastPanel onForecastFeed={onForecastFeed} />);
+  fillInputs();
+  expect(onForecastFeed).toHaveBeenLastCalledWith(fee === null ? null : expect.objectContaining({ fee }));
+  expect(has("Chưa đủ dữ liệu phí để mô phỏng overlay")).toBe(fee === null);
+});
+
 describe("A4b panel flag matrix (n=1, model unavailable)", () => {
   it("both flags OFF ⇒ existing warning branch, no A4b view", () => {
     oneEvent();
