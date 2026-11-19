@@ -51,6 +51,14 @@ BEGIN
   IF NOT public.op_is_enabled() THEN
     RETURN jsonb_build_object('outcome', 'disabled');
   END IF;
+  IF p_state ? 'satelliteLevel' AND p_actor_user_id IS NOT NULL THEN
+    IF to_regprocedure('public.op_lock_satellite_manual_dealer(uuid,uuid)') IS NULL THEN
+      RETURN jsonb_build_object('outcome', 'rejected', 'detail', 'satellite level validation unavailable');
+    END IF;
+    IF NOT public.op_lock_satellite_manual_dealer(v_table_id,p_actor_user_id) THEN
+      RETURN jsonb_build_object('outcome', 'rejected', 'detail', 'satellite manager required');
+    END IF;
+  END IF;
 
   -- Public state must never carry secret data.
   IF p_state ? 'deck'

@@ -651,6 +651,8 @@ test('the shared server deal persists one native hand with consistent public and
     ...anteArgs,
     p_state: { ...anteArgs.p_state, satelliteLevel: { clockRevision: '2', levelStartSecond: '120' } },
   };
+  assert.equal(json(startStatement({ ...currentAnteArgs, p_actor_user_id: spectator })).detail,
+    'satellite manager required');
   assert.throws(() => json(startStatement(currentAnteArgs)), /online_satellite_deal_roster_invalid/);
   sql(`INSERT INTO online_satellite_private.entries(pilot_id,player_user_id)
     VALUES ('${pilotId}','${first}'), ('${pilotId}','${second}')`);
@@ -659,6 +661,26 @@ test('the shared server deal persists one native hand with consistent public and
     p_state: { ...currentAnteArgs.p_state, satelliteLevel: { clockRevision: '2', levelStartSecond: '60' } },
   };
   assert.throws(() => json(startStatement(staleAnteArgs)), /online_satellite_stale_deal_level/);
+  sql(`UPDATE online_satellite_private.registration_gate SET delegated_td_actor_id='${second}',
+    delegated_by='${first}' WHERE club_id='${clubId}';
+    INSERT INTO public.club_floors VALUES ('${clubId}','${second}')`);
+  assert.equal(level(anteTable, second).mode, 'ready');
+  const revokeTd = session('g03-satellite-revoke-td');
+  const oldTdDeal = session('g03-satellite-old-td-deal');
+  try {
+    revokeTd.send(`BEGIN;
+      DELETE FROM public.club_floors WHERE club_id='${clubId}' AND user_id='${second}';
+      \\echo satellite_td_settling`);
+    await revokeTd.waitFor('satellite_td_settling');
+    oldTdDeal.send(startStatement({ ...currentAnteArgs, p_actor_user_id: second }));
+    await waitForPostgresLock('g03-satellite-old-td-deal');
+    revokeTd.send('COMMIT;');
+    await revokeTd.finish();
+    assert.equal(JSON.parse((await oldTdDeal.finish()).at(-1)).detail, 'satellite manager required');
+  } finally {
+    revokeTd.stop();
+    oldTdDeal.stop();
+  }
   const clockWriter = session('g03-satellite-clock-writer');
   const waitingDeal = session('g03-satellite-stale-deal');
   try {
@@ -843,7 +865,7 @@ test('the shared server deal persists one native hand with consistent public and
       'owner',pg_get_userbyid(proowner),'securityDefiner',prosecdef,'settings',proconfig,'acl',proacl)
       FROM pg_proc WHERE oid=${startOid}`);
     const candidate = functionRecord();
-    assert.equal(candidate.source, '6b55c671fbe0219e1c4331c629e79e06');
+    assert.equal(candidate.source, '13368e326882525cb5b8661b1f0a3541');
     const enabled = spawnSync('psql', ['-X', '-Atq', '-v', 'ON_ERROR_STOP=1'],
       { encoding: 'utf8', input: rollback, timeout: 10_000 });
     assert.notEqual(enabled.status, 0);

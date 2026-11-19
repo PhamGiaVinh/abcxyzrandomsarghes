@@ -77,4 +77,33 @@ $$;
 REVOKE ALL ON FUNCTION public.op_read_satellite_deal_level(uuid,uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.op_read_satellite_deal_level(uuid,uuid) TO service_role;
 
+-- Called by the service-owned deal writer before it locks seats or the clock.
+-- Role changes wait until a deal that passed this check has committed.
+CREATE FUNCTION public.op_lock_satellite_manual_dealer(p_table_id uuid, p_actor_user_id uuid)
+RETURNS boolean LANGUAGE plpgsql SET search_path = ''
+AS $$
+DECLARE
+  pilot_club uuid;
+  club_owner uuid;
+  gate online_satellite_private.registration_gate%ROWTYPE;
+BEGIN
+  SELECT p.club_id INTO pilot_club
+  FROM online_satellite_private.table_clocks c
+  JOIN online_satellite_private.pilots p ON p.id=c.pilot_id
+  WHERE c.table_id=p_table_id;
+  IF NOT FOUND THEN RETURN false; END IF;
+  SELECT c.owner_id INTO club_owner FROM public.clubs c WHERE c.id=pilot_club FOR SHARE;
+  IF p_actor_user_id=club_owner THEN RETURN true; END IF;
+  SELECT g.* INTO gate FROM online_satellite_private.registration_gate g
+    WHERE g.club_id=pilot_club FOR SHARE;
+  IF NOT FOUND OR p_actor_user_id IS DISTINCT FROM gate.delegated_td_actor_id
+    OR club_owner IS DISTINCT FROM gate.delegated_by THEN
+    RETURN false;
+  END IF;
+  PERFORM 1 FROM public.club_floors f WHERE f.club_id=pilot_club AND f.user_id=p_actor_user_id FOR SHARE;
+  RETURN FOUND;
+END;
+$$;
+REVOKE ALL ON FUNCTION public.op_lock_satellite_manual_dealer(uuid,uuid) FROM PUBLIC, anon, authenticated, service_role;
+
 COMMIT;
