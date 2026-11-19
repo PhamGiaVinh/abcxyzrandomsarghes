@@ -56,7 +56,7 @@ function makeAdmin(stage: Stage) {
         calls.startHand++;
         calls.startStates.push(_args?.p_state);
         const sh = typeof stage.startHand === 'function' ? stage.startHand() : stage.startHand;
-        return Promise.resolve(ok(sh ?? { outcome: 'ok', hand_id: 'h1', state_version: 0 }));
+        return Promise.resolve(ok(sh ?? { outcome: 'ok', hand_id: _args?.p_state?.config?.handId, state_version: 0 }));
       }
       return Promise.resolve(ok(null));
     },
@@ -88,7 +88,6 @@ describe('runTableRunner — deals eligible tables', () => {
       enabled: true,
       due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
       table: TABLE, seats: TWO_FUNDED, lastHand: null,
-      startHand: { outcome: 'ok', hand_id: 'h1', state_version: 0 },
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = await runTableRunner(admin as any);
@@ -175,6 +174,18 @@ describe('runTableRunner — dry-run never deals & reports skip reasons', () => 
 });
 
 describe('runTableRunner — no secret output', () => {
+  it('does not report a hand dealt when the receipt identifies a different hand', async () => {
+    const { admin } = makeAdmin({
+      enabled: true,
+      due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
+      table: TABLE, seats: TWO_FUNDED,
+      startHand: { outcome: 'ok', hand_id: 'different-hand', state_version: 0 },
+    });
+    const result = await runTableRunner(admin);
+    expect(result.dealt).toBe(0);
+    expect(result.errors).toBe(1);
+  });
+
   it('derives the next hand from the persisted hand when a new runner takes over', async () => {
     const { admin, calls } = makeAdmin({
       enabled: true,
@@ -194,7 +205,6 @@ describe('runTableRunner — no secret output', () => {
       enabled: true,
       due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
       table: TABLE, seats: TWO_FUNDED, lastHand: null,
-      startHand: { outcome: 'ok' },
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = await runTableRunner(admin as any);
