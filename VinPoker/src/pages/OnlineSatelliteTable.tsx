@@ -27,11 +27,20 @@ const clockReceipt = z.object({ outcome: z.enum(["ok", "stale"]) });
 export default function OnlineSatelliteTable() {
   const { user, loading } = useAuth();
   const { pilotId } = useParams();
+  return <OnlineSatelliteTableContent key={`${user?.id ?? ""}:${pilotId ?? ""}`}
+    actorId={user?.id} pilotId={pilotId} loading={loading} />;
+}
+
+export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false }: {
+  actorId?: string;
+  pilotId?: string;
+  loading?: boolean;
+}) {
   const pilot = pilotIdentifier.safeParse(pilotId);
   const client = useSupabaseClient();
   const snapshot = useQuery({
-    queryKey: ["online-satellite-table", user?.id, pilotId],
-    enabled: !loading && Boolean(user) && pilot.success,
+    queryKey: ["online-satellite-table", actorId, pilotId],
+    enabled: !loading && Boolean(actorId) && pilot.success,
     queryFn: async ({ signal }) => {
       const { data, error } = await client.rpc("get_online_satellite_table_v1" as never,
         { p_pilot_id: pilotId } as never).abortSignal(signal);
@@ -57,7 +66,7 @@ export default function OnlineSatelliteTable() {
     <section className="mx-auto max-w-xl space-y-4 px-4 py-6">
       <h1 className="text-2xl font-semibold">Bàn Satellite TEST</h1>
       {loading || snapshot.isFetching ? <p role="status">Đang kiểm tra trạng thái bàn…</p>
-        : !user ? <p>Đăng nhập để mở bàn Satellite.</p>
+        : !actorId ? <p>Đăng nhập để mở bàn Satellite.</p>
         : snapshot.isError ? (
           <div className="space-y-2">
             <p role="alert">Chưa đọc được trạng thái bàn.</p>

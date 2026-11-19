@@ -784,6 +784,13 @@ test('the shared server deal persists one native hand with consistent public and
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
+    const browserPilot = 'ab510000-0000-4000-8000-000000000021';
+    sql(`INSERT INTO online_satellite_private.pilots VALUES
+      ('${browserPilot}','${clubId}','${destination}','${first}','${browserPilot}',now(),100,2);
+      INSERT INTO online_satellite_private.entries(pilot_id,player_user_id)
+      VALUES ('${browserPilot}','${first}'),('${browserPilot}','${second}')`);
+    const { verifySatelliteClockBrowser } = await import('./satelliteClockBrowser.fixture.mjs');
+    await verifySatelliteClockBrowser({ sql, actor: first, pilot: browserPilot });
     assert.equal(sql("SELECT count(*) FROM public.online_poker_hands WHERE status IN ('dealing','betting')"), '0');
     const rollback = file('../../supabase/pending-migrations/ROLLBACK_20261119193713_online_poker_complete_deal_stack_writeback.sql');
     const startOid = "'public.op_start_hand(jsonb,jsonb,jsonb,jsonb,jsonb,text,timestamp with time zone,uuid)'::regprocedure";
