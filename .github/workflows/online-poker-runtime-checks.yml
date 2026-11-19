@@ -1,0 +1,45 @@
+name: Online poker engine and Edge contracts
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/online-poker-runtime-checks.yml"
+      - "VinPoker/supabase/functions/online-poker-*/**"
+      - "VinPoker/supabase/functions/_shared/poker*/**"
+      - "VinPoker/tests/onlinePoker/**"
+      - "VinPoker/tests/pokerEngine/**"
+      - "VinPoker/tests/pokerAdapter/**"
+      - "VinPoker/tsconfig.engine.json"
+      - "VinPoker/package-lock.json"
+
+permissions:
+  contents: read
+
+jobs:
+  online-poker-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck:engine
+      - name: Verify engine, adapter and runner state
+        run: npx vitest run tests/pokerEngine tests/pokerAdapter tests/onlinePoker/tableRunner.test.ts
+      - name: Verify the manual deal handler with fixture transport
+        run: node --experimental-transform-types --test tests/onlinePoker/manualDeal.handler.test.mjs
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.8.0
+      - name: Check Edge import graphs
+        run: |
+          deno check supabase/functions/online-poker-action/index.ts \
+            supabase/functions/online-poker-table-runner/index.ts \
+            supabase/functions/online-poker-timeout-sweep/index.ts
