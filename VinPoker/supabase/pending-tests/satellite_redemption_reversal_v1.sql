@@ -263,6 +263,14 @@ BEGIN
   END;
   IF (SELECT status='cancelled' FROM public.tournament_registrations WHERE id=v_reg)
       IS DISTINCT FROM true
+     OR (SELECT status='redeemed' AND registration_id=v_reg FROM public.satellite_tickets WHERE id=v_ticket)
+        IS DISTINCT FROM true
+     OR NOT EXISTS (SELECT 1 FROM public.satellite_redemption_reversals x
+       JOIN public.tournament_entries e ON e.id=x.entry_id
+       JOIN public.tournament_seats s ON s.id=x.seat_id
+       JOIN public.seat_draw_receipts r ON r.id=x.receipt_id
+       WHERE x.ticket_id=v_ticket AND e.status='cancelled' AND s.status='cancelled'
+         AND NOT s.is_active AND r.status='cancelled')
      OR (SELECT count(*)=1 FROM public.satellite_ticket_value_transfers
          WHERE id=v_transfer) IS DISTINCT FROM true
      OR (SELECT count(*)=1 AND sum(target_debit_vnd)=6600000
