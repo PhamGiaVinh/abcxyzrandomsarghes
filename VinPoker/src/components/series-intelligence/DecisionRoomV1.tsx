@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -204,10 +204,17 @@ export function DecisionRoomV1() {
   const [actualEntries, setActualEntries] = useState("");
   const [reconciliationMode, setReconciliationMode] = useState<ReconciliationMode>("blocked_conflict");
   const [reconciliationReason, setReconciliationReason] = useState("");
-  const [state, setState] = useState<DecisionEventStateResponse | null>(null);
+  const [loadedState, setState] = useState<{
+    request: { scope: string; sequence: number };
+    value: DecisionEventStateResponse;
+  } | null>(null);
   const [stateError, setStateError] = useState<string | null>(null);
   const [loadingState, setLoadingState] = useState(false);
   const [saving, setSaving] = useState(false);
+  const readScope = JSON.stringify([capture.clubId, eventId]);
+  const readRequest = useRef({ scope: readScope, sequence: 0 });
+  if (readRequest.current.scope !== readScope) readRequest.current = { scope: readScope, sequence: 0 };
+  const state = loadedState?.request === readRequest.current ? loadedState.value : null;
 
   useEffect(() => {
     setEventId((current) => (capture.events.some((event) => event.id === current) ? current : capture.events[0]?.id ?? ""));
@@ -219,31 +226,44 @@ export function DecisionRoomV1() {
   );
 
   const refreshState = async () => {
-    if (!eventId) {
+    const request = readRequest.current;
+    if (request.scope !== readScope) return;
+    const sequence = ++request.sequence;
+    if (!eventId || !capture.clubId) {
       setState(null);
+      setLoadingState(false);
+      setStateError(null);
       return;
     }
     setLoadingState(true);
     setStateError(null);
     const result = await getDecisionEventState(eventId);
+    if (readRequest.current !== request || request.sequence !== sequence) return;
     setLoadingState(false);
     if (result.ok === false) {
       setState(null);
       setStateError(result.error);
       return;
     }
-    setState(result.value);
+    if (result.value.event.eventId !== eventId || result.value.event.clubId !== capture.clubId) {
+      setState(null);
+      setStateError("malformed_response");
+      return;
+    }
+    setState({ request, value: result.value });
   };
 
   useEffect(() => {
+    const request = readRequest.current;
     setCorrectionSource(null);
     setCorrectionReason("");
     setReconciliationMode("blocked_conflict");
     setReconciliationReason("");
     void refreshState();
+    return () => { request.sequence += 1; };
     // Event selection is the deliberate refresh boundary; the button handles manual refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId]);
+  }, [readScope]);
 
   const runMutation = async (action: () => Promise<{ readonly ok: boolean; readonly error?: string }>, message: string) => {
     setSaving(true);

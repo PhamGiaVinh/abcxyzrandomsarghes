@@ -52,6 +52,17 @@ const state = {
 };
 
 describe("DecisionRoomV1", () => {
+  it("does not display scoring from a different club's response", async () => {
+    getDecisionEventState.mockResolvedValue({ ok: true, value: {
+      ...state, event: { ...state.event, clubId: "another-club" },
+    } });
+    render(<DecisionRoomV1 />);
+
+    await waitFor(() => expect(getDecisionEventState).toHaveBeenCalledWith("event-1"));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(screen.queryByTestId("decision-room-scoring")).not.toBeInTheDocument();
+  });
+
   it("renders an honest no-data state without fabricating a score or outcome", async () => {
     getDecisionEventState.mockResolvedValue({ ok: true, value: state });
     render(<DecisionRoomV1 />);
