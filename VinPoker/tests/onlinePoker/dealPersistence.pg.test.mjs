@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { dealNextHand } from '../../supabase/functions/_shared/pokerRuntime/dealNextHand.ts';
-import { applyAction, createHand, shuffledDeck } from '../../supabase/functions/_shared/pokerEngine/index.ts';
+import { applyAction, createHand, forcedTimeoutAction, shuffledDeck } from '../../supabase/functions/_shared/pokerEngine/index.ts';
 import { actionToRow, deserializeAuthoritative, ENGINE_VERSION, serializeAuthoritative } from '../../supabase/functions/_shared/pokerAdapter/index.ts';
 
 const tableId = 'ab510000-0000-4000-8000-000000000001';
@@ -346,6 +346,38 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${pausedTable}'`), '0');
   sql(`UPDATE public.online_poker_seats SET status='sitting_out' WHERE table_id='${pausedTable}' AND seat_no=7`);
   assert.equal((await admin.rpc('op_start_hand', ordinaryArgs)).data.outcome, 'ok');
+
+  const sweep = () => json('SET ROLE service_role; SELECT public.op_timeout_sweep()');
+  assert.ok(!sweep().hands.some(item => item.hand_id === pausedHand));
+  sql(`UPDATE public.online_poker_hands SET act_deadline=now()-interval '5 seconds' WHERE id='${pausedHand}'`);
+  const overdue = sweep().hands.find(item => item.hand_id === pausedHand);
+  assert.equal(overdue.state_version, 0);
+  const overdueContext = json(`SET ROLE service_role; SELECT public.op_load_action_context('${pausedHand}')`);
+  const overdueState = deserializeAuthoritative(overdueContext.state, overdueContext.live_deck, overdueContext.holes);
+  assert.equal(overdueState.toAct, 2);
+  const forced = forcedTimeoutAction(overdueState, overdueState.toAct);
+  assert.equal(forced.type, 'fold');
+  const timedOut = applyAction(overdueState, forced);
+  assert.equal(timedOut.error, undefined);
+  const timedOutState = serializeAuthoritative(timedOut.state);
+  const timeoutPayload = Buffer.from(JSON.stringify({
+    action: actionToRow(forced), state: timedOutState.stateJson, liveDeck: timedOutState.liveDeck,
+    events: timedOut.events.map(({ type, payload }) => ({ type, payload })),
+  })).toString('hex');
+  const commitTimeout = () => json(`
+    SET ROLE service_role;
+    WITH input AS (SELECT convert_from(decode('${timeoutPayload}','hex'),'UTF8')::jsonb AS p)
+    SELECT public.op_submit_action('${pausedHand}', '${first}', p->'action', p->'state',
+      p->'liveDeck', p->'events', 0, NULL, 'timeout_${pausedHand}_0') FROM input;
+  `);
+  const timeoutReceipt = commitTimeout();
+  assert.equal(timeoutReceipt.outcome, 'ok');
+  assert.equal(timeoutReceipt.state_version, 1);
+  assert.deepEqual(commitTimeout(), timeoutReceipt);
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${pausedHand}'`), '1');
+  assert.equal(sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
+    FROM public.online_poker_seats WHERE table_id='${pausedTable}'`), '95,105,25');
+  assert.ok(!sweep().hands.some(item => item.hand_id === pausedHand));
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
