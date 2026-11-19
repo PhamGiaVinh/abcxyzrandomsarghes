@@ -39,11 +39,13 @@ export default function OpsFinanceWorkspace() {
     let active = true;
     const load = async () => {
       const currentRange = currentMonthFinanceRange();
-      setRange(currentRange);
       setState(previous=>({ clubId, loading: true, summary: previous.clubId===clubId?previous.summary:null, blockedReason: null }));
       try {
         const summary = await loadFinanceSummary(client, clubId, currentRange);
-        if (active) setState({ clubId, loading: false, summary, blockedReason: null });
+        if (active) {
+          setRange(currentRange);
+          setState({ clubId, loading: false, summary, blockedReason: null });
+        }
       } catch (error: unknown) {
         if (active) setState({ clubId, loading: false, summary: null, blockedReason: safeErrorCode(error) });
       }
@@ -64,7 +66,7 @@ export default function OpsFinanceWorkspace() {
       summary={!capabilities.loading && !capabilities.scopeError && clubId && state.clubId === clubId ? state.summary : null}
       loading={capabilities.loading || state.clubId !== clubId || state.loading}
       blockedReason={capabilities.scopeError ?? (capabilities.loading ? null : !clubId ? "FINANCE_CLUB_SCOPE_REQUIRED" : state.clubId === clubId ? state.blockedReason : null)}
-      onRefresh={() => { setRange(currentMonthFinanceRange()); setRevision((value) => value + 1); }}
+      onRefresh={() => setRevision((value) => value + 1)}
     />
     {clubId && !capabilities.loading && !capabilities.scopeError && <TourRevenuePanel key={clubId} clubId={clubId} />}
     {clubId && OPS_CASHIER_MUTATIONS_ENABLED && <CashierCashflowPanel key={`${clubId}:${range.from}:${range.to}`} clubId={clubId} range={range} />}
