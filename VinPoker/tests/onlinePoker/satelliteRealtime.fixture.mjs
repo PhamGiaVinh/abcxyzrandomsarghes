@@ -31,6 +31,7 @@ export async function verifySatelliteRealtime({ sql, statusPath, first, spectato
   const clients = [clientFor(first), clientFor(spectator),
     createClient(status.API_URL, status.ANON_KEY, { auth: { persistSession: false } })];
   const seen = clients.map(() => []);
+  const arrivalByRevision = new Map();
   try {
     await Promise.all(clients.slice(0, 2).map(client => client.realtime.setAuth()));
     const visible = await Promise.all(clients.map(client => client.from('online_poker_hands')
@@ -41,7 +42,12 @@ export async function verifySatelliteRealtime({ sql, statusPath, first, spectato
     await Promise.all(clients.map((client, index) => new Promise((resolve, reject) => {
       client.channel(`fixture-poker-${index}`).on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'online_poker_hands',
-      }, payload => seen[index].push(payload.new)).subscribe((state) => {
+      }, payload => {
+        seen[index].push(payload.new);
+        if (index === 0 && payload.new.id === secondaryHand) {
+          arrivalByRevision.set(Number(payload.new.state_version), performance.now());
+        }
+      }).subscribe((state) => {
         if (state === 'SUBSCRIBED') resolve();
         if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT' || state === 'CLOSED') {
           reject(new Error(`Realtime subscription: ${state}`));
@@ -82,6 +88,27 @@ export async function verifySatelliteRealtime({ sql, statusPath, first, spectato
     assert.doesNotMatch(JSON.stringify(seen[0].find(row => row.id === secondaryHand)),
       /"(?:holeCards|deck|board_future|server_seed)"\s*:/);
     console.log('SUPABASE_REALTIME_SATELLITE_SECONDARY_TABLE_ASSIGNED_ONLY_PASS');
+    // Diagnostic only. Start before the disposable SQL writer and finish in
+    // the authorized socket callback using the same monotonic clock.
+    const deliveryMs = [];
+    for (let i = 0; i < 20; i++) {
+      const started = performance.now();
+      const revision = receipt(secondaryHand);
+      await observe(() => arrivalByRevision.has(revision), `Missing secondary sample ${i + 1}`);
+      deliveryMs.push(arrivalByRevision.get(revision) - started);
+    }
+    const finalBarrier = receipt(practiceHand);
+    await observe(() => seen.every(events => events.some(row => row.id === practiceHand
+      && Number(row.state_version) === finalBarrier)), 'All sockets must receive the final diagnostic barrier');
+    assert.equal(received(seen[1], secondaryHand), 0);
+    assert.equal(received(seen[2], secondaryHand), 0);
+    deliveryMs.sort((left, right) => left - right);
+    console.log('SATELLITE_SECONDARY_REALTIME_DIAGNOSTIC', JSON.stringify({
+      scope: 'disposable_sql_dispatch_to_assigned_socket_callback',
+      expectedSamples: 20, completedSamples: deliveryMs.length,
+      openSockets: clients.length, p95Ms: Math.round(deliveryMs[Math.ceil(deliveryMs.length * .95) - 1]),
+      maxMs: Math.round(deliveryMs.at(-1)), capacityQualified: false,
+    }));
   } finally {
     await Promise.all(clients.map(async (client) => {
       await client.removeAllChannels();
