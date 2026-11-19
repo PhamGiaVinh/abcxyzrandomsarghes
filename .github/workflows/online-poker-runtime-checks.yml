@@ -91,8 +91,6 @@ jobs:
           cache-dependency-path: VinPoker/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - name: Fetch exact G02 registration dependency
-        run: git fetch --no-tags origin 6a1e68f9601d4830eae3120577a9c76b98bcb26a
       - name: Verify native start-hand persistence using the server engine
         env:
           VERIFY_POKER_BROWSER_RETRY: '1'
@@ -133,7 +131,6 @@ jobs:
             exit 1
           fi
           supabase status --workdir "$fixture" --output json >"$fixture/status.json"
-          git fetch --no-tags origin 6a1e68f9601d4830eae3120577a9c76b98bcb26a
           export POKER_ISOLATED_REALTIME_STATUS="$fixture/status.json"
           if ! node --experimental-transform-types --test tests/onlinePoker/dealPersistence.pg.test.mjs; then
             db_container="$(docker ps -a --filter 'name=supabase_db_' --format '{{.Names}}')"

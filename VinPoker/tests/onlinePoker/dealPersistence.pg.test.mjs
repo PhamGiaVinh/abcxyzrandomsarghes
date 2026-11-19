@@ -145,16 +145,13 @@ test('the shared server deal persists one native hand with consistent public and
   const anteRollback = file('../../supabase/pending-migrations/ROLLBACK_20261119203153_online_poker_bba_state_fence.sql');
   sql(anteMigration);
 
-  const registration = spawnSync('git', ['show',
-    '6a1e68f9601d4830eae3120577a9c76b98bcb26a:VinPoker/supabase/pending-migrations/20261119143438_online_satellite_pilot_registration.sql'],
-  { encoding: 'utf8' });
-  assert.equal(registration.status, 0, registration.stderr);
+  const registration = file('../../supabase/pending-migrations/20261119143438_online_satellite_pilot_registration.sql');
   sql(`
     ALTER TABLE public.clubs ADD COLUMN owner_id uuid REFERENCES auth.users(id);
     CREATE TABLE public.tournaments(id uuid PRIMARY KEY, club_id uuid REFERENCES public.clubs(id), name text);
     CREATE TABLE public.club_floors(club_id uuid, user_id uuid);
     CREATE TABLE public.club_members(club_id uuid, player_user_id uuid);
-    ${registration.stdout}
+    ${registration}
   `);
   sql(file('../../supabase/pending-migrations/20261119204101_online_satellite_deal_levels.sql'));
   sql(file('../../supabase/pending-migrations/20261119204315_online_satellite_deal_commit_fence.sql'));
