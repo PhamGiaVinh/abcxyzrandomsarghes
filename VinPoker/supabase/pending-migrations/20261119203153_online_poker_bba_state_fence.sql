@@ -33,7 +33,8 @@ BEGIN
   END IF;
 
   IF NEW.state_schema_version = 1 THEN
-    IF config ?| ARRAY['bigBlindAnte','bigBlindAnteSeat']
+    IF (config->>'schemaVersion')::int IS DISTINCT FROM 1
+       OR config ?| ARRAY['bigBlindAnte','bigBlindAnteSeat']
        OR EXISTS (SELECT 1 FROM jsonb_array_elements(NEW.state->'seats') s WHERE s ? 'deadAnte') THEN
       RAISE EXCEPTION 'online_poker_ante_requires_v2' USING ERRCODE = '23514';
     END IF;
@@ -42,6 +43,14 @@ BEGIN
 
   IF NEW.state_schema_version <> 2 OR (config->>'schemaVersion')::int IS DISTINCT FROM 2 THEN
     RAISE EXCEPTION 'online_poker_unsupported_hand_schema' USING ERRCODE = '23514';
+  END IF;
+  IF jsonb_typeof(NEW.state->'seats') IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'online_poker_ante_seat_invalid' USING ERRCODE = '23514';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM jsonb_array_elements(NEW.state->'seats') s GROUP BY (s->>'seat')::int HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'online_poker_ante_seat_invalid' USING ERRCODE = '23514';
   END IF;
   IF TG_OP = 'UPDATE' AND config IS DISTINCT FROM OLD.state->'config' THEN
     RAISE EXCEPTION 'online_poker_ante_configuration_changed' USING ERRCODE = '23514';
@@ -56,7 +65,10 @@ BEGIN
 
   SELECT count(*) FILTER (WHERE (s->>'seat')::int=payer),
          count(*) FILTER (WHERE
-           COALESCE((s->>'deadAnte')::bigint,0) IS DISTINCT FROM
+           (s->>'seat')::int IS NULL OR (s->>'seat')::int NOT BETWEEN 1 AND 10
+           OR s->>'playerId' IS NULL OR s->>'startingStack' IS NULL
+           OR s->>'totalCommitted' IS NULL OR s->>'committed' IS NULL
+           OR COALESCE((s->>'deadAnte')::bigint,0) IS DISTINCT FROM
              CASE WHEN (s->>'seat')::int=payer
                THEN LEAST(ante,GREATEST(0,(s->>'startingStack')::bigint-blind)) ELSE 0 END
            OR COALESCE((s->>'deadAnte')::bigint,0) >

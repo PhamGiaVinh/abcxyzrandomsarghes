@@ -542,6 +542,12 @@ test('the shared server deal persists one native hand with consistent public and
   delete legacy.config.bigBlindAnteSeat;
   for (const seat of legacy.seats) delete seat.deadAnte;
   assert.throws(() => json(submitAnteFold(legacy)), /online_poker_ante_configuration_changed/);
+  const duplicateSeat = structuredClone(anteFinal.stateJson);
+  duplicateSeat.seats.push(structuredClone(duplicateSeat.seats[0]));
+  const encodedDuplicate = Buffer.from(JSON.stringify(duplicateSeat)).toString('hex');
+  assert.throws(() => sql(`UPDATE public.online_poker_hands SET
+    state=convert_from(decode('${encodedDuplicate}','hex'),'UTF8')::jsonb WHERE id='${anteHand}'`),
+  /online_poker_ante_seat_invalid/);
   const anteSeatStacks = () => sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
     FROM public.online_poker_seats WHERE table_id='${anteTable}'`);
   assert.equal(anteSeatStacks(), '100,14');
