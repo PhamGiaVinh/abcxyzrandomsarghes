@@ -39,7 +39,7 @@ it.each(['write rejected', 'response lost after commit'])('retries only FT after
   fireEvent.change(screen.getByLabelText('Lương giờ cho PT'),{target:{value:'100000'}});
   fireEvent.change(screen.getByLabelText('Lương tháng cho FT'),{target:{value:'100.000'}});
   fireEvent.click(screen.getByRole('button',{name:'Áp lương cho 2 dealer'}));
-  fireEvent.click(screen.getByRole('button',{name:'Áp lương',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'Áp lương'}));
   await vi.waitFor(() => expect(mock.update).toHaveBeenNthCalledWith(2,{monthly_salary_vnd:100000,base_rate_vnd:3846,hourly_rate_vnd:481}));
   expect(mock.update).toHaveBeenNthCalledWith(1,{hourly_rate_vnd:100000,monthly_salary_vnd:0});
   expect(query.eq).toHaveBeenCalledWith('club_id', 'club');
@@ -55,7 +55,7 @@ it.each(['write rejected', 'response lost after commit'])('retries only FT after
   });
   if (!alreadyCommitted) mock.written.mockResolvedValueOnce({data:ftRates,error:null});
   fireEvent.click(screen.getByRole('button',{name:'Áp lương cho 1 dealer'}));
-  fireEvent.click(screen.getByRole('button',{name:'Áp lương',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'Áp lương'}));
   expect(await screen.findByText('Đã xác minh: TEST FT.')).toBeInTheDocument();
   expect(readQuery.eq).toHaveBeenNthCalledWith(6, 'id', 'ft');
   expect(mock.update).toHaveBeenCalledTimes(alreadyCommitted ? 2 : 3);
