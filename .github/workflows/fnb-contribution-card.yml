@@ -1,0 +1,22 @@
+name: FNB contribution card
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/src/components/series-intelligence/FnbClubContributionCard*'
+      - '.github/workflows/fnb-contribution-card.yml'
+permissions:
+  contents: read
+jobs:
+  fnb-contribution:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm test -- src/components/series-intelligence/FnbClubContributionCard.test.tsx

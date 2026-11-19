@@ -73,8 +73,14 @@ export function TurnoutForecastPanel({
   onViewOverlayWithForecast?: () => void;
 }) {
   const native = useNativeSeriesEvents();
-  // csvEvents is null in native mode (mirrors OwnerCommandCenter's handling) — never .length on null.
-  const events: SeriesEvent[] = csvEvents && csvEvents.length > 0 ? csvEvents : native.events;
+  const csvSelected = csvEvents != null;
+  const availableEvents = csvEvents ?? native.events;
+  const clubIds = useMemo(() => [...new Set(availableEvents.map(event => event.clubId))].sort(), [availableEvents]);
+  const [selection, setSelection] = useState({ sourceKey: "", club: "" });
+  const sourceKey = JSON.stringify([csvSelected ? "csv" : "native", clubIds]);
+  const club = clubIds.length === 1 ? clubIds[0] : selection.sourceKey === sourceKey ? selection.club : "";
+  const events = useMemo(() => club === "portfolio" ? availableEvents
+    : club ? availableEvents.filter(event => event.clubId === club) : [], [availableEvents, club]);
 
   const [date, setDate] = useState("");
   // Real start hour matters: training rows carry true start times (hour-slot feature); a date-only value
@@ -98,7 +104,7 @@ export function TurnoutForecastPanel({
 
   const ready = date.trim() !== "" && buyIn !== null && buyIn > 0;
   // Local datetime (never date-only) so the hour-slot feature matches the training rows' bucketing.
-  const eventDateTime = `${date}T${/^\d{2}:\d{2}$/.test(startTime) ? startTime : "19:00"}:00`;
+  const eventDateTime = `${date}T${/^\d{2}:\d{2}$/.test(startTime) ? startTime : "19:00"}:00+07:00`;
   const fc = useMemo(
     () =>
       ready
@@ -110,14 +116,14 @@ export function TurnoutForecastPanel({
         : null,
     [events, eventDateTime, buyIn, gtd, typeKeyword, seriesName, capacity, ready],
   );
-  const medianFee = useMemo(() => median(events.map((e) => e.fee)) ?? 0, [events]);
+  const medianFee = useMemo(() => median(events.map((e) => e.fee)), [events]);
 
   // Explicit forecast→overlay adapter feed (σ recovered from the forecast band; NO synthetic n anywhere).
   const feed = useMemo(() => forecastToOverlayFeed(fc, buyIn, override), [fc, buyIn, override]);
 
   // Bubble the feed up so the simulator below can offer "Dự báo" as a center source.
   useEffect(() => {
-    onForecastFeed?.(feed ? { ...feed, fee: medianFee } : null);
+    onForecastFeed?.(feed && medianFee !== null ? { ...feed, fee: medianFee } : null);
   }, [feed, medianFee, onForecastFeed]);
 
   const contributions = (fc?.coefContributions ?? []).filter((c) => Math.abs(c.impactPct) >= 1).slice(0, 8);
@@ -185,6 +191,22 @@ export function TurnoutForecastPanel({
           Học từ các giải đã chạy của club, chỉ dùng thông tin biết-trước-giải. Khác với "gợi ý từ giải tương tự" ở
           Bước ⑥ — đây là mô hình hồi quy nhiều yếu tố. Cả hai đều KHÔNG phải cam kết.
         </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {csvSelected ? "Nguồn: CSV đang chọn" : "Nguồn: giải trên VBacker"} · {events.length} giải trong phạm vi
+        </p>
+        {clubIds.length > 1 && (
+          <label className="mt-2 flex max-w-sm flex-col gap-1 text-xs">
+            Phạm vi dự báo
+            <select className="h-8 rounded-md border bg-background px-2" value={club}
+              onChange={event => setSelection({ sourceKey, club: event.target.value })}>
+              <option value="">Chọn CLB hoặc danh mục</option>
+              {clubIds.map(id => <option key={id} value={id}>CLB {id}</option>)}
+              <option value="portfolio">Danh mục {clubIds.length} CLB</option>
+            </select>
+          </label>
+        )}
+        {clubIds.length === 1 && !csvSelected && <p className="text-xs text-muted-foreground">CLB {club}</p>}
+        {!csvSelected && native.status === "unavailable" && <p role="alert" className="text-xs text-muted-foreground">{native.reason ?? "Chưa xác minh được nguồn giải."}</p>}
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
@@ -363,7 +385,7 @@ export function TurnoutForecastPanel({
 
               <Button
                 className="w-full gap-1.5"
-                disabled={!feed || gtd === null || gtd <= 0}
+                disabled={!feed || medianFee === null || gtd === null || gtd <= 0}
                 onClick={() => onViewOverlayWithForecast?.()}
                 title={gtd === null || gtd <= 0 ? "Nhập GTD dự kiến ở form bên trái trước" : undefined}
               >
@@ -374,7 +396,8 @@ export function TurnoutForecastPanel({
               )}
               {feed && (
                 <p className="text-center text-[10px] text-muted-foreground/80">
-                  fee mô phỏng = median toàn CLB ({formatVndShort(medianFee)} — giả định)
+                  {medianFee === null ? "Chưa đủ dữ liệu phí để mô phỏng overlay từ dự báo này."
+                    : `Phí mô phỏng lấy trung vị của mẫu (${formatVndShort(medianFee)} — giả định).`}
                 </p>
               )}
 

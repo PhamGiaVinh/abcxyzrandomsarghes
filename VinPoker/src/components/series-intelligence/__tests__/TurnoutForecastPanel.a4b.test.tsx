@@ -2,7 +2,7 @@
 // surface. Proves flag OFF keeps the existing branch, flag ON shows the honest baseline_only view (never a
 // fabricated 0), and the two flags never conflict.
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, cleanup, fireEvent } from "@testing-library/react";
+import { render, cleanup, fireEvent, screen } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({ FLAGS: {} as Record<string, boolean>, EVENTS: [] as unknown[] }));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: h.FLAGS }));
@@ -40,6 +40,25 @@ function fillInputs() {
 const oneEvent = () => {
   h.EVENTS = [ev(1, 200)];
 };
+
+it("requires a scope for multiple clubs and does not replace an empty CSV with native history", () => {
+  h.EVENTS = [ev(1, 100), { ...ev(2, 900), clubId: "c2" }, { ...ev(3, 1000), clubId: "c2" }];
+  const view = render(<TurnoutForecastPanel />);
+  expect(screen.getByText(/Nguồn: giải trên VBacker · 0 giải/)).toBeVisible();
+  fireEvent.change(screen.getByLabelText("Phạm vi dự báo"), { target: { value: "c2" } });
+  expect(screen.getByText(/Nguồn: giải trên VBacker · 2 giải/)).toBeVisible();
+  view.rerender(<TurnoutForecastPanel csvEvents={[]} />);
+  expect(screen.getByText(/Nguồn: CSV đang chọn · 0 giải/)).toBeVisible();
+});
+
+it.each([null, 0, 100000])("preserves fee evidence when forwarding a forecast (%s)", (fee) => {
+  h.EVENTS = Array.from({ length: 12 }, (_, index) => ({ ...ev(index + 1, 200 + index), fee }));
+  const onForecastFeed = vi.fn();
+  render(<TurnoutForecastPanel onForecastFeed={onForecastFeed} />);
+  fillInputs();
+  expect(onForecastFeed).toHaveBeenLastCalledWith(fee === null ? null : expect.objectContaining({ fee }));
+  expect(has("Chưa đủ dữ liệu phí để mô phỏng overlay")).toBe(fee === null);
+});
 
 describe("A4b panel flag matrix (n=1, model unavailable)", () => {
   it("both flags OFF ⇒ existing warning branch, no A4b view", () => {
