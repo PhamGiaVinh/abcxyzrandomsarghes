@@ -26,6 +26,22 @@ function openControl() {
   );
 }
 
+it("shows the participant's own qualification on their closed table", async () => {
+  rpc.mockImplementation(name => ({
+    abortSignal: async () => ({
+      data: name === "get_my_online_satellite_result_v1"
+        ? { qualified: true, destinationName: "Giải đích TEST", lockedAt: "2030-01-01T12:00:00Z" }
+        : { tableId, clockRevision: "5", running: false, status: "closed",
+          canManage: false, canPlay: true, canProvision: false, qualificationReached: true },
+      error: null,
+    }),
+  }));
+  openControl();
+  expect(await screen.findByText("Bạn đạt suất TEST.")).toBeVisible();
+  expect(screen.getByText("Giải đích TEST")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Chia ván mới" })).not.toBeInTheDocument();
+});
+
 it("shows the qualification boundary without offering another deal", async () => {
   rpc.mockImplementation(name => {
     if (name === "lock_online_satellite_result_v1") {

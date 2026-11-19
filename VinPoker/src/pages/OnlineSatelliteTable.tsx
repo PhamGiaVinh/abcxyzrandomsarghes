@@ -26,6 +26,7 @@ const unprovisioned = z.object({
   canProvision: z.boolean(),
 });
 const clockReceipt = z.object({ outcome: z.enum(["ok", "stale"]) });
+const ownResult = z.object({ qualified: z.boolean(), destinationName: z.string(), lockedAt: z.string() });
 
 export default function OnlineSatelliteTable() {
   const { user, loading } = useAuth();
@@ -49,6 +50,18 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
         { p_pilot_id: pilotId } as never).abortSignal(signal);
       if (error) throw error;
       return z.union([tableSnapshot, unprovisioned]).nullable().parse(data);
+    },
+    retry: false,
+  });
+  const ownQualification = useQuery({
+    queryKey: ["online-satellite-own-result", actorId, pilotId],
+    enabled: Boolean(actorId) && !loading && pilot.success
+      && snapshot.data?.status === "closed" && snapshot.data.canPlay,
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.rpc("get_my_online_satellite_result_v1" as never,
+        { p_pilot_id: pilotId } as never).abortSignal(signal);
+      if (error) throw error;
+      return ownResult.nullable().parse(data);
     },
     retry: false,
   });
@@ -90,6 +103,21 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
             <p role="status">{snapshot.data.status === "closed" ? "Bàn đã đóng"
               : snapshot.data.qualificationReached ? "Đã chạm ngưỡng suất TEST"
               : snapshot.data.running ? "Đồng hồ đang chạy" : "Đồng hồ đang tạm dừng"}</p>
+            {snapshot.data.status === "closed" && snapshot.data.canPlay && (
+              <section className="space-y-1" aria-label="Kết quả của bạn">
+                <h2 className="font-semibold">Kết quả của bạn</h2>
+                {ownQualification.isFetching ? <p role="status">Đang kiểm tra kết quả…</p>
+                  : ownQualification.isError ? <>
+                    <p role="alert">Chưa tải được kết quả.</p>
+                    <Button variant="outline" onClick={() => void ownQualification.refetch()}>Tải lại kết quả</Button>
+                  </>
+                  : ownQualification.data ? <>
+                    <p role="status">{ownQualification.data.qualified ? "Bạn đạt suất TEST." : "Bạn chưa đạt suất TEST."}</p>
+                    <p className="text-sm text-muted-foreground">{ownQualification.data.destinationName}</p>
+                  </>
+                  : <p role="status">Chưa có kết quả đã khóa cho tài khoản này.</p>}
+              </section>
+            )}
             <div className="flex flex-wrap gap-2">
               {snapshot.data.canPlay && (
                 <Button asChild><Link to={`/poker/table/${snapshot.data.tableId}`}>Vào bàn</Link></Button>
