@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ViewerTab } from "./viewerTypes";
 const { hubData, publicData, snapshotReads } = vi.hoisted(() => ({
   snapshotReads:vi.fn(),
@@ -14,12 +14,13 @@ vi.mock("@/hooks/use-mobile", () => ({ useIsMobile: () => false }));
 vi.mock("./useLiveTrackerData", () => ({ useLiveTrackerData: () => hubData }));
 vi.mock("./usePublicSpectatorSnapshot", () => ({ usePublicSpectatorSnapshot: (...args:unknown[]) => {snapshotReads(...args);return publicData;} }));
 vi.mock("@/components/tracker/useTournamentTableAppearance", () => ({ useTournamentTableAppearance: () => ({ data: undefined }) }));
-vi.mock("./LiveHubHeader", () => ({ LiveHubHeader: () => null }));
+vi.mock("./LiveHubHeader", () => ({ LiveHubHeader: ({ lastUpdated }: {lastUpdated?: Date | null}) => <output data-testid="table-publication">{lastUpdated?.toISOString() ?? "unverified"}</output> }));
 vi.mock("./LiveStatsBar", () => ({ LiveStatsBar: () => null }));
 vi.mock("./LiveStoryFeed", () => ({ LiveStoryFeed: () => null }));
 vi.mock("./LiveUpdatesFeed", () => ({ LiveUpdatesFeed: () => null }));
 vi.mock("./LiveHandFeed", () => ({ LiveHandFeed: ({ featuredTableId, initialTableHistory, variant }: { featuredTableId: string; initialTableHistory: boolean; variant: string }) => <output data-testid="feed">{variant}:{featuredTableId}:{String(initialTableHistory)}</output> }));
 import { LiveHub } from "./LiveHub";
+afterEach(cleanup);
 
 describe("table history opens inside one selected table", () => {
   it("keeps four event sections and opens the table-history child panel", () => {
@@ -31,6 +32,7 @@ describe("table history opens inside one selected table", () => {
       return <output data-testid="viewer">{selectedTableIdOverride}:{initialTablePanel}</output>;
     }
     render(<App />);
+    expect(screen.getByTestId("table-publication")).toHaveTextContent("unverified");
     expect(screen.getAllByRole("tab")).toHaveLength(4);
     expect(screen.getByRole("tab", { name: "Bàn LIVE" })).toHaveAttribute("aria-selected", "true");
     fireEvent.click(within(screen.getByRole("article", { name: "Bàn 2" })).getByRole("button", { name: "Lịch sử" }));
