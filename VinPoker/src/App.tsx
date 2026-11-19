@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import {LegacyGroupNotificationRedirect} from '@/components/notifications/LegacyGroupNotificationRedirect';
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { installToastSounds } from "@/lib/toastSound";
+import { FEATURES } from "@/lib/featureFlags";
 
 // Attach success/error/info/warning sound effects to every sonner toast.
 installToastSounds();
