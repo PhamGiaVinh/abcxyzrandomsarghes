@@ -73,8 +73,14 @@ export function TurnoutForecastPanel({
   onViewOverlayWithForecast?: () => void;
 }) {
   const native = useNativeSeriesEvents();
-  // csvEvents is null in native mode (mirrors OwnerCommandCenter's handling) — never .length on null.
-  const events: SeriesEvent[] = csvEvents && csvEvents.length > 0 ? csvEvents : native.events;
+  const csvSelected = csvEvents != null;
+  const availableEvents = csvEvents ?? native.events;
+  const clubIds = useMemo(() => [...new Set(availableEvents.map(event => event.clubId))].sort(), [availableEvents]);
+  const [selection, setSelection] = useState({ sourceKey: "", club: "" });
+  const sourceKey = JSON.stringify([csvSelected ? "csv" : "native", clubIds]);
+  const club = clubIds.length === 1 ? clubIds[0] : selection.sourceKey === sourceKey ? selection.club : "";
+  const events = useMemo(() => club === "portfolio" ? availableEvents
+    : club ? availableEvents.filter(event => event.clubId === club) : [], [availableEvents, club]);
 
   const [date, setDate] = useState("");
   // Real start hour matters: training rows carry true start times (hour-slot feature); a date-only value
@@ -185,6 +191,22 @@ export function TurnoutForecastPanel({
           Học từ các giải đã chạy của club, chỉ dùng thông tin biết-trước-giải. Khác với "gợi ý từ giải tương tự" ở
           Bước ⑥ — đây là mô hình hồi quy nhiều yếu tố. Cả hai đều KHÔNG phải cam kết.
         </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {csvSelected ? "Nguồn: CSV đang chọn" : "Nguồn: giải trên VBacker"} · {events.length} giải trong phạm vi
+        </p>
+        {clubIds.length > 1 && (
+          <label className="mt-2 flex max-w-sm flex-col gap-1 text-xs">
+            Phạm vi dự báo
+            <select className="h-8 rounded-md border bg-background px-2" value={club}
+              onChange={event => setSelection({ sourceKey, club: event.target.value })}>
+              <option value="">Chọn CLB hoặc danh mục</option>
+              {clubIds.map(id => <option key={id} value={id}>CLB {id}</option>)}
+              <option value="portfolio">Danh mục {clubIds.length} CLB</option>
+            </select>
+          </label>
+        )}
+        {clubIds.length === 1 && !csvSelected && <p className="text-xs text-muted-foreground">CLB {club}</p>}
+        {!csvSelected && native.status === "unavailable" && <p role="alert" className="text-xs text-muted-foreground">{native.reason ?? "Chưa xác minh được nguồn giải."}</p>}
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
