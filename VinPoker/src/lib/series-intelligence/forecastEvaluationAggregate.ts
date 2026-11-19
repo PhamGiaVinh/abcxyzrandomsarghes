@@ -21,8 +21,9 @@ function sampleGate(n: number): ForecastEvaluationSampleGate {
   return "evaluation_summary_available";
 }
 
-function groupKey(evaluation: Pick<SeriesForecastEvaluationV1, "targetMetric" | "horizon" | "engineId" | "engineVersion" | "band">): string {
+function groupKey(evaluation: SeriesForecastEvaluationV1): string {
   return JSON.stringify([
+    evaluation.clubId,
     evaluation.targetMetric,
     evaluation.horizon,
     evaluation.engineId,
@@ -41,9 +42,10 @@ export function aggregateForecastEvaluationsV1(
   const groups = new Map<string, SeriesForecastEvaluationV1[]>();
   for (const evaluation of evaluations) {
     if (evaluation.lifecycle !== "current") continue;
-    const key = groupKey(evaluation);
+    const current: SeriesForecastEvaluationV1 = { ...evaluation, lifecycle: "current" };
+    const key = groupKey(current);
     const group = groups.get(key) ?? [];
-    group.push({ ...evaluation, lifecycle: "current" });
+    group.push(current);
     groups.set(key, group);
   }
 
@@ -51,10 +53,12 @@ export function aggregateForecastEvaluationsV1(
     const first = group[0];
     const signed = group.reduce((sum, item) => sum + BigInt(item.signedError), 0n);
     const absolute = group.reduce((sum, item) => sum + BigInt(item.absoluteError), 0n);
+    const actual = group.reduce((sum, item) => sum + BigInt(item.actual), 0n);
     const banded = group.filter((item) => item.band.available);
     const inside = banded.filter((item) => item.band.actualInsideBand === true).length;
     return {
       contractVersion: FORECAST_EVALUATION_CONTRACT_VERSION,
+      clubId: first.clubId,
       targetMetric: first.targetMetric,
       horizon: first.horizon,
       engineId: first.engineId,
@@ -65,6 +69,7 @@ export function aggregateForecastEvaluationsV1(
       sumAbsoluteError: absolute.toString(),
       meanSignedError: { numerator: signed.toString(), denominator: group.length },
       mae: { numerator: absolute.toString(), denominator: group.length },
+      wape: actual > 0n ? { numerator: absolute.toString(), denominator: actual.toString() } : null,
       exactCount: group.filter((item) => item.direction === "exact").length,
       overCount: group.filter((item) => item.direction === "over").length,
       underCount: group.filter((item) => item.direction === "under").length,

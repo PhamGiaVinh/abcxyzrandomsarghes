@@ -1,15 +1,23 @@
 import { useEffect, useState } from "react";
+import { z } from "zod";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
+import { startLiveReportRefresh } from "@/lib/liveReportRefresh";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import type { FinanceRange } from "./financeReadAdapter";
 
-type Cashflow = {
-  ok: boolean;
-  cash_flow: { cash_in: number; cash_out: number; bank_in: number; bank_out: number; unallocated_bank: number };
-  unmatched_verified_bank: number;
-  entry_allocation: { prize_delta: number; fees_delta: number; unclassified_entries: number };
-  closed_shift_variance: number;
-  drawer_adjustments: number;
-};
+const amount = z.number().refine(Number.isSafeInteger);
+const cashflow = z.object({
+  ok: z.literal(true),
+  club_id: z.string(),
+  from: z.string(),
+  to: z.string(),
+  cash_flow: z.object({ cash_in: amount, cash_out: amount, bank_in: amount, bank_out: amount, unallocated_bank: amount }),
+  unmatched_verified_bank: amount,
+  entry_allocation: z.object({ prize_delta: amount, fees_delta: amount, unclassified_entries: z.number().int().nonnegative() }),
+  closed_shift_variance: amount,
+  drawer_adjustments: amount,
+});
+type Cashflow = z.infer<typeof cashflow>;
 const money = (value: number) => `${new Intl.NumberFormat("vi-VN").format(value)} VND`;
 
 export default function CashierCashflowPanel({ clubId, range }: { clubId: string; range: FinanceRange }) {
@@ -19,18 +27,21 @@ export default function CashierCashflowPanel({ clubId, range }: { clubId: string
     let active = true;
     setState({ data: null, error: null });
     const load = async () => {
-      const { data, error } = await client.rpc("cashier_cashflow_range_v1" as never, {
-        p_club_id: clubId, p_from: range.from, p_to: range.to,
-      } as never);
-      if (!active) return;
-      const result = data as unknown as Cashflow | null;
-      setState(error || !result?.ok
-        ? { data: null, error: "Không tải được sổ dòng tiền Cashier V1." }
-        : { data: result, error: null });
+      try {
+        const { data, error } = await observeTrackerContextRead(client.rpc("cashier_cashflow_range_v1" as never, {
+          p_club_id: clubId, p_from: range.from, p_to: range.to,
+        } as never));
+        if (error) throw error;
+        const result = cashflow.parse(data);
+        if (result.club_id !== clubId || Date.parse(result.from) !== Date.parse(range.from)
+          || Date.parse(result.to) !== Date.parse(range.to)) throw new Error("CASHFLOW_SCOPE_MISMATCH");
+        if (active) setState({ data: result, error: null });
+      } catch {
+        if (active) setState({ data: null, error: "Không tải được sổ dòng tiền Cashier V1." });
+      }
     };
-    void load();
-    const timer = window.setInterval(() => { void load(); }, 30_000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = startLiveReportRefresh(load, 30_000);
+    return () => { active = false; stop(); };
   }, [client, clubId, range.from, range.to]);
 
   return <section className="mt-5 rounded-2xl border border-emerald-300/20 bg-[#07100c] p-4 sm:p-5">
