@@ -68,6 +68,7 @@ test('the shared server deal persists one native hand with consistent public and
     op_submit_action: 'b0dd7ff7cd2d70b84198d35de5f14f6e',
     op_stand_up: '140a23e7260f0d70a11c097c7986061f',
   });
+  sql(file('../../supabase/pending-migrations/20261119193713_online_poker_complete_deal_stack_writeback.sql'));
 
   const reads = {
     online_poker_tables: `SELECT row_to_json(t) FROM public.online_poker_tables t WHERE id='${tableId}'`,
@@ -179,14 +180,28 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(allIn.state.status, 'complete');
   assert.deepEqual(allIn.state.seats.map(seat => seat.stack), [0n, 15n]);
   const terminal = serializeAuthoritative(allIn.state);
-  const started = await admin.rpc('op_start_hand', {
+  const startAllIn = () => admin.rpc('op_start_hand', {
     p_state: terminal.stateJson, p_deck: deck, p_board_future: terminal.liveDeck,
     p_holes: terminal.holes, p_events: allIn.events.map(({ type, payload }) => ({ type, payload })),
     p_engine_version: ENGINE_VERSION, p_act_deadline: null, p_actor_user_id: null,
   });
+  sql(`UPDATE public.online_poker_tables SET status='paused' WHERE id='${shortTable}'`);
+  assert.equal((await startAllIn()).data.detail, 'stale table configuration');
+  sql(`UPDATE public.online_poker_tables SET status='open',bb=15 WHERE id='${shortTable}'`);
+  assert.equal((await startAllIn()).data.detail, 'stale table configuration');
+  sql(`UPDATE public.online_poker_tables SET bb=10 WHERE id='${shortTable}'`);
+  sql(`UPDATE public.online_poker_seats SET stack=11 WHERE table_id='${shortTable}' AND seat_no=5`);
+  await assert.rejects(startAllIn, /online_poker_stale_terminal_seats/);
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE id='${shortHand}'`), '0');
+  assert.equal(sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
+    FROM public.online_poker_seats WHERE table_id='${shortTable}'`), '5,11');
+  sql(`UPDATE public.online_poker_seats SET stack=10 WHERE table_id='${shortTable}' AND seat_no=5`);
+  const started = await startAllIn();
   assert.equal(started.data.outcome, 'ok');
   assert.equal(sql(`SELECT status FROM public.online_poker_hands WHERE id='${shortHand}'`), 'complete');
   assert.equal(sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
     FROM public.online_poker_seats WHERE table_id='${shortTable}'`), '0,15',
     'An immediately complete deal must also persist its terminal stacks');
+  assert.equal((await startAllIn()).data.detail, 'stale hand sequence');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${shortTable}'`), '1');
 });
