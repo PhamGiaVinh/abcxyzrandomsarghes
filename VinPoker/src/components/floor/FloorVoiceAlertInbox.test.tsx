@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
-const alert = { id: "alert-1", tournament_id: "tour-1", physical_table_id: "physical-5", hand_id: "hand-12", title: "Sai action", priority: "urgent", status: "open", updated_at: "2026-11-18T09:30:00Z" };
+const alert = { id: "alert-1", tournament_id: "tour-1", physical_table_id: "physical-5", hand_id: "hand-12" as string | null, alert_kind: "wrong_action", source_action_id: null, title: "Sai action", priority: "urgent", status: "open", updated_at: "2026-11-18T09:30:00Z" };
 const query = {
   select: vi.fn(),
   in: vi.fn(),
@@ -35,6 +35,17 @@ afterEach(() => {
 });
 
 describe("FloorVoiceAlertInbox", () => {
+  it("opens an operational alert without suggesting a hand change", async () => {
+    query.abortSignal.mockResolvedValueOnce({ data: [
+      { ...alert, alert_kind: "display_issue", hand_id: null, title: "Màn hình bàn sai" },
+    ], error: null });
+    const onSelect = vi.fn();
+    render(<FloorVoiceAlertInbox tournaments={[{ id: "tour-1", name: "Giải TEST" }]} onSelect={onSelect} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Màn hình bàn sai.*Mở cảnh báo/i }));
+    expect(screen.queryByText(/Action sai chưa được chỉ rõ|Xem toàn bộ ván/)).not.toBeInTheDocument();
+    expect(onSelect).toHaveBeenCalledWith("tour-1", "alert-1");
+  });
+
   it("shows an open Tracker alert on the Floor landing and opens its tournament", async () => {
     const onSelect = vi.fn();
     render(<MemoryRouter><FloorVoiceAlertInbox tournaments={[{ id: "tour-1", name: "Giải TEST" }]} onSelect={onSelect} /></MemoryRouter>);

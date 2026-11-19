@@ -13,6 +13,8 @@ type AlertRow = {
   tournament_id: string;
   physical_table_id: string;
   hand_id: string | null;
+  alert_kind: string;
+  source_action_id: string | null;
   title: string;
   priority: string;
   status: string;
@@ -42,7 +44,7 @@ export function FloorVoiceAlertInbox({ tournaments, onSelect }: {
       try {
         const { data, error: readError } = await observeTrackerContextRead(client
           .from("tracker_floor_alerts")
-          .select("id,tournament_id,physical_table_id,hand_id,title,priority,status,updated_at")
+          .select("id,tournament_id,physical_table_id,hand_id,alert_kind,source_action_id,title,priority,status,updated_at")
           .in("tournament_id", ids)
           .in("status", ["open", "acknowledged", "in_progress"])
           .order("created_at", { ascending: true })
@@ -79,6 +81,7 @@ export function FloorVoiceAlertInbox({ tournaments, onSelect }: {
       <div className="space-y-2">
         {alerts.map((alert) => {
           const location = locationFor(alert);
+          const reviewHand = alert.hand_id && alert.alert_kind !== "display_issue" && !location?.handVoided;
           return <div
             key={alert.id}
             className="rounded-xl border border-amber-300/20 bg-black/20 px-3 py-2 text-sm text-foreground"
@@ -92,8 +95,13 @@ export function FloorVoiceAlertInbox({ tournaments, onSelect }: {
                   <> · Cập nhật <time dateTime={alert.updated_at}>{formatDateTime(alert.updated_at)}</time></>
                 )}
               </span>
-              <span className="mt-1 block text-xs text-amber-100">{location?.handVoided ? "Hand đã void; Floor cần đóng cảnh báo." : "Action sai chưa được chỉ rõ; xem toàn bộ action để tìm chỗ cần sửa."}</span>
-              <span className="mt-1 block text-xs font-semibold text-amber-300">{location?.handStatus === "completed" && !location?.handVoided ? "Xem toàn bộ ván và sửa hand →" : "Xem toàn bộ ván →"}</span>
+              {location?.handVoided && <span className="mt-1 block text-xs text-amber-100">Hand đã void; Floor cần đóng cảnh báo.</span>}
+              {reviewHand && alert.alert_kind === "wrong_action" && !alert.source_action_id && (
+                <span className="mt-1 block text-xs text-amber-100">Action sai chưa được chỉ rõ; xem nhật ký ván trước khi sửa.</span>
+              )}
+              <span className="mt-1 block text-xs font-semibold text-amber-300">
+                {reviewHand ? location?.handStatus === "completed" ? "Xem toàn bộ ván và sửa hand →" : "Xem toàn bộ ván →" : "Mở cảnh báo →"}
+              </span>
             </button>
           </div>;
         })}
