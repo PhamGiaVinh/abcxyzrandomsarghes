@@ -104,4 +104,21 @@ $$;
 REVOKE ALL ON FUNCTION public.lock_online_satellite_result_v1(uuid,uuid,integer) FROM PUBLIC, anon, service_role;
 GRANT EXECUTE ON FUNCTION public.lock_online_satellite_result_v1(uuid,uuid,integer) TO authenticated;
 
+CREATE FUNCTION public.get_my_online_satellite_result_v1(p_pilot_id uuid)
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT jsonb_build_object(
+    'qualified',e.id=ANY(r.qualified_entries),
+    'lockedAt',r.locked_at,
+    'destinationName',t.name
+  )
+  FROM online_satellite_private.locked_results r
+  JOIN online_satellite_private.pilots p ON p.id=r.pilot_id
+  JOIN public.tournaments t ON t.id=p.destination_tournament_id AND t.club_id=p.club_id
+  JOIN online_satellite_private.entries e ON e.pilot_id=p.id AND e.player_user_id=(SELECT auth.uid())
+  WHERE p.id=p_pilot_id;
+$$;
+REVOKE ALL ON FUNCTION public.get_my_online_satellite_result_v1(uuid) FROM PUBLIC, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.get_my_online_satellite_result_v1(uuid) TO authenticated;
+
 COMMIT;

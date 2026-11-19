@@ -987,6 +987,12 @@ test('the shared server deal persists one native hand with consistent public and
     JOIN online_satellite_private.entries e ON e.id=r.qualified_entries[1]
     WHERE r.pilot_id='${exactBubble.bubblePilot}'`), second);
   assert.equal(sql(`SELECT status FROM public.online_poker_tables WHERE id='${exactBubble.bubbleTable}'`), 'closed');
+  const ownQualification = (actor) => json(`SET ROLE authenticated;
+    SET request.jwt.claim.sub='${actor}';
+    SELECT COALESCE(public.get_my_online_satellite_result_v1('${exactBubble.bubblePilot}'),'null'::jsonb)`);
+  assert.equal(ownQualification(second).qualified, true);
+  assert.equal(ownQualification(first).qualified, false);
+  assert.equal(ownQualification(spectator), null);
   assert.deepEqual(lockResult(first,boundaryPilot), { outcome: 'ok', idempotent: false, qualifiedCount: 2 });
   assert.deepEqual(lockResult(first,boundaryPilot), { outcome: 'ok', idempotent: true, qualifiedCount: 2 });
   assert.equal(sql(`SELECT status FROM public.online_poker_tables WHERE id='${boundary.tableId}'`), 'closed');
