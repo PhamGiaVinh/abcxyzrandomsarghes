@@ -1597,7 +1597,7 @@ test('active checkout respects automatic OFF and rested replacement eligibility'
  }catch(error){phase+='-failed';report();throw error;}
 });
 
-test('current Floor deferred move reserves and cancels without joining an active hand',async({page})=>{
+test('current Floor deferred move reserves and cancels without joining an active hand',async({page,baseURL})=>{
  test.skip(process.env.LOCAL_OPERATIONS_DEFERRED_MOVE_ENABLED!=='1','Isolated stage after existing operational conservation proofs');test.setTimeout(120_000);
  let failedRpc:{name:string;status:number;code:string;messageSha256:string|null;classification:string}|null=null;
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000001';
@@ -1637,10 +1637,13 @@ test('current Floor deferred move reserves and cancels without joining an active
   phase='same-key-race';const move=await intent(staff[2].userId,tableId),answers=await Promise.all(Array.from({length:20},()=>rpc(staff[0].token,'move_player_seat_v5',move)));for(const answer of answers)expect(answer.data).toEqual(answers[0].data);expect(answers[0].data.queued).toBe(true);
   race={requests:20,identicalResults:true,latency:dist(answers.map(r=>r.ms))};expect((await rpc(owner,'get_floor_pending_tracker_moves_v1',{p_tournament_id:tour})).data).toHaveLength(1);
   phase='two-visible-floor-screens';
-  const observer = await page.context().browser()!.newContext({ storageState: await page.context().storageState() });
+  expect(baseURL).toBeTruthy();
+  const observer = await page.context().browser()!.newContext();
   try {
-    const tabs = [page, await observer.newPage()];
-    const targetUrl = new URL(`/ops/floor/tournaments/${tour}/tables?club=a2000000-0000-4000-8000-000000000001`, page.url()).href;
+    const secondPage = await observer.newPage();
+    await loginOwner(secondPage);
+    const tabs = [page, secondPage];
+    const targetUrl = new URL(`/ops/floor/tournaments/${tour}/tables?club=a2000000-0000-4000-8000-000000000001`, baseURL).href;
     const readers = new Set([floorRosterRpc, 'get_floor_seatable_entries', 'get_floor_restorable_entries_v3', 'get_floor_pending_tracker_moves_v1']);
     await Promise.all(tabs.map(async (tab, index) => {
       const pendingReady = tab.waitForResponse(response => response.url().endsWith('/rpc/get_floor_pending_tracker_moves_v1')
