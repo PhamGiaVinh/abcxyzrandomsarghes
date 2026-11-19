@@ -47,3 +47,25 @@ it("clears old invite actions when club authority changes and discards its late 
   expect(screen.queryByRole("button", { name: "Thu hồi" })).not.toBeInTheDocument();
   expect(mock.invoke).not.toHaveBeenCalled();
 });
+
+it("keeps only the new actor's invite actions when the club does not change", async () => {
+  let finish!: (reply: unknown) => void;
+  mock.read.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }))
+    .mockResolvedValue({ data: [
+      { id: "new-invite", club_id: "a", email_normalized: "new@example.test", operator_role: "cashier", status: "active" },
+    ], error: null });
+  const view = render(<MemoryRouter><OpsClubAccounts /></MemoryRouter>);
+  expect(mock.read).toHaveBeenCalledWith("a");
+  mock.user = "new-owner";
+  view.rerender(<MemoryRouter><OpsClubAccounts /></MemoryRouter>);
+  expect(await screen.findByText("new@example.test")).toBeVisible();
+  await act(async () => finish({ data: [
+    { id: "old-invite", club_id: "a", email_normalized: "old@example.test", operator_role: "floor", status: "active" },
+  ], error: null }));
+  expect(screen.queryByText("old@example.test")).not.toBeInTheDocument();
+  mock.invoke.mockResolvedValue({ data: { status: "REVOKED", invite_status: "revoked", invite_id: "new-invite" }, error: null });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Thu hồi" })); });
+  expect(mock.invoke).toHaveBeenCalledExactlyOnceWith("ops-club-accounts", {
+    body: { action: "revoke", invite_id: "new-invite" },
+  });
+});
