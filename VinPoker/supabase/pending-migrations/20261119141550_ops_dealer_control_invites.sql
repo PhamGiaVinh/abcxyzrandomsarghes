@@ -271,7 +271,7 @@ DECLARE
   v_confirmed_at timestamptz;
   v_candidate record;
   v_invite public.club_operator_invites%ROWTYPE;
-  v_club_id uuid;
+  v_owner_id uuid;
   v_accepted_count integer := 0;
   v_already_active_count integer := 0;
   v_invite_ids jsonb := '[]'::jsonb;
@@ -298,7 +298,7 @@ BEGIN
       AND status IN ('pending', 'active')
     ORDER BY club_id, id
   LOOP
-    SELECT id INTO v_club_id
+    SELECT owner_id INTO v_owner_id
     FROM public.clubs
     WHERE id = v_candidate.club_id
     FOR UPDATE;
@@ -322,7 +322,8 @@ BEGIN
       CONTINUE;
     END IF;
     IF v_invite.operator_role = 'dealer_control'
-      AND (v_invite.invitation_sent_at IS NULL
+      AND (v_invite.invited_by IS DISTINCT FROM v_owner_id
+        OR v_invite.invitation_sent_at IS NULL
         OR v_invite.invitation_sent_at + interval '1 hour' <= clock_timestamp()) THEN
       CONTINUE;
     END IF;

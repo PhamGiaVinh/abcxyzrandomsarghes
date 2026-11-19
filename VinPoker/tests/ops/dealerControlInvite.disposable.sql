@@ -22,7 +22,8 @@ SELECT public.ops_test_assert(
 
 INSERT INTO auth.users (id, email) VALUES
  ('00000000-0000-0000-0000-000000000031', 'expired.dealer@example.com'),
- ('00000000-0000-0000-0000-000000000032', 'fresh.dealer@example.com');
+ ('00000000-0000-0000-0000-000000000032', 'fresh.dealer@example.com'),
+ ('00000000-0000-0000-0000-000000000033', 'previous.owner.dealer@example.com');
 
 SET LOCAL ROLE service_role;
 DO $test$
@@ -53,6 +54,9 @@ SELECT * FROM public.apply_club_operator_invite(
 SELECT * FROM public.apply_club_operator_invite(
  '00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000010',
  '00000000-0000-0000-0000-000000000032','fresh.dealer@example.com','dealer_control',true,'sent');
+SELECT * FROM public.apply_club_operator_invite(
+ '00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000010',
+ '00000000-0000-0000-0000-000000000033','previous.owner.dealer@example.com','dealer_control',true,'sent');
 RESET ROLE;
 
 SELECT public.ops_test_assert(
@@ -67,7 +71,7 @@ SELECT public.ops_test_assert(
 UPDATE public.club_operator_invites SET invitation_sent_at=now()-interval '61 minutes'
  WHERE email_normalized='expired.dealer@example.com';
 UPDATE auth.users SET email_confirmed_at=now()
- WHERE email IN ('expired.dealer@example.com','fresh.dealer@example.com');
+ WHERE email IN ('expired.dealer@example.com','fresh.dealer@example.com','previous.owner.dealer@example.com');
 
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000031',true);
@@ -80,13 +84,23 @@ SELECT public.ops_test_assert(
   'fresh confirmed invite activates Dealer Control');
 RESET ROLE;
 
+UPDATE public.clubs SET owner_id='00000000-0000-0000-0000-000000000099'
+ WHERE id='00000000-0000-0000-0000-000000000010';
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000033',true);
+SELECT public.ops_test_assert(
+  (public.accept_my_club_operator_invites()->>'acceptedCount')::int=0,
+  'a former owner invitation cannot activate Dealer Control');
+RESET ROLE;
+
 SET LOCAL ROLE service_role;
 SELECT * FROM public.revoke_club_operator_invite(
- '00000000-0000-0000-0000-000000000001', :'existing_invite'::uuid);
+ '00000000-0000-0000-0000-000000000099', :'existing_invite'::uuid);
 RESET ROLE;
 SELECT public.ops_test_assert(
  NOT EXISTS(SELECT 1 FROM public.club_dealer_controls WHERE user_id IN (
-   '00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000031'))
+   '00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000031',
+   '00000000-0000-0000-0000-000000000033'))
  AND EXISTS(SELECT 1 FROM public.club_dealer_controls
    WHERE club_id='00000000-0000-0000-0000-000000000010'
      AND user_id='00000000-0000-0000-0000-000000000032')

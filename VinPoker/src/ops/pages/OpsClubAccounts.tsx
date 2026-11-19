@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Link, Navigate } from "react-router-dom";
@@ -56,9 +57,16 @@ export default function OpsClubAccounts() {
   const [rows, setRows] = useState<InviteRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const visibleRows = rows.filter(row => row.club_id === clubId);
+  const canManageClub = ownerClubs.some(row => row.club_id === clubId);
+  const scopedClubId = canManageClub ? clubId : "";
+  const visibleRows = rows.filter(row => row.club_id === scopedClubId);
+  const currentClub = useRef(scopedClubId);
+  currentClub.current = scopedClubId;
+  const readVersion = useRef(0);
 
   const load = useCallback(async (selectedClubId: string) => {
+    if (selectedClubId !== currentClub.current) return;
+    const version = ++readVersion.current;
     if (!selectedClubId) return setRows([]);
     // Generated Database types cannot include an unapplied migration. The API
     // boundary is covered by a contract test until types regenerate after apply.
@@ -66,6 +74,7 @@ export default function OpsClubAccounts() {
     const { data, error } = await (client.from as any)("club_operator_invites")
       .select("id,club_id,email_normalized,operator_role,status")
       .eq("club_id", selectedClubId).order("created_at", { ascending: false });
+    if (version !== readVersion.current || selectedClubId !== currentClub.current) return;
     if (error) return setMessage("Chưa tải được danh sách lời mời.");
     setRows(
       (data ?? []).filter((row: InviteRow) =>
@@ -78,20 +87,20 @@ export default function OpsClubAccounts() {
     if (!clubId && ownerClubs.length === 1) setClubId(ownerClubs[0].club_id);
   }, [clubId, ownerClubs]);
   useEffect(() => {
-    void load(clubId);
-  }, [clubId, load]);
+    void load(scopedClubId);
+  }, [scopedClubId, load]);
   if (capabilities.loading) return null;
   if (!capabilities.hasOwnerAccess) return <Navigate to="/ops" replace />;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!clubId || !email.trim()) {
+    if (!scopedClubId || !email.trim()) {
       return setMessage("Chọn CLB và nhập email nhân viên.");
     }
     setLoading(true);
     setMessage(null);
     const { data, error } = await client.functions.invoke("ops-club-accounts", {
-      body: { action: "invite", club_id: clubId, email, operator_role: role },
+      body: { action: "invite", club_id: scopedClubId, email, operator_role: role },
     });
     setLoading(false);
     if (error || !data?.status) {
@@ -111,6 +120,7 @@ export default function OpsClubAccounts() {
   };
 
   const revoke = async (inviteId: string) => {
+    if (!visibleRows.some(row => row.id === inviteId)) return;
     setLoading(true);
     setMessage(null);
     const { error } = await client.functions.invoke("ops-club-accounts", {
@@ -157,7 +167,7 @@ export default function OpsClubAccounts() {
           <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="ops-invite-club">CLB</Label>
-              <Select value={clubId} onValueChange={setClubId}>
+              <Select value={clubId} onValueChange={setClubId} disabled={loading}>
                 <SelectTrigger
                   id="ops-invite-club"
                   className="min-h-11 bg-black/20"
@@ -208,7 +218,7 @@ export default function OpsClubAccounts() {
             </div>
             <Button
               type="submit"
-              disabled={loading || !ownerClubs.length}
+              disabled={loading || !scopedClubId}
               className="min-h-11 sm:col-span-2"
             >
               Gửi lời mời bảo mật
