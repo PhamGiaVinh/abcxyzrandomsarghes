@@ -389,6 +389,12 @@ export function useTableHand(tableId: string): TableHandState {
   // (the table row carries host_user_id changes). Dark: no-op.
   useEffect(() => {
     if (!RUNTIME_LIVE) return;
+    const issuedTable = tableScope.current;
+    let active = true;
+    let joined = false;
+    const refreshCurrentTable = () => {
+      if (active && issuedTable === tableScope.current) setTick(n => n + 1);
+    };
     const channel = supabase
       .channel(`op-table-${tableId}`)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -397,8 +403,12 @@ export function useTableHand(tableId: string): TableHandState {
       .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_seats', filter: `table_id=eq.${tableId}` }, () => setTick((n) => n + 1))
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_tables', filter: `id=eq.${tableId}` }, () => setTick((n) => n + 1))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .subscribe(status => {
+        if (status !== 'SUBSCRIBED') return;
+        if (joined) refreshCurrentTable();
+        joined = true;
+      });
+    return () => { active = false; supabase.removeChannel(channel); };
   }, [tableId]);
 
   // Polling fallback (live only): realtime postgres_changes can drop or lag, which would
