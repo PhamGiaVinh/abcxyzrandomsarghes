@@ -42,6 +42,9 @@ it.each(['write rejected', 'response lost after commit'])('retries only FT after
   fireEvent.click(screen.getByRole('button',{name:'Áp lương',exact:true}));
   await vi.waitFor(() => expect(mock.update).toHaveBeenNthCalledWith(2,{monthly_salary_vnd:100000,base_rate_vnd:3846,hourly_rate_vnd:481}));
   expect(mock.update).toHaveBeenNthCalledWith(1,{hourly_rate_vnd:100000,monthly_salary_vnd:0});
+  expect(query.eq).toHaveBeenCalledWith('club_id', 'club');
+  expect(query.is).toHaveBeenCalledWith('monthly_salary_vnd', null);
+  expect(query.eq).toHaveBeenCalledWith('standard_hours_per_shift', 8);
   expect(await screen.findByText('Đã xác minh: TEST PT.')).toBeInTheDocument();
   expect(screen.getByText('Chưa xác minh: TEST FT.')).toBeInTheDocument();
 
