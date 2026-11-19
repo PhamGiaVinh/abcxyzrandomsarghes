@@ -254,6 +254,34 @@ test('the shared server deal persists one native hand with consistent public and
   assert.deepEqual(clockCommand(first, setupPilot, 1, false), { outcome: 'stale', revision: '2', running: true });
   assert.deepEqual(clockCommand(first, setupPilot, 2, false), { outcome: 'ok', revision: '3', running: false });
   assert.equal((await dealNextHand(admin, setupReceipt.tableId, null)).reason, 'table_not_open');
+  assert.deepEqual(clockCommand(first, setupPilot, 3, true), { outcome: 'ok', revision: '4', running: true });
+  const provisionedDeal = await dealNextHand(admin, setupReceipt.tableId, null);
+  assert.equal(provisionedDeal.ok, true, JSON.stringify(provisionedDeal));
+  assert.deepEqual(clockCommand(first, setupPilot, 4, false), { outcome: 'ok', revision: '5', running: false });
+  const provisionedContext = json(`SET ROLE service_role;
+    SELECT public.op_load_action_context('${provisionedDeal.handId}')`);
+  const provisionedState = deserializeAuthoritative(
+    provisionedContext.state, provisionedContext.live_deck, provisionedContext.holes,
+  );
+  assert.equal(provisionedState.toAct, 1);
+  const provisionedFold = { type: 'fold', seat: 1 };
+  const provisionedSettled = applyAction(provisionedState, provisionedFold);
+  assert.equal(provisionedSettled.error, undefined);
+  const provisionedSplit = serializeAuthoritative(provisionedSettled.state);
+  const provisionedInput = Buffer.from(JSON.stringify({
+    action: actionToRow(provisionedFold), state: provisionedSplit.stateJson, deck: provisionedSplit.liveDeck,
+    events: provisionedSettled.events.map(({ type, payload }) => ({ type, payload })),
+  })).toString('hex');
+  const provisionedSubmit = `SET ROLE service_role;
+    WITH input AS (SELECT convert_from(decode('${provisionedInput}','hex'),'UTF8')::jsonb AS p)
+    SELECT public.op_submit_action('${provisionedDeal.handId}', '${first}', p->'action', p->'state',
+      p->'deck', p->'events', 0, NULL, 'disposable-g03-provisioned-fold') FROM input`;
+  assert.equal(json(provisionedSubmit).outcome, 'ok');
+  assert.equal(json(provisionedSubmit).outcome, 'ok');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${provisionedDeal.handId}'`), '1');
+  const provisionedStacks = () => json(`SELECT json_agg(stack ORDER BY seat_no)
+    FROM public.online_poker_seats WHERE table_id='${setupReceipt.tableId}'`);
+  assert.deepEqual(provisionedStacks(), [135,145]);
   const hand = await dealNextHand(admin, tableId, first);
   assert.ok(hand.ok, JSON.stringify(hand));
   assert.equal(hand.handNo, 1);
@@ -741,8 +769,7 @@ test('the shared server deal persists one native hand with consistent public and
   `);
   assert.deepEqual(json('SET ROLE service_role; SELECT public.op_reap_stale_seats(3600)'), { outcome: 'ok', reaped: 1 });
   assert.equal(sql(`SELECT status FROM public.online_poker_seats WHERE table_id='${reapPractice}'`), 'empty');
-  assert.equal(sql(`SELECT count(*) FROM public.online_poker_seats
-    WHERE table_id='${setupReceipt.tableId}' AND user_id IS NOT NULL AND stack=140`), '2');
+  assert.deepEqual(provisionedStacks(), [135,145]);
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
