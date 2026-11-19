@@ -213,11 +213,15 @@ async function handleStart(
   ) as SeatRow[];
   if (seated.length < 2) { log("not_enough_players", { table_id: tid, http: 409 }); return json({ error: "not_enough_players" }, 409); }
 
-  const { data: last } = await admin
+  const { data: last, error: lastError } = await admin
     .from("online_poker_hands")
     .select("hand_no, button_seat")
     .eq("table_id", body.tableId)
     .order("hand_no", { ascending: false }).limit(1).maybeSingle();
+  if (lastError) {
+    log("previous_hand_unavailable", { table_id: tid, http: 503 });
+    return json({ error: "previous_hand_unavailable" }, 503);
+  }
   const handNo = Number(last?.hand_no ?? 0) + 1;
   const seatNos = seated.map((s) => s.seat_no).sort((a, b) => a - b);
   const button = nextButton(last?.button_seat ?? null, seatNos);

@@ -24,7 +24,7 @@ export interface AdminClient {
 }
 
 export type DealReason =
-  | 'table_not_found' | 'table_not_open' | 'seats_load_failed'
+  | 'table_not_found' | 'table_not_open' | 'seats_load_failed' | 'previous_hand_unavailable'
   | 'not_enough_players' | 'could_not_start_hand' | 'already_active' | 'start_hand_failed';
 
 export type DealResult =
@@ -65,12 +65,13 @@ export async function dealNextHand(
   );
   if (seated.length < 2) return { ok: false, tableId, reason: 'not_enough_players' };
 
-  const { data: last } = await admin
+  const { data: last, error: lastError } = await admin
     .from('online_poker_hands')
     .select('hand_no, button_seat')
     .eq('table_id', tableId)
     .order('hand_no', { ascending: false }).limit(1).maybeSingle();
 
+  if (lastError) return { ok: false, tableId, reason: 'previous_hand_unavailable' };
   const handNo = Number(last?.hand_no ?? 0) + 1;
   const seatNos = seated.map((s) => s.seat_no).sort((a, b) => a - b);
   const button = nextButton(last?.button_seat ?? null, seatNos);
