@@ -64,7 +64,7 @@ export async function verifyBrowserActionRetry({ sql, actor, handId, seat }) {
       return query;
     },
     async rpc(name, args) {
-      if (name === 'op_is_enabled') return { data: json('SELECT public.op_is_enabled()'), error: null };
+      if (name === 'op_is_enabled') return { data: json('SELECT to_jsonb(public.op_is_enabled())'), error: null };
       if (name === 'op_load_action_context') {
         assert.equal(args.p_hand_id, handId);
         return { data: json(`SELECT public.op_load_action_context('${handId}')`), error: null };
