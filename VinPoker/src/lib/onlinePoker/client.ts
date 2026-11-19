@@ -15,6 +15,7 @@
 // schema. The wire view shapes live in ./wire.ts (a hand-maintained server mirror).
 
 import { supabase } from '@/integrations/supabase/client';
+import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js';
 import { RUNTIME_LIVE } from './types';
 import {parseOnlineCreateReceipt,parseOnlineCreateResolution,type OnlineCreatePayload} from './createReceipt';
 import type { ActionType, LobbyTableSummary, PublicHandView, PublicSeatView, WalletView } from './types';
@@ -130,6 +131,29 @@ async function invokeEdge<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
+async function submitWithTransportRetry(body: ReturnType<typeof bodySubmitAction>): Promise<SubmitActionResult> {
+  if (!RUNTIME_LIVE) throw new RuntimeNotLiveError();
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session) throw new OnlinePokerError('auth_required');
+  const send = (accessToken: string) => supabase.functions.invoke<SubmitActionResult>('online-poker-action', {
+    body, headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  let result = await send(session.access_token);
+  const response = result.error instanceof FunctionsHttpError ? result.error.context as Response : null;
+  if (result.error instanceof FunctionsFetchError || response?.status === 503) {
+    const current = await supabase.auth.getSession();
+    if (current.error || current.data.session?.user.id !== session.user.id) {
+      throw new OnlinePokerError('auth_scope_changed');
+    }
+    result = await send(current.data.session.access_token);
+  }
+  if (result.error) throw new OnlinePokerError('edge_error', result.error.message);
+  if (!result.data || typeof result.data !== 'object' || 'error' in result.data) {
+    throw new OnlinePokerError('invalid_action_response');
+  }
+  return result.data;
+}
+
 // ── public client surface ────────────────────────────────────────────────────
 
 export const onlinePokerClient = {
@@ -182,7 +206,7 @@ export const onlinePokerClient = {
 
   /** Submit an action intent; the server re-validates with the engine. */
   submitAction: (req: Omit<ActionRequest, 'idempotencyKey'> & { idempotencyKey?: string }) =>
-    invokeEdge<SubmitActionResult>(
+    submitWithTransportRetry(
       bodySubmitAction({ ...req, idempotencyKey: req.idempotencyKey ?? newIdemKey() }),
     ),
 };

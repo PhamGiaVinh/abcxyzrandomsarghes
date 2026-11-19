@@ -260,8 +260,9 @@ async function handleSubmit(
   for (let attempt = 0; attempt < MAX_CAS_RETRIES; attempt++) {
     const tryNo = attempt + 1; // 1-based for human-readable logs
     const { data: ctx, error: lErr } = await admin.rpc("op_load_action_context", { p_hand_id: body.handId });
-    if (lErr) { log("load_failed", { hand_id: hid, attempt: tryNo, http: 400 }); return json({ error: "load_failed" }, 400); }
-    if (!ctx || ctx.outcome !== "ok") {
+    if (lErr || !ctx || ctx.outcome !== "ok") {
+      const receipt = await readReceipt();
+      if (receipt.kind === "committed") return acknowledgeReceipt(receipt.stateVersion, tryNo);
       const httpCode = ctx?.outcome === "not_found" ? 404 : 400;
       log(ctx?.outcome ?? "load_failed", { hand_id: hid, attempt: tryNo, http: httpCode });
       return json({ error: ctx?.outcome ?? "load_failed" }, httpCode);
@@ -272,6 +273,8 @@ async function handleSubmit(
     try {
       state = deserializeAuthoritative(ctx.state, ctx.live_deck ?? [], ctx.holes ?? []);
     } catch (_e) {
+      const receipt = await readReceipt();
+      if (receipt.kind === "committed") return acknowledgeReceipt(receipt.stateVersion, tryNo);
       log("state_error", { hand_id: hid, attempt: tryNo, http: 500 });
       return json({ error: "state_error" }, 500); // G1: no invariant message (may name a card)
     }

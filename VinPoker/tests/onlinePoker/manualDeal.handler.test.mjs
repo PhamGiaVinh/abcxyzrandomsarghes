@@ -67,6 +67,7 @@ test('retry through the Edge handler returns the committed terminal action after
   let context = { outcome: 'ok', state: split.stateJson, live_deck: split.liveDeck, holes: split.holes, state_version: 0 };
   let committed = 0;
   let stored;
+  let loadUnavailable = false;
   const admin = {
     from(name) {
       assert.equal(name, 'online_poker_actions');
@@ -75,7 +76,8 @@ test('retry through the Edge handler returns the committed terminal action after
     },
     async rpc(name, args) {
       if (name === 'op_is_enabled') return { data: true, error: null };
-      if (name === 'op_load_action_context') return { data: context, error: null };
+      if (name === 'op_load_action_context') return loadUnavailable
+        ? { data: null, error: { code: 'fixture_unavailable' } } : { data: context, error: null };
       assert.equal(name, 'op_submit_action');
       assert.equal(committed++, 0);
       context = { ...context, state: args.p_new_state, live_deck: args.p_board_future, state_version: 1 };
@@ -95,6 +97,11 @@ test('retry through the Edge handler returns the committed terminal action after
   const retry = await handler(request());
   assert.equal(retry.status, 200);
   assert.deepEqual(await retry.json(), { ok: true, handId, stateVersion: 1 });
+  loadUnavailable = true;
+  const retryWithoutState = await handler(request());
+  assert.equal(retryWithoutState.status, 200);
+  assert.deepEqual(await retryWithoutState.json(), { ok: true, handId, stateVersion: 1 });
+  loadUnavailable = false;
   const changedIntent = await handler(request('call'));
   assert.equal(changedIntent.status, 409);
   assert.equal(Object.hasOwn(await changedIntent.json(), 'view'), false);
