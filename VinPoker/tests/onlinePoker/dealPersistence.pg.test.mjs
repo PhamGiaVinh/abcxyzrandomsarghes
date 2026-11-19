@@ -21,6 +21,18 @@ function sql(source) {
 function json(source) { return JSON.parse(sql(source)); }
 function file(path) { return readFileSync(new URL(path, import.meta.url), 'utf8'); }
 
+// Only recreate the observed function body in this throwaway database.
+// Archived migration files are never replayed as migrations.
+function archivedFunction(name, path) {
+  const start = `CREATE OR REPLACE FUNCTION public.${name}(`;
+  const source = file('../../supabase/migration-archive/legacy-unapplied/' + path).replace(/\r\n/g, '\n');
+  const offset = source.indexOf(start);
+  assert.ok(offset >= 0);
+  const end = source.indexOf('$$;', source.indexOf('AS $$', offset) + 5);
+  assert.ok(end > offset);
+  return source.slice(offset, end + 3);
+}
+
 test('the shared server deal persists one native hand with consistent public and private state', async () => {
   assert.equal(process.env.PGHOST, '127.0.0.1');
   assert.equal(process.env.PGDATABASE, 'online_poker_runtime_ci');
@@ -34,17 +46,28 @@ test('the shared server deal persists one native hand with consistent public and
     CREATE TABLE auth.users(id uuid PRIMARY KEY);
     CREATE TABLE public.clubs(id uuid PRIMARY KEY);
     CREATE TYPE public.app_role AS ENUM ('super_admin');
-    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT NULL::uuid $$;
+    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
     CREATE FUNCTION public.has_role(uuid, public.app_role) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
     CREATE FUNCTION public.update_updated_at_column() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at=now(); RETURN NEW; END $$;
     ${file('../../supabase/migrations/20260817000000_online_poker_core.sql')}
     ${file('../../supabase/migrations/20260820000000_online_poker_runtime_rpcs.sql')}
+    ${archivedFunction('op_submit_action', '20260907000000_op_submit_action_settlement_seat_writeback.sql')}
+    ${archivedFunction('op_stand_up', '20260908000000_op_stand_up_block_folded_midhand.sql')}
     INSERT INTO auth.users VALUES ('${first}'), ('${second}');
     INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
     VALUES ('${tableId}','Disposable TEST',5,10,0,1000,100);
     INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status)
     VALUES ('${tableId}',2,'${first}',100,'sitting'), ('${tableId}',5,'${second}',100,'sitting');
   `);
+  assert.deepEqual(json(`
+    SELECT json_object_agg(proname, md5(prosrc))
+    FROM pg_proc WHERE pronamespace='public'::regnamespace
+      AND proname IN ('op_start_hand','op_submit_action','op_stand_up')
+  `), {
+    op_start_hand: '10282a2bb252d87125652c048de5d502',
+    op_submit_action: 'b0dd7ff7cd2d70b84198d35de5f14f6e',
+    op_stand_up: '140a23e7260f0d70a11c097c7986061f',
+  });
 
   const reads = {
     online_poker_tables: `SELECT row_to_json(t) FROM public.online_poker_tables t WHERE id='${tableId}'`,
@@ -93,6 +116,12 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql("SELECT count(*) FROM public.online_poker_hand_secrets"), '4');
   assert.equal(sql("SELECT sum(stack+total_committed) FROM public.online_poker_hand_seats"), '200');
   assert.equal(sql("SELECT has_function_privilege('authenticated','public.op_start_hand(jsonb,jsonb,jsonb,jsonb,jsonb,text,timestamptz,uuid)','EXECUTE')"), 'f');
+  const standDuringHand = json(`
+    SET request.jwt.claim.sub='${first}'; SET ROLE authenticated;
+    SELECT public.op_stand_up('${tableId}', 'disposable-g03-stand-blocked');
+  `);
+  assert.equal(standDuringHand.outcome, 'in_active_hand');
+  assert.equal(sql('SELECT count(*) FROM public.online_poker_chip_ledger'), '0');
 
   const context = json(`SET ROLE service_role; SELECT public.op_load_action_context('${hand.handId}')`);
   assert.equal(context.outcome, 'ok');

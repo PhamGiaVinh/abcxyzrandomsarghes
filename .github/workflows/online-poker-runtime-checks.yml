@@ -12,6 +12,8 @@ on:
       - "VinPoker/tsconfig.engine.json"
       - "VinPoker/supabase/migrations/20260817000000_online_poker_core.sql"
       - "VinPoker/supabase/migrations/20260820000000_online_poker_runtime_rpcs.sql"
+      - "VinPoker/supabase/migration-archive/legacy-unapplied/20260907000000_op_submit_action_settlement_seat_writeback.sql"
+      - "VinPoker/supabase/migration-archive/legacy-unapplied/20260908000000_op_stand_up_block_folded_midhand.sql"
       - "VinPoker/package-lock.json"
 
 permissions:
