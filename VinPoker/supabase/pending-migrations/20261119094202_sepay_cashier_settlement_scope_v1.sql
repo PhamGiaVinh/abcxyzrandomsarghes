@@ -1,5 +1,4 @@
 -- Read-only candidate. Rollback: DROP FUNCTION public.sepay_cashier_settlement_scope_v1(uuid, uuid, text, int).
-CREATE OR REPLACE FUNCTION; explicit REVOKE/GRANT.
 
 CREATE OR REPLACE FUNCTION public.sepay_cashier_settlement_scope_v1(
   p_club_id uuid,
