@@ -1116,21 +1116,23 @@ test('the shared server deal persists one native hand with consistent public and
   const sharedDestination = 'ab510000-0000-4000-8000-000000000036';
   const tables = ['ab510000-0000-4000-8000-000000000034', 'ab510000-0000-4000-8000-000000000035'];
   sql(`INSERT INTO public.tournaments VALUES ('${sharedDestination}','${clubId}','Disposable two-table award target');
-    INSERT INTO online_satellite_private.test_destinations VALUES ('${sharedDestination}','${clubId}');
+    INSERT INTO online_satellite_private.test_destinations VALUES ('${sharedDestination}','${clubId}');`);
+  const seedSharedRound = (pilot, tables, slots) => sql(`
     INSERT INTO online_satellite_private.pilots VALUES
-    ('${sharedPilot}','${clubId}','${sharedDestination}','${first}','${sharedPilot}',now(),10,4);
+    ('${pilot}','${clubId}','${sharedDestination}','${first}','${pilot}',now(),10,4);
     INSERT INTO online_satellite_private.entries(pilot_id,player_user_id) VALUES
-    ${[first, second, third, spectator].map(actor => `('${sharedPilot}','${actor}')`).join(',')};
+    ${[first, second, third, spectator].map(actor => `('${pilot}','${actor}')`).join(',')};
     INSERT INTO public.online_poker_tables(id,club_id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
     VALUES ${tables.map(id => `('${id}','${clubId}','Disposable shared Satellite clock TEST',5,10,0,100,10)`).join(',')};
     INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status) VALUES
     ${[first, second, third, spectator].map((actor, i) => `('${tables[Math.floor(i / 2)]}',${i % 2 + 1},'${actor}',${i % 2 ? 10 : 5},'sitting')`).join(',')};
     UPDATE public.online_poker_tables SET is_satellite=true WHERE id IN ('${tables.join("','")}');
     INSERT INTO online_satellite_private.table_clocks(table_id,pilot_id,running_since,qualification_slots)
-    VALUES ('${tables[0]}','${sharedPilot}',statement_timestamp(),2);
-    INSERT INTO online_satellite_private.blind_levels VALUES ('${sharedPilot}',0,5,10,0);
+    VALUES ('${tables[0]}','${pilot}',statement_timestamp(),${slots});
+    INSERT INTO online_satellite_private.blind_levels VALUES ('${pilot}',0,5,10,0);
     INSERT INTO online_satellite_private.round_tables(table_id,pilot_id) VALUES
-    ${tables.map(id => `('${id}','${sharedPilot}')`).join(',')};`);
+    ${tables.map(id => `('${id}','${pilot}')`).join(',')};`);
+  seedSharedRound(sharedPilot, tables, 2);
   assert.equal(level(tables[1], first).mode, 'waiting_for_round');
   sql(file('../../supabase/pending-migrations/20261119225000_online_satellite_open_round.sql'));
   const openSharedRound = (actor, expected) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
@@ -1138,8 +1140,7 @@ test('the shared server deal persists one native hand with consistent public and
   assert.throws(() => openSharedRound(third, 0), /SATELLITE_PILOT_MANAGER_REQUIRED/);
   assert.deepEqual(openSharedRound(first, 0), { outcome: 'ok', roundNo: '1' });
   assert.deepEqual(openSharedRound(first, 0), { outcome: 'stale', roundNo: '1' });
-  for (const [i, id] of tables.entries()) {
-    assert.equal(level(id, first).roundNo, '1');
+  const dealFixedRoundHand = async (id, actor) => {
     // Same deck as the verified blind all-in case above, so both tables end
     // with exactly one survivor. Limit deterministic randomness to this fixture.
     let roundSeed = 1977;
@@ -1152,12 +1153,17 @@ test('the shared server deal persists one native hand with consistent public and
     });
     let receipt;
     try {
-      receipt = await dealNextHand(admin, id, i === 0 ? null : first);
+      receipt = await dealNextHand(admin, id, actor);
     } finally {
       rng.mock.restore();
     }
     assert.equal(receipt.ok, true, JSON.stringify(receipt));
     assert.equal(sql(`SELECT status FROM public.online_poker_hands WHERE id='${receipt.handId}'`), 'complete');
+    return receipt.handId;
+  };
+  for (const [i, id] of tables.entries()) {
+    assert.equal(level(id, first).roundNo, '1');
+    await dealFixedRoundHand(id, i === 0 ? null : first);
     assert.equal(level(id, first).mode, 'waiting_for_round');
     if (i === 0) assert.deepEqual(openSharedRound(first, 1), { outcome: 'round_still_playing', roundNo: '1' });
   }
@@ -1322,6 +1328,28 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT table_id FROM online_satellite_private.round_deals WHERE pilot_id='${preparedPilot}'`), finalTable);
   assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${finalTable}'`), '400');
   console.log('POSTGRES_SATELLITE_FINAL_TABLE_DRAIN_AND_ROUND_PASS');
+  sql(file('../../supabase/pending-migrations/20261120000500_online_satellite_round_bubble_evidence.sql'));
+  const underfilledPilot = 'ab510000-0000-4000-8000-000000000041';
+  const underfilledTables = ['ab510000-0000-4000-8000-000000000042','ab510000-0000-4000-8000-000000000043'];
+  seedSharedRound(underfilledPilot, underfilledTables, 3);
+  assert.deepEqual(json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+    SELECT public.open_online_satellite_round_v1('${underfilledPilot}',0)`), { outcome: 'ok', roundNo: '1' });
+  const readRoundBubble = actor => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT coalesce(public.get_online_satellite_round_bubble_v1('${underfilledPilot}'),'null'::jsonb)`);
+  const firstBubbleHand = await dealFixedRoundHand(underfilledTables[0], first);
+  assert.equal(readRoundBubble(first), null);
+  const secondBubbleHand = await dealFixedRoundHand(underfilledTables[1], first);
+  assert.deepEqual(readRoundBubble(first), {
+    roundNo: '1', qualificationSlots: 3, survivors: 2, unfilledSlots: 1,
+    hands: [firstBubbleHand,secondBubbleHand].map((handId,index) => ({
+      tableId: underfilledTables[index], handId, handVersion: 0,
+      eliminations: [{ seatNo: 1, startingStack: '5' }],
+    })),
+  });
+  assert.equal(readRoundBubble(third), null);
+  assert.deepEqual(json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+    SELECT public.lock_online_satellite_round_result_v1('${underfilledPilot}',1)`), { outcome: 'bubble_review_required' });
+  console.log('POSTGRES_SATELLITE_UNDERFILLED_ROUND_EVIDENCE_PASS');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
