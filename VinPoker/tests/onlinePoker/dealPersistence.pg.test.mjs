@@ -184,6 +184,27 @@ test('the shared server deal persists one native hand with consistent public and
   sql(`DELETE FROM online_satellite_private.table_clocks WHERE table_id='${tableId}';
     UPDATE public.online_poker_tables SET club_id=NULL WHERE id='${tableId}'`);
   sql(file('../../supabase/pending-migrations/20261119205002_online_satellite_seat_ownership_fence.sql'));
+  sql(file('../../supabase/pending-migrations/20261119205132_online_satellite_provision_table.sql'));
+  const setupPilot = 'ab510000-0000-4000-8000-000000000019';
+  sql(`
+    INSERT INTO online_satellite_private.registration_gate(club_id,enabled) VALUES ('${clubId}',true);
+    INSERT INTO online_satellite_private.pilots VALUES
+      ('${setupPilot}','${clubId}','${destination}','${first}','${setupPilot}',now(),140,2);
+    INSERT INTO online_satellite_private.entries(pilot_id,player_user_id,registered_at) VALUES
+      ('${setupPilot}','${first}',now()-interval '2 seconds'), ('${setupPilot}','${second}',now()-interval '1 second');
+  `);
+  const setup = (actor) => `SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT public.provision_online_satellite_table_v1('${setupPilot}',
+      '[{"starts_at_second":0,"small_blind":5,"big_blind":10,"big_blind_ante":0},
+        {"starts_at_second":60,"small_blind":10,"big_blind":20,"big_blind_ante":20}]')`;
+  assert.throws(() => sql(setup(spectator)), /SATELLITE_PILOT_MANAGER_REQUIRED/);
+  const setupReceipt = json(setup(first));
+  assert.equal(setupReceipt.idempotent, false);
+  assert.deepEqual(json(setup(first)), { tableId: setupReceipt.tableId, idempotent: true });
+  assert.deepEqual(json(`SELECT json_agg(json_build_array(user_id,stack) ORDER BY seat_no)
+    FROM public.online_poker_seats WHERE table_id='${setupReceipt.tableId}'`), [[first,140], [second,140]]);
+  assert.deepEqual(level(setupReceipt.tableId), { mode: 'paused' });
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_chip_ledger WHERE table_id='${setupReceipt.tableId}'`), '0');
   sql(anteRollback);
   assert.equal(sql("SELECT to_regprocedure('public.op_preserve_bba_hand_state()') IS NULL"), 't');
   sql(anteMigration);
