@@ -303,6 +303,21 @@ describe("TrackerFloorAlertLane", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("highlights a display alert without entering hand review even when the alert refers to a hand", async () => {
+    vi.mocked(listTrackerFloorAlerts).mockResolvedValueOnce({
+      ok: true,
+      alerts: [{ ...baseAlert, alert_kind: "display_issue", title: "Sai màn hình bàn" }],
+    });
+    render(
+      <MemoryRouter initialEntries={["/ops/floor/tournaments/tournament-1/tables?club=club-1&alert=alert-1"]}>
+        <TrackerFloorAlertLane tournamentId="tournament-1" />
+      </MemoryRouter>,
+    );
+    expect((await screen.findByText("Sai màn hình bàn")).closest("article")).toHaveAttribute("aria-current", "true");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Xem action|Xem toàn bộ action/ })).toBeNull();
+  });
+
   it("only dismisses a voided hand after a fresh server check", async () => {
     voidState.value = true;
     render(<MemoryRouter><TrackerFloorAlertLane tournamentId="tournament-1" /></MemoryRouter>);

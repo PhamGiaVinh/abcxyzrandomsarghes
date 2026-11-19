@@ -119,7 +119,7 @@ function ScopedTrackerFloorAlertLane({ tournamentId, actorId }: TrackerFloorAler
   useEffect(() => {
     if (!targetAlertId || loading || error) return;
     const target = alerts.find((alert) => alert.id === targetAlertId);
-    if (target?.hand_id) setReviewAlert(target);
+    if (target?.hand_id && target.alert_kind !== "display_issue") setReviewAlert(target);
   }, [alerts, error, loading, targetAlertId]);
 
   const transition = async (alert: TrackerFloorAlert, action: string, note: string | null = null, confirmed=false) => {
@@ -199,7 +199,8 @@ function ScopedTrackerFloorAlertLane({ tournamentId, actorId }: TrackerFloorAler
           return (
             <article
               key={alert.id}
-              className={`rounded-xl border p-3 ${alert.priority === "urgent" ? "border-rose-400/35 bg-rose-400/10" : "border-amber-300/25 bg-black/20"}`}
+              aria-current={alert.id === targetAlertId || undefined}
+              className={`rounded-xl border p-3 ${alert.priority === "urgent" ? "border-rose-400/35 bg-rose-400/10" : "border-amber-300/25 bg-black/20"} ${alert.id === targetAlertId ? "ring-2 ring-amber-300" : ""}`}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -237,7 +238,7 @@ function ScopedTrackerFloorAlertLane({ tournamentId, actorId }: TrackerFloorAler
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {alert.hand_id && (
+                  {alert.hand_id && alert.alert_kind !== "display_issue" && (
                     <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={() => setReviewAlert(alert)}>
                       {location?.handStatus === "completed" && !location?.handVoided ? "Xem action / Sửa hand" : "Xem toàn bộ action"}
                     </Button>
