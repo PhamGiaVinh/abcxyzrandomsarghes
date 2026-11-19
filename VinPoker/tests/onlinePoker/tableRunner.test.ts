@@ -19,6 +19,7 @@ it('uses a confirmed first hand or rotates after a valid previous hand, refusing
 interface Stage {
   enabled?: boolean;
   lastHandUnavailable?: boolean;
+  satelliteLevel?: Record<string, string>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   due?: any; diag?: any; table?: any; seats?: any[]; lastHand?: any; startHand?: any | (() => any);
 }
@@ -52,6 +53,7 @@ function makeAdmin(stage: Stage) {
       if (fn === 'op_is_enabled') return Promise.resolve(ok(stage.enabled ?? false));
       if (fn === 'op_run_due_table_ticks') return Promise.resolve(ok(stage.due ?? { outcome: 'ok', tables: [] }));
       if (fn === 'op_table_runner_diag') return Promise.resolve(ok(stage.diag ?? { outcome: 'ok', tables: [] }));
+      if (fn === 'op_read_satellite_deal_level') return Promise.resolve(ok(stage.satelliteLevel ?? { mode: 'practice' }));
       if (fn === 'op_start_hand') {
         calls.startHand++;
         calls.startStates.push(_args?.p_state);
@@ -99,6 +101,23 @@ describe('runTableRunner — deals eligible tables', () => {
 });
 
 describe('runTableRunner — skips & idempotency', () => {
+  it('uses the database level and ante for a satellite deal', async () => {
+    const { admin, calls } = makeAdmin({ enabled: true, due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
+      table: TABLE, seats: TWO_FUNDED, satelliteLevel: {
+        mode: 'ready', clockRevision: '3', levelStartSecond: '60', sb: '40', bb: '80', bigBlindAnte: '80',
+      } });
+    expect((await runTableRunner(admin)).dealt).toBe(1);
+    expect(calls.startStates[0]).toMatchObject({
+      config: { sb: '40', bb: '80', bigBlindAnte: '80', schemaVersion: 2 },
+      satelliteLevel: { clockRevision: '3', levelStartSecond: '60' },
+    });
+  });
+  it('does not issue a start while the satellite clock is paused', async () => {
+    const { admin, calls } = makeAdmin({ enabled: true, due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
+      table: TABLE, seats: TWO_FUNDED, satelliteLevel: { mode: 'paused' } });
+    expect((await runTableRunner(admin)).dealt).toBe(0);
+    expect(calls.startHand).toBe(0);
+  });
   it('does not reset the button or hand number when the previous-hand read fails', async () => {
     const { admin, calls } = makeAdmin({ enabled: true, due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
       table: TABLE, seats: TWO_FUNDED, lastHandUnavailable: true });

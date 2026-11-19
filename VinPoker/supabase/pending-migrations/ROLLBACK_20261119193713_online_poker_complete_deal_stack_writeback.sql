@@ -11,7 +11,7 @@ BEGIN
   END IF;
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid =
     to_regprocedure('public.op_start_hand(jsonb,jsonb,jsonb,jsonb,jsonb,text,timestamp with time zone,uuid)'))
-      IS DISTINCT FROM 'd49d85ec3415ee0726fc3fdc268b966e' THEN
+      IS DISTINCT FROM '6b55c671fbe0219e1c4331c629e79e06' THEN
     RAISE EXCEPTION 'unexpected op_start_hand rollback source';
   END IF;
 END;

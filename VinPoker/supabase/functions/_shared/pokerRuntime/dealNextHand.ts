@@ -25,6 +25,7 @@ export interface AdminClient {
 
 export type DealReason =
   | 'table_not_found' | 'table_not_open' | 'seats_load_failed' | 'previous_hand_unavailable'
+  | 'satellite_level_unavailable'
   | 'not_enough_players' | 'could_not_start_hand' | 'already_active' | 'disabled' | 'start_hand_failed';
 
 export type DealResult =
@@ -89,14 +90,26 @@ export async function dealNextHand(
   if (!position) return { ok: false, tableId, reason: 'previous_hand_unavailable' };
   const { handNo, button } = position;
 
+  const { data: level, error: levelError } = await admin.rpc('op_read_satellite_deal_level', {
+    p_table_id: tableId,
+  });
+  if (levelError || (level?.mode !== 'practice' && level?.mode !== 'ready')) {
+    return { ok: false, tableId, reason: 'satellite_level_unavailable' };
+  }
+  const satellite = level.mode === 'ready' ? level : null;
   const handId = crypto.randomUUID();
   const seatInputs = buildSeatInputs(seated);
-  const config = buildHandConfig({ id: table.id, sb: table.sb, bb: table.bb }, handId, handNo, button);
   const originalDeck = shuffledDeck(cryptoRng32);
 
   let built;
   try {
-    built = createHand(config, [...originalDeck], seatInputs);
+    const blinds = satellite ?? table;
+    const { schemaVersion, ...config } = buildHandConfig(
+      { id: table.id, sb: blinds.sb, bb: blinds.bb }, handId, handNo, button,
+    );
+    built = createHand(satellite
+      ? { ...config, bigBlindAnte: BigInt(satellite.bigBlindAnte) }
+      : { ...config, schemaVersion }, [...originalDeck], seatInputs);
   } catch {
     return { ok: false, tableId, reason: 'could_not_start_hand' };
   }
@@ -108,7 +121,10 @@ export async function dealNextHand(
     : null;
 
   const { data, error } = await admin.rpc('op_start_hand', {
-    p_state: split.stateJson,
+    p_state: satellite ? {
+      ...split.stateJson,
+      satelliteLevel: { clockRevision: satellite.clockRevision, levelStartSecond: satellite.levelStartSecond },
+    } : split.stateJson,
     p_deck: originalDeck,
     p_board_future: split.liveDeck,
     p_holes: split.holes,

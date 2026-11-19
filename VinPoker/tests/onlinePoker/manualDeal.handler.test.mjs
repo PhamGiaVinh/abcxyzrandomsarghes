@@ -31,6 +31,7 @@ test('manual deal sends the same authoritative hand to persistence and returns i
     },
     async rpc(name, args) {
       if (name === 'op_is_enabled') return { data: true, error: null };
+      if (name === 'op_read_satellite_deal_level') return { data: { mode: 'practice' }, error: null };
       assert.equal(name, 'op_start_hand');
       assert.equal(started, undefined);
       started = args;

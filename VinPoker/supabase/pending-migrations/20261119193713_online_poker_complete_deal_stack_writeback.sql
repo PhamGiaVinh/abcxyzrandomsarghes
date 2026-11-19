@@ -64,9 +64,19 @@ BEGIN
   WHERE table_id = v_table_id ORDER BY seat_no FOR UPDATE;
   SELECT * INTO v_table FROM public.online_poker_tables WHERE id = v_table_id FOR SHARE;
   IF NOT FOUND OR v_table.status <> 'open'
-     OR v_table.sb IS DISTINCT FROM (p_state->'config'->>'sb')::bigint
-     OR v_table.bb IS DISTINCT FROM (p_state->'config'->>'bb')::bigint THEN
+     OR (NOT (p_state ? 'satelliteLevel') AND (
+       v_table.sb IS DISTINCT FROM (p_state->'config'->>'sb')::bigint
+       OR v_table.bb IS DISTINCT FROM (p_state->'config'->>'bb')::bigint
+     )) THEN
     RETURN jsonb_build_object('outcome', 'rejected', 'detail', 'stale table configuration');
+  END IF;
+  -- Only the Satellite insert trigger may authorize blinds from its clock.
+  IF p_state ? 'satelliteLevel' AND NOT EXISTS (
+    SELECT 1 FROM pg_trigger
+    WHERE tgrelid = 'public.online_poker_hands'::regclass
+      AND tgname = 'trg_op_check_satellite_deal_level' AND tgenabled = 'O'
+  ) THEN
+    RETURN jsonb_build_object('outcome', 'rejected', 'detail', 'satellite level validation unavailable');
   END IF;
 
   -- One active hand per table (the partial unique index is the hard backstop).

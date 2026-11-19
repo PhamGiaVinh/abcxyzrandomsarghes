@@ -3,6 +3,9 @@
 -- The fence is used only on hand creation. Settling a hand keeps its original level.
 BEGIN;
 
+ALTER TABLE public.online_poker_hands
+  ADD COLUMN IF NOT EXISTS satellite_deal_level jsonb;
+
 CREATE FUNCTION public.op_check_satellite_deal_level()
 RETURNS trigger LANGUAGE plpgsql SET search_path = ''
 AS $$
@@ -19,6 +22,7 @@ BEGIN
     IF expected IS NOT NULL THEN
       RAISE EXCEPTION 'online_satellite_deal_not_bound' USING ERRCODE = '23514';
     END IF;
+    NEW.satellite_deal_level := NULL;
     RETURN NEW;
   END IF;
 
@@ -52,6 +56,14 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'online_satellite_deal_roster_invalid' USING ERRCODE = '23514';
   END IF;
+  NEW.satellite_deal_level := jsonb_build_object(
+    'clockRevision', clock_row.revision::text,
+    'levelStartSecond', level_row.starts_at_second::text,
+    'sb', level_row.small_blind::text,
+    'bb', level_row.big_blind::text,
+    'bigBlindAnte', level_row.big_blind_ante::text
+  );
+  NEW.state := NEW.state - 'satelliteLevel';
   RETURN NEW;
 END;
 $$;

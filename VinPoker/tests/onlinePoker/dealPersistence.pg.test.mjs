@@ -198,6 +198,7 @@ test('the shared server deal persists one native hand with consistent public and
       return query;
     },
     async rpc(name, args) {
+      if (name === 'op_read_satellite_deal_level') return { data: level(), error: null };
       assert.equal(name, 'op_start_hand');
       const data = json(startStatement(args));
       return { data, error: null };
@@ -589,6 +590,7 @@ test('the shared server deal persists one native hand with consistent public and
   };
   assert.throws(() => json(startStatement(staleAnteArgs)), /online_satellite_stale_deal_level/);
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${anteTable}'`), '0');
+  sql(`UPDATE public.online_poker_tables SET sb=4,bb=8 WHERE id='${anteTable}'`);
   const anteReceipt = await admin.rpc('op_start_hand', currentAnteArgs);
   assert.equal(anteReceipt.data?.outcome, 'ok', JSON.stringify(anteReceipt));
   assert.equal(sql(`SELECT state_schema_version FROM public.online_poker_hands WHERE id='${anteHand}'`), '2');
@@ -626,6 +628,8 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${anteHand}'`), '0');
   assert.equal(json(submitAnteFold(anteFinal.stateJson)).outcome, 'ok');
   assert.equal(anteSeatStacks(), '95,19');
+  assert.deepEqual(json(`SELECT satellite_deal_level FROM public.online_poker_hands WHERE id='${anteHand}'`),
+    { clockRevision: '2', levelStartSecond: '120', sb: '5', bb: '10', bigBlindAnte: '10' });
   assert.equal(sql(`SELECT state->'seats'->1->>'deadAnte' FROM public.online_poker_hands WHERE id='${anteHand}'`), '4');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
@@ -637,7 +641,7 @@ test('the shared server deal persists one native hand with consistent public and
       'owner',pg_get_userbyid(proowner),'securityDefiner',prosecdef,'settings',proconfig,'acl',proacl)
       FROM pg_proc WHERE oid=${startOid}`);
     const candidate = functionRecord();
-    assert.equal(candidate.source, 'd49d85ec3415ee0726fc3fdc268b966e');
+    assert.equal(candidate.source, '6b55c671fbe0219e1c4331c629e79e06');
     const enabled = spawnSync('psql', ['-X', '-Atq', '-v', 'ON_ERROR_STOP=1'],
       { encoding: 'utf8', input: rollback, timeout: 10_000 });
     assert.notEqual(enabled.status, 0);
