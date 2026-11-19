@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import AttentionQueue from "@/components/cashier/command-center/AttentionQueue";
 
 vi.mock("@/hooks/useAttentionQueue", () => ({
-  useAttentionQueue: () => ({ criticalItems: [], warningItems: [], totalCount: 0 }),
+  useAttentionQueue: () => ({ items: [], criticalItems: [], warningItems: [], totalCount: 0 }),
 }));
 
 afterEach(cleanup);
