@@ -1,7 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { formatVND } from "@/lib/format";
 import { MOCK_MONTHLY } from "../mock/mockData";
-import { DataStateBadge } from "../shared/DataStateBadge";
 import { SpecNotice } from "../shared/Notices";
 import { TabShell } from "../shared/TabShell";
 
@@ -18,8 +17,7 @@ export function MonthlyReportTab({ report = MOCK_MONTHLY }: { report?: typeof MO
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/[0.08] px-3 py-2.5">
         <span className="text-[13px] font-semibold text-amber-300">{report.monthLabel}</span>
-        <span className="text-[12px] text-amber-200/80">— mọi con số dưới đây là</span>
-        <DataStateBadge state="provisional" />
+        <span className="text-[12px] font-semibold text-amber-200">Dữ liệu mẫu</span>
       </div>
 
       <Card className="p-3 md:p-4 gradient-card">
@@ -27,7 +25,7 @@ export function MonthlyReportTab({ report = MOCK_MONTHLY }: { report?: typeof MO
           <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
             Các mục cố định của báo cáo
           </span>
-          <DataStateBadge state="provisional" />
+          <span className="text-xs text-amber-200">Dữ liệu mẫu</span>
         </div>
         <div>
           {report.sections.map((s) => (

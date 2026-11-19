@@ -2,8 +2,7 @@ import type { ReactNode } from "react";
 import { FlaskConical, Hammer, PlugZap } from "lucide-react";
 
 /**
- * Banner toàn trang. Mặc định: mọi thứ là mock. Khi `partialLive` (W1): tab Tổng quan khối
- * "Tiền của club" là số thật (Tạm tính), phần còn lại vẫn mock.
+ * Nhãn nguồn dữ liệu của tab hiện tại.
  */
 export function MockNotice({ partialLive = false }: { partialLive?: boolean }) {
   if (partialLive) {
@@ -11,9 +10,7 @@ export function MockNotice({ partialLive = false }: { partialLive?: boolean }) {
       <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2.5">
         <FlaskConical className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
         <p className="text-[12px] leading-relaxed text-amber-200/90">
-          <span className="font-semibold">SỐ THẬT một phần.</span> Tab Tổng quan (khối "Tiền của
-          club") hiển thị số thật đọc từ tài chính CLB (Tạm tính, chỉ xem). Các tab còn lại vẫn là
-          DỮ LIỆU MẪU (mock) để duyệt thiết kế — nối dần ở các bước sau. Không có nút thao tác tiền.
+          <span className="font-semibold">SỐ THẬT một phần.</span> Tab này đọc dữ liệu CLB khi máy chủ xác minh được quyền và nguồn. Xem nhãn trên từng khối để biết trạng thái của số liệu.
         </p>
       </div>
     );
@@ -22,10 +19,7 @@ export function MockNotice({ partialLive = false }: { partialLive?: boolean }) {
     <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2.5">
       <FlaskConical className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
       <p className="text-[12px] leading-relaxed text-amber-200/90">
-        <span className="font-semibold">DỮ LIỆU MẪU (mock).</span> Toàn bộ số liệu trên trang này
-        là dữ liệu mẫu để duyệt thiết kế — chưa nối dữ liệu thật, chỉ xem, không có nút thao tác
-        tiền. Cảnh báo #656 là cảnh báo mẫu thuộc nhóm rủi ro đã biết; trạng thái thật xác minh
-        qua MODULE_STATUS.
+        <span className="font-semibold">DỮ LIỆU MẪU (mock).</span> Số liệu và cảnh báo trên tab này dùng để xem thiết kế.
       </p>
     </div>
   );
