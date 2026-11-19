@@ -145,3 +145,18 @@ it('shows no partial statistics if the prepared read fails',async()=>{
  render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}}/>);
   await screen.findByRole('alert');expect(screen.queryByText('TEST a')).not.toBeInTheDocument();expect(screen.queryByText('0%')).not.toBeInTheDocument();
 });
+
+it('retries the failed next history page without restarting from page one', async () => {
+  const cursor = {handId:'TEST-CURSOR'};
+  load.mockResolvedValue(result('a'));
+  history.mockResolvedValueOnce({hands:[],nextCursor:cursor})
+    .mockRejectedValueOnce(Error('TEST next page unavailable'))
+    .mockResolvedValueOnce({hands:[],nextCursor:null});
+  render(<PublicPlayerHud tournamentId="t" playerId="a" onClose={()=>{}} />);
+  fireEvent.click(await screen.findByRole('button',{name:'Xem thêm 50 hand trong tour'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Thử lại lịch sử'}));
+  await waitFor(() => expect(history).toHaveBeenCalledTimes(3));
+  expect(history.mock.calls[1][3]).toEqual(cursor);
+  expect(history.mock.calls[2][3]).toEqual(cursor);
+  expect(load).toHaveBeenCalledTimes(1);
+});
