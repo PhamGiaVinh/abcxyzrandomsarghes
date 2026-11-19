@@ -331,5 +331,18 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal((await admin.rpc('op_start_hand', ordinaryArgs)).data.detail, 'stale seat roster');
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${pausedTable}'`), '0');
   sql(`UPDATE public.online_poker_seats SET status='sitting' WHERE table_id='${pausedTable}' AND seat_no=5`);
+  // A positive stack with no owner is inconsistent. Preserve it for reconciliation
+  // and reject the deal rather than treating the chips as available or as zero.
+  sql(`INSERT INTO public.online_poker_seats(table_id,seat_no,stack,status)
+    VALUES ('${pausedTable}',7,25,'sitting')`);
+  assert.equal((await admin.rpc('op_start_hand', ordinaryArgs)).data.detail, 'stale seat roster');
+  assert.equal(sql(`SELECT stack FROM public.online_poker_seats WHERE table_id='${pausedTable}' AND seat_no=7`), '25');
+  const third = 'ab510000-0000-4000-8000-000000000010';
+  sql(`INSERT INTO auth.users VALUES ('${third}');
+    UPDATE public.online_poker_seats SET user_id='${third}'
+    WHERE table_id='${pausedTable}' AND seat_no=7`);
+  assert.equal((await admin.rpc('op_start_hand', ordinaryArgs)).data.detail, 'stale seat roster');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${pausedTable}'`), '0');
+  sql(`UPDATE public.online_poker_seats SET status='sitting_out' WHERE table_id='${pausedTable}' AND seat_no=7`);
   assert.equal((await admin.rpc('op_start_hand', ordinaryArgs)).data.outcome, 'ok');
 });
