@@ -20,6 +20,7 @@ on:
       - "VinPoker/supabase/pending-migrations/*_online_satellite_deal_levels.sql"
       - "VinPoker/supabase/pending-migrations/*_online_satellite_deal_commit_fence.sql"
       - "VinPoker/supabase/pending-migrations/*_online_satellite_private_table_reads.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_seat_ownership_fence.sql"
       - "VinPoker/supabase/pending-migrations/ROLLBACK_*_online_poker_complete_deal_stack_writeback.sql"
       - "VinPoker/supabase/migration-archive/legacy-unapplied/20260907000000_op_submit_action_settlement_seat_writeback.sql"
       - "VinPoker/supabase/migration-archive/legacy-unapplied/20260908000000_op_stand_up_block_folded_midhand.sql"

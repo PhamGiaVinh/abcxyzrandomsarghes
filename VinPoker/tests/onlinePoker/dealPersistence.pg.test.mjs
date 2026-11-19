@@ -183,6 +183,7 @@ test('the shared server deal persists one native hand with consistent public and
   assert.throws(() => sql(`SET ROLE authenticated; SELECT public.op_read_satellite_deal_level('${tableId}')`), /permission denied/);
   sql(`DELETE FROM online_satellite_private.table_clocks WHERE table_id='${tableId}';
     UPDATE public.online_poker_tables SET club_id=NULL WHERE id='${tableId}'`);
+  sql(file('../../supabase/pending-migrations/20261119205002_online_satellite_seat_ownership_fence.sql'));
   sql(anteRollback);
   assert.equal(sql("SELECT to_regprocedure('public.op_preserve_bba_hand_state()') IS NULL"), 't');
   sql(anteMigration);
@@ -663,6 +664,14 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${anteHand}'`), '0');
   assert.equal(json(submitAnteFold(anteFinal.stateJson)).outcome, 'ok');
   assert.equal(anteSeatStacks(), '95,19');
+  assert.throws(() => sql(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+    SELECT public.op_stand_up('${anteTable}', 'disposable-no-satellite-cashout')`),
+  /online_satellite_roster_is_fixed/);
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_chip_ledger
+    WHERE idempotency_key='disposable-no-satellite-cashout'`), '0');
+  assert.equal(anteSeatStacks(), '95,19');
+  assert.throws(() => sql(`DELETE FROM online_satellite_private.table_clocks WHERE table_id='${anteTable}'`),
+    /online_satellite_table_binding_is_fixed/);
   assert.deepEqual(json(`SELECT satellite_deal_level FROM public.online_poker_hands WHERE id='${anteHand}'`),
     { clockRevision: '3', levelStartSecond: '120', sb: '5', bb: '10', bigBlindAnte: '10' });
   const visibleSatellite = `SELECT json_build_array(
