@@ -14,6 +14,7 @@ vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({
 
 const pilotId = "ab510000-0000-4000-8000-000000000019";
 const tableId = "ab510000-0000-4000-8000-000000000020";
+const handId = "ab510000-0000-4000-8000-000000000028";
 
 function openControl() {
   return render(
@@ -26,15 +27,28 @@ function openControl() {
 }
 
 it("shows the qualification boundary without offering another deal", async () => {
-  rpc.mockReturnValue({ abortSignal: async () => ({
-    data: { tableId, clockRevision: "4", running: true, status: "open",
-      canManage: true, canPlay: true, canProvision: false, qualificationReached: true },
-    error: null,
-  }) });
+  rpc.mockImplementation(name => {
+    if (name === "lock_online_satellite_result_v1") {
+      return Promise.resolve({ data: { outcome: "bubble_review_required" }, error: null });
+    }
+    return { abortSignal: async () => ({
+      data: name === "get_online_satellite_bubble_evidence_v1"
+        ? { handId, handNo: "8", stateVersion: 3, status: "complete", survivingCount: 1, eliminations: [] }
+        : { tableId, clockRevision: "4", running: true, status: "open",
+          canManage: true, canPlay: true, canProvision: false, qualificationReached: true },
+      error: null,
+    }) };
+  });
   openControl();
   expect(await screen.findByText("Đã chạm ngưỡng suất TEST")).toBeVisible();
   expect(screen.queryByRole("button", { name: "Chia ván mới" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Tạm dừng đồng hồ" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Kiểm tra ván mới nhất" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Khóa kết quả TEST và đóng bàn" }));
+  expect(await screen.findByText("Cần TD phân xử suất còn thiếu.")).toBeVisible();
+  expect(rpc).toHaveBeenCalledWith("lock_online_satellite_result_v1", {
+    p_pilot_id: pilotId, p_expected_hand_id: handId, p_expected_hand_version: 3,
+  });
 });
 
 it("uses the server revision and refreshes a stale clock command", async () => {
@@ -46,7 +60,7 @@ it("uses the server revision and refreshes a stale clock command", async () => {
     }
     if (name === "get_online_satellite_bubble_evidence_v1") {
       return { abortSignal: async () => ({
-        data: { handNo: "8", stateVersion: 3, status: "complete", survivingCount: 1,
+        data: { handId, handNo: "8", stateVersion: 3, status: "complete", survivingCount: 1,
           eliminations: [{ seat: 2, startingStack: "10" }, { seat: 7, startingStack: "30" }] },
         error: null,
       }) };
