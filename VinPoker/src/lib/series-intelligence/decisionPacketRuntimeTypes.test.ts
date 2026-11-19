@@ -33,4 +33,14 @@ describe("D2B runtime response parser", () => {
     expect(parseDecisionEventStateResponse(missing)).toMatchObject({ ok: true });
     expect(parseDecisionEventStateResponse(zero)).toMatchObject({ ok: true });
   });
+  it("rejects eligibility attached to a different decision or actual revision", () => {
+    const valid = response();
+    for (const scoring of [
+      { ...valid.scoring, candidatePacketId: "another-packet" },
+      { ...valid.scoring, candidateActualRevisionId: "another-revision" },
+      { ...valid.scoring, targetMetric: "unique_players" },
+    ]) {
+      expect(parseDecisionEventStateResponse({ ...valid, scoring })).toEqual({ ok: false, error: "malformed_response" });
+    }
+  });
 });
