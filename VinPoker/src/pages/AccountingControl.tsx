@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { FEATURES } from "@/lib/featureFlags";
 import { Badge } from "@/components/ui/badge";
@@ -51,7 +51,7 @@ const TAB_DEFS: { id: AccountingTabId; label: string }[] = [
 /**
  * "Tài chính & Đối soát" (Accounting Control) — buồng lái tài chính cho chủ CLB.
  * KẾ TOÁN QUẢN TRỊ (quyết định cho chủ CLB), không phải kế toán thuế/pháp lý.
- * UI SHELL: toàn bộ dữ liệu là mock (xem MockNotice) — không đọc/ghi Supabase.
+ * Các tab đọc số thật theo cờ riêng; các tab thiết kế dùng dữ liệu mẫu.
  */
 const AccountingControl = () => {
   const { isAdmin, isClubAdmin, isClubOwner } = useAuth();
@@ -64,6 +64,9 @@ const AccountingControl = () => {
   if (!FEATURES.accountingControl && !isAdmin) return <Navigate to="/club/admin" replace />;
 
   const goTo = (id: string) => setTab(id as AccountingTabId);
+  const liveTab = (tab === "overview" && FEATURES.accountingControlLiveOverview)
+    || (tab === "payroll" && FEATURES.accountingControlLivePayroll)
+    || (tab === "payout" && FEATURES.accountingControlLivePayout);
 
   return (
     <div className="space-y-4">
@@ -71,7 +74,7 @@ const AccountingControl = () => {
         <div className="flex flex-wrap items-center gap-2">
           <h1 className="font-display text-2xl text-primary">Tài chính &amp; Đối soát</h1>
           <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-400">
-            MOCK · UAT
+            {liveTab ? "ĐỌC SỐ LIỆU CLB" : "DỮ LIỆU MẪU"}
           </Badge>
         </div>
         <p className="text-[12px] text-muted-foreground">
@@ -80,7 +83,10 @@ const AccountingControl = () => {
         </p>
       </header>
 
-      <MockNotice partialLive={FEATURES.accountingControlLiveOverview || FEATURES.accountingControlLivePayroll || FEATURES.accountingControlLivePayout} />
+      <MockNotice partialLive={liveTab} />
+      <Link to="/ops/finance" className="inline-block text-sm text-primary underline underline-offset-2">
+        Mở tổng hợp tài chính CLB
+      </Link>
 
       <Tabs value={tab} onValueChange={goTo} className="w-full">
         <div className="overflow-x-auto -mx-3 px-3 md:mx-0 md:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
