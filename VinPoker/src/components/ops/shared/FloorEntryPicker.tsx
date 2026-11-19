@@ -88,7 +88,7 @@ export function FloorEntryPicker({
           status === "failed" ? (
             <div role="alert">
               Chưa tải được danh sách người chơi.
-              {onRetry && <button type="button" onClick={onRetry}>Thử lại</button>}
+              {onRetry && <button type="button" data-ops-action="floor.tables.refresh" onClick={onRetry}>Thử lại</button>}
             </div>
           ) : rows.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">

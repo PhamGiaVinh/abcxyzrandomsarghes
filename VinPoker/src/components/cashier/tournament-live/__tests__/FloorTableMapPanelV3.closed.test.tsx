@@ -345,6 +345,6 @@ it("distinguishes a failed seatable list from a verified empty list and retries"
   expect(screen.getByRole("button", { name: "Thêm vào ghế này" })).toBeDisabled();
 
   state.entries.mockResolvedValue({ ok: true, data: [] });
-  fireEvent.click(screen.getByRole("button", { name: "Thử lại", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
   expect(await screen.findByText("Mọi entry hợp lệ đã có ghế.")).toBeInTheDocument();
 });
