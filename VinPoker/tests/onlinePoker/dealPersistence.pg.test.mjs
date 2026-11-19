@@ -1124,7 +1124,7 @@ test('the shared server deal persists one native hand with consistent public and
     ${[first, second, third, spectator].map((actor, i) => `('${tables[Math.floor(i / 2)]}',${i % 2 + 1},'${actor}',${i % 2 ? 10 : 5},'sitting')`).join(',')};
     UPDATE public.online_poker_tables SET is_satellite=true WHERE id IN ('${tables.join("','")}');
     INSERT INTO online_satellite_private.table_clocks(table_id,pilot_id,running_since,qualification_slots)
-    VALUES ('${tables[0]}','${sharedPilot}',statement_timestamp(),1);
+    VALUES ('${tables[0]}','${sharedPilot}',statement_timestamp(),2);
     INSERT INTO online_satellite_private.blind_levels VALUES ('${sharedPilot}',0,5,10,0);
     INSERT INTO online_satellite_private.round_tables(table_id,pilot_id) VALUES
     ${tables.map(id => `('${id}','${sharedPilot}')`).join(',')};`);
@@ -1212,6 +1212,18 @@ test('the shared server deal persists one native hand with consistent public and
   assert.deepEqual(lockResult(first,boundaryPilot), { outcome: 'ok', idempotent: true, qualifiedCount: 2 });
   assert.equal(sql(`SELECT count(*) FROM online_satellite_private.locked_results WHERE pilot_id='${sharedPilot}'`), '0');
   console.log('POSTGRES_SATELLITE_ROUND_REJECTS_PARTIAL_RESULT_LOCK_PASS');
+  sql(file('../../supabase/pending-migrations/20261119232500_online_satellite_lock_round_result.sql'));
+  const lockSharedRound = (actor, round) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT public.lock_online_satellite_round_result_v1('${sharedPilot}',${round})`);
+  assert.throws(() => lockSharedRound(third, 1), /SATELLITE_PILOT_MANAGER_REQUIRED/);
+  assert.deepEqual(lockSharedRound(first, 2), { outcome: 'stale' });
+  assert.deepEqual(lockSharedRound(first, 1), { outcome: 'ok', idempotent: false, qualifiedCount: 2 });
+  assert.deepEqual(lockSharedRound(first, 1), { outcome: 'ok', idempotent: true, qualifiedCount: 2 });
+  assert.equal(sql(`SELECT jsonb_array_length(round_hands) FROM online_satellite_private.locked_results
+    WHERE pilot_id='${sharedPilot}'`), '2');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_tables WHERE id IN ('${tables.join("','")}')
+    AND status='closed'`), '2');
+  console.log('POSTGRES_SATELLITE_LOCK_COMPLETE_ROUND_RESULT_PASS');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
