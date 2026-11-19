@@ -10,10 +10,14 @@ const tableId = 'ab510000-0000-4000-8000-000000000001';
 const first = 'ab510000-0000-4000-8000-000000000002';
 const second = 'ab510000-0000-4000-8000-000000000003';
 
-function sql(source) {
-  const result = spawnSync('psql', ['-X', '-Atq', '-v', 'ON_ERROR_STOP=1'], {
+function runSql(source) {
+  return spawnSync('psql', ['-X', '-Atq', '-v', 'ON_ERROR_STOP=1'], {
     encoding: 'utf8', input: source, timeout: 10_000,
   });
+}
+
+function sql(source) {
+  const result = runSql(source);
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim();
 }
@@ -39,6 +43,8 @@ test('the shared server deal persists one native hand with consistent public and
     CREATE FUNCTION public.update_updated_at_column() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at=now(); RETURN NEW; END $$;
     ${file('../../supabase/migrations/20260817000000_online_poker_core.sql')}
     ${file('../../supabase/migrations/20260820000000_online_poker_runtime_rpcs.sql')}
+    ${file('../../supabase/migrations/20260820000002_op_submit_action_chip_conservation_filter.sql')}
+    ${file('../../supabase/pending-migrations/20261119192824_online_poker_atomic_terminal_stacks.sql')}
     INSERT INTO auth.users VALUES ('${first}'), ('${second}');
     INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
     VALUES ('${tableId}','Disposable TEST',5,10,0,1000,100);
@@ -83,6 +89,10 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(hand.handNo, 1);
   assert.equal(hand.buttonSeat, 2);
   assert.equal((await dealNextHand(admin, tableId, null)).reason, 'already_active');
+  const mutation = runSql(`UPDATE public.online_poker_seats SET stack=1000 WHERE table_id='${tableId}' AND seat_no=2`);
+  assert.notEqual(mutation.status, 0);
+  assert.match(mutation.stderr, /online_poker_seat_in_active_hand/);
+  assert.equal(sql("SELECT sum(stack) FROM public.online_poker_seats"), '200');
   const state = json(`
     SELECT json_build_object('count',count(*),'pot',max(pot),'publicSecret',
       bool_or(state ? 'deck' OR EXISTS(
