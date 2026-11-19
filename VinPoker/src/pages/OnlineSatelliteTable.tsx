@@ -8,6 +8,7 @@ import { onlinePokerClient } from "@/lib/onlinePoker/client";
 import SatelliteBlindSchedule from "./SatelliteBlindSchedule";
 import SatelliteBubbleEvidence from "./SatelliteBubbleEvidence";
 import SatelliteTestTicket from "./SatelliteTestTicket";
+import SatelliteTestTicketIssuance from "./SatelliteTestTicketIssuance";
 
 const pilotIdentifier = z.string().uuid();
 const tableSnapshot = z.object({
@@ -152,6 +153,9 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
               <SatelliteBubbleEvidence pilotId={pilot.data} actorId={actorId}
                 canLock={snapshot.data.qualificationReached === true && snapshot.data.status !== "closed"}
                 onLocked={() => void snapshot.refetch()} />
+            )}
+            {snapshot.data.canManage && snapshot.data.status === "closed" && pilot.success && actorId && (
+              <SatelliteTestTicketIssuance pilotId={pilot.data} actorId={actorId} />
             )}
           </div>
         )}

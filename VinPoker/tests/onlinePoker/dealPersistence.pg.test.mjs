@@ -1004,6 +1004,10 @@ test('the shared server deal persists one native hand with consistent public and
   assert.throws(() => issueTicket(first, undefined, '2000-01-01T00:00:00Z'), /SATELLITE_TEST_ISSUE_BAD_EXPIRY/);
   assert.deepEqual(issueTicket(first), { outcome: 'ok', idempotent: false, ticketCount: 1 });
   assert.deepEqual(issueTicket(first), { outcome: 'ok', idempotent: true, ticketCount: 1 });
+  const issuedStatus = actor => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT COALESCE(public.get_online_satellite_test_issuance_v1('${exactBubble.bubblePilot}'),'null'::jsonb)`);
+  assert.equal(issuedStatus(first).issuedCount, 1);
+  assert.equal(issuedStatus(second), null);
   assert.throws(() => issueTicket(first,'ab510000-0000-4000-8000-000000000033'), /SATELLITE_TEST_ISSUE_CONFLICT/);
   assert.equal(sql(`SELECT e.player_user_id FROM online_satellite_private.test_tickets ticket
     JOIN online_satellite_private.entries e ON e.id=ticket.entry_id

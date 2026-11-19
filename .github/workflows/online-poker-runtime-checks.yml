@@ -11,6 +11,7 @@ on:
       - "VinPoker/src/pages/SatelliteBlindSchedule.tsx"
       - "VinPoker/src/pages/SatelliteBubbleEvidence.tsx"
       - "VinPoker/src/pages/SatelliteTestTicket.tsx"
+      - "VinPoker/src/pages/SatelliteTestTicketIssuance.tsx"
       - "VinPoker/src/lib/onlinePoker/client.ts"
       - "VinPoker/tests/pokerEngine/**"
       - "VinPoker/tests/pokerAdapter/**"

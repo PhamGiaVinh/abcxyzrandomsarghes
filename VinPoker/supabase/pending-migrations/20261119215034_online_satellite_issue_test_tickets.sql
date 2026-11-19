@@ -84,4 +84,22 @@ REVOKE ALL ON FUNCTION public.issue_online_satellite_test_tickets_v1(uuid,uuid,t
   FROM PUBLIC,anon,service_role;
 GRANT EXECUTE ON FUNCTION public.issue_online_satellite_test_tickets_v1(uuid,uuid,timestamptz) TO authenticated;
 
+CREATE FUNCTION public.get_online_satellite_test_issuance_v1(p_pilot_id uuid)
+RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT jsonb_build_object('destinationName',t.name,'expectedCount',r.qualification_slots,
+    'issuedCount',CASE WHEN b.pilot_id IS NULL THEN NULL ELSE (
+      SELECT count(*) FROM online_satellite_private.test_tickets ticket WHERE ticket.pilot_id=p.id
+    ) END,'expiresAt',b.expires_at)
+  FROM online_satellite_private.locked_results r
+  JOIN online_satellite_private.pilots p ON p.id=r.pilot_id
+  JOIN public.tournaments t ON t.id=p.destination_tournament_id AND t.club_id=p.club_id
+  JOIN online_satellite_private.test_destinations d ON d.tournament_id=t.id AND d.club_id=t.club_id
+  LEFT JOIN online_satellite_private.test_ticket_batches b ON b.pilot_id=r.pilot_id
+  WHERE r.pilot_id=p_pilot_id
+    AND public.get_online_satellite_table_v1(p_pilot_id)->'canManage'='true'::jsonb;
+$$;
+REVOKE ALL ON FUNCTION public.get_online_satellite_test_issuance_v1(uuid) FROM PUBLIC,anon,service_role;
+GRANT EXECUTE ON FUNCTION public.get_online_satellite_test_issuance_v1(uuid) TO authenticated;
+
 COMMIT;

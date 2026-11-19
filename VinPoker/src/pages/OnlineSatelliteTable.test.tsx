@@ -56,6 +56,32 @@ it("shows the participant's own qualification on their closed table", async () =
     { p_ticket_id: ticketId, p_destination_id: destinationId });
 });
 
+it("recovers an issued batch from the server after a lost response", async () => {
+  sessionStorage.clear();
+  let issued = false;
+  rpc.mockImplementation(name => {
+    if (name === "issue_online_satellite_test_tickets_v1") {
+      issued = true;
+      return Promise.resolve({ data: null, error: Error("TEST response lost after commit") });
+    }
+    return { abortSignal: async () => ({
+      data: name === "get_online_satellite_test_issuance_v1"
+        ? { destinationName: "Giải đích TEST", expectedCount: 1,
+          issuedCount: issued ? 1 : null, expiresAt: issued ? "2099-01-01T12:00:00Z" : null }
+        : { tableId, clockRevision: "7", running: false, status: "closed",
+          canManage: true, canPlay: false, canProvision: false, qualificationReached: true },
+      error: null,
+    }) };
+  });
+  openControl();
+  fireEvent.change(await screen.findByLabelText("Hạn dùng (giờ Việt Nam)"), { target: { value: "2099-01-01T19:00" } });
+  fireEvent.click(screen.getByRole("button", { name: "Phát vé TEST" }));
+  expect(await screen.findByText("Đã phát 1 vé TEST cho Giải đích TEST.")).toBeVisible();
+  expect(rpc).toHaveBeenCalledWith("issue_online_satellite_test_tickets_v1", {
+    p_pilot_id: pilotId, p_request_id: expect.any(String), p_expires_at: "2099-01-01T12:00:00.000Z",
+  });
+});
+
 it("shows the qualification boundary without offering another deal", async () => {
   rpc.mockImplementation(name => {
     if (name === "lock_online_satellite_result_v1") {
