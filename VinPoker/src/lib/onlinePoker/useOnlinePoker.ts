@@ -379,6 +379,7 @@ export function useTableHand(tableId: string): TableHandState {
   // (the table row carries host_user_id changes). Dark: no-op.
   useEffect(() => {
     if (!RUNTIME_LIVE) return;
+    let active = true;
     const channel = supabase
       .channel(`op-table-${tableId}`)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -387,8 +388,15 @@ export function useTableHand(tableId: string): TableHandState {
       .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_seats', filter: `table_id=eq.${tableId}` }, () => setTick((n) => n + 1))
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_tables', filter: `id=eq.${tableId}` }, () => setTick((n) => n + 1))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .subscribe((status) => {
+        // A hand may commit during the initial join or while the socket is offline.
+        // Read the current revision whenever this table joins or rejoins.
+        if (active && status === 'SUBSCRIBED') setTick((n) => n + 1);
+      });
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
   }, [tableId]);
 
   // Polling fallback (live only): realtime postgres_changes can drop or lag, which would
