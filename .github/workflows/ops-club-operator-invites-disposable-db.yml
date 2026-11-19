@@ -7,6 +7,7 @@ on:
       - "VinPoker/supabase/migration-archive/superseded/remote-alias/20270108000000_ops_operator_membership_baseline.sql"
       - "VinPoker/supabase/migration-archive/superseded/remote-alias/20270108000001_ops_club_operator_invites.sql"
       - "VinPoker/supabase/functions/ops-club-accounts/**"
+      - "VinPoker/supabase/pending-migrations/20261119141550_ops_dealer_control_invites.sql"
       - "VinPoker/src/ops/auth/**"
       - "VinPoker/src/ops/pages/OpsAccount.tsx"
       - "VinPoker/tests/ops/**"
@@ -38,6 +39,8 @@ jobs:
           set -euo pipefail
           psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -f tests/ops/disposableDb.integration.sql
+          psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -f tests/ops/dealerControlInvite.disposable.sql
           psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 \
             -c "CREATE DATABASE ops_baseline_incompatible"
           if psql -h localhost -U postgres -d ops_baseline_incompatible -v ON_ERROR_STOP=1 \
