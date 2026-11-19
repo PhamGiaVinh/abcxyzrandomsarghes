@@ -129,6 +129,7 @@ test('the shared server deal persists one native hand with consistent public and
     op_get_my_hole_cards: 'f950e9a194084a44cfbc13e23783e129',
   });
   sql(file('../../supabase/pending-migrations/20261119193713_online_poker_complete_deal_stack_writeback.sql'));
+  sql(file('../../supabase/pending-migrations/20261119203153_online_poker_bba_state_fence.sql'));
 
   const reads = {
     online_poker_tables: `SELECT row_to_json(t) FROM public.online_poker_tables t WHERE id='${tableId}'`,
@@ -499,6 +500,56 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
     FROM public.online_poker_seats WHERE table_id='${sideTable}'`), '0,70,20');
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${sideHand}'`), '3');
+
+  const anteTable = 'ab510000-0000-4000-8000-000000000014';
+  const anteHand = 'ab510000-0000-4000-8000-000000000015';
+  sql(`
+    INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
+    VALUES ('${anteTable}','Disposable BBA TEST',5,10,0,1000,100);
+    INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status)
+    VALUES ('${anteTable}',2,'${first}',100,'sitting'), ('${anteTable}',5,'${second}',14,'sitting');
+  `);
+  const anteDeal = createHand({
+    handId: anteHand, tableId: anteTable, handNo: 1, buttonSeat: 2, sb: 5n, bb: 10n, bigBlindAnte: 10n,
+  }, [...deck], [{ seat: 2, playerId: first, stack: 100n }, { seat: 5, playerId: second, stack: 14n }]);
+  assert.equal(anteDeal.error, undefined);
+  const anteSplit = serializeAuthoritative(anteDeal.state);
+  const anteReceipt = await admin.rpc('op_start_hand', {
+    p_state: anteSplit.stateJson, p_deck: deck, p_board_future: anteSplit.liveDeck,
+    p_holes: anteSplit.holes, p_events: anteDeal.events.map(({ type, payload }) => ({ type, payload })),
+    p_engine_version: ENGINE_VERSION, p_act_deadline: '2030-01-01T12:00:00Z', p_actor_user_id: null,
+  });
+  assert.equal(anteReceipt.data?.outcome, 'ok', JSON.stringify(anteReceipt));
+  assert.equal(sql(`SELECT state_schema_version FROM public.online_poker_hands WHERE id='${anteHand}'`), '2');
+  const fold = { type: 'fold', seat: 2 };
+  const anteSettled = applyAction(anteDeal.state, fold);
+  assert.equal(anteSettled.error, undefined);
+  const anteFinal = serializeAuthoritative(anteSettled.state);
+  const submitAnteFold = (state) => {
+    const encoded = Buffer.from(JSON.stringify({
+      action: actionToRow(fold), state, liveDeck: anteFinal.liveDeck,
+      events: anteSettled.events.map(({ type, payload }) => ({ type, payload })),
+    })).toString('hex');
+    return `
+      SET ROLE service_role;
+      WITH input AS (SELECT convert_from(decode('${encoded}','hex'),'UTF8')::jsonb AS p)
+      SELECT public.op_submit_action('${anteHand}', '${first}', p->'action', p->'state',
+        p->'liveDeck', p->'events', 0, NULL, 'disposable-g03-ante-fold') FROM input;
+    `;
+  };
+  const legacy = structuredClone(anteFinal.stateJson);
+  delete legacy.config.bigBlindAnte;
+  delete legacy.config.bigBlindAnteSeat;
+  for (const seat of legacy.seats) delete seat.deadAnte;
+  assert.throws(() => json(submitAnteFold(legacy)), /online_poker_ante_configuration_changed/);
+  const anteSeatStacks = () => sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
+    FROM public.online_poker_seats WHERE table_id='${anteTable}'`);
+  assert.equal(anteSeatStacks(), '100,14');
+  assert.equal(sql(`SELECT state_version FROM public.online_poker_hands WHERE id='${anteHand}'`), '0');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${anteHand}'`), '0');
+  assert.equal(json(submitAnteFold(anteFinal.stateJson)).outcome, 'ok');
+  assert.equal(anteSeatStacks(), '95,19');
+  assert.equal(sql(`SELECT state->'seats'->1->>'deadAnte' FROM public.online_poker_hands WHERE id='${anteHand}'`), '4');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
