@@ -25,6 +25,10 @@ export function checkInvariants(state: HandState, initialTotal?: bigint): string
 
   // ── per-seat chip sanity ──
   for (const s of seats) {
+    const ante = s.deadAnte ?? 0n;
+    if (ante < 0n || ante > (state.config.bigBlindAnte ?? 0n) || ante > s.totalCommitted - s.committed) {
+      v.push(`seat ${s.seat}: invalid dead ante`);
+    }
     if (s.stack < 0n) v.push(`seat ${s.seat}: negative stack ${s.stack}`);
     if (s.committed < 0n) v.push(`seat ${s.seat}: negative committed ${s.committed}`);
     if (s.totalCommitted < 0n) v.push(`seat ${s.seat}: negative totalCommitted ${s.totalCommitted}`);
@@ -50,6 +54,7 @@ export function checkInvariants(state: HandState, initialTotal?: bigint): string
       v.push(`seat ${s.seat}: in the hand with ${s.holeCards.length} hole cards (must be 2)`);
     }
   }
+  if (seats.filter(seat => (seat.deadAnte ?? 0n) > 0n).length > 1) v.push('more than one big blind ante payer');
 
   // ── pot sanity + conservation ──
   if (state.pot < 0n) v.push(`negative pot ${state.pot}`);

@@ -97,6 +97,8 @@ export function createHand(
   // Tournament dead-button placement (optional + additive). When present it is the
   // single source of truth for the button seat (which may be an EMPTY/dead seat).
   const blindPlacement = config.blindPlacement;
+  const ante = config.bigBlindAnte ?? 0n;
+  if (ante < 0n) throw new Error('big blind ante must be non-negative');
   const cfg: HandConfig = {
     handId: config.handId,
     tableId: config.tableId,
@@ -104,6 +106,7 @@ export function createHand(
     buttonSeat: blindPlacement ? blindPlacement.buttonSeat : config.buttonSeat,
     sb: config.sb,
     bb: config.bb,
+    ...(ante > 0n ? { bigBlindAnte: ante } : {}),
     schemaVersion: config.schemaVersion ?? SCHEMA_VERSION,
     ...(blindPlacement ? { blindPlacement } : {}),
   };
@@ -154,6 +157,12 @@ export function createHand(
 
   if (sbSeat) commit(state, sbSeat, sbSeat.stack < cfg.sb ? sbSeat.stack : cfg.sb);
   commit(state, bbSeat, bbSeat.stack < cfg.bb ? bbSeat.stack : cfg.bb);
+  const antePaid = bbSeat.stack < ante ? bbSeat.stack : ante;
+  if (antePaid > 0n) {
+    commit(state, bbSeat, antePaid);
+    bbSeat.committed -= antePaid;
+    bbSeat.deadAnte = antePaid;
+  }
   state.currentBet = cfg.bb;
   state.lastFullRaiseSize = cfg.bb;
   state.aggressor = bbSeat.seat;
@@ -186,6 +195,7 @@ export function createHand(
       bbSeat.seat,
       sbSeat ? cfg.sb.toString() : '0',
       cfg.bb.toString(),
+      ante > 0n ? antePaid.toString() : undefined,
     ),
     holeCardsDealt(active.map((s) => s.seat)),
   ];
