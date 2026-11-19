@@ -204,7 +204,7 @@ it("reconciles missing source changes even when a partial channel reports health
   expect(screen.getByText("TEST table 7", {exact:false})).toBeInTheDocument();
 });
 
-it("queues a pending-move tick behind a slow fallback read of the same tour", async () => {
+it("coalesces pending moves and reconnect hints behind a slow fallback read", async () => {
   vi.useFakeTimers();
   state.moves.mockResolvedValue({ ok: true, data: [{ status: "pending", pendingMoveId: "move-1" }] });
   await act(async () => {
@@ -217,14 +217,26 @@ it("queues a pending-move tick behind a slow fallback read of the same tour", as
   await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
   expect(state.roster).toHaveBeenCalledTimes(2);
   expect(state.moves).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    window.dispatchEvent(new Event("online"));
+    live.channels[0].status?.("SUBSCRIBED");
+    live.channels[0].changes[0].read();
+    await vi.advanceTimersByTimeAsync(200);
+  });
+  expect(state.roster).toHaveBeenCalledTimes(2);
+  expect(state.entries).toHaveBeenCalledTimes(2);
+  expect(state.restorable).toHaveBeenCalledTimes(2);
 
   state.roster.mockResolvedValue({ ok: true, data: [table(8)] });
   await act(async () => {
     finish({ ok: true, data: [table(7)] });
-    await Promise.resolve();
   });
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "true");
   await act(async () => { await vi.advanceTimersByTimeAsync(200); });
   expect(state.roster).toHaveBeenCalledTimes(3);
+  expect(state.entries).toHaveBeenCalledTimes(3);
+  expect(state.restorable).toHaveBeenCalledTimes(3);
+  expect(state.moves).toHaveBeenCalledTimes(3);
   expect(screen.getByRole("button", { name: /Bàn 8, 0\/9 ghế/ })).toBeInTheDocument();
 });
 
