@@ -113,7 +113,8 @@ jobs:
           fi
           supabase status --workdir "$fixture" --output json >"$fixture/status.json"
           git fetch --no-tags origin 6a1e68f9601d4830eae3120577a9c76b98bcb26a
-          POKER_ISOLATED_REALTIME_STATUS="$fixture/status.json" +            node --experimental-transform-types --test tests/onlinePoker/dealPersistence.pg.test.mjs
+          export POKER_ISOLATED_REALTIME_STATUS="$fixture/status.json"
+          node --experimental-transform-types --test tests/onlinePoker/dealPersistence.pg.test.mjs
 
   online-poker-runtime:
     runs-on: ubuntu-24.04
