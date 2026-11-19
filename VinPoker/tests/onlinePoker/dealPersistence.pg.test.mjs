@@ -502,5 +502,34 @@ test('the shared server deal persists one native hand with consistent public and
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
+    assert.equal(sql("SELECT count(*) FROM public.online_poker_hands WHERE status IN ('dealing','betting')"), '0');
+    const rollback = file('../../supabase/pending-migrations/ROLLBACK_20261119193713_online_poker_complete_deal_stack_writeback.sql');
+    const startOid = "'public.op_start_hand(jsonb,jsonb,jsonb,jsonb,jsonb,text,timestamp with time zone,uuid)'::regprocedure";
+    const functionRecord = () => json(`SELECT json_build_object('source',md5(prosrc),
+      'owner',pg_get_userbyid(proowner),'securityDefiner',prosecdef,'settings',proconfig,'acl',proacl)
+      FROM pg_proc WHERE oid=${startOid}`);
+    const candidate = functionRecord();
+    assert.equal(candidate.source, 'd49d85ec3415ee0726fc3fdc268b966e');
+    const enabled = spawnSync('psql', ['-X', '-Atq', '-v', 'ON_ERROR_STOP=1'],
+      { encoding: 'utf8', input: rollback, timeout: 10_000 });
+    assert.notEqual(enabled.status, 0);
+    assert.match(enabled.stderr, /runtime|disabled and idle/);
+    assert.deepEqual(functionRecord(), candidate);
+
+    const storedFacts = () => sql(`SELECT md5(jsonb_build_array(
+      (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_hands t),
+      (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_seats t),
+      (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_hand_seats t),
+      (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_hand_events t),
+      (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_hand_secrets t),
+      (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_actions t),
+      (SELECT jsonb_agg(to_jsonb(t) ORDER BY id) FROM public.online_poker_chip_ledger t)
+    )::text)`);
+    const beforeRollback = storedFacts();
+    sql('UPDATE public.online_poker_config SET enabled=false');
+    sql(rollback);
+    assert.deepEqual(functionRecord(), { ...candidate, source: '10282a2bb252d87125652c048de5d502' });
+    assert.equal(storedFacts(), beforeRollback);
+    console.log('POSTGRES_POKER_ROLLBACK_PRESERVES_COMMITTED_HANDS_AND_RECEIPTS_PASS');
   }
 });
