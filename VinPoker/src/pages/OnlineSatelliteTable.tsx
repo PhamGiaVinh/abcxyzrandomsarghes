@@ -131,6 +131,7 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
   });
   const commandPending = clock.isPending || deal.isPending || openRound.isPending || lockRoundResult.isPending;
 
+  const table = snapshot.data;
   return (
     <section className="mx-auto max-w-xl space-y-4 px-4 py-6">
       <h1 className="text-2xl font-semibold">Bàn Satellite TEST</h1>
@@ -141,19 +142,19 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
             <p role="alert">Chưa đọc được trạng thái bàn.</p>
             <Button variant="outline" onClick={() => void snapshot.refetch()}>Thử lại</Button>
           </div>
-        ) : !snapshot.data ? <p>Bàn chưa sẵn sàng hoặc bạn chưa có quyền truy cập.</p>
-        : snapshot.data.status === "unassigned" ? <p role="status">Bạn chưa được xếp bàn.</p>
-        : snapshot.data.status === "unprovisioned" ? (
-          snapshot.data.canProvision && pilot.success
+        ) : !table ? <p>Bàn chưa sẵn sàng hoặc bạn chưa có quyền truy cập.</p>
+        : table.status === "unassigned" ? <p role="status">Bạn chưa được xếp bàn.</p>
+        : table.status === "unprovisioned" ? (
+          table.canProvision && pilot.success
             ? <SatelliteBlindSchedule pilotId={pilot.data} onCreated={() => void snapshot.refetch()} />
             : <p role="status">Bàn chưa được tạo.</p>
         )
         : (
           <div className="space-y-3">
-            <p role="status">{snapshot.data.status === "closed" ? "Bàn đã đóng"
-              : snapshot.data.qualificationReached ? "Đã chạm ngưỡng suất TEST"
-              : snapshot.data.running ? "Đồng hồ đang chạy" : "Đồng hồ đang tạm dừng"}</p>
-            {snapshot.data.status === "closed" && snapshot.data.canPlay && (
+            <p role="status">{table.status === "closed" ? "Bàn đã đóng"
+              : table.qualificationReached ? "Đã chạm ngưỡng suất TEST"
+              : table.running ? "Đồng hồ đang chạy" : "Đồng hồ đang tạm dừng"}</p>
+            {table.status === "closed" && table.canPlay && (
               <section className="space-y-1" aria-label="Kết quả của bạn">
                 <h2 className="font-semibold">Kết quả của bạn</h2>
                 {ownQualification.isFetching ? <p role="status">Đang kiểm tra kết quả…</p>
@@ -172,38 +173,36 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
               </section>
             )}
             <div className="flex flex-wrap gap-2">
-              {snapshot.data.canPlay && (
-                <Button asChild><Link to={`/poker/table/${snapshot.data.tableId}`}>Vào bàn</Link></Button>
+              {table.canPlay && (
+                <Button asChild><Link to={`/poker/table/${table.tableId}`}>Vào bàn</Link></Button>
               )}
-              {snapshot.data.canManage && snapshot.data.status !== "closed"
-                && (!snapshot.data.qualificationReached || snapshot.data.running) && (
+              {table.canManage && table.status !== "closed"
+                && (!table.qualificationReached || table.running) && (
                 <Button variant="outline" disabled={commandPending}
-                  onClick={() => snapshot.data?.tableId && clock.mutate(snapshot.data)}>
-                  {clock.isPending ? "Đang gửi…" : snapshot.data.running ? "Tạm dừng đồng hồ" : "Chạy đồng hồ"}
+                  onClick={() => table?.tableId && clock.mutate(table)}>
+                  {clock.isPending ? "Đang gửi…" : table.running ? "Tạm dừng đồng hồ" : "Chạy đồng hồ"}
                 </Button>
               )}
-              {snapshot.data.canManage && snapshot.data.status !== "closed" && snapshot.data.roundNo !== undefined && (
-                <Button variant="outline" disabled={!snapshot.data.running || commandPending}
+              {table.canManage && table.status !== "closed" && table.roundNo !== undefined && (
+                <Button variant="outline" disabled={!table.running || commandPending}
                   onClick={() => {
-                    const table = snapshot.data;
-                    if (table?.tableId && table.roundNo !== undefined) openRound.mutate(table.roundNo);
+                    if (table.tableId && table.roundNo !== undefined) openRound.mutate(table.roundNo);
                   }}>
                   {openRound.isPending ? "Đang mở vòng…" : "Mở vòng tiếp theo"}
                 </Button>
               )}
-              {snapshot.data.canManage && snapshot.data.status !== "closed" && snapshot.data.roundNo
-                && snapshot.data.roundNo !== "0" && (
+              {table.canManage && table.status !== "closed" && table.roundNo
+                && table.roundNo !== "0" && (
                 <Button variant="outline" disabled={commandPending} onClick={() => {
-                  const table = snapshot.data;
-                  if (table?.tableId && table.roundNo && table.roundNo !== "0") lockRoundResult.mutate(table.roundNo);
+                  if (table.tableId && table.roundNo && table.roundNo !== "0") lockRoundResult.mutate(table.roundNo);
                 }}>
                   {lockRoundResult.isPending ? "Đang khóa kết quả…" : "Khóa kết quả toàn vòng"}
                 </Button>
               )}
-              {snapshot.data.canManage && snapshot.data.running && snapshot.data.status === "open"
-                && !snapshot.data.qualificationReached && (
+              {table.canManage && table.running && table.status === "open"
+                && !table.qualificationReached && (
                 <Button variant="outline" disabled={commandPending}
-                  onClick={() => snapshot.data?.tableId && deal.mutate(snapshot.data.tableId)}>
+                  onClick={() => table?.tableId && deal.mutate(table.tableId)}>
                   {deal.isPending ? "Đang gửi lệnh…" : "Chia ván mới"}
                 </Button>
               )}
@@ -211,9 +210,9 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
             {openRound.data && <p role="status">{roundMessages[openRound.data]}</p>}
             {openRound.isError && <p role="alert">Chưa xác nhận được lệnh mở vòng.</p>}
             {lockRoundResult.data && <p role="status">{roundResultMessages[lockRoundResult.data]}</p>}
-            {lockRoundResult.data === "bubble_review_required" && snapshot.data.canManage
-              && snapshot.data.roundNo && pilot.success && actorId && (
-              <SatelliteRoundBubbleEvidence pilotId={pilot.data} actorId={actorId} roundNo={snapshot.data.roundNo} />
+            {lockRoundResult.data === "bubble_review_required" && table.canManage
+              && table.roundNo && pilot.success && actorId && (
+              <SatelliteRoundBubbleEvidence pilotId={pilot.data} actorId={actorId} roundNo={table.roundNo} />
             )}
             {lockRoundResult.isError && <p role="alert">Chưa xác nhận được lệnh khóa kết quả toàn vòng.</p>}
             {deal.data?.outcome === "ok" && <p role="status">Máy chủ đã chia ván mới.</p>}
@@ -223,15 +222,15 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
             )}
             {clock.isError && <p role="alert">Chưa xác nhận được lệnh. Trạng thái bàn đã được tải lại.</p>}
             {clock.data === "stale" && <p role="status">Đồng hồ đã thay đổi. Hãy kiểm tra trạng thái mới.</p>}
-            {snapshot.data.canManage && snapshot.data.roundNo !== undefined && pilot.success && actorId && (
-              <SatelliteRoundOperations pilotId={pilot.data} actorId={actorId} roundNo={snapshot.data.roundNo} />
+            {table.canManage && table.roundNo !== undefined && pilot.success && actorId && (
+              <SatelliteRoundOperations pilotId={pilot.data} actorId={actorId} roundNo={table.roundNo} />
             )}
-            {snapshot.data.canManage && snapshot.data.roundNo === undefined && pilot.success && actorId && (
+            {table.canManage && table.roundNo === undefined && pilot.success && actorId && (
               <SatelliteBubbleEvidence pilotId={pilot.data} actorId={actorId}
-                canLock={snapshot.data.qualificationReached === true && snapshot.data.status !== "closed"}
+                canLock={table.qualificationReached === true && table.status !== "closed"}
                 onLocked={() => void snapshot.refetch()} />
             )}
-            {snapshot.data.canManage && snapshot.data.status === "closed" && pilot.success && actorId && (
+            {table.canManage && table.status === "closed" && pilot.success && actorId && (
               <SatelliteTestTicketIssuance pilotId={pilot.data} actorId={actorId} />
             )}
           </div>
