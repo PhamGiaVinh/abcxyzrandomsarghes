@@ -12,8 +12,6 @@ on:
       - "VinPoker/tsconfig.engine.json"
       - "VinPoker/supabase/migrations/20260817000000_online_poker_core.sql"
       - "VinPoker/supabase/migrations/20260820000000_online_poker_runtime_rpcs.sql"
-      - "VinPoker/supabase/migrations/20260820000002_op_submit_action_chip_conservation_filter.sql"
-      - "VinPoker/supabase/pending-migrations/*_online_poker_atomic_terminal_stacks.sql"
       - "VinPoker/package-lock.json"
 
 permissions:
