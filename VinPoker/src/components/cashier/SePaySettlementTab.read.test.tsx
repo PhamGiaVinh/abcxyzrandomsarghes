@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 const { rpc, auth } = vi.hoisted(() => ({ rpc: vi.fn(), auth: { user: { id: '00000000-0000-4000-8000-000000000001' }, session: null } }));
 vi.mock('@/integrations/supabase/client', () => ({ supabase: { rpc } }));
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => auth }));
+vi.mock('@/lib/featureFlags', () => ({ FEATURES: { sepayScopedHandoff: true } }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 afterEach(() => { cleanup(); sessionStorage.clear(); rpc.mockReset(); vi.mocked(toast.success).mockClear(); vi.mocked(toast.error).mockClear(); auth.user = { id: '00000000-0000-4000-8000-000000000001' }; vi.useRealTimers(); });
 function deferred() { let resolve!: (value: unknown) => void; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
@@ -23,6 +24,26 @@ function envelope(receipt:unknown,args:Record<string,unknown>){return {ok:true,s
  request_id:args.p_request_id,club_id:'club-a',request_hash:'a'.repeat(64),replayed:false,
  payload:{operation:args.p_operation,bank_transaction_id:args.p_bank_transaction_id,registration_id:args.p_registration_id,reason:args.p_reason,
  ...(args.p_expected_snapshot?{snapshot:args.p_expected_snapshot}:{})},receipt};}
+
+it('requests only the exact linked transfer and refuses a different club in the response', async () => {
+ const clubId = ids('club-a') as string;
+ const bankId = ids('bank-a') as string;
+ rpc.mockReturnValue(query(Promise.resolve({ data: [{bank_transaction_id:'bank-a',club_id:auth.user.id,
+   created_at:'2026-10-21T00:00:00Z',bt_status:'unmatched',reg_match_count:0,registration_id:null,
+   amount:100000,reg_total_pay:null,amount_delta:null,content:'wrong club transfer'}],error:null })));
+ render(<SePaySettlementTab clubIds={[clubId]} clubId={clubId} bankId={bankId}/>);
+ expect(await screen.findByRole('alert')).toHaveTextContent('Không tải được');
+ expect(screen.queryByText('wrong club transfer')).not.toBeInTheDocument();
+ expect(rpc).toHaveBeenCalledExactlyOnceWith('sepay_cashier_settlement_scope_v1', {
+   p_scope:'actionable',p_limit:1,p_club_id:clubId,p_bank_transaction_id:bankId,
+ });
+});
+
+it('does not fall back to a global worklist for an unauthorized club link', () => {
+ render(<SePaySettlementTab clubIds={[]} clubId={ids('club-a') as string} bankId={ids('bank-a') as string}/>);
+ expect(screen.getByRole('alert')).toHaveTextContent('Không xác minh được CLB');
+ expect(rpc).not.toHaveBeenCalled();
+});
 
 it('shows a read error instead of claiming no actionable transfers, then retries', async () => {
  rpc.mockReturnValueOnce(query(Promise.resolve({ data: null, error: { message: 'backend unavailable' } })))

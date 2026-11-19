@@ -6,7 +6,7 @@ import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext
 import { useOpsCapabilities } from "@/ops/auth/OpsCapabilityProvider";
 import { useOpsWorkspace } from "@/ops/workspace/OpsWorkspaceProvider";
 import { assertMutationOk } from "@/ops/opsMutations";
-import { OPS_TOUR_CASHIER_ENABLED } from "@/lib/featureFlags";
+import { FEATURES, OPS_TOUR_CASHIER_ENABLED } from "@/lib/featureFlags";
 import { SeatReceiptDialog } from "@/components/tournament/seat/SeatReceiptDialog";
 import type { SeatReceiptData } from "@/components/tournament/seat/SeatReceipt";
 import { normalizeCashierScan } from "./cashierScan";
@@ -626,6 +626,14 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
   </section>;
   if (!clubId) return <p className="p-6 text-amber-200">Không có quyền Cashier tại CLB đã chọn.</p>;
   const plainCashierUrl='/ops/cashier/tour?'+new URLSearchParams({club:clubId}).toString();
+  const settlementUrl = (bankId?: string) => {
+    const params = new URLSearchParams({ tab: "sepay_settlement" });
+    if (FEATURES.sepayScopedHandoff) {
+      params.set("club", clubId);
+      if (bankId) params.set("bank", bankId);
+    }
+    return `/cashier?${params}`;
+  };
   if(invalidBooking)return <section role="alert" className="space-y-3 p-6 text-amber-200"><p>Liên kết từ chat không hợp lệ. Chưa chọn tour hoặc đăng ký để thu tiền.</p><a className="underline" href={plainCashierUrl}>Mở quầy không kèm ngữ cảnh chat</a></section>;
   return <div className="min-w-0 space-y-4 pb-8 text-[#eef5ef]">
     {bookingFocus&&<section role="status" className="space-y-2 rounded-xl border border-emerald-300/30 p-3 text-sm"><p>Đang xem đúng đăng ký được chọn từ chat. Đây chỉ là đối chiếu; chưa ghi nhận khoản thu nào. Kiểm tra người chơi, tour và số tiền trước khi thao tác.</p><a className="underline" href={plainCashierUrl}>Mở quầy không kèm ngữ cảnh chat</a></section>}
@@ -737,7 +745,7 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
       <p className="mt-1 text-sm text-[#a9baae]">Chọn tour một lần, quét liên tục. Hệ thống không tự đổi tour theo đồng hồ.</p>
       <div className="mt-4 grid gap-2 sm:grid-cols-2">{tours.map((tour) => <button key={tour.id} type="button" disabled={busy} onClick={() => changeTour(tour.id)}
         className="min-h-16 rounded-xl border border-white/10 p-3 text-left hover:border-emerald-300/50">{tour.name}<span className="block text-xs text-[#a9baae]">{dateTime(tour.start_time)} · {tour.status}</span></button>)}</div>
-      <p className="mt-4 text-sm text-amber-200">Chưa phân bổ / khoản thừa toàn CLB: {issueCountLabel}. <a href="/cashier?tab=sepay_settlement" className="underline underline-offset-2">Mở đối soát SePay</a></p>
+      <p className="mt-4 text-sm text-amber-200">Chưa phân bổ / khoản thừa toàn CLB: {issueCountLabel}. <a href={settlementUrl()} className="underline underline-offset-2">Mở đối soát SePay</a></p>
     </section> : <>
       <label className="relative block"><Search className="absolute left-4 top-3.5 h-5 w-5 text-[#9caf9f]" />
         <input ref={scanner} autoFocus disabled={busy||!!bookingFocus} value={query} onChange={(event) => {
@@ -777,8 +785,9 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
           : issues.rows.map((issue) => <div key={`${issue.kind}:${issue.bank_transaction_id}`} className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3 text-sm">
             <span>{issue.kind === "surplus" ? "Khoản thừa" : "Chưa phân bổ"} · {issue.reference_code ?? "không có mã khớp"}<span className="block text-xs text-[#a9baae]">{dateTime(issue.occurred_at)}</span></span>
             <strong className="text-amber-200">{formatMoney(issue.amount)}</strong>
+            {FEATURES.sepayScopedHandoff && <a className="underline underline-offset-2" href={settlementUrl(issue.bank_transaction_id)}>Đối soát giao dịch</a>}
           </div>)}
-        <a href="/cashier?tab=sepay_settlement" className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-amber-300/40 px-4 text-sm text-amber-100">Mở đối soát SePay</a>
+        <a href={settlementUrl()} className="mt-4 inline-flex min-h-11 items-center rounded-lg border border-amber-300/40 px-4 text-sm text-amber-100">Mở đối soát SePay</a>
       </section> : <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
         <section className="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-[#101c17]">
           {!worklist ? <p role="status" className="p-5 text-sm text-[#a9baae]">{loading ? "Đang tải danh sách tour…" : "Chưa đọc được danh sách; bấm Làm mới để thử lại."}</p>
