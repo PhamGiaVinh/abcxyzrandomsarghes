@@ -1167,6 +1167,16 @@ test('the shared server deal persists one native hand with consistent public and
   assert.throws(() => openSharedRound(third, 0), /SATELLITE_PILOT_MANAGER_REQUIRED/);
   assert.deepEqual(openSharedRound(first, 0), { outcome: 'ok', roundNo: '1' });
   assert.deepEqual(openSharedRound(first, 0), { outcome: 'stale', roundNo: '1' });
+  assert.deepEqual(clockCommand(first,sharedPilot,1,false), { outcome: 'ok', revision: '2', running: false });
+  assert.equal(level(tables[0], first).mode, 'paused');
+  assert.equal(level(tables[1], first).mode, 'paused');
+  assert.equal((await dealNextHand(admin, tables[0], null)).reason, 'table_not_open');
+  assert.equal((await dealNextHand(admin, tables[1], first)).reason, 'satellite_level_unavailable');
+  assert.deepEqual(openSharedRound(first, 1), { outcome: 'paused', roundNo: '1' });
+  assert.equal(sql(`SELECT count(*) FROM online_satellite_private.round_deals
+    WHERE pilot_id='${sharedPilot}' AND round_no=1 AND hand_id IS NULL`), '2');
+  assert.deepEqual(clockCommand(first,sharedPilot,2,true), { outcome: 'ok', revision: '3', running: true });
+  console.log('POSTGRES_SATELLITE_SHARED_PAUSE_RETAINS_ROUND_PERMITS_PASS');
   const dealFixedRoundHand = async (id, actor) => {
     // Same deck as the verified blind all-in case above, so both tables end
     // with exactly one survivor. Limit deterministic randomness to this fixture.
