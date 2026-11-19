@@ -32,6 +32,12 @@ export async function verifySatelliteRealtime({ sql, statusPath, first, spectato
     createClient(status.API_URL, status.ANON_KEY, { auth: { persistSession: false } })];
   const seen = clients.map(() => []);
   try {
+    await Promise.all(clients.slice(0, 2).map(client => client.realtime.setAuth()));
+    const visible = await Promise.all(clients.map(client => client.from('online_poker_hands')
+      .select('id').eq('id', satelliteHand)));
+    assert.deepEqual(visible.map(({ error, data }) => ({ code: error?.code ?? null, count: data?.length ?? null })), [
+      { code: null, count: 1 }, { code: null, count: 0 }, { code: null, count: 0 },
+    ], 'REST and Realtime must use the same isolated identities');
     await Promise.all(clients.map((client, index) => new Promise((resolve, reject) => {
       client.channel(`fixture-poker-${index}`).on('postgres_changes', {
         event: 'UPDATE', schema: 'public', table: 'online_poker_hands',
