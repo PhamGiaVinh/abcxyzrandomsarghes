@@ -5,6 +5,8 @@ import { createServer as createVite } from 'vite';
 
 export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketScenario, twoTablePilot, finalTablePilot }) {
   const statements = {
+    get_online_satellite_pilot_v1: "public.get_online_satellite_pilot_v1((p->>'p_pilot_id')::uuid)",
+    register_online_satellite_pilot_v1: "public.register_online_satellite_pilot_v1((p->>'p_pilot_id')::uuid)",
     get_online_satellite_table_v1: "public.get_online_satellite_table_v1((p->>'p_pilot_id')::uuid)",
     get_online_satellite_round_operations_v1:
       "public.get_online_satellite_round_operations_v1((p->>'p_pilot_id')::uuid)",
@@ -65,7 +67,10 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketSce
   let browser;
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   try {
-    vite = await createVite({ server: { middlewareMode: true, hmr: false }, appType: 'custom' });
+    vite = await createVite({
+      server: { middlewareMode: true, hmr: false }, appType: 'custom',
+      define: { 'import.meta.env.VITE_ONLINE_SATELLITE_RUNTIME': JSON.stringify('true') },
+    });
     browser = await chromium.launch();
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     const fixtureUrl = (user, targetPilot) =>
@@ -104,6 +109,14 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketSce
     await participant.getByText('Đã tạo entry TEST tại giải đích.', { exact: true }).waitFor();
     assert.equal(entry(), firstEntry);
     console.log('CHROMIUM_SATELLITE_TICKET_ISSUE_LOST_REPLY_AND_REDEEM_DISTINCT_ACTORS_PASS');
+    await participant.goto(fixtureUrl(ticketScenario.player, twoTablePilot) + '&register=1');
+    await participant.getByRole('button', { name: 'Đăng ký một ghế' }).click();
+    await participant.getByText('Máy chủ đã xác nhận đăng ký.', { exact: true }).waitFor();
+    const browserEntry = sql(`SELECT id FROM online_satellite_private.entries
+      WHERE pilot_id='${twoTablePilot}' AND player_user_id='${ticketScenario.player}'`);
+    assert.match(browserEntry, /^[0-9a-f-]{36}$/);
+    sql(`UPDATE online_satellite_private.pilots SET registration_closes_at=clock_timestamp()-interval '1 second'
+      WHERE id='${twoTablePilot}'`);
     await page.goto(fixtureUrl(actor, twoTablePilot));
     await page.getByRole('checkbox', { name: /Tạo hai bàn TEST/ }).check();
     await page.getByRole('spinbutton', { name: 'Số suất TEST', exact: true }).fill('2');
@@ -111,6 +124,14 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketSce
     await page.getByRole('spinbutton', { name: 'Big blind', exact: true }).fill('10');
     await page.getByRole('button', { name: 'Tạo bàn và khóa lịch' }).click();
     await page.getByRole('button', { name: 'Chuyển ghế', exact: true }).waitFor();
+    const assignedTable = sql(`SELECT s.table_id FROM online_satellite_private.round_tables m
+      JOIN public.online_poker_seats s ON s.table_id=m.table_id
+      WHERE m.pilot_id='${twoTablePilot}' AND s.user_id='${ticketScenario.player}'`);
+    await participant.getByRole('link', { name: 'Mở bàn Satellite' }).click();
+    const assignedLink = participant.getByRole('link', { name: 'Vào bàn', exact: true });
+    await assignedLink.waitFor();
+    assert.equal(await assignedLink.getAttribute('href'), `/poker/table/${assignedTable}`);
+    console.log('CHROMIUM_SATELLITE_REGISTRATION_TO_ASSIGNED_TABLE_PASS');
     const { seat, anchor, target } = JSON.parse(sql(`SELECT json_build_object(
       'seat',s.id,'anchor',c.table_id,'target',m.table_id)
       FROM online_satellite_private.table_clocks c

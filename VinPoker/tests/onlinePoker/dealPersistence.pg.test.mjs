@@ -1435,10 +1435,12 @@ test('the shared server deal persists one native hand with consistent public and
     const twoTablePilot = 'ab510000-0000-4000-8000-000000000039';
     const finalTablePilot = 'ab510000-0000-4000-8000-000000000040';
     for (const pilot of [twoTablePilot,finalTablePilot]) {
+      const registrationCutoff = pilot === twoTablePilot ? "now()+interval '1 day'" : 'now()';
+      const registeredUsers = pilot === twoTablePilot ? [first,third,spectator] : [first,second,third,spectator];
       sql(`INSERT INTO online_satellite_private.pilots VALUES
-        ('${pilot}','${clubId}','${sharedDestination}','${first}','${pilot}',now(),100,4);
+        ('${pilot}','${clubId}','${sharedDestination}','${first}','${pilot}',${registrationCutoff},100,4);
         INSERT INTO online_satellite_private.entries(pilot_id,player_user_id) VALUES
-        ${[first,second,third,spectator].map(user => `('${pilot}','${user}')`).join(',')};`);
+        ${registeredUsers.map(user => `('${pilot}','${user}')`).join(',')};`);
     }
     await verifySatelliteClockBrowser({ sql, actor: first, pilot: browserPilot,
       twoTablePilot, finalTablePilot, ticketScenario: { pilot: boundaryPilot, player: second, destination: browserTicketDestination } });

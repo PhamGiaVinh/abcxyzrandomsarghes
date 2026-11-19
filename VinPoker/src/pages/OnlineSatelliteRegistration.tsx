@@ -31,10 +31,10 @@ export default function OnlineSatelliteRegistration() {
     <p>Đăng nhập bằng tài khoản thành viên đã liên kết tại CLB để tiếp tục đăng ký.</p>
     <Button asChild><Link to={{ pathname: "/auth", search: new URLSearchParams({ next: `/poker/satellite/${id.data}` }).toString() }}>Đăng nhập</Link></Button>
   </main>;
-  return <ScopedRegistration key={JSON.stringify([id.data, user.id, sessionReadEpoch(session)])} pilotId={id.data} />;
+  return <OnlineSatelliteRegistrationContent key={JSON.stringify([id.data, user.id, sessionReadEpoch(session)])} pilotId={id.data} />;
 }
 
-function ScopedRegistration({ pilotId }: { pilotId: string }) {
+export function OnlineSatelliteRegistrationContent({ pilotId }: { pilotId: string }) {
   const client = useSupabaseClient();
   const [details, setDetails] = useState<Registration | null>(null);
   const [error, setError] = useState<string | null>(null);
