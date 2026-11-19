@@ -111,6 +111,25 @@ describe('runTableRunner — skips & idempotency', () => {
       config: { sb: '40', bb: '80', bigBlindAnte: '80', schemaVersion: 2 },
       satelliteLevel: { clockRevision: '3', levelStartSecond: '60' },
     });
+    expect(calls.startStates[0]).not.toHaveProperty('satelliteRound');
+  });
+  it.each(['12', '0'])('handles the database-issued round number %s', async (roundNo) => {
+    const { admin, calls } = makeAdmin({
+      enabled: true, due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
+      table: TABLE, seats: TWO_FUNDED,
+      satelliteLevel: {
+        mode: 'ready', clockRevision: '3', levelStartSecond: '60',
+        sb: '40', bb: '80', bigBlindAnte: '80', roundNo,
+      },
+    });
+    const result = await runTableRunner(admin);
+    if (roundNo === '0') {
+      expect(result.dealt).toBe(0);
+      expect(calls.startHand).toBe(0);
+    } else {
+      expect(result.dealt).toBe(1);
+      expect(calls.startStates[0]).toHaveProperty('satelliteRound', roundNo);
+    }
   });
   it('does not issue a start while the satellite clock is paused', async () => {
     const { admin, calls } = makeAdmin({ enabled: true, due: { outcome: 'ok', tables: [{ table_id: 't1' }] },

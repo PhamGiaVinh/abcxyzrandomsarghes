@@ -1111,6 +1111,39 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands
     WHERE table_id IN ('${fast}','${slow}') AND state ? 'satelliteRound'`), '0');
   console.log('POSTGRES_SATELLITE_ROUND_WAIT_STALE_PERMIT_ROLLBACK_PASS');
+  sql(file('../../supabase/pending-migrations/20261119223500_online_satellite_shared_round_clock.sql'));
+  const sharedPilot = 'ab510000-0000-4000-8000-000000000033';
+  const tables = ['ab510000-0000-4000-8000-000000000034', 'ab510000-0000-4000-8000-000000000035'];
+  sql(`INSERT INTO online_satellite_private.pilots VALUES
+    ('${sharedPilot}','${clubId}','${destination}','${first}','${sharedPilot}',now(),10,4);
+    INSERT INTO online_satellite_private.entries(pilot_id,player_user_id) VALUES
+    ${[first, second, third, spectator].map(actor => `('${sharedPilot}','${actor}')`).join(',')};
+    INSERT INTO public.online_poker_tables(id,club_id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
+    VALUES ${tables.map(id => `('${id}','${clubId}','Disposable shared Satellite clock TEST',5,10,0,100,10)`).join(',')};
+    INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status) VALUES
+    ${[first, second, third, spectator].map((actor, i) => `('${tables[Math.floor(i / 2)]}',${i % 2 + 1},'${actor}',${i % 2 ? 10 : 5},'sitting')`).join(',')};
+    UPDATE public.online_poker_tables SET is_satellite=true WHERE id IN ('${tables.join("','")}');
+    INSERT INTO online_satellite_private.table_clocks(table_id,pilot_id,running_since,qualification_slots)
+    VALUES ('${tables[0]}','${sharedPilot}',statement_timestamp(),1);
+    INSERT INTO online_satellite_private.blind_levels VALUES ('${sharedPilot}',0,5,10,0);
+    INSERT INTO online_satellite_private.round_tables(table_id,pilot_id) VALUES
+    ${tables.map(id => `('${id}','${sharedPilot}')`).join(',')};`);
+  assert.equal(level(tables[1], first).mode, 'waiting_for_round');
+  assert.equal(sql(`SELECT online_satellite_private.open_next_round('${sharedPilot}')`), '1');
+  for (const [i, id] of tables.entries()) {
+    assert.equal(level(id, first).roundNo, '1');
+    const receipt = await dealNextHand(admin, id, i === 0 ? null : first);
+    assert.equal(receipt.ok, true, JSON.stringify(receipt));
+    assert.equal(sql(`SELECT status FROM public.online_poker_hands WHERE id='${receipt.handId}'`), 'complete');
+    assert.equal(level(id, first).mode, 'waiting_for_round');
+    if (i === 0) assert.throws(
+      () => sql(`SELECT online_satellite_private.open_next_round('${sharedPilot}')`),
+      /online_satellite_round_still_playing/,
+    );
+  }
+  assert.equal(sql(`SELECT count(*) FROM online_satellite_private.round_deals
+    WHERE pilot_id='${sharedPilot}' AND round_no=1 AND hand_id IS NOT NULL`), '2');
+  console.log('POSTGRES_SHARED_SATELLITE_CLOCK_MANUAL_RUNNER_ROUND_PASS');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });

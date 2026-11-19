@@ -98,6 +98,10 @@ export async function dealNextHand(
     return { ok: false, tableId, reason: 'satellite_level_unavailable' };
   }
   const satellite = level.mode === 'ready' ? level : null;
+  const roundNo = satellite?.roundNo;
+  if (roundNo !== undefined && (typeof roundNo !== 'string' || !/^[1-9]\d*$/.test(roundNo))) {
+    return { ok: false, tableId, reason: 'satellite_level_unavailable' };
+  }
   const handId = crypto.randomUUID();
   const seatInputs = buildSeatInputs(seated);
   const originalDeck = shuffledDeck(cryptoRng32);
@@ -125,6 +129,7 @@ export async function dealNextHand(
     p_state: satellite ? {
       ...split.stateJson,
       satelliteLevel: { clockRevision: satellite.clockRevision, levelStartSecond: satellite.levelStartSecond },
+      ...(roundNo === undefined ? {} : { satelliteRound: roundNo }),
     } : split.stateJson,
     p_deck: originalDeck,
     p_board_future: split.liveDeck,
