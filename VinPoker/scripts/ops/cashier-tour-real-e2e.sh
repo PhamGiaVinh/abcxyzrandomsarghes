@@ -1422,7 +1422,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_SUPABASE_ANON_KEY="$anon_key" \
   --env LOCAL_OWNER_EMAIL="$owner_email" \
   --env LOCAL_OWNER_PASSWORD="$owner_password" \
-  --env LOCAL_SATELLITE_BROWSER_PROBE="$satellite_browser_probe" \
+  --env LOCAL_SATELLITE_BROWSER_PROBE="${LOCAL_SATELLITE_BROWSER_PROBE:-0}" \
   --env LOCAL_SATELLITE_PLAYER_EMAIL="$player_email" \
   --env LOCAL_SATELLITE_PLAYER_PASSWORD="$player_password" \
   --env LOCAL_SUPABASE_STORAGE_KEY="$storage_key" \
@@ -1432,7 +1432,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   npx playwright test "${test_args[@]}"
 }
 if [[ "$satellite_browser_probe" == 1 ]]; then
-  run_browser_proof '' '' 'private Satellite invite crosses from Ops to member registration and survives reload'
+  LOCAL_SATELLITE_BROWSER_PROBE=1 run_browser_proof '' '' 'private Satellite invite crosses from Ops to member registration and survives reload'
   satellite_entries="$(docker exec "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres -c "
     SELECT count(*) FROM online_satellite_private.entries;")"
   [[ "$satellite_entries" == 1 ]]
