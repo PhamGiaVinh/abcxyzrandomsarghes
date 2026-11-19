@@ -84,7 +84,7 @@ const AccountingControl = () => {
       </header>
 
       <MockNotice partialLive={liveTab} />
-      <Link to="/ops/finance" className="inline-block text-sm text-primary underline underline-offset-2">
+      <Link to="/club/admin/finance" className="inline-block text-sm text-primary underline underline-offset-2">
         Mở tổng hợp tài chính CLB
       </Link>
 
