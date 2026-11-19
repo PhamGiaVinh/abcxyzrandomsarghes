@@ -214,6 +214,7 @@ async function handleStart(
     could_not_start_hand: 400,
     start_hand_failed: 400,
     satellite_level_unavailable: 409,
+    waiting_for_round: 409,
   };
   const status = statuses[result.reason];
   log(result.reason, { table_id: tableId, http: status });

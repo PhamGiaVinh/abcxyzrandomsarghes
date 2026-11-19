@@ -137,6 +137,12 @@ describe('runTableRunner — skips & idempotency', () => {
     expect((await runTableRunner(admin)).dealt).toBe(0);
     expect(calls.startHand).toBe(0);
   });
+  it('counts a table waiting for the other tables without reporting an error', async () => {
+    const { admin, calls } = makeAdmin({ enabled: true, due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
+      table: TABLE, seats: TWO_FUNDED, satelliteLevel: { mode: 'waiting_for_round' } });
+    expect(await runTableRunner(admin)).toMatchObject({ dealt: 0, errors: 0, skippedWaitingForRound: 1 });
+    expect(calls.startHand).toBe(0);
+  });
   it('does not reset the button or hand number when the previous-hand read fails', async () => {
     const { admin, calls } = makeAdmin({ enabled: true, due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
       table: TABLE, seats: TWO_FUNDED, lastHandUnavailable: true });

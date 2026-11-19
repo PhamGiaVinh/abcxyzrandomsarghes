@@ -25,7 +25,7 @@ export interface AdminClient {
 
 export type DealReason =
   | 'table_not_found' | 'table_not_open' | 'seats_load_failed' | 'previous_hand_unavailable'
-  | 'satellite_level_unavailable'
+  | 'satellite_level_unavailable' | 'waiting_for_round'
   | 'not_enough_players' | 'could_not_start_hand' | 'already_active' | 'disabled' | 'start_hand_failed';
 
 export type DealResult =
@@ -94,6 +94,9 @@ export async function dealNextHand(
     p_table_id: tableId,
     p_actor_user_id: actorUserId,
   });
+  if (!levelError && level?.mode === 'waiting_for_round') {
+    return { ok: false, tableId, reason: 'waiting_for_round' };
+  }
   if (levelError || (level?.mode !== 'practice' && level?.mode !== 'ready')) {
     return { ok: false, tableId, reason: 'satellite_level_unavailable' };
   }
