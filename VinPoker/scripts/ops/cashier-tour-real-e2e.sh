@@ -1125,7 +1125,7 @@ if [[ "${LOCAL_FLOOR_ALERT_BROWSER_PROBE:-0}" == 1 ]]; then
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'FLOOR_ALERT_FIXTURE'
 INSERT INTO public.tournament_hands(id,tournament_id,table_id,hand_number,status,is_voided)
 VALUES ('ae610000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001',
-        'a7000000-0000-4000-8000-000000000001',982001,'completed',false);
+        'a8000000-0000-4000-8000-000000000001',982001,'completed',false);
 INSERT INTO public.tracker_floor_alerts(id,club_id,tournament_id,tournament_table_id,physical_table_id,
   hand_id,reported_by,alert_kind,priority,title)
 VALUES ('ae610000-0000-4000-8000-000000000002','a2000000-0000-4000-8000-000000000001',
