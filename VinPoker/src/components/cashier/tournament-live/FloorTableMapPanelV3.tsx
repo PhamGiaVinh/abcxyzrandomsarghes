@@ -118,6 +118,7 @@ function ScopedFloorTableMapPanelV3({
     { enabled: tournamentEnded || FEATURES.floorTableControlV3 },
   ), [supabase, tournamentEnded]);
   const [tables, setTables] = useState<FloorTournamentTableRoster[]>([]);
+  const [entryReads, setEntryReads] = useState<{ scope: string; seat: boolean; restore: boolean } | null>(null);
   const [seatableEntries, setSeatableEntries] = useState<FloorSeatableEntry[]>([]);
   const [restorableEntries, setRestorableEntries] = useState<FloorRestorableEntry[]>([]);
   const [restoreTarget, setRestoreTarget] = useState<{ scope: string; entryId: string; name: string; destination: { tableId: string; seatNumber: number } } | null>(null);
@@ -170,7 +171,12 @@ function ScopedFloorTableMapPanelV3({
       .filter((seat) => !occupied.has(seat) && !locked.has(seat));
   }, [selectedTable]);
 
-  const readScope = `${actorId ?? ""}:${tournament.id}`;
+  const readScope = JSON.stringify([actorId, tournament.id, sessionEpoch]);
+  const seatableReady = !loading && entryReads?.scope === readScope && entryReads.seat;
+  const restorableReady = !loading && entryReads?.scope === readScope && entryReads.restore;
+  const entryReady = !!entrySelection && (entrySelection.kind === "seat"
+    ? seatableReady && seatableEntries.some((entry) => entry.entryId === entrySelection.entryId)
+    : restorableReady && restorableEntries.some((entry) => entry.entryId === entrySelection.entryId));
   const selectedSessionScope = JSON.stringify([readScope, sessionEpoch ?? null, selectedTable?.tournamentTableId,
     selectedTable?.tableSessionId, selectedTable?.controlEpoch]);
   const selectedWriteScope = JSON.stringify([selectedSessionScope, selectedTable?.sessionRevision]);
@@ -226,8 +232,14 @@ function ScopedFloorTableMapPanelV3({
         setLoadError(message);
         if (!silent) toast.error(message);
       }
-      if (entries.ok) setSeatableEntries(entries.data);
-      if (restorable.ok) setRestorableEntries(restorable.data);
+      setEntryReads({ scope: readScope, seat: entries.ok, restore: restorable.ok });
+      setEntrySelection((selection) => {
+        if (!selection) return null;
+        const list = selection.kind === "seat" ? entries : restorable;
+        return list.ok && list.data.some((entry) => entry.entryId === selection.entryId) ? selection : null;
+      });
+      setSeatableEntries(entries.ok ? entries.data : []);
+      setRestorableEntries(restorable.ok ? restorable.data : []);
       if (pending.ok) setPendingMoves(pending.data);
       const secondaryFailures = [entries, restorable, pending].filter((result) => !result.ok);
       setSecondaryLoadError(secondaryFailures.length > 0
@@ -242,6 +254,8 @@ function ScopedFloorTableMapPanelV3({
         setRestorableEntries([]);
         setPendingMoves([]);
       }
+      setEntryReads(null);
+      setEntrySelection(null);
       const message = "Không thể kết nối để tải dữ liệu bàn. Hãy kiểm tra mạng và thử lại.";
       setLoadError(message);
       if (!silent) toast.error(message);
@@ -584,7 +598,7 @@ function ScopedFloorTableMapPanelV3({
           maxSeats={manualPlayerTable?.maxSeats ?? 0} occupiedSeats={manualPlayerTable?.seats.map((s) => s.seatNumber) ?? []}
           lockedSeats={manualPlayerTable?.seatLocks.map((s) => s.seatNumber) ?? []} defaultSeatNumber={manualPlayerTarget.seat}
           onDone={() => { onParticipationChanged?.(); void load(true); }} />}
-      <RestoreBustDialog actorId={actorId} tournamentId={tournament.id} target={restoreTarget?.scope === selectedSessionScope ? restoreTarget : null}
+      <RestoreBustDialog actorId={actorId} tournamentId={tournament.id} target={restorableReady && restoreTarget?.scope === selectedSessionScope && restorableEntries.some((entry) => entry.entryId === restoreTarget.entryId) ? restoreTarget : null}
         onClose={() => setRestoreTarget(null)}
         onRestored={() => { setEntrySelection(null); onParticipationChanged?.(); toast.success("Đã khôi phục người chơi vào ghế."); void load(); }} />
       {FEATURES.floorRedrawSeatLockV1 && (
@@ -681,6 +695,11 @@ function ScopedFloorTableMapPanelV3({
                       </Button>
                       <p className="text-xs text-muted-foreground">Danh sách chỉ gồm entry hợp lệ của giải. Chọn “Đã loại” để khôi phục.</p>
                       <FloorEntryPicker
+                        availability={{
+                          seat: seatableReady ? "ready" : loading ? "loading" : "failed",
+                          restore: restorableReady ? "ready" : loading ? "loading" : "failed",
+                        }}
+                        onRetry={() => void load()}
                         seatableEntries={seatableEntries}
                         restorableEntries={restorableEntries}
                         value={entrySelection}
@@ -719,7 +738,7 @@ function ScopedFloorTableMapPanelV3({
                         <Button
                           data-ops-action="floor.players.restore"
                           className="min-h-12 w-full"
-                          disabled={busy}
+                          disabled={busy || !entryReady}
                           onClick={() => setRestoreTarget({
                             scope: selectedSessionScope,
                             entryId: entrySelection.entryId,
@@ -733,9 +752,9 @@ function ScopedFloorTableMapPanelV3({
                         <Button
                           data-ops-action="floor.tables.add_player"
                           className="min-h-12 w-full"
-                          disabled={busy || !entrySelection}
+                          disabled={busy || !entryReady}
                           onClick={() => {
-                            if (!entrySelection) return;
+                            if (!entrySelection || !entryReady) return;
                             void run("Đã thêm người vào ghế.", () => v3.assignEntryToSeat({
                               entryId: entrySelection.entryId,
                               tournamentTableId: selectedTable.tournamentTableId,
