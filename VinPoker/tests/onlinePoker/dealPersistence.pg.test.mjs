@@ -404,7 +404,7 @@ test('the shared server deal persists one native hand with consistent public and
         nextActor: (handId) => sql(`SELECT s.user_id FROM public.online_poker_hands h JOIN public.online_poker_seats s
           ON s.table_id=h.table_id AND s.seat_no=h.to_act_seat WHERE h.id='${handId}'`),
       });
-      assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${actionTable}' AND status='complete'`), '11');
+      assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${actionTable}' AND status='complete'`), '12');
       assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${actionTable}'`), '200');
     });
     return;

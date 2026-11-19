@@ -44,17 +44,36 @@ export async function verifySatellitePlayBrowser({ apiUrl, anonKey, players, tab
       await page.goto(`${origin}/poker/table/${tableId}`);
       return page;
     }));
-    const response = await post({ op: 'start_hand', tableId, idempotencyKey: crypto.randomUUID() });
-    assert.equal(response.status, 200);
-    const hand = await response.json();
-    assert.equal(hand.outcome, 'ok');
-    const actor = nextActor(hand.hand_id);
-    const actingPage = pages[players.findIndex(player => player.actor === actor)];
-    assert.ok(actingPage);
-    const fold = actingPage.getByRole('button', { name: 'Bỏ bài', exact: true });
-    await fold.click({ timeout: 25_000 });
-    await Promise.all(pages.map(page => page.getByText('Kết quả ván #11', { exact: true }).waitFor()));
+    const playHand = async (handNo, disconnectPeer) => {
+      const response = await post({ op: 'start_hand', tableId, idempotencyKey: crypto.randomUUID() });
+      assert.equal(response.status, 200);
+      const hand = await response.json();
+      assert.equal(hand.outcome, 'ok');
+      const actor = nextActor(hand.hand_id);
+      const actingIndex = players.findIndex(player => player.actor === actor);
+      assert.ok(actingIndex >= 0);
+      const actingPage = pages[actingIndex];
+      const peer = pages[1 - actingIndex];
+      const result = page => page.getByText(`Kết quả ván #${handNo}`, { exact: true });
+      const fold = actingPage.getByRole('button', { name: 'Bỏ bài', exact: true });
+      await fold.waitFor({ timeout: 25_000 });
+      if (disconnectPeer) {
+        await peer.context().setOffline(true);
+        assert.equal(await peer.evaluate(() => navigator.onLine), false);
+      }
+      await fold.click();
+      await result(actingPage).waitFor();
+      if (disconnectPeer) {
+        assert.equal(await result(peer).count(), 0);
+        await peer.context().setOffline(false);
+        assert.equal(await peer.evaluate(() => navigator.onLine), true);
+      }
+      await result(peer).waitFor({ timeout: 15_000 });
+    };
+    await playHand(11, false);
     console.log('CHROMIUM_SATELLITE_PLAY_REAL_EDGE_AND_PEER_RESULT_PASS');
+    await playHand(12, true);
+    console.log('CHROMIUM_SATELLITE_PLAY_PEER_OFFLINE_RECOVERY_PASS');
   } finally {
     await browser?.close();
     await vite.close();
