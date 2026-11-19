@@ -58,11 +58,25 @@ export async function withSatelliteEdgeHttp(statusPath, run) {
         }
       });
     });
-    return async (handId) => {
+    const receive = async (handId) => {
       const deadline = performance.now() + 8_000;
       while (!completed.has(handId) && performance.now() < deadline) await delay(20);
       assert.ok(completed.has(handId), 'Missing committed action on subscribed table');
       return completed.get(handId);
+    };
+    return {
+      receive,
+      async disconnect() {
+        await client.removeAllChannels();
+        client.realtime.disconnect();
+      },
+      async latestHand() {
+        const { data, error } = await client.from('online_poker_hands').select('state,state_version')
+          .eq('table_id', tableId).in('status', ['dealing', 'betting', 'complete'])
+          .order('hand_no', { ascending: false }).limit(1).maybeSingle();
+        assert.equal(error?.code, undefined);
+        return data;
+      },
     };
   }));
   try {
