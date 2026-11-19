@@ -1,5 +1,5 @@
 import { useOperationalCapabilities } from "@/hooks/useOperationalCapabilities";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { BarChart3, Calculator, ReceiptText, Table2, Users, UtensilsCrossed, Wallet } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -31,22 +31,22 @@ import StaffSalaryChot from "./StaffSalaryChot";
  * from empty data. Every write keeps its server-side gate; the UI is presentation only.
  */
 export default function AccountantDashboard() {
-  const { loading, authError, user, isAdmin, isClubOwner } = useAuth();
+  const { loading, authError, user, isAdmin } = useAuth();
   const source = staffSalarySource();
   const access = useOperationalCapabilities();
   const gateOk = !loading && !access.loading && !access.error && !!user && access.allows("accountant");
 
   const clubsQuery = useSalaryClubs(source, gateOk && FEATURES.accountantWorkspace);
-  const clubs = useMemo(() => clubsQuery.data ?? [], [clubsQuery.data]);
+  const clubs = clubsQuery.isError ? [] : clubsQuery.data ?? [];
   const [clubId, setClubId] = useState("");
   const [salaryView, setSalaryView] = useState<"staff" | "dealer">("staff");
-  const activeClubId = clubId || clubs[0]?.id || null;
-  const activeClub = clubs.find((c) => c.id === activeClubId) ?? null;
+  const activeClub = clubId ? clubs.find((club) => club.id === clubId) : clubs[0];
+  const activeClubId = activeClub?.id ?? null;
   const { caps } = useAccountantCapabilities(FEATURES.accountantWorkspace ? activeClubId : null);
 
   useEffect(() => {
-    if (!clubId && clubs[0]?.id) setClubId(clubs[0].id);
-  }, [clubId, clubs]);
+    if (!clubId && activeClubId) setClubId(activeClubId);
+  }, [clubId, activeClubId]);
 
   if (loading || access.loading) return <RouteLoader />;
   if (authError || access.error) return <p role="alert" className="p-6">Chưa xác minh được quyền nhân sự. Vui lòng tải lại trang.</p>;
@@ -58,7 +58,7 @@ export default function AccountantDashboard() {
 
   // Owner/admin already pass the pre-migration authz for dealer payroll; accountant-only
   // users need migration 20261236000000 (probe says so). Approve/lock stays owner/admin.
-  const hasOwnerAdmin = isAdmin || clubs.some((c) => c.role === "owner" || c.role === "admin");
+  const hasOwnerAdmin = !!activeClub && (isAdmin || activeClub.role === "owner" || activeClub.role === "admin");
   const dealerAvailable = hasOwnerAdmin || (caps.state === "ok" && caps.payroll);
   const staffAvailable = hasOwnerAdmin || (caps.state === "ok" && caps.staff);
   const expensesAvailable = hasOwnerAdmin || (caps.state === "ok" && caps.expenses);
@@ -83,7 +83,7 @@ export default function AccountantDashboard() {
             Bàn làm việc kế toán: bảng lương, nhân viên, chi phí và báo cáo. Kế toán chốt + gửi — chủ CLB duyệt.
           </p>
         </div>
-        {clubs.length > 1 && (
+        {(clubs.length > 1 || (clubs.length === 1 && !activeClub)) && (
           <div className="w-full sm:w-64">
             <Select value={activeClubId ?? ""} onValueChange={setClubId}>
               <SelectTrigger className="bg-background border-border">
@@ -101,7 +101,8 @@ export default function AccountantDashboard() {
         )}
       </header>
 
-      <Tabs defaultValue="salary" className="space-y-4">
+      {clubsQuery.isError && <PendingDbNotice state="network_error" />}
+      <Tabs key={JSON.stringify([user.id, activeClubId, activeClub?.role])} defaultValue="salary" className="space-y-4">
         <TabsList className="flex flex-wrap h-auto">
           <TabsTrigger value="salary" className="gap-1.5">
             <Wallet className="w-4 h-4" />
@@ -144,11 +145,15 @@ export default function AccountantDashboard() {
           </div>
 
           {salaryView === "staff" ? (
-            <StaffSalaryChot embedded />
-          ) : dealerAvailable ? (
+            activeClub && staffAvailable ? (
+              <StaffSalaryChot embedded scopedClubId={activeClub.id} />
+            ) : (
+              <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
+            )
+          ) : activeClub && dealerAvailable ? (
             <DealerPayrollTab
-              clubIds={clubs.map((c) => c.id)}
-              clubs={clubs.map((c) => ({ id: c.id, name: c.name }))}
+              clubIds={[activeClub.id]}
+              clubs={[{ id: activeClub.id, name: activeClub.name }]}
               hideApprovalActions={hideApprovalActions}
             />
           ) : (
@@ -157,7 +162,7 @@ export default function AccountantDashboard() {
         </TabsContent>
 
         <TabsContent value="staff">
-          {staffAvailable ? (
+          {activeClub && staffAvailable ? (
             <StaffDirectoryManager clubId={activeClubId} />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
@@ -165,15 +170,15 @@ export default function AccountantDashboard() {
         </TabsContent>
 
         <TabsContent value="expenses">
-          {expensesAvailable ? (
-            <ClubExpenses embedded />
+          {activeClub && expensesAvailable ? (
+            <ClubExpenses embedded scopedClubId={activeClub.id} />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
           )}
         </TabsContent>
 
         <TabsContent value="fnb">
-          {fnbAvailable ? (
+          {activeClub && fnbAvailable ? (
             <AccountantFnbTab clubId={activeClubId} />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
@@ -181,7 +186,7 @@ export default function AccountantDashboard() {
         </TabsContent>
 
         <TabsContent value="report">
-          {financeAvailable ? (
+          {activeClub && financeAvailable ? (
             <AccountantFinanceTab clubId={activeClubId} />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />

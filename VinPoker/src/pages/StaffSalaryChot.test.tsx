@@ -47,3 +47,9 @@ it('labels an approved PT month row as an already-paid daily summary and offers 
 it('keeps the payment action for an unpaid approved FT snapshot while PT remains a summary',()=>{
  const ft={...pt,staffId:'staff-ft',runId:'run-ft',fullName:'FT unpaid',employmentType:'full_time',netVnd:100000,grossVnd:100000};f.month={...f.month,isError:false,data:{status:'approved',hasRuns:true,lockedRows:[pt,ft],totalGrossVnd:115792,totalNetVnd:115792}};mount();expect(screen.getAllByRole('button',{name:'Đánh dấu trả'})).toHaveLength(1);expect(screen.getByText(/Tổng đã trả theo ngày/)).toBeTruthy();
 });
+
+it('does not fall back to a different club for an embedded staff salary view', () => {
+  render(<MemoryRouter><StaffSalaryChot embedded scopedClubId="other-club" /></MemoryRouter>);
+  expect(f.monthRead.mock.calls.at(-1)?.[1]).toBeNull();
+  expect(screen.queryByRole('button', {name:/Chốt lương/})).toBeNull();
+});

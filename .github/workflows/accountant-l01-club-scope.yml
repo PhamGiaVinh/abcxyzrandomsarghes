@@ -1,0 +1,52 @@
+name: Accountant L01 isolated club scope
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/accountant-l01-club-scope.yml'
+      - 'VinPoker/tests/accountantClubScope/**'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  rpc-club-scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: vinpoker_ops_l01
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -d vinpoker_ops_l01"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_l01
+      CAPTURE_RUN: '44484017071'
+      CAPTURE_SHA: '02c4d6cba8678c9d52feea055fc1f0714082bc77'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify capture provenance and restore schema on loopback
+        working-directory: VinPoker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CAPTURE_RUN" > "$RUNNER_TEMP/l01-capture.json"
+          jq -e --arg sha "$CAPTURE_SHA" --arg owner "$GITHUB_REPOSITORY_OWNER"             '.conclusion == "success" and .head_sha == $sha and .head_branch == "main" and
+             .event == "workflow_dispatch" and .actor.login == $owner and
+             .path == ".github/workflows/capture-live-public-schema.yml"'             "$RUNNER_TEMP/l01-capture.json" > /dev/null
+          export SCHEMA_ARTIFACT_DIR="$RUNNER_TEMP/l01-schema"
+          gh run download "$CAPTURE_RUN" -R "$GITHUB_REPOSITORY" -n live-public-schema -D "$SCHEMA_ARTIFACT_DIR"
+          node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
+          node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Exercise the actual three RPCs as authenticated fixture actors
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/accountantClubScope/rpc.pg17.sql

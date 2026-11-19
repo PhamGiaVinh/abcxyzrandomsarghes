@@ -36,7 +36,7 @@ function currentMonthKey(): string {
   return financeBusinessToday().slice(0,7);
 }
 
-export default function ClubExpenses({ embedded }: { embedded?: boolean } = {}) {
+export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: boolean; scopedClubId?: string } = {}) {
   const { loading: authLoading, isAdmin, isClubAdmin, isClubOwner, isCashier, isAccountant } = useAuth();
   const [searchParams] = useSearchParams();
   const source = clubExpensesSource();
@@ -51,7 +51,9 @@ export default function ClubExpenses({ embedded }: { embedded?: boolean } = {}) 
   const { from, to } = useMemo(() => monthBounds(monthKey), [monthKey]);
   const clubsQuery = useExpenseClubs(source, allowed);
   const clubs = clubsQuery.isError ? [] : clubsQuery.data ?? [];
-  const activeClubId = clubs.some(c=>c.id===clubId) ? clubId : clubs[0]?.id ?? null;
+  const activeClubId = scopedClubId === undefined
+    ? (clubs.some(c=>c.id===clubId) ? clubId : clubs[0]?.id ?? null)
+    : clubs.find((club) => club.id === scopedClubId)?.id ?? null;
   const expensesQuery = useClubExpenses(source, activeClubId, from, to);
   const recordExpense = useRecordClubExpense(source, activeClubId, from, to);
 
@@ -104,7 +106,7 @@ export default function ClubExpenses({ embedded }: { embedded?: boolean } = {}) 
         <Card role="alert" className="p-4 border-destructive/40 text-sm">
           Không tải được danh sách CLB. <Button variant="outline" size="sm" onClick={()=>void clubsQuery.refetch()}>Thử lại</Button>
         </Card>
-      ) : clubs.length === 0 ? (
+      ) : !activeClubId ? (
         <Card className="p-6 border-border text-sm text-muted-foreground">Bạn chưa có CLB hoặc quyền thu ngân để ghi chi phí.</Card>
       ) : (
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -122,7 +124,7 @@ export default function ClubExpenses({ embedded }: { embedded?: boolean } = {}) 
                   <h2 className="text-sm font-bold text-foreground">Chi tiết tháng</h2>
                   <p className="text-[12px] text-muted-foreground">{activeClub?.name ?? "Chưa chọn CLB"}</p>
                 </div>
-                {clubs.length > 1 && (
+                {scopedClubId === undefined && clubs.length > 1 && (
                   <div className="w-full sm:w-64">
                     <Select value={activeClubId ?? ""} onValueChange={setClubId}>
                       <SelectTrigger className="bg-background border-border">

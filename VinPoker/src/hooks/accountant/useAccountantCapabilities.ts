@@ -1,3 +1,4 @@
+import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -36,9 +37,10 @@ function isMissingFunction(error: any): boolean {
  * Never infer "no permission" from an empty result — that is what these states are for.
  */
 export function useAccountantCapabilities(clubId: string | null) {
+  const { user } = useAuth();
   const q = useQuery({
-    queryKey: ["accountant", "capabilities", clubId ?? ""],
-    enabled: !!clubId,
+    queryKey: ["accountant", "capabilities", user?.id, clubId],
+    enabled: !!user?.id && !!clubId,
     staleTime: 60_000,
     retry: 1,
     queryFn: async (): Promise<AccountantCapabilities> => {
