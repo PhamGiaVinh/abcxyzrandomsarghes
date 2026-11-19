@@ -270,6 +270,7 @@ export interface LiveTableMeta {
   startingStack: string;
   /** current host (transferable; null if table has no seated players) */
   hostUserId: string | null;
+  isSatellite?: boolean;
 }
 
 /** Single table row by id — for the table page header when RUNTIME_LIVE. */
@@ -277,7 +278,8 @@ export async function loadTableMetaLive(tableId: string,signal?:AbortSignal): Pr
   if (!RUNTIME_LIVE) throw new RuntimeNotLiveError();
   let read = rails()
     .from('online_poker_tables')
-    .select('id, name, sb, bb, max_seats, status, min_buyin, max_buyin, starting_stack_default, host_user_id')
+    .select('id, name, sb, bb, max_seats, status, min_buyin, max_buyin, starting_stack_default, host_user_id'
+      + (import.meta.env.VITE_ONLINE_SATELLITE_RUNTIME === 'true' ? ', is_satellite' : ''))
     .eq('id', tableId);
   if(signal)read=read.abortSignal(signal);
   const { data, error } = await read.maybeSingle();
@@ -293,6 +295,7 @@ export async function loadTableMetaLive(tableId: string,signal?:AbortSignal): Pr
     maxBuyin: String(data.max_buyin ?? '0'),
     startingStack: String(data.starting_stack_default ?? data.min_buyin ?? '0'),
     hostUserId: data.host_user_id ? String(data.host_user_id) : null,
+    ...(data.is_satellite === true ? { isSatellite: true } : {}),
   };
 }
 

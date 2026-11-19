@@ -19,7 +19,9 @@ BEGIN
   SELECT c.* INTO clock_row FROM online_satellite_private.table_clocks c
     WHERE c.table_id = NEW.table_id FOR SHARE;
   IF NOT FOUND THEN
-    IF expected IS NOT NULL THEN
+    IF expected IS NOT NULL OR EXISTS (
+      SELECT 1 FROM public.online_poker_tables WHERE id=NEW.table_id AND is_satellite
+    ) THEN
       RAISE EXCEPTION 'online_satellite_deal_not_bound' USING ERRCODE = '23514';
     END IF;
     NEW.satellite_deal_level := NULL;

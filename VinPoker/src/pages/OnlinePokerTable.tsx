@@ -130,6 +130,8 @@ export default function OnlinePokerTable() {
   const { user } = useAuth();
   const { hand, seats, mySeatNo, myUserId, hostUserId, amIHost, legal, loading, dealSignal, dealSeats, refresh, applyServerView, actions } = useTableHand(tableId);
   const table = useTableMeta(tableId);
+  const hasTable = Boolean(table);
+  const isSatellite = table?.isSatellite === true;
 
   const [sitSeat, setSitSeat] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -145,14 +147,14 @@ export default function OnlinePokerTable() {
 
   // Scope the append-only ledger to the current actor/table. Failed reads are not empty.
   useEffect(() => {
-    if (!settingsOpen || !RUNTIME_LIVE || !tableId || !user?.id) return;
+    if (!settingsOpen || !RUNTIME_LIVE || !tableId || !user?.id || !hasTable || isSatellite) return;
     let alive = true;
     setBuyinRead({ scope: buyinScope, status: 'loading', rows: [] });
     loadBuyinsLive(tableId)
       .then((rows) => { if (alive) setBuyinRead({ scope: buyinScope, status: 'ready', rows }); })
       .catch(() => { if (alive) setBuyinRead({ scope: buyinScope, status: 'error', rows: [] }); });
     return () => { alive = false; };
-  }, [settingsOpen, tableId, user?.id, buyinScope, buyinRetry]);
+  }, [settingsOpen, tableId, user?.id, buyinScope, buyinRetry, isSatellite, hasTable]);
   const toggleMute = () => { const v = !muted; setPokerSoundMuted(v); setMuted(v); markPokerSoundGesture(); };
 
   // UI-4 — optional felt skin (emerald default / premium burgundy+gold), persisted locally.
@@ -264,7 +266,7 @@ export default function OnlinePokerTable() {
   // once the player is no longer busted (e.g. after leaving). Never decides chips client-side.
   const myStackStr = seats.find((s) => s.userId === myUserId)?.stack;
   const inLiveHand = !!hand && (hand.status === 'dealing' || hand.status === 'betting');
-  const isBusted = mySeatNo != null && myStackStr != null && Number(myStackStr) === 0 && !inLiveHand;
+  const isBusted = !isSatellite && mySeatNo != null && myStackStr != null && Number(myStackStr) === 0 && !inLiveHand;
   useEffect(() => {
     if (isBusted && !dwell) {
       if (!bustHandledRef.current) { bustHandledRef.current = true; setBustOpen(true); }
@@ -311,7 +313,7 @@ export default function OnlinePokerTable() {
   const tableLive = isTableLive(table.status, occupied);
 
   // Keep the unmount-leave snapshot current every render.
-  leaveRef.current = { seated, inActiveHand, leave: actions.leaveTable };
+  leaveRef.current = { seated: seated && hasTable && !isSatellite, inActiveHand, leave: actions.leaveTable };
 
   // PR C — only show a held result on a LIVE table; never for a closed / empty one.
   // P0 deal-anim fix: when a genuinely NEW hand has been dealt (handId changed from the
@@ -346,7 +348,7 @@ export default function OnlinePokerTable() {
   const openSit = (seatNo: number) => {
     // Don't offer to sit until the first load settles — a reload could otherwise briefly
     // open the dialog for a seat the player already occupies (server would then reject).
-    if (loading) return;
+    if (loading || isSatellite) return;
     if (seated) { toast.info('Bạn đã ngồi ở bàn này rồi.'); return; }
     setSitSeat(seatNo);
   };
@@ -602,7 +604,7 @@ export default function OnlinePokerTable() {
               {seated ? (
                 <>
                   <Badge variant="secondary">Bạn đang ngồi ghế {mySeatNo}</Badge>
-                  <Button
+                  {!isSatellite && <Button
                     size="sm"
                     variant="outline"
                     onClick={leave}
@@ -610,10 +612,12 @@ export default function OnlinePokerTable() {
                     title={iAmInLiveHand ? 'Bạn đang trong ván — sẽ rời được sau khi xong ván' : undefined}
                   >
                     {iAmInLiveHand ? 'Rời sau ván' : 'Đứng dậy / rời bàn'}
-                  </Button>
+                  </Button>}
                 </>
               ) : (
-                <span className="text-sm text-muted-foreground">Chạm một ghế trống trên bàn để vào chơi.</span>
+                <span className="text-sm text-muted-foreground">{isSatellite
+                  ? "Ghế do danh sách đăng ký Satellite xác định."
+                  : "Chạm một ghế trống trên bàn để vào chơi."}</span>
               )}
             </div>
 
@@ -631,7 +635,7 @@ export default function OnlinePokerTable() {
                         <span className={`truncate ${isMe ? 'font-semibold' : ''}`}>{nameFor(s)}</span>
                         {isHost && <Badge variant="outline" className="gap-1 border-primary/40 text-primary"><Crown className="h-3 w-3" /> Chủ</Badge>}
                         <span className="ml-auto text-xs tabular-nums text-muted-foreground">{fmtChips(s.stack)}</span>
-                        {amIHost && !isHost && (
+                        {!isSatellite && amIHost && !isHost && (
                           <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => transfer(s.userId, nameFor(s))}>
                             Trao quyền
                           </Button>
@@ -645,7 +649,7 @@ export default function OnlinePokerTable() {
 
             {/* buy-in history — informal record of how many chips each player has bought in
                 (sit + rebuy) over this table's lifetime; survives a leave→re-sit. */}
-            {RUNTIME_LIVE && user && (
+            {RUNTIME_LIVE && user && !isSatellite && (
               <div>
                 <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lịch sử buy-in</div>
                 {buyinStatus === 'loading' && <p role="status" className="text-sm text-muted-foreground">Đang tải lịch sử buy-in…</p>}

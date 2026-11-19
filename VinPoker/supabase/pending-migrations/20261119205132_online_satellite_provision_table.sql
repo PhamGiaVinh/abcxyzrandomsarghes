@@ -79,8 +79,8 @@ BEGIN
   SELECT small_blind,big_blind INTO first_sb,first_bb FROM jsonb_to_recordset(p_levels)
     AS l(starts_at_second bigint,small_blind bigint,big_blind bigint)
     WHERE starts_at_second=0;
-  INSERT INTO public.online_poker_tables(club_id,name,max_seats,sb,bb,min_buyin,max_buyin,starting_stack_default,status)
-    VALUES (pilot.club_id,'Satellite TEST',pilot.seat_limit,first_sb,first_bb,0,0,pilot.starting_stack,'paused')
+  INSERT INTO public.online_poker_tables(club_id,name,max_seats,sb,bb,min_buyin,max_buyin,starting_stack_default,status,is_satellite)
+    VALUES (pilot.club_id,'Satellite TEST',pilot.seat_limit,first_sb,first_bb,0,0,pilot.starting_stack,'paused',true)
     RETURNING id INTO bound_table;
   INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status)
     SELECT bound_table,row_number() OVER (ORDER BY registered_at,id),player_user_id,pilot.starting_stack,'sitting'

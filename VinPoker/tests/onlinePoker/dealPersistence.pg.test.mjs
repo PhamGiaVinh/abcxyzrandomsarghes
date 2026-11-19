@@ -183,6 +183,10 @@ test('the shared server deal persists one native hand with consistent public and
   assert.throws(() => sql(`SET ROLE authenticated; SELECT public.op_read_satellite_deal_level('${tableId}')`), /permission denied/);
   sql(`DELETE FROM online_satellite_private.table_clocks WHERE table_id='${tableId}';
     UPDATE public.online_poker_tables SET club_id=NULL WHERE id='${tableId}'`);
+  sql(`UPDATE public.online_poker_tables SET is_satellite=true WHERE id='${tableId}'`);
+  assert.deepEqual(level(), { mode: 'unavailable' });
+  assert.equal(sql(`SET ROLE anon; SELECT count(*) FROM public.online_poker_tables WHERE id='${tableId}'`), '0');
+  sql(`UPDATE public.online_poker_tables SET is_satellite=false WHERE id='${tableId}'`);
   sql(file('../../supabase/pending-migrations/20261119205002_online_satellite_seat_ownership_fence.sql'));
   sql(file('../../supabase/pending-migrations/20261119205132_online_satellite_provision_table.sql'));
   sql(file('../../supabase/pending-migrations/20261119205447_online_satellite_set_clock.sql'));

@@ -2,6 +2,9 @@
 -- No initial clock or schedule is created. No browser grants.
 BEGIN;
 
+ALTER TABLE public.online_poker_tables
+  ADD COLUMN IF NOT EXISTS is_satellite boolean NOT NULL DEFAULT false;
+
 CREATE TABLE IF NOT EXISTS online_satellite_private.table_clocks (
   table_id uuid PRIMARY KEY REFERENCES public.online_poker_tables(id),
   pilot_id uuid NOT NULL UNIQUE REFERENCES online_satellite_private.pilots(id),
@@ -55,7 +58,9 @@ AS $$
       LIMIT 1
     ) l ON true
     WHERE c.table_id = p_table_id
-  ), jsonb_build_object('mode', 'practice'));
+  ), jsonb_build_object('mode', CASE WHEN EXISTS (
+    SELECT 1 FROM public.online_poker_tables WHERE id=p_table_id AND is_satellite
+  ) THEN 'unavailable' ELSE 'practice' END));
 $$;
 
 REVOKE ALL ON FUNCTION public.op_read_satellite_deal_level(uuid) FROM PUBLIC, anon, authenticated;

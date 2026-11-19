@@ -6,7 +6,11 @@ CREATE FUNCTION online_satellite_private.can_read_poker_table(p_table_id uuid)
 RETURNS boolean
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
-  SELECT NOT EXISTS (
+  SELECT (NOT EXISTS (
+    SELECT 1 FROM public.online_poker_tables t WHERE t.id=p_table_id AND t.is_satellite
+  ) OR EXISTS (
+    SELECT 1 FROM online_satellite_private.table_clocks c WHERE c.table_id=p_table_id
+  )) AND NOT EXISTS (
     SELECT 1 FROM online_satellite_private.table_clocks c
     WHERE c.table_id = p_table_id AND NOT EXISTS (
       SELECT 1 FROM online_satellite_private.entries e
