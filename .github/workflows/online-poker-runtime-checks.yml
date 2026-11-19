@@ -77,6 +77,44 @@ jobs:
           VERIFY_POKER_BROWSER_RETRY: '1'
         run: node --experimental-transform-types --test tests/onlinePoker/dealPersistence.pg.test.mjs
 
+  online-poker-realtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.101.0
+      - run: npm ci
+      - name: Verify real Realtime delivery for the disposable satellite
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGDATABASE: postgres
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp -d "${RUNNER_TEMP}/poker-realtime.XXXXXX")"
+          trap 'supabase stop --no-backup --workdir "$fixture" >/dev/null 2>&1 || true' EXIT
+          umask 077
+          supabase init --workdir "$fixture"
+          if ! supabase start --workdir "$fixture" --exclude imgproxy,logflare,mailpit,postgres-meta,storage-api,studio,supavisor,vector,edge-runtime >"$fixture/start.log" 2>&1; then
+            docker ps -a --format '{{.Names}} {{.Status}}'
+            exit 1
+          fi
+          supabase status --workdir "$fixture" --output json >"$fixture/status.json"
+          git fetch --no-tags origin 6a1e68f9601d4830eae3120577a9c76b98bcb26a
+          POKER_ISOLATED_REALTIME_STATUS="$fixture/status.json" +            node --experimental-transform-types --test tests/onlinePoker/dealPersistence.pg.test.mjs
+
   online-poker-runtime:
     runs-on: ubuntu-24.04
     timeout-minutes: 12

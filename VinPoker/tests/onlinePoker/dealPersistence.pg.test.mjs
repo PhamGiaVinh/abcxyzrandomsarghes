@@ -83,22 +83,34 @@ function startStatement(args) {
 
 test('the shared server deal persists one native hand with consistent public and private state', async () => {
   assert.equal(process.env.PGHOST, '127.0.0.1');
-  assert.equal(process.env.PGDATABASE, 'online_poker_runtime_ci');
-  assert.equal(sql('SELECT current_database()'), 'online_poker_runtime_ci');
+  const realtimeFixture = process.env.POKER_ISOLATED_REALTIME_STATUS;
+  const database = realtimeFixture ? 'postgres' : 'online_poker_runtime_ci';
+  assert.equal(process.env.PGDATABASE, database);
+  assert.equal(sql('SELECT current_database()'), database);
+  if (realtimeFixture) {
+    assert.equal(process.env.PGPORT, '54322');
+    assert.equal(sql("SELECT to_regnamespace('realtime') IS NOT NULL"), 't');
+  }
   assert.equal(sql("SELECT to_regclass('public.online_poker_tables') IS NULL"), 't');
   sql(`
-    CREATE ROLE anon;
-    CREATE ROLE authenticated;
-    CREATE ROLE service_role BYPASSRLS;
-    CREATE SCHEMA auth;
-    CREATE TABLE auth.users(id uuid PRIMARY KEY);
+    ${realtimeFixture ? '' : `
+      CREATE ROLE anon;
+      CREATE ROLE authenticated;
+      CREATE ROLE service_role BYPASSRLS;
+      CREATE SCHEMA auth;
+      CREATE TABLE auth.users(id uuid PRIMARY KEY);
+      CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+    `}
     CREATE TABLE public.clubs(id uuid PRIMARY KEY);
     CREATE TYPE public.app_role AS ENUM ('super_admin');
-    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
     CREATE FUNCTION public.has_role(uuid, public.app_role) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
     CREATE FUNCTION public.update_updated_at_column() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at=now(); RETURN NEW; END $$;
     ${file('../../supabase/migrations/20260817000000_online_poker_core.sql')}
-    CREATE PUBLICATION supabase_realtime;
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname='supabase_realtime') THEN
+        CREATE PUBLICATION supabase_realtime;
+      END IF;
+    END $$;
     ${file('../../supabase/migrations/20260817000001_online_poker_realtime.sql')}
     ${file('../../supabase/migrations/20260820000000_online_poker_runtime_rpcs.sql')}
     GRANT SELECT ON public.online_poker_actions TO service_role;
@@ -306,7 +318,8 @@ test('the shared server deal persists one native hand with consistent public and
   assert.ok(publicRows.seats.every(row => row.revealed_cards === null));
   assert.doesNotMatch(JSON.stringify(publicRows), /"(?:cards|holeCards|deck|board_future|server_seed)"\s*:/);
   assert.equal(sql(`SELECT string_agg(tablename,',' ORDER BY tablename)
-    FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public'`),
+    FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public'
+      AND tablename LIKE 'online_poker_%'`),
   'online_poker_hand_seats,online_poker_hands,online_poker_seats');
   assert.equal(sql("SELECT sum(stack+total_committed) FROM public.online_poker_hand_seats"), '200');
   assert.equal(sql("SELECT has_function_privilege('authenticated','public.op_start_hand(jsonb,jsonb,jsonb,jsonb,jsonb,text,timestamptz,uuid)','EXECUTE')"), 'f');
@@ -805,6 +818,11 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT stack FROM public.online_poker_seats WHERE table_id='${missingBinding}' AND user_id='${first}'`), '100');
   assert.throws(() => sql(`UPDATE public.online_poker_seats SET user_id=NULL WHERE table_id='${missingBinding}'`),
     /online_satellite_roster_is_fixed/);
+  if (realtimeFixture) {
+    const { verifySatelliteRealtime } = await import('./satelliteRealtime.fixture.mjs');
+    await verifySatelliteRealtime({ sql, statusPath: realtimeFixture, first, spectator,
+      practiceHand: sideHand, satelliteHand: provisionedDeal.handId });
+  }
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
