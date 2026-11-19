@@ -49,14 +49,24 @@ function session(name) {
 
 // Only recreate the observed function body in this throwaway database.
 // Archived migration files are never replayed as migrations.
-function archivedFunction(name, path) {
+function archivedFunction(name, path, group = 'legacy-unapplied') {
   const start = `CREATE OR REPLACE FUNCTION public.${name}(`;
-  const source = file('../../supabase/migration-archive/legacy-unapplied/' + path).replace(/\r\n/g, '\n');
+  const source = file(`../../supabase/migration-archive/${group}/${path}`).replace(/\r\n/g, '\n');
   const offset = source.indexOf(start);
   assert.ok(offset >= 0);
   const end = source.indexOf('$$;', source.indexOf('AS $$', offset) + 5);
   assert.ok(end > offset);
   return source.slice(offset, end + 3);
+}
+
+async function waitForPostgresLock(name) {
+  assert.match(name, /^g03-[a-z-]+$/);
+  for (let n = 0; n < 40; n++) {
+    if (sql(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+      WHERE application_name='${name}' AND wait_event_type='Lock')`) === 't') return;
+    await delay(50);
+  }
+  assert.fail('Second connection must actually be blocked on the first transaction');
 }
 
 function startStatement(args) {
@@ -90,6 +100,10 @@ test('the shared server deal persists one native hand with consistent public and
     ${file('../../supabase/migrations/20260820000000_online_poker_runtime_rpcs.sql')}
     ${archivedFunction('op_submit_action', '20260907000000_op_submit_action_settlement_seat_writeback.sql')}
     ${archivedFunction('op_stand_up', '20260908000000_op_stand_up_block_folded_midhand.sql')}
+    ${archivedFunction('op_close_table_if_empty', '20261002000000_op_auto_close_empty_table.sql', 'historical-never-replay')}
+    CREATE TRIGGER trg_op_close_empty AFTER UPDATE OF user_id ON public.online_poker_seats
+    FOR EACH ROW WHEN (OLD.user_id IS NOT NULL AND NEW.user_id IS NULL)
+    EXECUTE FUNCTION public.op_close_table_if_empty();
     INSERT INTO auth.users VALUES ('${first}'), ('${second}');
     INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
     VALUES ('${tableId}','Disposable TEST',5,10,0,1000,100);
@@ -99,11 +113,12 @@ test('the shared server deal persists one native hand with consistent public and
   assert.deepEqual(json(`
     SELECT json_object_agg(proname, md5(prosrc))
     FROM pg_proc WHERE pronamespace='public'::regnamespace
-      AND proname IN ('op_start_hand','op_submit_action','op_stand_up')
+      AND proname IN ('op_start_hand','op_submit_action','op_stand_up','op_close_table_if_empty')
   `), {
     op_start_hand: '10282a2bb252d87125652c048de5d502',
     op_submit_action: 'b0dd7ff7cd2d70b84198d35de5f14f6e',
     op_stand_up: '140a23e7260f0d70a11c097c7986061f',
+    op_close_table_if_empty: '905b8fbbdbf57aa27598e51027a64b52',
   });
   sql(file('../../supabase/pending-migrations/20261119193713_online_poker_complete_deal_stack_writeback.sql'));
 
@@ -235,13 +250,7 @@ test('the shared server deal persists one native hand with consistent public and
       \\echo leader_has_seats`);
     await leader.waitFor('leader_has_seats');
     follower.send(startStatement(allInArgs));
-    let waiting = false;
-    for (let n = 0; !waiting && n < 40; n++) {
-      waiting = sql(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
-        WHERE application_name='g03-terminal-follower' AND wait_event_type='Lock')`) === 't';
-      if (!waiting) await delay(50);
-    }
-    assert.ok(waiting, 'Second connection must actually be blocked on the first transaction');
+    await waitForPostgresLock('g03-terminal-follower');
     leader.send(startStatement(allInArgs) + '\nCOMMIT;');
     const [winner, duplicate] = await Promise.all([leader.finish(), follower.finish()]);
     assert.equal(JSON.parse(winner.at(-1)).outcome, 'ok');
@@ -256,4 +265,40 @@ test('the shared server deal persists one native hand with consistent public and
     'An immediately complete deal must also persist its terminal stacks');
   assert.equal((await startAllIn()).data.detail, 'stale hand sequence');
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${shortTable}'`), '1');
+
+  const closingTable = 'ab510000-0000-4000-8000-000000000006';
+  const closingHand = 'ab510000-0000-4000-8000-000000000007';
+  sql(`
+    INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
+    VALUES ('${closingTable}','Disposable close overlap TEST',5,10,0,1000,10);
+    INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status)
+    VALUES ('${closingTable}',2,'${first}',5,'sitting'), ('${closingTable}',5,'${second}',10,'sitting');
+  `);
+  const closingArgs = {
+    ...allInArgs,
+    p_state: { ...allInArgs.p_state, config: { ...allInArgs.p_state.config, tableId: closingTable, handId: closingHand } },
+  };
+  const leaver = session('g03-terminal-leaver');
+  const staleDeal = session('g03-close-stale-deal');
+  try {
+    leaver.send(`BEGIN;
+      SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+      SELECT public.op_stand_up('${closingTable}', 'disposable-g03-close-first');
+      SET request.jwt.claim.sub='${second}';
+      SELECT public.op_stand_up('${closingTable}', 'disposable-g03-close-second');
+      \\echo standups_uncommitted`);
+    await leaver.waitFor('standups_uncommitted');
+    staleDeal.send(startStatement(closingArgs));
+    await waitForPostgresLock('g03-close-stale-deal');
+    leaver.send('COMMIT;');
+    const [standups, denied] = await Promise.all([leaver.finish(), staleDeal.finish()]);
+    assert.deepEqual(standups.slice(0, 2).map(line => JSON.parse(line).outcome), ['ok', 'ok']);
+    assert.equal(JSON.parse(denied.at(-1)).detail, 'stale table configuration');
+  } finally {
+    leaver.stop();
+    staleDeal.stop();
+  }
+  assert.equal(sql(`SELECT status FROM public.online_poker_tables WHERE id='${closingTable}'`), 'closed');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${closingTable}'`), '0');
+  assert.equal(sql(`SELECT sum(amount) FROM public.online_poker_chip_ledger WHERE table_id='${closingTable}'`), '15');
 });

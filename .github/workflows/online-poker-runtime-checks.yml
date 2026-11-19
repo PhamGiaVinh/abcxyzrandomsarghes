@@ -15,6 +15,7 @@ on:
       - "VinPoker/supabase/pending-migrations/*_online_poker_complete_deal_stack_writeback.sql"
       - "VinPoker/supabase/migration-archive/legacy-unapplied/20260907000000_op_submit_action_settlement_seat_writeback.sql"
       - "VinPoker/supabase/migration-archive/legacy-unapplied/20260908000000_op_stand_up_block_folded_midhand.sql"
+      - "VinPoker/supabase/migration-archive/historical-never-replay/20261002000000_op_auto_close_empty_table.sql"
       - "VinPoker/package-lock.json"
 
 permissions:
