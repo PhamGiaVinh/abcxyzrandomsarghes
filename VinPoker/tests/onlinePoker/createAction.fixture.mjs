@@ -7,7 +7,9 @@ import {createRequire} from 'node:module';
 import {webcrypto} from 'node:crypto';
 import {z} from 'zod';
 const ts=createRequire(import.meta.url)('typescript');
-export function loadCreateAction(createClient,logs=[],url='http://local.invalid'){
+export function loadCreateAction(createClient,logs=[],url='http://local.invalid',dealNextHand=()=>{
+ throw Error('unexpected deal operation in create/read fixture');
+}){
  const cache=new Map();let handler;
  const files={
   '../_shared/validate.ts':'supabase/functions/_shared/validate.ts',
@@ -20,6 +22,7 @@ export function loadCreateAction(createClient,logs=[],url='http://local.invalid'
   if(name==='npm:zod@3.25.76')return {z};
   if(name==='npm:@supabase/supabase-js@2.105.4')return {createClient};
   if(['../_shared/pokerEngine/index.ts','../_shared/pokerAdapter/index.ts'].includes(name))return {};
+  if(name==='../_shared/pokerRuntime/dealNextHand.ts')return {dealNextHand};
   if(cache.has(name))return cache.get(name);
   if(!(name in files))throw Error('unqualified handler dependency');
   const exports={};cache.set(name,exports);
