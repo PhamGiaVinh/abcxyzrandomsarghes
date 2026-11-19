@@ -891,11 +891,44 @@ test('the shared server deal persists one native hand with consistent public and
     const split = serializeAuthoritative(applied.state);
     const input = Buffer.from(JSON.stringify({ action: actionToRow(action), state: split.stateJson,
       deck: split.liveDeck, events: applied.events.map(({ type, payload }) => ({ type, payload })) })).toString('hex');
-    assert.equal(json(`SET ROLE service_role;
+    const submitBubble = `SET ROLE service_role;
       WITH input AS (SELECT convert_from(decode('${input}','hex'),'UTF8')::jsonb AS p)
       SELECT public.op_submit_action('${bubbleHand}', '${player.playerId}', p->'action', p->'state',
-        p->'deck', p->'events', ${version}, NULL, 'disposable-g03-bubble-${version}') FROM input`).outcome, 'ok');
+        p->'deck', p->'events', ${version}, NULL, 'disposable-g03-bubble-${version}') FROM input;`;
+    if (version < 2) {
+      assert.equal(json(submitBubble).outcome, 'ok');
+      continue;
+    }
+    assert.equal(applied.state.status, 'complete');
+    const staleNext = createHand({
+      handId: 'ab510000-0000-4000-8000-000000000028', tableId: bubbleTable, handNo: 2,
+      buttonSeat: 5, sb: 5n, bb: 10n,
+    }, [...deck], bubblePlayers);
+    assert.equal(staleNext.error, undefined);
+    const staleSplit = serializeAuthoritative(staleNext.state);
+    const settling = session('g03-bubble-settlement');
+    const nextDeal = session('g03-bubble-next-deal');
+    try {
+      settling.send(`BEGIN;
+        ${submitBubble}
+        \\echo satellite_bubble_uncommitted`);
+      await settling.waitFor('satellite_bubble_uncommitted');
+      nextDeal.send(startStatement({
+        p_state: { ...staleSplit.stateJson, satelliteLevel: { clockRevision: '1', levelStartSecond: '0' } },
+        p_deck: deck, p_board_future: staleSplit.liveDeck, p_holes: staleSplit.holes,
+        p_events: [], p_engine_version: ENGINE_VERSION, p_act_deadline: null, p_actor_user_id: first,
+      }));
+      await waitForPostgresLock('g03-bubble-next-deal');
+      settling.send('COMMIT;');
+      const [committed, rejected] = await Promise.all([settling.finish(), nextDeal.finish()]);
+      assert.equal(JSON.parse(committed[0]).outcome, 'ok');
+      assert.deepEqual(JSON.parse(rejected.at(-1)), { outcome: 'rejected', detail: 'stale seat roster' });
+    } finally {
+      settling.stop();
+      nextDeal.stop();
+    }
   }
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${bubbleTable}'`), '1');
   assert.deepEqual(json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
     SELECT public.get_online_satellite_bubble_evidence_v1('${bubblePilot}')`), {
     handId: bubbleHand, handNo: '1', stateVersion: 3, status: 'complete', survivingCount: 1,
