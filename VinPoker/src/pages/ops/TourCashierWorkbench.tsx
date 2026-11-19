@@ -13,6 +13,7 @@ import { normalizeCashierScan } from "./cashierScan";
 import { useOpsAuth } from '@/ops/auth/OpsAuthProvider';
 import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
 import { observeTrackerContextRead } from '@/lib/tournament/observeTrackerContextRead';
+import { startLiveReportRefresh } from '@/lib/liveReportRefresh';
 import { cashPaymentJournalKey,readCashPaymentJournal,persistCashPaymentIntent,settleCashPaymentIntent,
   resolveCashPaymentIntent,type CashPaymentIntent } from '@/lib/cashPaymentIntent';
 
@@ -320,21 +321,47 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
   useEffect(() => {
     if (!shiftId || !clubId) { setShiftSummary(null); setShiftSummaryError(null); return; }
     let active = true;
+    let controller: AbortController | undefined;
+    let deadline: number | undefined;
     setShiftSummary(null); setShiftSummaryError(null);
     const load = async () => {
-      const { data, error: rpcError } = await client.rpc("cashier_shift_summary_v1" as never, { p_shift_id: shiftId } as never);
-      if (!active) return;
-      if (rpcError || !isShiftSummary(data, shiftId, clubId)) {
-        setShiftSummary(null);
-        setShiftSummaryError(rpcError?.message ?? "Không đọc được báo cáo ca.");
-      } else {
+      if (document.visibilityState === "hidden") return;
+      const request = new AbortController();
+      controller = request;
+      try {
+        const { data, error: rpcError } = await Promise.race([
+          client.rpc("cashier_shift_summary_v1" as never, { p_shift_id: shiftId } as never).abortSignal(request.signal),
+          new Promise<never>((_, reject) => {
+            deadline = window.setTimeout(() => {
+              request.abort();
+              reject(new Error("SHIFT_SUMMARY_TIMEOUT"));
+            }, 25_000);
+          }),
+        ]);
+        if (!active) return;
+        if (rpcError || !isShiftSummary(data, shiftId, clubId)) {
+          setShiftSummary(null);
+          setShiftSummaryError(rpcError?.message ?? "Không đọc được báo cáo ca.");
+          return;
+        }
         setShiftSummary(data);
         setShiftSummaryError(null);
+      } catch {
+        if (!active) return;
+        setShiftSummary(null);
+        setShiftSummaryError("Không đọc được báo cáo ca.");
+      } finally {
+        window.clearTimeout(deadline);
+        controller = undefined;
       }
     };
-    void load();
-    const timer = window.setInterval(() => { void load(); }, 10_000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = startLiveReportRefresh(load, 10_000);
+    return () => {
+      active = false;
+      stop();
+      controller?.abort();
+      window.clearTimeout(deadline);
+    };
   }, [client, clubId, shiftId, revision]);
 
   useEffect(() => {

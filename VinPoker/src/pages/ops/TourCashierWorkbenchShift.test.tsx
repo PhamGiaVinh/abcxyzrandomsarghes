@@ -274,6 +274,46 @@ describe("closed Cashier shift correction", () => {
     expect(mock.rpc.mock.calls.some(([name])=>name==='cashier_close_shift_v1')).toBe(false);
   });
 
+  it('coalesces slow current-shift reads and stops polling in a hidden tab', async () => {
+    prepareCash(async () => ({ data: null, error: null }));
+    const normal = mock.rpc.getMockImplementation()!;
+    const requests: Array<(cashIn: number) => void> = [];
+    mock.rpc.mockImplementation((name, args) => {
+      if (name !== 'cashier_shift_summary_v1' || args.p_shift_id !== 'shift-open') return normal(name, args);
+      const value = summary(args.p_shift_id);
+      return new Promise(resolve => requests.push(cashIn => resolve({
+        data: { ...value, totals: { ...value.totals, cash_in: cashIn } },
+        error: null,
+      })));
+    });
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      render(<TourCashierWorkbench />);
+      await act(async () => {});
+      expect(requests).toHaveLength(1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+      expect(requests).toHaveLength(1);
+      fireEvent.focus(window);
+      fireEvent.focus(window);
+      await act(async () => { requests[0](111_111); });
+      expect(requests).toHaveLength(2);
+      await act(async () => { requests[1](222_222); });
+      expect(screen.getByRole('region', { name: 'Báo cáo ca hiện tại' })).toHaveTextContent('222.222');
+      visibility.mockReturnValue('hidden');
+      fireEvent(document, new Event('visibilitychange'));
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+      expect(requests).toHaveLength(2);
+      visibility.mockReturnValue('visible');
+      fireEvent(document, new Event('visibilitychange'));
+      expect(requests).toHaveLength(3);
+    } finally {
+      cleanup();
+      vi.useRealTimers();
+      visibility.mockRestore();
+    }
+  });
+
   it('rejects a closed-shift summary with a missing adjustment amount instead of allowing an adjustment against it',async()=>{
     const normal=mock.rpc.getMockImplementation()!;
     mock.rpc.mockImplementation((name,args)=>name==='cashier_shift_summary_v1'
