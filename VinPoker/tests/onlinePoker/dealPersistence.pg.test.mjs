@@ -1302,6 +1302,26 @@ test('the shared server deal persists one native hand with consistent public and
   assert.deepEqual(finalized.tables.map(table => table.roundStatus), ['complete','complete']);
   assert.ok(finalized.tables.every(table => table.status === 'closed'));
   console.log('POSTGRES_SATELLITE_TD_ROUND_OPERATIONS_SCOPE_PASS');
+  sql(file('../../supabase/pending-migrations/20261119235500_online_satellite_final_table.sql'));
+  const [finalTable, drainingTable] = pair.tableIds;
+  const retire = () => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+    SELECT public.retire_online_satellite_round_table_v1('${preparedPilot}','${drainingTable}',0)`);
+  assert.deepEqual(retire(), { outcome: 'table_has_players' });
+  const drainingSeats = json(`SELECT json_agg(id ORDER BY seat_no)
+    FROM public.online_poker_seats WHERE table_id='${drainingTable}' AND stack>0`);
+  for (const [i, seat] of drainingSeats.entries()) {
+    const moved = json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+      SELECT public.move_online_satellite_round_seat_v2('${preparedPilot}','${seat}','${finalTable}',${i + 3},0,1)`);
+    assert.equal(moved.outcome, 'ok');
+  }
+  assert.deepEqual(retire(), { outcome: 'ok', idempotent: false, roundNo: '0' });
+  assert.deepEqual(retire(), { outcome: 'ok', idempotent: true, roundNo: '0' });
+  assert.equal(clockCommand(first,preparedPilot,1,true).outcome, 'ok');
+  assert.deepEqual(json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+    SELECT public.open_online_satellite_round_v1('${preparedPilot}',0)`), { outcome: 'ok', roundNo: '1' });
+  assert.equal(sql(`SELECT table_id FROM online_satellite_private.round_deals WHERE pilot_id='${preparedPilot}'`), finalTable);
+  assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${finalTable}'`), '400');
+  console.log('POSTGRES_SATELLITE_FINAL_TABLE_DRAIN_AND_ROUND_PASS');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
