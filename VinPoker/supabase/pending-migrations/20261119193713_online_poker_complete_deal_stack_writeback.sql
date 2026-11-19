@@ -43,6 +43,7 @@ DECLARE
   v_expected bigint;
   v_funded_count int;
   v_hand_count int;
+  v_matching_count int;
   v_updated_count int;
   v_initial numeric;
   v_final numeric;
@@ -57,28 +58,45 @@ BEGIN
     RETURN jsonb_build_object('outcome', 'rejected', 'detail', 'public state carries secret data');
   END IF;
 
-  IF v_terminal THEN
-    -- Seat writers may close the table after releasing the last seat.
-    -- Acquire seat locks before the table row to follow the same order.
-    PERFORM 1 FROM public.online_poker_seats
-    WHERE table_id = v_table_id ORDER BY seat_no FOR UPDATE;
-    SELECT * INTO v_table FROM public.online_poker_tables WHERE id = v_table_id FOR SHARE;
-    IF NOT FOUND OR v_table.status <> 'open'
-       OR v_table.sb IS DISTINCT FROM (p_state->'config'->>'sb')::bigint
-       OR v_table.bb IS DISTINCT FROM (p_state->'config'->>'bb')::bigint THEN
-      RETURN jsonb_build_object('outcome', 'rejected', 'detail', 'stale table configuration');
-    END IF;
-    SELECT COALESCE(MAX(hand_no), 0) + 1 INTO v_expected
-    FROM public.online_poker_hands WHERE table_id = v_table_id;
-    IF v_hand_no IS DISTINCT FROM v_expected THEN
-      RETURN jsonb_build_object('outcome', 'rejected', 'detail', 'stale hand sequence');
-    END IF;
+  -- Seat writers may close the table after releasing the last seat.
+  -- Acquire seat locks before the table row to follow the same order.
+  PERFORM 1 FROM public.online_poker_seats
+  WHERE table_id = v_table_id ORDER BY seat_no FOR UPDATE;
+  SELECT * INTO v_table FROM public.online_poker_tables WHERE id = v_table_id FOR SHARE;
+  IF NOT FOUND OR v_table.status <> 'open'
+     OR v_table.sb IS DISTINCT FROM (p_state->'config'->>'sb')::bigint
+     OR v_table.bb IS DISTINCT FROM (p_state->'config'->>'bb')::bigint THEN
+    RETURN jsonb_build_object('outcome', 'rejected', 'detail', 'stale table configuration');
   END IF;
 
   -- One active hand per table (the partial unique index is the hard backstop).
   IF EXISTS (SELECT 1 FROM public.online_poker_hands
              WHERE table_id = v_table_id AND status IN ('dealing', 'betting')) THEN
     RETURN jsonb_build_object('outcome', 'already_active');
+  END IF;
+
+  SELECT COALESCE(MAX(hand_no), 0) + 1 INTO v_expected
+  FROM public.online_poker_hands WHERE table_id = v_table_id;
+  IF v_hand_no IS DISTINCT FROM v_expected THEN
+    RETURN jsonb_build_object('outcome', 'rejected', 'detail', 'stale hand sequence');
+  END IF;
+
+  SELECT count(*) INTO v_funded_count FROM public.online_poker_seats
+  WHERE table_id = v_table_id AND status = 'sitting' AND stack > 0;
+  SELECT count(*), count(DISTINCT s.seat_no), sum((p.value->>'startingStack')::bigint),
+    sum((p.value->>'stack')::bigint)
+  INTO v_hand_count, v_matching_count, v_initial, v_final
+  FROM jsonb_array_elements(p_state->'seats') AS p(value)
+  LEFT JOIN public.online_poker_seats s ON s.table_id = v_table_id
+    AND s.seat_no = (p.value->>'seat')::int AND s.user_id = (p.value->>'playerId')::uuid
+    AND s.status = 'sitting' AND s.stack > 0 AND s.stack = (p.value->>'startingStack')::bigint
+  WHERE p.value->>'status' IN ('active', 'folded', 'allin');
+  IF v_hand_count < 2 OR v_hand_count <> v_funded_count OR v_hand_count <> v_matching_count THEN
+    RETURN jsonb_build_object('outcome', 'rejected', 'detail', 'stale seat roster');
+  END IF;
+  IF v_terminal AND ((p_state->>'pot')::bigint IS DISTINCT FROM 0::bigint
+    OR v_initial IS DISTINCT FROM v_final) THEN
+    RAISE EXCEPTION 'online_poker_invalid_terminal_stacks' USING ERRCODE = '23514';
   END IF;
 
   INSERT INTO public.online_poker_hands (
@@ -104,16 +122,6 @@ BEGIN
   WHERE (s->>'status') IN ('active', 'folded', 'allin');
 
   IF v_terminal THEN
-    SELECT count(*), sum(starting_stack), sum(stack) INTO v_hand_count, v_initial, v_final
-    FROM public.online_poker_hand_seats WHERE hand_id = v_hand_id;
-    SELECT count(*) INTO v_funded_count FROM public.online_poker_seats
-    WHERE table_id = v_table_id AND status = 'sitting' AND stack > 0;
-    IF v_hand_count < 2 OR v_hand_count <> v_funded_count
-       OR (p_state->>'pot')::bigint IS DISTINCT FROM 0::bigint
-       OR v_initial IS DISTINCT FROM v_final THEN
-      RAISE EXCEPTION 'online_poker_invalid_terminal_stacks' USING ERRCODE = '23514';
-    END IF;
-
     UPDATE public.online_poker_seats s SET stack = hs.stack
     FROM public.online_poker_hand_seats hs
     WHERE hs.hand_id = v_hand_id AND s.table_id = v_table_id

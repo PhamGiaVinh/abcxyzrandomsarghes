@@ -237,7 +237,7 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal((await startAllIn()).data.detail, 'stale table configuration');
   sql(`UPDATE public.online_poker_tables SET bb=10 WHERE id='${shortTable}'`);
   sql(`UPDATE public.online_poker_seats SET stack=11 WHERE table_id='${shortTable}' AND seat_no=5`);
-  await assert.rejects(startAllIn, /online_poker_stale_terminal_seats/);
+  assert.equal((await startAllIn()).data.detail, 'stale seat roster');
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE id='${shortHand}'`), '0');
   assert.equal(sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
     FROM public.online_poker_seats WHERE table_id='${shortTable}'`), '5,11');
@@ -324,5 +324,12 @@ test('the shared server deal persists one native hand with consistent public and
   sql(`UPDATE public.online_poker_tables SET status='paused' WHERE id='${pausedTable}'`);
   const paused = await admin.rpc('op_start_hand', ordinaryArgs);
   assert.equal(paused.data.outcome, 'rejected', 'A prepared regular deal must not start after a pause commits');
+  sql(`UPDATE public.online_poker_tables SET status='open',bb=15 WHERE id='${pausedTable}'`);
+  assert.equal((await admin.rpc('op_start_hand', ordinaryArgs)).data.detail, 'stale table configuration');
+  sql(`UPDATE public.online_poker_tables SET bb=10 WHERE id='${pausedTable}'`);
+  sql(`UPDATE public.online_poker_seats SET status='sitting_out' WHERE table_id='${pausedTable}' AND seat_no=5`);
+  assert.equal((await admin.rpc('op_start_hand', ordinaryArgs)).data.detail, 'stale seat roster');
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${pausedTable}'`), '0');
+  sql(`UPDATE public.online_poker_seats SET status='sitting' WHERE table_id='${pausedTable}' AND seat_no=5`);
+  assert.equal((await admin.rpc('op_start_hand', ordinaryArgs)).data.outcome, 'ok');
 });
