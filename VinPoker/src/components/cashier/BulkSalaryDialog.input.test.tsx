@@ -3,13 +3,14 @@ import {afterEach, expect, it, vi} from 'vitest';
 import type {DealerRecord} from '@/hooks/useDealerManagement';
 import {BulkSalaryDialog} from './BulkSalaryDialog';
 
-const mock = vi.hoisted(() => ({update:vi.fn(), in:vi.fn()}));
-vi.mock('@/integrations/supabase/client', () => ({supabase:{from:()=>({update:mock.update})}}));
+const mock = vi.hoisted(() => ({update:vi.fn(), read:vi.fn(), written:vi.fn()}));
+vi.mock('@/integrations/supabase/client', () => ({supabase:{from:()=>({update:mock.update,select:mock.read})}}));
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
+const missingRates = {monthly_salary_vnd:null,base_rate_vnd:null,hourly_rate_vnd:null,standard_hours_per_shift:null};
 const dealers = [
-  {id:'pt',club_id:'club',full_name:'TEST PT',employment_type:'part_time'},
-  {id:'ft',club_id:'club',full_name:'TEST FT',employment_type:'full_time',standard_hours_per_shift:8},
+  {...missingRates,id:'pt',club_id:'club',full_name:'TEST PT',employment_type:'part_time'},
+  {...missingRates,id:'ft',club_id:'club',full_name:'TEST FT',employment_type:'full_time',standard_hours_per_shift:8},
 ] as DealerRecord[];
 
 it.each(['-100000','1e3','100,000','100.00','2147483648'])('blocks an invalid PT amount even when FT is valid', (value) => {
@@ -23,8 +24,15 @@ it.each(['-100000','1e3','100,000','100.00','2147483648'])('blocks an invalid PT
 });
 
 it('writes whole VND amounts for PT and FT using either supported format', async () => {
-  mock.update.mockReturnValue({in:mock.in});
-  mock.in.mockResolvedValue({error:null});
+  const readQuery = {eq:vi.fn().mockReturnThis(),maybeSingle:vi.fn()
+    .mockResolvedValueOnce({data:dealers[0],error:null})
+    .mockResolvedValueOnce({data:dealers[1],error:null})};
+  mock.read.mockReturnValue(readQuery);
+  const query = {eq:vi.fn().mockReturnThis(),is:vi.fn().mockReturnThis(),select:vi.fn().mockReturnThis(),maybeSingle:mock.written};
+  mock.update.mockReturnValue(query);
+  mock.written
+    .mockResolvedValueOnce({data:{hourly_rate_vnd:100000,monthly_salary_vnd:0},error:null})
+    .mockResolvedValueOnce({data:null,error:{message:'TEST FT write error'}});
   render(<BulkSalaryDialog dealers={dealers} onDone={vi.fn()} />);
   fireEvent.click(screen.getByRole('button',{name:'Áp lương hàng loạt'}));
   fireEvent.click(screen.getByRole('button',{name:'Chọn tất cả đang hiển thị'}));
@@ -34,4 +42,13 @@ it('writes whole VND amounts for PT and FT using either supported format', async
   fireEvent.click(screen.getByRole('button',{name:'Áp lương',exact:true}));
   await vi.waitFor(() => expect(mock.update).toHaveBeenNthCalledWith(2,{monthly_salary_vnd:100000,base_rate_vnd:3846,hourly_rate_vnd:481}));
   expect(mock.update).toHaveBeenNthCalledWith(1,{hourly_rate_vnd:100000,monthly_salary_vnd:0});
+  expect(await screen.findByText('Đã xác minh: TEST PT.')).toBeInTheDocument();
+  expect(screen.getByText('Chưa xác minh: TEST FT.')).toBeInTheDocument();
+
+  readQuery.maybeSingle.mockResolvedValueOnce({data:{...dealers[1],
+    monthly_salary_vnd:100000,base_rate_vnd:3846,hourly_rate_vnd:481},error:null});
+  fireEvent.click(screen.getByRole('button',{name:'Áp lương cho 1 dealer'}));
+  fireEvent.click(screen.getByRole('button',{name:'Áp lương',exact:true}));
+  expect(await screen.findByText('Đã xác minh: TEST FT.')).toBeInTheDocument();
+  expect(mock.update).toHaveBeenCalledTimes(2);
 });
