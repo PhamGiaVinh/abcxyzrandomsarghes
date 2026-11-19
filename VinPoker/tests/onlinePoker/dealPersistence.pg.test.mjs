@@ -207,6 +207,7 @@ test('the shared server deal persists one native hand with consistent public and
   sql(file('../../supabase/pending-migrations/20261119205132_online_satellite_provision_table.sql'));
   sql(file('../../supabase/pending-migrations/20261119205447_online_satellite_set_clock.sql'));
   sql(file('../../supabase/pending-migrations/20261119213644_online_satellite_bubble_evidence.sql'));
+  sql(file('../../supabase/pending-migrations/20261119214450_online_satellite_lock_result.sql'));
   const setupPilot = 'ab510000-0000-4000-8000-000000000019';
   sql(`
     INSERT INTO online_satellite_private.registration_gate(club_id,enabled) VALUES ('${clubId}',true);
@@ -960,6 +961,16 @@ test('the shared server deal persists one native hand with consistent public and
     p_events: [], p_engine_version: ENGINE_VERSION, p_act_deadline: null, p_actor_user_id: first,
   })), /online_satellite_qualification_reached/);
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${boundary.tableId}'`), '0');
+  const lockResult = (actor,pilot,hand = null,version = null) => json(`SET ROLE authenticated;
+    SET request.jwt.claim.sub='${actor}';
+    SELECT public.lock_online_satellite_result_v1('${pilot}',${hand ? `'${hand}'` : 'NULL'},${version ?? 'NULL'})`);
+  assert.throws(() => lockResult(spectator,boundaryPilot), /SATELLITE_PILOT_MANAGER_REQUIRED/);
+  assert.deepEqual(lockResult(first,bubblePilot,bubbleHand,2), { outcome: 'stale' });
+  assert.deepEqual(lockResult(first,bubblePilot,bubbleHand,3), { outcome: 'bubble_review_required' });
+  assert.deepEqual(lockResult(first,boundaryPilot), { outcome: 'ok', idempotent: false, qualifiedCount: 2 });
+  assert.deepEqual(lockResult(first,boundaryPilot), { outcome: 'ok', idempotent: true, qualifiedCount: 2 });
+  assert.equal(sql(`SELECT status FROM public.online_poker_tables WHERE id='${boundary.tableId}'`), 'closed');
+  assert.equal(sql(`SELECT count(*) FROM online_satellite_private.locked_results WHERE pilot_id='${bubblePilot}'`), '0');
   const reapPractice = 'ab510000-0000-4000-8000-000000000020';
   const missingBinding = 'ab510000-0000-4000-8000-000000000022';
   sql(`
