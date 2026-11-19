@@ -33,7 +33,11 @@ describe("table history opens inside one selected table", () => {
     const first = "2026-11-19T19:00:00.000Z";
     const next = "2026-11-19T19:10:00.000Z";
     const tables = publicData.snapshot.sections.tables;
-    const view = (tournamentId = "tour") => <LiveHub tournamentId={tournamentId} title="TEST" onShare={() => {}} />;
+    const view = (tournamentId = "tour") => (
+      <LiveHub tournamentId={tournamentId} title="TEST" onShare={() => {}}>
+        <div />
+      </LiveHub>
+    );
     publicData.networkError = true;
     const { rerender } = render(view());
     expect(screen.getByText(/chưa có dữ liệu bàn đã xác minh/)).toBeVisible();
