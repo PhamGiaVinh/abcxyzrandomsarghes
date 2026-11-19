@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { setTimeout as delay } from 'node:timers/promises';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { dealNextHand } from '../../supabase/functions/_shared/pokerRuntime/dealNextHand.ts';
@@ -21,6 +22,31 @@ function sql(source) {
 function json(source) { return JSON.parse(sql(source)); }
 function file(path) { return readFileSync(new URL(path, import.meta.url), 'utf8'); }
 
+function session(name) {
+  const child = spawn('psql', ['-X', '-Atq', '-v', 'ON_ERROR_STOP=1'], {
+    env: { ...process.env, PGAPPNAME: name, PGOPTIONS: '-c statement_timeout=8000' },
+    stdio: 'pipe',
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8').on('data', part => { stdout += part; });
+  child.stderr.setEncoding('utf8').on('data', part => { stderr += part; });
+  const closed = new Promise(resolve => child.on('close', resolve));
+  return {
+    send: statement => child.stdin.write(statement + '\n'),
+    async waitFor(marker) {
+      for (let n = 0; n < 100 && !stdout.includes(marker); n++) await delay(40);
+      assert.ok(stdout.includes(marker), stderr);
+    },
+    async finish() {
+      child.stdin.end();
+      assert.equal(await closed, 0, stderr);
+      return stdout.trim().split(/\r?\n/);
+    },
+    stop: () => child.kill(),
+  };
+}
+
 // Only recreate the observed function body in this throwaway database.
 // Archived migration files are never replayed as migrations.
 function archivedFunction(name, path) {
@@ -31,6 +57,17 @@ function archivedFunction(name, path) {
   const end = source.indexOf('$$;', source.indexOf('AS $$', offset) + 5);
   assert.ok(end > offset);
   return source.slice(offset, end + 3);
+}
+
+function startStatement(args) {
+  const payload = Buffer.from(JSON.stringify(args)).toString('hex');
+  return `
+    SET ROLE service_role;
+    WITH input AS (SELECT convert_from(decode('${payload}','hex'),'UTF8')::jsonb AS p)
+    SELECT public.op_start_hand(p->'p_state', p->'p_deck', p->'p_board_future', p->'p_holes',
+      p->'p_events', p->>'p_engine_version', (p->>'p_act_deadline')::timestamptz,
+      (p->>'p_actor_user_id')::uuid) FROM input;
+  `;
 }
 
 test('the shared server deal persists one native hand with consistent public and private state', async () => {
@@ -88,14 +125,7 @@ test('the shared server deal persists one native hand with consistent public and
     },
     async rpc(name, args) {
       assert.equal(name, 'op_start_hand');
-      const payload = Buffer.from(JSON.stringify(args)).toString('hex');
-      const data = json(`
-        SET ROLE service_role;
-        WITH input AS (SELECT convert_from(decode('${payload}','hex'),'UTF8')::jsonb AS p)
-        SELECT public.op_start_hand(p->'p_state', p->'p_deck', p->'p_board_future', p->'p_holes',
-          p->'p_events', p->>'p_engine_version', (p->>'p_act_deadline')::timestamptz,
-          (p->>'p_actor_user_id')::uuid) FROM input;
-      `);
+      const data = json(startStatement(args));
       return { data, error: null };
     },
   };
@@ -180,11 +210,12 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(allIn.state.status, 'complete');
   assert.deepEqual(allIn.state.seats.map(seat => seat.stack), [0n, 15n]);
   const terminal = serializeAuthoritative(allIn.state);
-  const startAllIn = () => admin.rpc('op_start_hand', {
+  const allInArgs = {
     p_state: terminal.stateJson, p_deck: deck, p_board_future: terminal.liveDeck,
     p_holes: terminal.holes, p_events: allIn.events.map(({ type, payload }) => ({ type, payload })),
     p_engine_version: ENGINE_VERSION, p_act_deadline: null, p_actor_user_id: null,
-  });
+  };
+  const startAllIn = () => admin.rpc('op_start_hand', allInArgs);
   sql(`UPDATE public.online_poker_tables SET status='paused' WHERE id='${shortTable}'`);
   assert.equal((await startAllIn()).data.detail, 'stale table configuration');
   sql(`UPDATE public.online_poker_tables SET status='open',bb=15 WHERE id='${shortTable}'`);
@@ -196,8 +227,29 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
     FROM public.online_poker_seats WHERE table_id='${shortTable}'`), '5,11');
   sql(`UPDATE public.online_poker_seats SET stack=10 WHERE table_id='${shortTable}' AND seat_no=5`);
-  const started = await startAllIn();
-  assert.equal(started.data.outcome, 'ok');
+  const leader = session('g03-terminal-leader');
+  const follower = session('g03-terminal-follower');
+  try {
+    leader.send(`BEGIN;
+      SELECT 1 FROM public.online_poker_seats WHERE table_id='${shortTable}' ORDER BY seat_no FOR UPDATE;
+      \\echo leader_has_seats`);
+    await leader.waitFor('leader_has_seats');
+    follower.send(startStatement(allInArgs));
+    let waiting = false;
+    for (let n = 0; !waiting && n < 40; n++) {
+      waiting = sql(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+        WHERE application_name='g03-terminal-follower' AND wait_event_type='Lock')`) === 't';
+      if (!waiting) await delay(50);
+    }
+    assert.ok(waiting, 'Second connection must actually be blocked on the first transaction');
+    leader.send(startStatement(allInArgs) + '\nCOMMIT;');
+    const [winner, duplicate] = await Promise.all([leader.finish(), follower.finish()]);
+    assert.equal(JSON.parse(winner.at(-1)).outcome, 'ok');
+    assert.equal(JSON.parse(duplicate.at(-1)).detail, 'stale hand sequence');
+  } finally {
+    leader.stop();
+    follower.stop();
+  }
   assert.equal(sql(`SELECT status FROM public.online_poker_hands WHERE id='${shortHand}'`), 'complete');
   assert.equal(sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
     FROM public.online_poker_seats WHERE table_id='${shortTable}'`), '0,15',

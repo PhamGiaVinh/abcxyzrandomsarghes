@@ -1,5 +1,7 @@
 -- Pending, disposable G03 proof only.
 -- Restore the previously observed op_start_hand definition to roll back while disabled and idle.
+BEGIN;
+
 DO $$
 BEGIN
   IF public.op_is_enabled() OR EXISTS (
@@ -140,3 +142,5 @@ BEGIN
   RETURN jsonb_build_object('outcome', 'ok', 'hand_id', v_hand_id, 'state_version', 0);
 END;
 $$;
+
+COMMIT;
