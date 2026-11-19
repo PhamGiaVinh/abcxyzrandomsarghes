@@ -124,6 +124,24 @@ describe("closed Cashier shift correction", () => {
     });
   });
 
+  it('requires the opening cash input and accepts explicit zero', async () => {
+    prepareCash(async () => ({data:null,error:null}));
+    mock.openShift = null;
+    render(<TourCashierWorkbench />);
+    const button = await screen.findByRole('button',{name:'Mở ca'});
+    await waitFor(() => expect(button).toBeEnabled());
+    const input = screen.getByPlaceholderText('Tiền đầu ca (VND)');
+    fireEvent.click(button);
+    expect(await screen.findByText('Nhập tiền đầu ca hợp lệ.')).toBeInTheDocument();
+    fireEvent.change(input,{target:{value:'   '}});
+    fireEvent.click(button);
+    expect(mock.rpc.mock.calls.some(([name]) => name === 'cashier_open_shift_v1')).toBe(false);
+    fireEvent.change(input,{target:{value:'0'}});
+    fireEvent.click(button);
+    await waitFor(() => expect(mock.rpc.mock.calls.some(([name,args]) =>
+      name === 'cashier_open_shift_v1' && args.p_opening_cash === 0)).toBe(true));
+  });
+
   it('rejects blank cash counts but submits an explicitly counted zero', async () => {
     mock.openShift = {id:'active-shift',opening_cash:0,opened_at:'2026-09-15T08:00:00Z'};
     const confirm = vi.spyOn(window,'confirm').mockReturnValue(true);
