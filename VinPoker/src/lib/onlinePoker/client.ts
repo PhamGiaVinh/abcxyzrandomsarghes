@@ -319,18 +319,23 @@ export async function loadSeatsLive(tableId: string): Promise<LiveSeat[]> {
     .select('seat_no, user_id, stack, status')
     .eq('table_id', tableId)
     .in('status', ['sitting', 'sitting_out', 'active', 'folded', 'allin']);
-  if (error || !data) return [];
+  if (error || !Array.isArray(data)) throw new Error('ONLINE_POKER_SEATS_UNAVAILABLE');
   const rows = data as Array<{ seat_no: number; user_id: string | null; stack: number | string; status: string }>;
+  if (rows.some(row => !row || !Number.isSafeInteger(row.seat_no) || row.seat_no < 1
+    || (row.user_id !== null && typeof row.user_id !== 'string')
+    || !/^\d+$/.test(String(row.stack)))) throw new Error('ONLINE_POKER_SEATS_UNAVAILABLE');
   const occupied = rows.filter((r) => r.user_id);
 
   // Best-effort display names; falls back to the seat number when unavailable.
   const ids = [...new Set(occupied.map((r) => r.user_id as string))];
   const names: Record<string, string> = {};
   if (ids.length) {
-    const { data: profs } = await rails().from('profiles').select('id, display_name').in('id', ids);
-    for (const p of (profs ?? []) as Array<{ id: string; display_name: string | null }>) {
-      if (p.display_name) names[p.id] = p.display_name;
-    }
+    try {
+      const { data: profs } = await rails().from('profiles').select('id, display_name').in('id', ids);
+      for (const p of (profs ?? []) as Array<{ id: string; display_name: string | null }>) {
+        if (p.display_name) names[p.id] = p.display_name;
+      }
+    } catch { /* A missing display name does not invalidate authoritative seat data. */ }
   }
   return occupied.map((r) => ({
     seatNo: Number(r.seat_no),

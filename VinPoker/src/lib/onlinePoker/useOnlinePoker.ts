@@ -120,6 +120,7 @@ export interface TableHandState {
   hand: PublicHandView | null;
   /** Live table seats (occupied), independent of any active hand. */
   seats: LiveSeat[];
+  seatReadStatus: 'loading' | 'ready' | 'unavailable';
   /** The caller's seat number at this table, or null if not seated. */
   mySeatNo: number | null;
   /** The caller's auth user id (live only). */
@@ -154,6 +155,10 @@ export function useTableHand(tableId: string): TableHandState {
   const [seats, setSeats] = useState<LiveSeat[]>([]);
   const [seatsOrigin,setSeatsOrigin]=useState<object|null>(null);
   const scopedSeats=seatsOrigin===tableScope.current?seats:[];
+  const [seatFailure, setSeatFailure] = useState<object | null>(null);
+  const seatReadStatus = !RUNTIME_LIVE || seatsOrigin === tableScope.current
+    ? seatFailure === tableScope.current ? 'unavailable' : 'ready'
+    : seatFailure === tableScope.current ? 'unavailable' : 'loading';
   const [uid, setUid] = useState<string | null>(null);
   const uidRef=useRef<string|null>(null);
   const identityScope=useRef<object>({});
@@ -370,7 +375,11 @@ export function useTableHand(tableId: string): TableHandState {
     if (!RUNTIME_LIVE) { setSeats([]); setHostUserId(null); return; }
     let cancelled = false;
     const issuedTable=tableScope.current;
-    loadSeatsLive(tableId).then((s) => { if (!cancelled) {setSeats(s);setSeatsOrigin(issuedTable);} }).catch(() => {});
+    void observeTrackerContextRead(loadSeatsLive(tableId)).then((s) => {
+      if (!cancelled && issuedTable === tableScope.current) { setSeats(s); setSeatsOrigin(issuedTable); setSeatFailure(null); }
+    }).catch(() => {
+      if (!cancelled && issuedTable === tableScope.current) setSeatFailure(issuedTable);
+    });
     loadTableHostLive(tableId).then((h) => { if (!cancelled) {setHostUserId(h);setHostOrigin(issuedTable);} }).catch(() => {});
     return () => { cancelled = true; };
   }, [tableId, tick]);
@@ -449,7 +458,7 @@ export function useTableHand(tableId: string): TableHandState {
     rebuy: (amount) => onlinePokerClient.rebuyOpen(tableId, amount),
   };
 
-  return { hand:scopedHand, seats:scopedSeats, mySeatNo, myUserId: uid, hostUserId:scopedHost, amIHost,
+  return { hand:scopedHand, seats:scopedSeats, seatReadStatus, mySeatNo, myUserId: uid, hostUserId:scopedHost, amIHost,
     legal:handOrigin===tableScope.current?legal:null, loading, error:handOrigin===tableScope.current?error:null,
     dealSignal, dealSeats:handOrigin===tableScope.current?dealSeats:[], refresh, applyServerView, actions };
 }
