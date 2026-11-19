@@ -97,9 +97,24 @@ for (const [entry, destination] of [
   test(entry + " opens its existing operational document without a mutation", async ({ page }) => {
     const observedRequests: string[] = [];
     await installMockOpsSession(page, observedRequests); await installOperationalDocument(page, destination);
-    await page.goto(entry + "?club=" + clubId + "&t=" + tournamentId);
+    const search = new URLSearchParams({ club: clubId });
+    if (entry !== "/ops/chip-ops") search.set("t", tournamentId);
+    await page.goto(entry + "?" + search);
     await expect(page.getByRole("heading", { name: "Operational destination" })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(destination + "$"));
     expect(observedRequests.filter(request => /^POST /u.test(request) && !request.includes("/rpc/get_my_ops_"))).toEqual([]);
   });
 }
+
+test("Chip Ops keeps a tournament link in the scoped read-only workspace", async ({ page }) => {
+  const observedRequests: string[] = [];
+  await installMockOpsSession(page, observedRequests);
+  const search = new URLSearchParams({ club: clubId, t: tournamentId });
+  await page.goto("/ops/chip-ops?" + search);
+  await expect(page.getByRole("heading", { name: "Chip Ops", exact: true })).toBeVisible();
+  await expect(page.getByText("Chip vật lý đã phát", { exact: true })).toBeVisible();
+  await expect(page.locator("label").filter({ hasText: "Giải đấu" }).locator("select")).toHaveValue(tournamentId);
+  expect(observedRequests.filter(request => /^POST /u.test(request)
+    && !request.includes("/rpc/get_my_ops_")
+    && !request.includes("/rpc/get_issued_chip_inventory"))).toEqual([]);
+});
