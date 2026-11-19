@@ -1095,7 +1095,8 @@ test('the shared server deal persists one native hand with consistent public and
   // No production path disables the level check.
   const fixtureRoundDeal = (table, round, status = 'complete') => `
     INSERT INTO public.online_poker_hands(table_id,hand_no,status,state)
-    VALUES ('${table}',${round},'${status}',jsonb_build_object('satelliteRound','${round}'));`;
+    VALUES ('${table}',${round},'${status}',
+      jsonb_build_object('satelliteRound','${round}','config',jsonb_build_object('schemaVersion',1)));`;
   sql('ALTER TABLE public.online_poker_hands DISABLE TRIGGER trg_op_check_satellite_deal_level');
   assert.equal(openRound(), '1');
   sql(fixtureRoundDeal(fast, 1));
