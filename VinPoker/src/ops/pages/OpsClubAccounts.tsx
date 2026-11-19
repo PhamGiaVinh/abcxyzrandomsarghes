@@ -29,8 +29,11 @@ import { useOpsCapabilities } from "@/ops/auth/OpsCapabilityProvider";
 import {
   inviteStatusLabel,
   isOperatorInviteRole,
+  operatorInviteRoleLabel,
   type OperatorInviteRole,
 } from "@/ops/clubAdmin/clubOperatorInviteModel";
+
+const dealerControlInvitesEnabled = import.meta.env.VITE_OPS_DEALER_CONTROL_INVITES_ENABLED === "true";
 
 type InviteRow = {
   id: string;
@@ -53,6 +56,7 @@ export default function OpsClubAccounts() {
   const [rows, setRows] = useState<InviteRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const visibleRows = rows.filter(row => row.club_id === clubId);
 
   const load = useCallback(async (selectedClubId: string) => {
     if (!selectedClubId) return setRows([]);
@@ -115,7 +119,7 @@ export default function OpsClubAccounts() {
     setLoading(false);
     if (error) return setMessage("Không thu hồi được quyền. Vui lòng thử lại.");
     setMessage(
-      "Đã thu hồi quyền Floor/Cashier của CLB này. Tài khoản Auth không bị xóa.",
+      "Đã thu hồi quyền đã chọn tại CLB này.",
     );
     await load(clubId);
   };
@@ -136,7 +140,7 @@ export default function OpsClubAccounts() {
           Tài khoản vận hành
         </h1>
         <p className="mt-2 text-sm leading-6 text-zinc-400">
-          Chủ CLB chỉ mời Floor hoặc Cashier cho CLB của mình. Nhân viên tự đặt
+          Chủ CLB mời nhân viên vào các vai trò được hỗ trợ tại CLB của mình. Nhân viên tự đặt
           mật khẩu qua email; không có nút cấp Owner ở đây.
         </p>
       </header>
@@ -198,6 +202,7 @@ export default function OpsClubAccounts() {
                 <SelectContent>
                   <SelectItem value="floor">Floor</SelectItem>
                   <SelectItem value="cashier">Cashier</SelectItem>
+                  {dealerControlInvitesEnabled && <SelectItem value="dealer_control">Dealer Control</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
@@ -223,12 +228,12 @@ export default function OpsClubAccounts() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {!rows.length && (
+          {!visibleRows.length && (
             <p className="text-sm text-zinc-400">
               Chưa có lời mời nào cho CLB này.
             </p>
           )}
-          {rows.map((row) => (
+          {visibleRows.map((row) => (
             <div
               key={row.id}
               className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-3 sm:flex-row sm:items-center sm:justify-between"
@@ -236,7 +241,7 @@ export default function OpsClubAccounts() {
               <div className="min-w-0">
                 <p className="truncate font-medium">{row.email_normalized}</p>
                 <p className="mt-1 text-xs text-zinc-400">
-                  {row.operator_role === "floor" ? "Floor" : "Cashier"} ·{" "}
+                  {operatorInviteRoleLabel[row.operator_role]} ·{" "}
                   {inviteStatusLabel(row.status)}
                 </p>
               </div>

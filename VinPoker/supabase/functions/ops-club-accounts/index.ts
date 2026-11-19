@@ -9,7 +9,7 @@ import {
   type SupabaseAdmin,
 } from "../_shared/staking-common.ts";
 
-type OperatorRole = "floor" | "cashier";
+type OperatorRole = "floor" | "cashier" | "dealer_control";
 type InviteRequest = {
   action: "invite";
   club_id: string;
@@ -30,8 +30,9 @@ function normalizeEmail(value: unknown): string | null {
     ? email
     : null;
 }
-function isRole(value: unknown): value is OperatorRole {
-  return value === "floor" || value === "cashier";
+export function isEnabledOperatorRole(value: unknown, dealerControlFlag?: string): value is OperatorRole {
+  return value === "floor" || value === "cashier" ||
+    (value === "dealer_control" && dealerControlFlag === "true");
 }
 function isUuid(value: unknown): value is string {
   return typeof value === "string" &&
@@ -175,7 +176,9 @@ export async function handleOpsClubAccounts(req: Request): Promise<Response> {
     }
     if (body.action === "invite") {
       const email = normalizeEmail(body.email);
-      if (!isUuid(body.club_id) || !isRole(body.operator_role) || !email) {
+      if (!isUuid(body.club_id) ||
+        !isEnabledOperatorRole(body.operator_role, Deno.env.get("OPS_DEALER_CONTROL_INVITES_ENABLED")) ||
+        !email) {
         return json({ error: "INVALID_REQUEST" }, 400);
       }
       if (!(await isOwner(admin, body.club_id, auth.uid))) {
