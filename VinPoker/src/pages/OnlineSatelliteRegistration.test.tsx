@@ -2,10 +2,12 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import OnlineSatelliteRegistration from "./OnlineSatelliteRegistration";
+import { safeSatelliteReturnTarget } from "@/lib/onlineSatelliteRoute";
 
 const rpc = vi.hoisted(() => vi.fn());
+const auth = vi.hoisted(() => ({ signedIn: true }));
 vi.mock("@/hooks/useAuth", () => ({
-  useAuth: () => ({ user: { id: "player" }, session: null, loading: false }),
+  useAuth: () => ({ user: auth.signedIn ? { id: "player" } : null, session: null, loading: false }),
 }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
   const client = {
@@ -28,7 +30,26 @@ const open = () => render(<MemoryRouter initialEntries={[`/poker/satellite/${pil
   <Routes><Route path="/poker/satellite/:pilotId" element={<OnlineSatelliteRegistration />} /></Routes>
 </MemoryRouter>);
 
-beforeEach(() => rpc.mockReset());
+beforeEach(() => {
+  rpc.mockReset();
+  auth.signedIn = true;
+});
+
+it("keeps the exact pilot link through sign-in before reading pilot data", () => {
+  auth.signedIn = false;
+  open();
+  const href = screen.getByRole("link", { name: "Đăng nhập" }).getAttribute("href")!;
+  const target = new URL(href, "https://vinpoker.vercel.app");
+  expect(target.pathname).toBe("/auth");
+  expect(safeSatelliteReturnTarget(target.searchParams.get("next"))).toBe(`/poker/satellite/${pilotId}`);
+  expect(rpc).not.toHaveBeenCalled();
+});
+
+it("only accepts an exact internal pilot path as the sign-in destination", () => {
+  for (const target of [null, "//example.com", "/account", `/poker/satellite/${pilotId}?next=/ops`, `/poker/satellite/${pilotId}/extra`]) {
+    expect(safeSatelliteReturnTarget(target)).toBeNull();
+  }
+});
 
 it("shows a server-confirmed entry and suppresses a duplicate in-flight click", async () => {
   let finish!: (value: unknown) => void;

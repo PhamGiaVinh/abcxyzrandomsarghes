@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
+import { satellitePilotId } from "@/lib/onlineSatelliteRoute";
 
 const registration = z.object({
   pilotId: z.string().uuid(),
@@ -23,12 +24,12 @@ const receipt = z.object({ entryId: z.string().uuid(), idempotent: z.boolean() }
 export default function OnlineSatelliteRegistration() {
   const { pilotId } = useParams();
   const { user, session, loading } = useAuth();
-  const id = z.string().uuid().safeParse(pilotId);
+  const id = satellitePilotId.safeParse(pilotId);
   if (!id.success) return <p className="mx-auto max-w-lg p-4">Link đăng ký không hợp lệ.</p>;
   if (loading) return <p className="mx-auto max-w-lg p-4" role="status">Đang xác minh tài khoản…</p>;
   if (!user) return <main className="mx-auto max-w-lg space-y-4 p-4">
-    <p>Đăng nhập bằng tài khoản thành viên đã liên kết tại CLB, rồi mở lại link đăng ký.</p>
-    <Button asChild><Link to="/auth">Đăng nhập</Link></Button>
+    <p>Đăng nhập bằng tài khoản thành viên đã liên kết tại CLB để tiếp tục đăng ký.</p>
+    <Button asChild><Link to={{ pathname: "/auth", search: new URLSearchParams({ next: `/poker/satellite/${id.data}` }).toString() }}>Đăng nhập</Link></Button>
   </main>;
   return <ScopedRegistration key={JSON.stringify([id.data, user.id, sessionReadEpoch(session)])} pilotId={id.data} />;
 }
