@@ -37,10 +37,15 @@ export async function verifySatelliteRealtime({ sql, statusPath, first, spectato
         event: 'UPDATE', schema: 'public', table: 'online_poker_hands',
       }, payload => seen[index].push(payload.new)).subscribe((state) => {
         if (state === 'SUBSCRIBED') resolve();
-        if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT') reject(new Error(`Realtime subscription: ${state}`));
+        if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT' || state === 'CLOSED') {
+          reject(new Error(`Realtime subscription: ${state}`));
+        }
       });
     })));
-    const receipt = (id) => sql(`UPDATE public.online_poker_hands SET state=state WHERE id='${id}'`);
+    // Distinct revisions keep in-flight warm-up events from satisfying the
+    // barrier after the private event. This writes only disposable fixture rows.
+    const receipt = (id) => Number(sql(`UPDATE public.online_poker_hands SET state_version=state_version+1
+      WHERE id='${id}' RETURNING state_version`));
     const received = (events, id) => events.filter(row => row.id === id).length;
     const canary = () => seen.map(events => received(events, practiceHand));
     for (let attempt = 0; attempt < 12 && canary().some(count => count === 0); attempt++) {
@@ -50,9 +55,9 @@ export async function verifySatelliteRealtime({ sql, statusPath, first, spectato
     await observe(() => canary().every(count => count > 0), 'All three healthy sockets must receive a practice event');
     receipt(satelliteHand);
     await observe(() => received(seen[0], satelliteHand) === 1, 'Registered socket must receive the satellite event');
-    const previous = canary();
-    receipt(practiceHand);
-    await observe(() => canary().every((count, index) => count > previous[index]), 'All sockets must receive the following canary');
+    const barrier = receipt(practiceHand);
+    await observe(() => seen.every(events => events.some(row => row.id === practiceHand
+      && Number(row.state_version) === barrier)), 'All sockets must receive the exact following canary');
     assert.equal(received(seen[1], satelliteHand), 0);
     assert.equal(received(seen[2], satelliteHand), 0);
     const privateEvent = seen[0].find(row => row.id === satelliteHand);
