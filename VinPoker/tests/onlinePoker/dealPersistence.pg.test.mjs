@@ -129,7 +129,12 @@ test('the shared server deal persists one native hand with consistent public and
     op_get_my_hole_cards: 'f950e9a194084a44cfbc13e23783e129',
   });
   sql(file('../../supabase/pending-migrations/20261119193713_online_poker_complete_deal_stack_writeback.sql'));
-  sql(file('../../supabase/pending-migrations/20261119203153_online_poker_bba_state_fence.sql'));
+  const anteMigration = file('../../supabase/pending-migrations/20261119203153_online_poker_bba_state_fence.sql');
+  const anteRollback = file('../../supabase/pending-migrations/ROLLBACK_20261119203153_online_poker_bba_state_fence.sql');
+  sql(anteMigration);
+  sql(anteRollback);
+  assert.equal(sql("SELECT to_regprocedure('public.op_preserve_bba_hand_state()') IS NULL"), 't');
+  sql(anteMigration);
 
   const reads = {
     online_poker_tables: `SELECT row_to_json(t) FROM public.online_poker_tables t WHERE id='${tableId}'`,
@@ -584,6 +589,9 @@ test('the shared server deal persists one native hand with consistent public and
     )::text)`);
     const beforeRollback = storedFacts();
     sql('UPDATE public.online_poker_config SET enabled=false');
+    assert.throws(() => sql(anteRollback), /version-2 hand history requires the BBA fence and reader/);
+    assert.equal(sql("SELECT to_regprocedure('public.op_preserve_bba_hand_state()') IS NOT NULL"), 't');
+    assert.equal(storedFacts(), beforeRollback);
     sql(rollback);
     assert.deepEqual(functionRecord(), { ...candidate, source: '10282a2bb252d87125652c048de5d502' });
     assert.equal(storedFacts(), beforeRollback);

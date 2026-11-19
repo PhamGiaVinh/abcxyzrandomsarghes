@@ -1,6 +1,9 @@
 -- Pending G03 opt-in BBA storage contract. No runtime switch or backfill.
--- Rollback while disabled, after draining all version-2 hands and writers.
+-- The paired rollback is allowed only while disabled, idle and without v2 history.
 BEGIN;
+
+LOCK TABLE public.online_poker_config IN SHARE MODE NOWAIT;
+LOCK TABLE public.online_poker_hands IN ACCESS EXCLUSIVE MODE NOWAIT;
 
 DO $$
 BEGIN
