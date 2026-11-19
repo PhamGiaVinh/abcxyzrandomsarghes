@@ -23,16 +23,19 @@ import {useTableHand,useTableMeta} from '@/lib/onlinePoker/useOnlinePoker';
 beforeEach(()=>{h.listeners=[];h.channelStatuses.clear();h.seatChanges.clear();vi.clearAllMocks();h.seats.mockReset().mockResolvedValue([]);h.getUser.mockResolvedValue({data:{user:{id:'actor-a'}},error:null});
  h.load.mockResolvedValue({wire:{config:{handId:'hand-a',handNo:1}},stateVersion:1});h.holes.mockResolvedValue({outcome:'ok',seat:1,cards:['As','Ah']});h.meta.mockResolvedValue({id:'table-a',name:'TABLE A',status:'open'});});
 afterEach(()=>{cleanup();vi.useRealTimers();});
-it('rechecks a failed seat read on rejoin and ignores the old table channel', async () => {
+it.each(['SUBSCRIBED','TIMED_OUT'])('rechecks seats on recovery after %s and ignores the old channel', async initialStatus => {
  h.seats.mockRejectedValue(new Error('temporary seat read failure'));
  const {result,rerender}=renderHook(({id})=>useTableHand(id),{initialProps:{id:'table-a'}});
  await waitFor(()=>expect(result.current.seatReadStatus).toBe('unavailable'));
  const initialReads=h.seats.mock.calls.length;
  const status=h.channelStatuses.get('op-table-table-a')!;
- act(()=>status('SUBSCRIBED'));
+ act(()=>status(initialStatus));
  expect(h.seats).toHaveBeenCalledTimes(initialReads);
  h.seats.mockResolvedValue([]);
- act(()=>{status('CHANNEL_ERROR');status('SUBSCRIBED');});
+ act(()=>{
+  if(initialStatus==='SUBSCRIBED')status('CHANNEL_ERROR');
+  status('SUBSCRIBED');
+ });
  await waitFor(()=>expect(result.current.seatReadStatus).toBe('ready'));
  expect(h.seats).toHaveBeenCalledTimes(initialReads+1);
  rerender({id:'table-b'});

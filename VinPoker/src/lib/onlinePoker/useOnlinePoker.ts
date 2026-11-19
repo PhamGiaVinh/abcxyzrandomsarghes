@@ -391,7 +391,7 @@ export function useTableHand(tableId: string): TableHandState {
     if (!RUNTIME_LIVE) return;
     const issuedTable = tableScope.current;
     let active = true;
-    let joined = false;
+    let hasJoinedOrFailed = false;
     const refreshCurrentTable = () => {
       if (active && issuedTable === tableScope.current) setTick(n => n + 1);
     };
@@ -404,9 +404,12 @@ export function useTableHand(tableId: string): TableHandState {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_tables', filter: `id=eq.${tableId}` }, refreshCurrentTable)
       .subscribe(status => {
-        if (status !== 'SUBSCRIBED') return;
-        if (joined) refreshCurrentTable();
-        joined = true;
+        if (status === 'SUBSCRIBED') {
+          if (hasJoinedOrFailed) refreshCurrentTable();
+          hasJoinedOrFailed = true;
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          hasJoinedOrFailed = true;
+        }
       });
     return () => { active = false; supabase.removeChannel(channel); };
   }, [tableId]);
