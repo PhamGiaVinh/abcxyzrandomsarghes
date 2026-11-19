@@ -193,7 +193,10 @@ test('the shared server deal persists one native hand with consistent public and
   assert.deepEqual(level(), { mode: 'ready', clockRevision: '1', levelStartSecond: '0', sb: '5', bb: '10', bigBlindAnte: '0' });
   assert.equal(atBoundary(60), 1);
   assert.deepEqual(level(), { mode: 'ready', clockRevision: '1', levelStartSecond: '60', sb: '10', bb: '20', bigBlindAnte: '20' });
-  assert.throws(() => sql(`SET ROLE authenticated; SELECT public.op_read_satellite_deal_level('${tableId}')`), /permission denied/);
+  assert.equal(sql("SELECT has_function_privilege('authenticated','public.op_read_satellite_deal_level(uuid,uuid)','EXECUTE')"), 'f');
+  if (!realtimeFixture) {
+    assert.throws(() => sql(`SET ROLE authenticated; SELECT public.op_read_satellite_deal_level('${tableId}')`), /permission denied/);
+  }
   sql(`DELETE FROM online_satellite_private.table_clocks WHERE table_id='${tableId}';
     UPDATE public.online_poker_tables SET club_id=NULL WHERE id='${tableId}'`);
   sql(`UPDATE public.online_poker_tables SET is_satellite=true WHERE id='${tableId}'`);
@@ -220,7 +223,7 @@ test('the shared server deal persists one native hand with consistent public and
     tableId: null, clockRevision: null, running: false, status: 'unprovisioned',
     canManage: true, canPlay: true, canProvision: true,
   });
-  assert.throws(() => sql(setup(spectator)), /SATELLITE_PILOT_MANAGER_REQUIRED/);
+  if (!realtimeFixture) assert.throws(() => sql(setup(spectator)), /SATELLITE_PILOT_MANAGER_REQUIRED/);
   const setupReceipt = json(setup(first));
   assert.equal(setupReceipt.idempotent, false);
   assert.deepEqual(json(setup(first)), { tableId: setupReceipt.tableId, idempotent: true });
@@ -271,6 +274,19 @@ test('the shared server deal persists one native hand with consistent public and
   const clockCommand = (actor, pilot, revision, running) => json(`SET ROLE authenticated;
     SET request.jwt.claim.sub='${actor}';
     SELECT public.set_online_satellite_clock_v1('${pilot}',${revision},${running})`);
+  // The Realtime job validates network delivery through the Supabase image.
+  // The separate vanilla PostgreSQL job retains the full SQL/Chromium suite.
+  if (realtimeFixture) {
+    assert.deepEqual(clockCommand(first, setupPilot, 1, true), { outcome: 'ok', revision: '2', running: true });
+    const practice = await dealNextHand(admin, tableId, null);
+    const satellite = await dealNextHand(admin, setupReceipt.tableId, first);
+    assert.equal(practice.ok, true, JSON.stringify(practice));
+    assert.equal(satellite.ok, true, JSON.stringify(satellite));
+    const { verifySatelliteRealtime } = await import('./satelliteRealtime.fixture.mjs');
+    await verifySatelliteRealtime({ sql, statusPath: realtimeFixture, first, spectator,
+      practiceHand: practice.handId, satelliteHand: satellite.handId });
+    return;
+  }
   assert.throws(() => clockCommand(spectator, setupPilot, 1, true), /SATELLITE_PILOT_MANAGER_REQUIRED/);
   assert.deepEqual(clockCommand(first, setupPilot, 1, true), { outcome: 'ok', revision: '2', running: true });
   assert.deepEqual(clockCommand(first, setupPilot, 1, false), { outcome: 'stale', revision: '2', running: true });
@@ -843,11 +859,6 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT stack FROM public.online_poker_seats WHERE table_id='${missingBinding}' AND user_id='${first}'`), '100');
   assert.throws(() => sql(`UPDATE public.online_poker_seats SET user_id=NULL WHERE table_id='${missingBinding}'`),
     /online_satellite_roster_is_fixed/);
-  if (realtimeFixture) {
-    const { verifySatelliteRealtime } = await import('./satelliteRealtime.fixture.mjs');
-    await verifySatelliteRealtime({ sql, statusPath: realtimeFixture, first, spectator,
-      practiceHand: sideHand, satelliteHand: provisionedDeal.handId });
-  }
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
