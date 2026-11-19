@@ -24,7 +24,7 @@ interface Stage {
 }
 
 function makeAdmin(stage: Stage) {
-  const calls = { startHand: 0, rpc: [] as string[] };
+  const calls = { startHand: 0, rpc: [] as string[], startStates: [] as unknown[] };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ok = (data: any) => ({ data, error: null });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -54,6 +54,7 @@ function makeAdmin(stage: Stage) {
       if (fn === 'op_table_runner_diag') return Promise.resolve(ok(stage.diag ?? { outcome: 'ok', tables: [] }));
       if (fn === 'op_start_hand') {
         calls.startHand++;
+        calls.startStates.push(_args?.p_state);
         const sh = typeof stage.startHand === 'function' ? stage.startHand() : stage.startHand;
         return Promise.resolve(ok(sh ?? { outcome: 'ok', hand_id: 'h1', state_version: 0 }));
       }
@@ -174,6 +175,20 @@ describe('runTableRunner — dry-run never deals & reports skip reasons', () => 
 });
 
 describe('runTableRunner — no secret output', () => {
+  it('derives the next hand from the persisted hand when a new runner takes over', async () => {
+    const { admin, calls } = makeAdmin({
+      enabled: true,
+      due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
+      table: TABLE, seats: TWO_FUNDED, lastHand: { hand_no: 7, button_seat: 2 },
+    });
+    const result = await runTableRunner(admin);
+
+    expect(result.dealt).toBe(1);
+    expect(calls.startStates).toHaveLength(1);
+    expect(calls.startStates[0]).toMatchObject({ config: { handNo: 8, buttonSeat: 1 } });
+    expect(JSON.stringify(calls.startStates[0])).not.toMatch(/"deck"|"holeCards"/);
+  });
+
   it('result telemetry contains no cards/deck/holes', async () => {
     const { admin } = makeAdmin({
       enabled: true,
