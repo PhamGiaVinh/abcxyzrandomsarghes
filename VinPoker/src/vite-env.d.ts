@@ -9,6 +9,7 @@ interface ImportMetaEnv {
   readonly VITE_FLOOR_UAT_ENV?: string;
   readonly VITE_OPS_TOUR_CASHIER?: string;
   readonly VITE_ONLINE_SATELLITE_PILOT?: string;
+  readonly VITE_ONLINE_SATELLITE_RUNTIME?: string;
 }
 
 interface ImportMeta {

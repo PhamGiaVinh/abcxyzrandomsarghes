@@ -99,7 +99,12 @@ function ScopedRegistration({ pilotId }: { pilotId: string }) {
             setError(null); setDetails(null); setRevision(value => value + 1);
           }}>Tải lại</Button>
         </> : !details ? <p role="status">Đang xác minh đăng ký…</p>
-          : details.entryId ? <p role="status">Máy chủ đã xác nhận đăng ký.</p>
+          : details.entryId ? <>
+            <p role="status">Máy chủ đã xác nhận đăng ký.</p>
+            {import.meta.env.VITE_ONLINE_SATELLITE_RUNTIME === "true" && (
+              <Button asChild><Link to={`/poker/satellite/${pilotId}/table`}>Mở bàn Satellite</Link></Button>
+            )}
+          </>
           : details.acceptingEntries ? <Button type="button" disabled={saving} onClick={() => void register()}>
             {saving ? "Đang đăng ký…" : "Đăng ký một ghế"}
           </Button> : <p role="status">Giải hiện chưa nhận thêm đăng ký.</p>}

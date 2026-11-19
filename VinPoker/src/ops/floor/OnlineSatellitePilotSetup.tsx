@@ -112,6 +112,11 @@ export default function OnlineSatellitePilotSetup({ actorId, clubId, destination
         <a className="break-all underline" href={`/poker/satellite/${pilotId}`}>
           {new URL(`/poker/satellite/${pilotId}`, window.location.origin).href}
         </a>
+        {import.meta.env.VITE_ONLINE_SATELLITE_RUNTIME === "true" && (
+          <Button variant="outline" asChild>
+            <a href={`/poker/satellite/${pilotId}/table`}>Mở bàn điều hành Satellite</a>
+          </Button>
+        )}
       </div> : <form className="grid gap-3 sm:grid-cols-2" onSubmit={createPilot}>
         <div className="space-y-1">
           <Label htmlFor="satellite-pilot-target">Giải đích thử</Label>
