@@ -91,3 +91,18 @@ it('re-reads an already paid FT run after an unknown payment outcome and a remou
  expect(f.rpc.mock.calls.map(c=>c[0])).toEqual(['get_staff_salary_report','mark_staff_salary_paid','get_staff_salary_report','mark_staff_salary_paid']);
  expect(writes).toBe(1);expect(f.success).toHaveBeenCalledTimes(1);
 });
+
+it('reports an existing FT payout without claiming the newly selected method was saved', async () => {
+  f.rpc.mockImplementation((fn) => Promise.resolve({
+    data: fn === 'get_staff_salary_report' ? saved : {status:'paid',run_id:runId,idempotent:true},
+    error:null,
+  }));
+  const view = mount();
+  await act(async () => {
+    await view.result.current.markPaid.mutateAsync({runId,method:'bank_transfer',reference:' TEST-REF '});
+  });
+  expect(f.rpc).toHaveBeenLastCalledWith('mark_staff_salary_paid', {
+    p_run_id:runId,p_payment_method:'bank_transfer',p_payment_reference:'TEST-REF',
+  });
+  expect(f.success).toHaveBeenCalledWith('Phiếu lương đã được ghi chi trước đó. Hệ thống giữ thông tin chi hiện có.');
+});
