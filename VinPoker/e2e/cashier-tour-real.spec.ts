@@ -160,6 +160,21 @@ for (const name of required) {
 
 const scopeReadFailures=new WeakMap<Page,{status:number;path:string;code?:string;gatewayClass?:string;observedAtMs?:number;requestStartedAtMs?:number}[]>();
 
+test("Floor TD opens the exact seeded Tracker hand from an alert", async ({ page }) => {
+  test.skip(process.env.LOCAL_FLOOR_ALERT_BROWSER_PROBE !== "1", "Requires isolated Floor alert fixtures");
+  await loginOwner(page);
+  await page.goto("/ops/floor?club=a2000000-0000-4000-8000-000000000001");
+  const inbox = page.getByRole("region", { name: "Việc TD cần xử lý" });
+  const alert = inbox.getByRole("button", { name: /Floor hand browser TEST/ });
+  await expect(alert).toContainText("Bàn 1 · Hand #982001");
+  await alert.click();
+  await expect(page).toHaveURL(/\/ops\/floor\/tournaments\/a3000000-0000-4000-8000-000000000001\/tables\?.*alert=ae610000-0000-4000-8000-000000000002/);
+  const review = page.getByRole("dialog", { name: "Kiểm tra & sửa hand" });
+  await expect(review).toBeVisible();
+  await expect(review.getByText("Hand #982001", { exact: true })).toBeVisible();
+  await expect(page.locator("article[aria-current=true]")).toContainText("Bàn 1 · Hand #982001");
+});
+
 async function loginOwner(page: Page) {
   const api = process.env.LOCAL_SUPABASE_URL!.replace(/\/$/, "");
   const anon = process.env.LOCAL_SUPABASE_ANON_KEY!;

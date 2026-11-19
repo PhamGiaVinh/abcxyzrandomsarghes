@@ -1118,7 +1118,24 @@ fi
 # browser performs real Auth/Data API calls; no request route is intercepted.
 floor_redraw_build=off
 if [[ "$operations_candidate_probe" == 1 ]]; then floor_redraw_build=preview; fi
+floor_alert_voice_build=false
+if [[ "${LOCAL_FLOOR_ALERT_BROWSER_PROBE:-0}" == 1 ]]; then
+  [[ "$schema_mode" == current ]]
+  floor_alert_voice_build=true
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'FLOOR_ALERT_FIXTURE'
+INSERT INTO public.tournament_hands(id,tournament_id,table_id,hand_number,status,is_voided)
+VALUES ('ae610000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001',
+        'a7000000-0000-4000-8000-000000000001',982001,'completed',false);
+INSERT INTO public.tracker_floor_alerts(id,club_id,tournament_id,tournament_table_id,physical_table_id,
+  hand_id,reported_by,alert_kind,priority,title)
+VALUES ('ae610000-0000-4000-8000-000000000002','a2000000-0000-4000-8000-000000000001',
+        'a3000000-0000-4000-8000-000000000001','a8000000-0000-4000-8000-000000000001',
+        'a7000000-0000-4000-8000-000000000001','ae610000-0000-4000-8000-000000000001',
+        :'owner_id'::uuid,'wrong_action','urgent','Floor hand browser TEST');
+FLOOR_ALERT_FIXTURE
+fi
 (cd "$repo_root" && \
+  VITE_TRACKER_VOICE_INPUT="$floor_alert_voice_build" \
   VITE_SUPABASE_URL="http://$browser_gateway:8000" \
   VITE_SUPABASE_PUBLISHABLE_KEY="$anon_key" \
   VITE_OPS_TOUR_CASHIER=production \
@@ -1380,6 +1397,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_EXACT_MOVE_ENABLED="$move_enabled" \
   --env LOCAL_OPERATIONS_ACTIVE_CHECKOUT_ENABLED="$active_checkout_enabled" \
   --env LOCAL_OPERATIONS_REPLACEMENT_ENABLED="$replacement_enabled" \
+  --env LOCAL_FLOOR_ALERT_BROWSER_PROBE="${FLOOR_ALERT_PROOF_STAGE:-0}" \
   --env LOCAL_OPERATIONS_STAFF_SALARY_ENABLED="$staff_salary_enabled" \
   --env LOCAL_OPERATIONS_DEFERRED_MOVE_ENABLED="$deferred_move_enabled" \
   --env LOCAL_OPERATIONS_MANUAL_FINISH_ENABLED="$manual_finish_enabled" \
@@ -1411,6 +1429,15 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   mcr.microsoft.com/playwright:v1.60.0-noble \
   npx playwright test "${test_args[@]}"
 }
+if [[ "$floor_alert_voice_build" == true ]]; then
+  FLOOR_ALERT_PROOF_STAGE=1 run_browser_proof '' '' 'Floor TD opens the exact seeded Tracker hand from an alert'
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'FLOOR_ALERT_CLEANUP'
+BEGIN;
+DELETE FROM public.tracker_floor_alerts WHERE id='ae610000-0000-4000-8000-000000000002';
+DELETE FROM public.tournament_hands WHERE id='ae610000-0000-4000-8000-000000000001';
+COMMIT;
+FLOOR_ALERT_CLEANUP
+fi
 prepare_current_movement_schema() {
   node "$repo_root/scripts/ops/prepare-cashier-runtime-dependencies.mjs" "$test_root/clock-pre32-fixture.sql" --restore-clock-pre32
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
