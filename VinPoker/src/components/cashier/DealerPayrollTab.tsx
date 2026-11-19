@@ -512,7 +512,7 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayro
     if (!activeClubId || !currentRange) return;
     let initial = true;
     const stop = startLiveReportRefresh(async () => {
-      if (initial || (!backgroundReadPaused.current && !transitionLockRef.current && !recoveryLockRef.current)) {
+      if (initial || (!backgroundReadPaused.current && !transitionLocks.current.has(savedReadScopeRef.current) && !recoveryLockRef.current)) {
         initial = false;
         await refreshAll();
       }
@@ -668,57 +668,58 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayro
 
   // ── Submit / Approve / Lock ─────────────────────────────────────────────
 
-  const transitionLockRef = useRef(false);
+  const transitionLocks = useRef(new Set<string>());
+  const [checkingTransitions, setCheckingTransitions] = useState<ReadonlySet<string>>(() => new Set());
   backgroundReadPaused.current = saving || recoveryBusy || paymentBusy || adjSaving
     || adjDialogOpen || auditLogOpen || !!legacyPreview || !!exporting || !!pendingSaveIntent;
   const runStatusTransition = useCallback(async (
     mutate: () => Promise<unknown>,
-    confirmed: () => void,
+    successMessage: string,
     failureMessage: string,
   ) => {
-    if (transitionLockRef.current || verifiedSavedScope !== savedReadScope || error || savedReadError) return;
+    if (transitionLocks.current.has(savedReadScope) || verifiedSavedScope !== savedReadScope || error || savedReadError) return;
     const scope = savedReadScope;
-    transitionLockRef.current = true;
+    const current = () => activeRef.current && scope === savedReadScopeRef.current;
+    transitionLocks.current.add(scope);
+    let delayed = false;
+    const timer = setTimeout(() => {
+      delayed = true;
+      if (activeRef.current) setCheckingTransitions((scopes) => new Set(scopes).add(scope));
+      if (current()) void refreshAll();
+    }, 8_000);
     try {
       await mutate();
-      if (!activeRef.current || scope !== savedReadScopeRef.current) return;
-      confirmed();
+      if (current() && !delayed) toast.success(successMessage);
     } catch (failure: unknown) {
-      if (!activeRef.current || scope !== savedReadScopeRef.current) return;
-      toast.error(failure instanceof Error ? failure.message : failureMessage);
+      if (current() && !delayed) toast.error(failure instanceof Error ? failure.message : failureMessage);
     } finally {
-      transitionLockRef.current = false;
+      clearTimeout(timer);
+      try {
+        if (current()) await refreshAll();
+      } finally {
+        transitionLocks.current.delete(scope);
+        if (activeRef.current && delayed) setCheckingTransitions((scopes) => {
+          const remaining = new Set(scopes);
+          remaining.delete(scope);
+          return remaining;
+        });
+      }
     }
-  }, [verifiedSavedScope, savedReadScope, error, savedReadError]);
+  }, [verifiedSavedScope, savedReadScope, error, savedReadError, refreshAll]);
 
   const handleSubmit = useCallback(async () => {
     if (!user || !savedPeriodId) return;
-    await runStatusTransition(() => submitPayroll(savedPeriodId), () => {
-      setPayrollStatus("submitted");
-      setSubmittedByMeta(user.id);
-      setSubmittedAtMeta(new Date().toISOString());
-      toast.success("Đã gửi duyệt");
-    }, "Lỗi gửi duyệt");
+    await runStatusTransition(() => submitPayroll(savedPeriodId), "Đã gửi duyệt", "Lỗi gửi duyệt");
   }, [user, savedPeriodId, runStatusTransition]);
 
   const handleApprove = useCallback(async () => {
     if (!user || !savedPeriodId) return;
-    await runStatusTransition(() => approvePayroll(savedPeriodId), () => {
-      setPayrollStatus("approved");
-      setApprovedByMeta(user.id);
-      setApprovedAtMeta(new Date().toISOString());
-      toast.success("Đã phê duyệt");
-    }, "Lỗi phê duyệt");
+    await runStatusTransition(() => approvePayroll(savedPeriodId), "Đã phê duyệt", "Lỗi phê duyệt");
   }, [user, savedPeriodId, runStatusTransition]);
 
   const handleLock = useCallback(async () => {
     if (!user || !savedPeriodId) return;
-    await runStatusTransition(() => lockPayroll(savedPeriodId), () => {
-      setPayrollStatus("locked");
-      setLockedByMeta(user.id);
-      setLockedAtMeta(new Date().toISOString());
-      toast.success("Đã khoá sổ");
-    }, "Lỗi khoá sổ");
+    await runStatusTransition(() => lockPayroll(savedPeriodId), "Đã khoá sổ", "Lỗi khoá sổ");
   }, [user, savedPeriodId, runStatusTransition]);
 
   const handleReject = useCallback(async (reason: string) => {
@@ -727,27 +728,13 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayro
       toast.error("Vui lòng nhập lý do từ chối");
       return;
     }
-    await runStatusTransition(() => rejectPayroll(savedPeriodId, reason), () => {
-      setPayrollStatus("rejected");
-      setRejectedBy(user.id);
-      setRejectedAt(new Date().toISOString());
-      setStoredRejectionReason(reason);
-      setRejectionReason("");
-      toast.success("Đã từ chối bảng lương");
-    }, "Lỗi từ chối");
+    await runStatusTransition(() => rejectPayroll(savedPeriodId, reason), "Đã từ chối bảng lương", "Lỗi từ chối");
   }, [user, savedPeriodId, runStatusTransition]);
 
   const handleResubmit = useCallback(async () => {
     if (!user || !savedPeriodId) return;
-    await runStatusTransition(() => resubmitPayroll(savedPeriodId), () => {
-      setPayrollStatus("draft");
-      setRejectedBy(null);
-      setRejectedAt(null);
-      setStoredRejectionReason(null);
-      toast.success("Đã chuyển về nháp");
-    }, "Lỗi chuyển về nháp");
+    await runStatusTransition(() => resubmitPayroll(savedPeriodId), "Đã chuyển về nháp", "Lỗi chuyển về nháp");
   }, [user, savedPeriodId, runStatusTransition]);
-
   const handlePreparePayment = useCallback(async () => {
     if (!user || !savedPeriodId || paymentBusy) return;
     const scope = savedReadScope;
@@ -1111,6 +1098,12 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayro
   }
   return (
     <div className="min-h-full flex flex-col gap-3">
+      {checkingTransitions.has(savedReadScope) && (
+        <div className="flex items-center gap-2">
+          <p role="status">Đang xác minh kết quả thao tác trên kỳ lương này…</p>
+          <Button variant="outline" size="sm" onClick={() => void refreshAll()}>Kiểm tra lại kỳ lương</Button>
+        </div>
+      )}
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
         {clubs.length > 1 && (

@@ -305,6 +305,31 @@ it('pauses monthly polling while an adjustment dialog contains operator input',a
   expect(screen.getByPlaceholderText('VD: 500000')).toHaveValue(17000);expect(state.save).not.toHaveBeenCalled();
  }finally{view.unmount();vi.useRealTimers();}
 });
+it('verifies a stalled approval using the saved server state without submitting again', async () => {
+  vi.useFakeTimers();
+  editablePayroll();
+  const period = { periodId: 'period', records: [{ ...state.rows[0], id: 'saved', club_id: 'club', period_id: 'period', status: 'pending' }] };
+  state.saved.mockResolvedValue({ ...period, status: 'submitted' });
+  state.rpc.mockImplementationOnce(() => new Promise(() => {}));
+  const view = render(<DealerPayrollTab clubIds={['club']} clubs={[{ id: 'club', name: 'TEST' }]} />);
+  try {
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    const approve = screen.getByRole('button', { name: 'Duyệt bảng lương' });
+    fireEvent.click(approve);
+    fireEvent.click(approve);
+    state.saved.mockResolvedValue({ ...period, status: 'approved', approvedBy: 'server-signer', approvedAt: '2026-11-18T04:30:00Z' });
+    await act(async () => vi.advanceTimersByTimeAsync(8001));
+    expect(screen.getByText('server-s')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Duyệt bảng lương' })).not.toBeInTheDocument();
+    expect(state.rpc).toHaveBeenCalledTimes(1);
+    expect(state.rpc).toHaveBeenCalledWith('transition_payroll_status_secure', {
+      p_period_id: 'period', p_expected_status: 'submitted', p_new_status: 'approved',
+    });
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
 it.each([
  ['locked','Chuẩn bị chi trả',null],
  ['payment_prepared','Xác nhận đã chi trả','Mã/tham chiếu thanh toán...'],
