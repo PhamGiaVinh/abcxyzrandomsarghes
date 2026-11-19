@@ -208,6 +208,7 @@ test('the shared server deal persists one native hand with consistent public and
   sql(file('../../supabase/pending-migrations/20261119205447_online_satellite_set_clock.sql'));
   sql(file('../../supabase/pending-migrations/20261119213644_online_satellite_bubble_evidence.sql'));
   sql(file('../../supabase/pending-migrations/20261119214450_online_satellite_lock_result.sql'));
+  sql(file('../../supabase/pending-migrations/20261119215034_online_satellite_issue_test_tickets.sql'));
   const setupPilot = 'ab510000-0000-4000-8000-000000000019';
   sql(`
     INSERT INTO online_satellite_private.registration_gate(club_id,enabled) VALUES ('${clubId}',true);
@@ -993,6 +994,19 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(ownQualification(second).qualified, true);
   assert.equal(ownQualification(first).qualified, false);
   assert.equal(ownQualification(spectator), null);
+  const issueTicket = (actor, request = 'ab510000-0000-4000-8000-000000000032', expiry = '2099-01-01T00:00:00Z') => json(`
+    SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT public.issue_online_satellite_test_tickets_v1('${exactBubble.bubblePilot}','${request}','${expiry}')`);
+  assert.throws(() => issueTicket(first), /SATELLITE_TEST_DESTINATION_REQUIRED/);
+  sql(`INSERT INTO online_satellite_private.test_destinations VALUES ('${destination}','${clubId}')`);
+  assert.throws(() => issueTicket(spectator), /SATELLITE_PILOT_MANAGER_REQUIRED/);
+  assert.throws(() => issueTicket(first, undefined, '2000-01-01T00:00:00Z'), /SATELLITE_TEST_ISSUE_BAD_EXPIRY/);
+  assert.deepEqual(issueTicket(first), { outcome: 'ok', idempotent: false, ticketCount: 1 });
+  assert.deepEqual(issueTicket(first), { outcome: 'ok', idempotent: true, ticketCount: 1 });
+  assert.throws(() => issueTicket(first,'ab510000-0000-4000-8000-000000000033'), /SATELLITE_TEST_ISSUE_CONFLICT/);
+  assert.equal(sql(`SELECT e.player_user_id FROM online_satellite_private.test_tickets ticket
+    JOIN online_satellite_private.entries e ON e.id=ticket.entry_id
+    WHERE ticket.pilot_id='${exactBubble.bubblePilot}'`), second);
   assert.deepEqual(lockResult(first,boundaryPilot), { outcome: 'ok', idempotent: false, qualifiedCount: 2 });
   assert.deepEqual(lockResult(first,boundaryPilot), { outcome: 'ok', idempotent: true, qualifiedCount: 2 });
   assert.equal(sql(`SELECT status FROM public.online_poker_tables WHERE id='${boundary.tableId}'`), 'closed');
