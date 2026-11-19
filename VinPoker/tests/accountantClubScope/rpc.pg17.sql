@@ -7,6 +7,7 @@ DECLARE
   owner_b constant uuid := '16660000-0000-4000-8000-000000000003';
   club_a constant uuid := '16660000-0000-4000-8000-000000000011';
   club_b constant uuid := '16660000-0000-4000-8000-000000000012';
+  dealer_a constant uuid := '16660000-0000-4000-8000-000000000031';
   result jsonb;
 BEGIN
   ASSERT current_database() = 'vinpoker_ops_l01', 'Require disposable L01 database';
@@ -18,6 +19,8 @@ BEGIN
            (club_b, owner_b, 'L01 fixture B', 'TEST', 'approved');
   INSERT INTO public.club_accountants (club_id, user_id, granted_by)
     VALUES (club_b, actor_b, owner_b);
+  INSERT INTO public.dealers (id, club_id, full_name, status)
+    VALUES (dealer_a, club_a, 'L01 dealer A', 'active');
 
   PERFORM set_config('request.jwt.claim.sub', actor_b::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', actor_b, 'role', 'authenticated')::text, true);
@@ -44,6 +47,15 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN NULL;
   END;
 
+  BEGIN
+    PERFORM public.save_payroll_period_v2(club_b, 2026, 10, '2026-10-01', '2026-10-31',
+      jsonb_build_array(jsonb_build_object('dealer_id', dealer_a)),
+      '16660000-0000-4000-8000-000000000027');
+    RAISE EXCEPTION 'Dealer payroll accepted a row from another club';
+  EXCEPTION WHEN invalid_parameter_value THEN
+    ASSERT SQLERRM IN ('payroll_roster_changed', 'payroll_dealer_identity_conflict');
+  END;
+
   result := public.record_club_expense(p_club_id=>club_b, p_category=>'misc', p_amount_vnd=>10000,
     p_incurred_at=>now(), p_description=>'L01 TEST expense', p_payment_status=>'unpaid',
     p_idempotency_key=>'16660000-0000-4000-8000-000000000023');
@@ -59,6 +71,8 @@ BEGIN
 
   RESET ROLE;
   ASSERT NOT EXISTS (SELECT FROM public.payroll_periods WHERE club_id = club_a);
+  ASSERT NOT EXISTS (SELECT FROM public.payroll_periods
+    WHERE club_id = club_b AND period_year = 2026 AND period_month = 10);
   ASSERT NOT EXISTS (SELECT FROM public.club_expenses WHERE club_id = club_a);
   ASSERT EXISTS (SELECT FROM public.club_expenses WHERE club_id = club_b AND amount_vnd = 10000);
   ASSERT NOT EXISTS (
