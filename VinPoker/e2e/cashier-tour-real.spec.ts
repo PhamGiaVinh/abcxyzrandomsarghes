@@ -2276,7 +2276,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page}
  test.skip(process.env.LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED!=='1','Explicit isolated full34 prize-close stage only');test.setTimeout(180_000);
  const owner=await loginOwner(page),staff=(await loginFixtureStaff()).slice(0,3),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000005',club='a2000000-0000-4000-8000-000000000001';
  const headers={apikey:anon,Authorization:'Bearer '+owner,'Content-Type':'application/json'};
- let phase='setup',failure:{operation:string;httpStatus:number;code:string|null;messageSha256:string|null}|null=null,paidRows=0,prizeTotal=0,reconcileDelta:number|null=null;
+ let phase='setup',failure:{operation:string;httpStatus:number;code:string|null;messageSha256:string|null;denialSha256:string|null}|null=null,paidRows=0,prizeTotal=0,reconcileDelta:number|null=null;
  const showdownHands:{number:number;pots:number[];endings:number[]}[]=[];
  const payoutUi={loaded:false,dialogVerified:false,cancelPreservedUnpaid:false,confirmed:false,paidVisible:false};
  const timings:{operation:string;ms:number}[]=[];
@@ -2284,7 +2284,12 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page}
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
-  if(!response.ok||data.ok===false||data.success===false){failure={operation,httpStatus:response.status,code:typeof data.code==='string'&&/^[A-Z0-9]{5}$/.test(data.code)?data.code:null,messageSha256:typeof data.message==='string'?createHash('sha256').update(data.message).digest('hex'):null};report();}
+  if(!response.ok||data.ok===false||data.success===false){
+   failure={operation,httpStatus:response.status,code:typeof data.code==='string'&&/^[A-Z0-9]{5}$/.test(data.code)?data.code:null,
+    messageSha256:typeof data.message==='string'?createHash('sha256').update(data.message).digest('hex'):null,
+    denialSha256:typeof data.error==='string'?createHash('sha256').update(data.error).digest('hex'):null};
+   report();
+  }
   expect(response.ok,operation).toBe(true);expect(data.ok,operation).not.toBe(false);expect(data.success,operation).not.toBe(false);return data;
  };
  const rpc=(name:string,args:Record<string,unknown>,custom=headers)=>request(name,'/rest/v1/rpc/'+name,args,custom);
