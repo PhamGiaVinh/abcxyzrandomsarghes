@@ -378,6 +378,60 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
     FROM public.online_poker_seats WHERE table_id='${pausedTable}'`), '95,105,25');
   assert.ok(!sweep().hands.some(item => item.hand_id === pausedHand));
+  const sideTable = 'ab510000-0000-4000-8000-000000000011';
+  const sideHand = 'ab510000-0000-4000-8000-000000000012';
+  const contestants = [
+    { seat: 2, playerId: first, stack: 10n },
+    { seat: 5, playerId: second, stack: 30n },
+    { seat: 7, playerId: third, stack: 50n },
+  ];
+  sql(`
+    INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
+    VALUES ('${sideTable}','Disposable side pot TEST',5,10,0,1000,100);
+    INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status)
+    VALUES ('${sideTable}',2,'${first}',10,'sitting'), ('${sideTable}',5,'${second}',30,'sitting'),
+      ('${sideTable}',7,'${third}',50,'sitting');
+  `);
+  const sideStart = createHand({
+    handId: sideHand, tableId: sideTable, handNo: 1, buttonSeat: 2, sb: 5n, bb: 10n,
+  }, [...deck], contestants);
+  const sideStartState = serializeAuthoritative(sideStart.state);
+  const sideStartReceipt = await admin.rpc('op_start_hand', {
+    p_state: sideStartState.stateJson, p_deck: deck, p_board_future: sideStartState.liveDeck,
+    p_holes: sideStartState.holes, p_events: sideStart.events.map(({ type, payload }) => ({ type, payload })),
+    p_engine_version: ENGINE_VERSION, p_act_deadline: '2030-01-01T12:00:00Z', p_actor_user_id: null,
+  });
+  assert.equal(sideStartReceipt.data.outcome, 'ok');
+  for (const [version, contestant] of contestants.entries()) {
+    // Each action reloads only from persisted state and the server-only deck.
+    const loaded = json(`SET ROLE service_role; SELECT public.op_load_action_context('${sideHand}')`);
+    assert.equal(loaded.state_version, version);
+    const state = deserializeAuthoritative(loaded.state, loaded.live_deck, loaded.holes);
+    assert.equal(state.toAct, contestant.seat);
+    const action = { type: 'allin', seat: contestant.seat };
+    const applied = applyAction(state, action);
+    assert.equal(applied.error, undefined);
+    const split = serializeAuthoritative(applied.state);
+    const encoded = Buffer.from(JSON.stringify({
+      action: actionToRow(action), state: split.stateJson, liveDeck: split.liveDeck,
+      events: applied.events.map(({ type, payload }) => ({ type, payload })),
+    })).toString('hex');
+    const receipt = json(`
+      SET ROLE service_role;
+      WITH input AS (SELECT convert_from(decode('${encoded}','hex'),'UTF8')::jsonb AS p)
+      SELECT public.op_submit_action('${sideHand}', '${contestant.playerId}', p->'action', p->'state',
+        p->'liveDeck', p->'events', ${version}, NULL, 'disposable-g03-side-${version}') FROM input;
+    `);
+    assert.equal(receipt.outcome, 'ok');
+    assert.equal(receipt.state_version, version + 1);
+  }
+  const settled = json(`SELECT state FROM public.online_poker_hands WHERE id='${sideHand}'`);
+  assert.equal(settled.status, 'complete');
+  assert.equal(String(settled.result.potTotal), '70');
+  assert.deepEqual(settled.result.payouts, { 5: '70' });
+  assert.equal(sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
+    FROM public.online_poker_seats WHERE table_id='${sideTable}'`), '0,70,20');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${sideHand}'`), '3');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
