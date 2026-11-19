@@ -375,13 +375,14 @@ export function useTableHand(tableId: string): TableHandState {
     if (!RUNTIME_LIVE) { setSeats([]); setHostUserId(null); return; }
     let cancelled = false;
     const issuedTable=tableScope.current;
-    void observeTrackerContextRead(loadSeatsLive(tableId)).then((s) => {
+    const controller = new AbortController();
+    void loadSeatsLive(tableId, controller.signal).then((s) => {
       if (!cancelled && issuedTable === tableScope.current) { setSeats(s); setSeatsOrigin(issuedTable); setSeatFailure(null); }
     }).catch(() => {
       if (!cancelled && issuedTable === tableScope.current) setSeatFailure(issuedTable);
-    });
+    }).finally(() => controller.abort());
     loadTableHostLive(tableId).then((h) => { if (!cancelled) {setHostUserId(h);setHostOrigin(issuedTable);} }).catch(() => {});
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
   }, [tableId, tick]);
 
   // Live realtime: re-pull on any change to this table's hands, seats OR table row
