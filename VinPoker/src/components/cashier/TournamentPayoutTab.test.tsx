@@ -49,3 +49,20 @@ it('opens an authorized historical tournament outside the latest list via an exa
   expect(withinClubs).toHaveBeenCalledTimes(2);
   expect(screen.getByLabelText('Giải đấu')).toHaveValue('tour-old');
 });
+
+it('discards an old club lookup that resolves after the cashier changes club', async () => {
+  const entry = '/cashier?tab=tournament_payouts&tournament=tour-old';
+  const oldTour = { id: 'tour-old', name: 'Giải cũ', start_time: '2025-01-01' };
+  let finishOldRead: (result: { data: typeof oldTour; error: null }) => void;
+  directRead.mockImplementationOnce(() => new Promise(resolve => { finishOldRead = resolve; }));
+  read.mockResolvedValue({ data: [], error: null });
+  const view = mount(entry);
+  await waitFor(() => expect(directRead).toHaveBeenCalledTimes(1));
+
+  view.rerender(<MemoryRouter initialEntries={[entry]}><TournamentPayoutTab clubIds={['club-b']} /></MemoryRouter>);
+  await screen.findByRole('alert');
+  await act(async () => finishOldRead({ data: oldTour, error: null }));
+
+  expect(withinClubs).toHaveBeenLastCalledWith('club_id', ['club-b']);
+  expect(screen.queryByText(/^Payment:/)).not.toBeInTheDocument();
+});
