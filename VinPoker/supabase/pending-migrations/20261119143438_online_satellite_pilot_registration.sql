@@ -162,13 +162,32 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.can_create_online_satellite_pilot_v1(p_club_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.clubs c
+    JOIN online_satellite_private.registration_gate g ON g.club_id=c.id AND g.enabled
+    WHERE c.id=p_club_id AND (
+      c.owner_id=auth.uid()
+      OR (
+        g.delegated_td_actor_id=auth.uid() AND g.delegated_by=c.owner_id
+        AND EXISTS (SELECT 1 FROM public.club_floors f WHERE f.club_id=c.id AND f.user_id=auth.uid())
+      )
+    )
+  );
+$$;
+
 REVOKE ALL ON FUNCTION public.create_online_satellite_pilot_v1(uuid,uuid,uuid,timestamptz,integer,integer)
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.register_online_satellite_pilot_v1(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.get_online_satellite_pilot_v1(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.can_create_online_satellite_pilot_v1(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.create_online_satellite_pilot_v1(uuid,uuid,uuid,timestamptz,integer,integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.register_online_satellite_pilot_v1(uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_online_satellite_pilot_v1(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.can_create_online_satellite_pilot_v1(uuid) TO authenticated;
 COMMIT;

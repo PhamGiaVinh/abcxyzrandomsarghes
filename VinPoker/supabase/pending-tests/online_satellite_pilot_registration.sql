@@ -32,6 +32,9 @@ BEGIN
      OR has_function_privilege('anon','public.register_online_satellite_pilot_v1(uuid)','EXECUTE') THEN
     RAISE EXCEPTION 'satellite private registration was exposed';
   END IF;
+  IF public.can_create_online_satellite_pilot_v1('ef200000-0000-4000-8000-000000000001') THEN
+    RAISE EXCEPTION 'closed pilot gate advertised create authority';
+  END IF;
   BEGIN
     PERFORM public.create_online_satellite_pilot_v1(
       'ef200000-0000-4000-8000-000000000001','ef300000-0000-4000-8000-000000000001',
@@ -66,6 +69,9 @@ BEGIN
     IF SQLERRM <> 'SATELLITE_PILOT_DESTINATION_NOT_IN_CLUB' THEN RAISE; END IF;
   END;
   PERFORM set_config('request.jwt.claim.sub','ef100000-0000-4000-8000-000000000004',true);
+  IF public.can_create_online_satellite_pilot_v1(v_club) THEN
+    RAISE EXCEPTION 'other-club TD read create authority';
+  END IF;
   BEGIN
     PERFORM public.create_online_satellite_pilot_v1(v_club,v_destination,v_request,v_cutoff,10000,2);
     RAISE EXCEPTION 'TD from another club created a pilot';
@@ -73,6 +79,9 @@ BEGIN
     IF SQLERRM <> 'SATELLITE_PILOT_MANAGER_REQUIRED' THEN RAISE; END IF;
   END;
   PERFORM set_config('request.jwt.claim.sub','ef100000-0000-4000-8000-000000000003',true);
+  IF NOT public.can_create_online_satellite_pilot_v1(v_club) THEN
+    RAISE EXCEPTION 'delegated TD did not receive create authority';
+  END IF;
   v_created := public.create_online_satellite_pilot_v1(v_club,v_destination,v_request,v_cutoff,10000,2);
   v_pilot := (v_created->>'pilotId')::uuid;
   IF v_pilot IS NULL OR public.create_online_satellite_pilot_v1(
