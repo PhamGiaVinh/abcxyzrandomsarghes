@@ -27,19 +27,33 @@ function openControl() {
 }
 
 it("shows the participant's own qualification on their closed table", async () => {
-  rpc.mockImplementation(name => ({
-    abortSignal: async () => ({
+  const ticketId = "ab510000-0000-4000-8000-000000000032";
+  const destinationId = "ab510000-0000-4000-8000-000000000018";
+  let redeemed = false;
+  rpc.mockImplementation(name => {
+    if (name === "redeem_online_satellite_test_ticket_v1") {
+      redeemed = true;
+      return Promise.resolve({ data: { outcome: "ok" }, error: null });
+    }
+    return { abortSignal: async () => ({
       data: name === "get_my_online_satellite_result_v1"
         ? { qualified: true, destinationName: "Giải đích TEST", lockedAt: "2030-01-01T12:00:00Z" }
-        : { tableId, clockRevision: "5", running: false, status: "closed",
-          canManage: false, canPlay: true, canProvision: false, qualificationReached: true },
+        : name === "get_my_online_satellite_test_ticket_v1"
+          ? { ticketId, destinationId, destinationName: "Giải đích TEST", expiresAt: "2099-01-01T12:00:00+00:00",
+            testEntryId: redeemed ? "ab510000-0000-4000-8000-000000000033" : null }
+          : { tableId, clockRevision: "5", running: false, status: "closed",
+            canManage: false, canPlay: true, canProvision: false, qualificationReached: true },
       error: null,
-    }),
-  }));
+    }) };
+  });
   openControl();
   expect(await screen.findByText("Bạn đạt suất TEST.")).toBeVisible();
   expect(screen.getByText("Giải đích TEST")).toBeVisible();
   expect(screen.queryByRole("button", { name: "Chia ván mới" })).not.toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Đổi vé TEST" }));
+  expect(await screen.findByText("Đã tạo entry TEST tại giải đích.")).toBeVisible();
+  expect(rpc).toHaveBeenCalledWith("redeem_online_satellite_test_ticket_v1",
+    { p_ticket_id: ticketId, p_destination_id: destinationId });
 });
 
 it("shows the qualification boundary without offering another deal", async () => {

@@ -7,6 +7,7 @@ import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext
 import { onlinePokerClient } from "@/lib/onlinePoker/client";
 import SatelliteBlindSchedule from "./SatelliteBlindSchedule";
 import SatelliteBubbleEvidence from "./SatelliteBubbleEvidence";
+import SatelliteTestTicket from "./SatelliteTestTicket";
 
 const pilotIdentifier = z.string().uuid();
 const tableSnapshot = z.object({
@@ -114,6 +115,9 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
                   : ownQualification.data ? <>
                     <p role="status">{ownQualification.data.qualified ? "Bạn đạt suất TEST." : "Bạn chưa đạt suất TEST."}</p>
                     <p className="text-sm text-muted-foreground">{ownQualification.data.destinationName}</p>
+                    {ownQualification.data.qualified && pilot.success && actorId && (
+                      <SatelliteTestTicket pilotId={pilot.data} actorId={actorId} />
+                    )}
                   </>
                   : <p role="status">Chưa có kết quả đã khóa cho tài khoản này.</p>}
               </section>
