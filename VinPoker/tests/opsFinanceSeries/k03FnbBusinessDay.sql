@@ -22,6 +22,9 @@ BEGIN
     VALUES (club_id_fixture,actor_id,'K03 TEST A','TEST','approved'), (other_club,other_actor,'K03 TEST B','TEST','approved');
   INSERT INTO public.fnb_settings(club_id,fnb_in_club_net) VALUES (club_id_fixture,true), (other_club,true)
     ON CONFLICT (club_id) DO UPDATE SET fnb_in_club_net=true;
+  -- Satisfy the existing shift trigger while seeding historical fixture facts.
+  PERFORM pg_advisory_xact_lock(hashtextextended('fnb-cash-shift:' || club_id_fixture::text, 718));
+  PERFORM pg_advisory_xact_lock(hashtextextended('fnb-cash-shift:' || other_club::text, 718));
   INSERT INTO public.fnb_orders(club_id,status,source,created_by,client_request_id,subtotal_vnd,cogs_vnd,paid_at,shipped_at,cancelled_at)
     VALUES
       (club_id_fixture,'cancelled','counter',actor_id,gen_random_uuid()::text,100000,30000,
