@@ -99,6 +99,31 @@ it("uses the observed round and explains when another table is still playing", a
     { p_pilot_id: pilotId, p_expected_round: "2" });
 });
 
+it("lets the TD close only an empty secondary table at a round boundary", async () => {
+  const secondary = "ab510000-0000-4000-8000-000000000037";
+  rpc.mockImplementation(name => {
+    if (name === "retire_online_satellite_round_table_v1") {
+      return Promise.resolve({ data: { outcome: "ok" }, error: null });
+    }
+    return { abortSignal: async () => ({
+      data: name === "get_online_satellite_round_operations_v1" ? {
+        roundNo: "2", tables: [tableId, secondary].map(id => ({
+          tableId: id, maxSeats: 4, status: "open", roundStatus: "complete", seats: [],
+        })),
+      } : { tableId, clockRevision: "5", running: true, status: "open",
+        canManage: true, canPlay: false, canProvision: false, roundNo: "2" },
+      error: null,
+    }) };
+  });
+  openControl();
+  fireEvent.click(await screen.findByRole("button", { name: "Đóng bàn 2" }));
+  expect(await screen.findByText("Đã đóng bàn.")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Đóng bàn 1" })).not.toBeInTheDocument();
+  expect(rpc).toHaveBeenCalledWith("retire_online_satellite_round_table_v1", {
+    p_pilot_id: pilotId, p_table_id: secondary, p_expected_round: "2",
+  });
+});
+
 it("uses the whole-round result command and surfaces the bubble review outcome", async () => {
   rpc.mockImplementation(name => name === "lock_online_satellite_round_result_v1"
     ? Promise.resolve({ data: { outcome: "bubble_review_required" }, error: null })

@@ -1332,12 +1332,15 @@ test('the shared server deal persists one native hand with consistent public and
       VALUES ('${browserPilot}','${first}'),('${browserPilot}','${second}')`);
     const { verifySatelliteClockBrowser } = await import('./satelliteClockBrowser.fixture.mjs');
     const twoTablePilot = 'ab510000-0000-4000-8000-000000000039';
-    sql(`INSERT INTO online_satellite_private.pilots VALUES
-      ('${twoTablePilot}','${clubId}','${sharedDestination}','${first}','${twoTablePilot}',now(),100,4);
-      INSERT INTO online_satellite_private.entries(pilot_id,player_user_id) VALUES
-      ${[first,second,third,spectator].map(user => `('${twoTablePilot}','${user}')`).join(',')};`);
+    const finalTablePilot = 'ab510000-0000-4000-8000-000000000040';
+    for (const pilot of [twoTablePilot,finalTablePilot]) {
+      sql(`INSERT INTO online_satellite_private.pilots VALUES
+        ('${pilot}','${clubId}','${sharedDestination}','${first}','${pilot}',now(),100,4);
+        INSERT INTO online_satellite_private.entries(pilot_id,player_user_id) VALUES
+        ${[first,second,third,spectator].map(user => `('${pilot}','${user}')`).join(',')};`);
+    }
     await verifySatelliteClockBrowser({ sql, actor: first, pilot: browserPilot,
-      twoTablePilot, ticketScenario: { pilot: boundaryPilot, player: second, destination: browserTicketDestination } });
+      twoTablePilot, finalTablePilot, ticketScenario: { pilot: boundaryPilot, player: second, destination: browserTicketDestination } });
     assert.equal(sql("SELECT count(*) FROM public.online_poker_hands WHERE status IN ('dealing','betting')"), '0');
     const rollback = file('../../supabase/pending-migrations/ROLLBACK_20261119193713_online_poker_complete_deal_stack_writeback.sql');
     const startOid = "'public.op_start_hand(jsonb,jsonb,jsonb,jsonb,jsonb,text,timestamp with time zone,uuid)'::regprocedure";

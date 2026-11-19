@@ -3,13 +3,15 @@ import { chromium } from '@playwright/test';
 import { createServer } from 'node:http';
 import { createServer as createVite } from 'vite';
 
-export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketScenario, twoTablePilot }) {
+export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketScenario, twoTablePilot, finalTablePilot }) {
   const statements = {
     get_online_satellite_table_v1: "public.get_online_satellite_table_v1((p->>'p_pilot_id')::uuid)",
     get_online_satellite_round_operations_v1:
       "public.get_online_satellite_round_operations_v1((p->>'p_pilot_id')::uuid)",
     move_online_satellite_round_seat_v2:
       "public.move_online_satellite_round_seat_v2((p->>'p_pilot_id')::uuid,(p->>'p_seat_id')::uuid,(p->>'p_destination')::uuid,(p->>'p_destination_seat')::int,(p->>'p_expected_round')::bigint,(p->>'p_expected_placement')::bigint)",
+    retire_online_satellite_round_table_v1:
+      "public.retire_online_satellite_round_table_v1((p->>'p_pilot_id')::uuid,(p->>'p_table_id')::uuid,(p->>'p_expected_round')::bigint)",
     provision_online_satellite_table_v1:
       "public.provision_online_satellite_table_v1((p->>'p_pilot_id')::uuid,p->'p_levels',(p->>'p_qualification_slots')::integer)",
     provision_online_satellite_two_tables_v1:
@@ -138,6 +140,31 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketSce
     await page.getByRole('button', { name: 'Mở vòng tiếp theo' }).click();
     await page.getByText('Còn bàn chưa hoàn tất vòng hiện tại.', { exact: true }).waitFor();
     console.log('CHROMIUM_SATELLITE_PROVISION_TWO_TABLES_OPEN_ROUND_PASS');
+    await page.goto(fixtureUrl(actor, finalTablePilot));
+    await page.getByRole('checkbox', { name: /Tạo hai bàn TEST/ }).check();
+    await page.getByRole('spinbutton', { name: 'Số suất TEST', exact: true }).fill('2');
+    await page.getByRole('spinbutton', { name: 'Small blind', exact: true }).fill('5');
+    await page.getByRole('spinbutton', { name: 'Big blind', exact: true }).fill('10');
+    await page.getByRole('button', { name: 'Tạo bàn và khóa lịch' }).click();
+    await page.getByRole('button', { name: 'Chuyển ghế', exact: true }).waitFor();
+    const finalAnchor = sql(`SELECT table_id FROM online_satellite_private.table_clocks WHERE pilot_id='${finalTablePilot}'`);
+    for (const [index, label] of ['Bàn 2 · Ghế 1', 'Bàn 2 · Ghế 2'].entries()) {
+      const option = page.getByLabel('Người cần chuyển').locator('option').filter({ hasText: label });
+      const seatId = await option.getAttribute('value');
+      assert.ok(seatId);
+      await page.getByLabel('Người cần chuyển').selectOption(seatId);
+      await page.getByLabel('Ghế đích').selectOption(`${finalAnchor}:${index+3}`);
+      await page.getByRole('button', { name: 'Chuyển ghế', exact: true }).click();
+      await option.waitFor({ state: 'detached' });
+    }
+    await page.getByRole('button', { name: 'Đóng bàn 2', exact: true }).click();
+    await page.getByText('Đã đóng bàn.', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Chạy đồng hồ' }).click();
+    await page.getByRole('button', { name: 'Mở vòng tiếp theo' }).click();
+    await page.getByText('Đã mở vòng chơi.', { exact: true }).waitFor();
+    assert.equal(sql(`SELECT table_id FROM online_satellite_private.round_deals WHERE pilot_id='${finalTablePilot}'`), finalAnchor);
+    assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${finalAnchor}'`), '400');
+    console.log('CHROMIUM_SATELLITE_CLOSE_DRAINED_TABLE_FINAL_ROUND_PASS');
   } finally {
     await browser?.close();
     await vite?.close();

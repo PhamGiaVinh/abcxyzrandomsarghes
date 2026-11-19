@@ -34,6 +34,16 @@ const moveMessages = {
 const moveReceipt = z.object({ outcome: z.enum([
   "ok", "stale", "stale_placement", "round_still_playing", "invalid_destination",
 ]) });
+const closeMessages = {
+  ok: "Đã đóng bàn.",
+  stale: "Số vòng đã đổi. Hãy kiểm tra tiến độ mới.",
+  round_still_playing: "Chờ các bàn hoàn tất vòng trước khi đóng bàn.",
+  table_has_players: "Bàn còn người chơi có chip.",
+  invalid_table: "Bàn không thể đóng ở trạng thái hiện tại.",
+};
+const closeReceipt = z.object({ outcome: z.enum([
+  "ok", "stale", "round_still_playing", "table_has_players", "invalid_table",
+]) });
 
 export default function SatelliteRoundOperations({ pilotId, actorId, roundNo }: {
   pilotId: string;
@@ -84,6 +94,18 @@ export default function SatelliteRoundOperations({ pilotId, actorId, roundNo }: 
       await details.refetch();
     },
   });
+  const close = useMutation({
+    mutationFn: async (tableId: string) => {
+      const observedRound = details.data?.roundNo;
+      if (observedRound === undefined) throw new Error("Missing current round");
+      const { data, error } = await client.rpc("retire_online_satellite_round_table_v1" as never, {
+        p_pilot_id: pilotId, p_table_id: tableId, p_expected_round: observedRound,
+      } as never);
+      if (error) throw error;
+      return closeReceipt.parse(data).outcome;
+    },
+    onSettled: () => details.refetch(),
+  });
   return <section className="space-y-2" aria-label="Tiến độ các bàn">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="font-semibold">Tiến độ các bàn</h2>
@@ -102,6 +124,10 @@ export default function SatelliteRoundOperations({ pilotId, actorId, roundNo }: 
               <span>Ghế {seat.seatNo}</span><span>{seat.stack} chip</span>
             </li>)}
           </ul>
+          {index > 0 && checkpoint && table.status !== "closed" && table.seats.every(seat => seat.stack === "0") && (
+            <Button size="sm" variant="outline" className="mt-2" disabled={details.isFetching || move.isPending || close.isPending}
+              onClick={() => close.mutate(table.tableId)}>Đóng bàn {index + 1}</Button>
+          )}
         </li>)}
       </ul>}
     {checkpoint && tables.filter(table => table.status !== "closed").length > 1 && (
@@ -129,12 +155,14 @@ export default function SatelliteRoundOperations({ pilotId, actorId, roundNo }: 
             {availableSeats.map(seat => <option key={seat.value} value={seat.value}>{seat.label}</option>)}
           </select>
         </label>
-        <Button type="submit" variant="outline" disabled={!selectedSeat || !target || move.isPending || details.isFetching}>
+        <Button type="submit" variant="outline" disabled={!selectedSeat || !target || move.isPending || close.isPending || details.isFetching}>
           Chuyển ghế
         </Button>
       </form>
     )}
     {move.data && <p role="status">{moveMessages[move.data]}</p>}
     {move.isError && <p role="alert">Chưa xác nhận được việc chuyển ghế.</p>}
+    {close.data && <p role="status">{closeMessages[close.data]}</p>}
+    {close.isError && <p role="alert">Chưa xác nhận được việc đóng bàn.</p>}
   </section>;
 }
