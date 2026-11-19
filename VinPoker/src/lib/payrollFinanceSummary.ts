@@ -64,6 +64,9 @@ const STATUS_LABELS: Record<string, string> = {
   approved: "Đã duyệt",
   rejected: "Bị từ chối",
   locked: "Đã khoá sổ",
+  payment_prepared: "Đã chuẩn bị chi",
+  paid: "CLB đã ghi chi",
+  reconciled: "Đã đối soát",
 };
 
 export function buildPayrollFinanceSummary(
@@ -104,8 +107,8 @@ export function buildPayrollFinanceSummary(
 
   // Frontend-only readiness rule (visibility, not authority):
   //   mismatch        → blocked  "Không nên chi trước khi đối chiếu"
-  //   open/capped ca  → review   "Cần kiểm tra trước khi duyệt"
-  //   else            → ready    "Sẵn sàng duyệt"
+  //   open/capped ca  → review   "Cần đối chiếu ca làm"
+  //   else            → ready    "Không phát hiện chênh lệch"
   let approvalRiskLevel: ApprovalRiskLevel = "ready";
   const riskReasons: string[] = [];
   if (mismatches.length > 0) {
@@ -116,16 +119,12 @@ export function buildPayrollFinanceSummary(
   }
   if (open.length > 0) {
     if (approvalRiskLevel === "ready") approvalRiskLevel = "review";
-    riskReasons.push(`${open.length} ca chưa checkout — giờ tạm tính theo ca chuẩn, cần đối chiếu trước khi duyệt`);
+    riskReasons.push(`${open.length} ca chưa checkout — giờ tạm tính theo ca chuẩn`);
   }
   if (capped.length > 0) {
     if (approvalRiskLevel === "ready") approvalRiskLevel = "review";
     riskReasons.push(`${capped.length} ca chạm trần 24h — có thể quên checkout`);
   }
-  if (approvalRiskLevel === "ready") {
-    riskReasons.push("Không phát hiện rủi ro chặn — có thể tiếp tục workflow duyệt");
-  }
-
   return {
     totalGrossVnd,
     totalNetVnd,
@@ -148,7 +147,9 @@ export function buildPayrollFinanceSummary(
       ptNetVnd: pt.reduce((s, r) => s + n(r.net_pay_vnd), 0),
     },
     statusLabel: savedMeta.periodId
-      ? STATUS_LABELS[savedMeta.status ?? ""] ?? "—"
+      ? (savedMeta.status && Object.prototype.hasOwnProperty.call(STATUS_LABELS, savedMeta.status)
+        ? STATUS_LABELS[savedMeta.status]
+        : "Chưa xác định trạng thái")
       : "Chưa lưu",
     approvalRiskLevel,
     riskReasons,
