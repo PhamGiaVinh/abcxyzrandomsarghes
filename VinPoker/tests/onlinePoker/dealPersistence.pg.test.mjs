@@ -61,7 +61,7 @@ function archivedFunction(name, path, group = 'legacy-unapplied') {
 }
 
 async function waitForPostgresLock(name) {
-  assert.match(name, /^g03-[a-z-]+$/);
+  assert.match(name, /^g0[34]-[a-z-]+$/);
   for (let n = 0; n < 40; n++) {
     if (sql(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
       WHERE application_name='${name}' AND wait_event_type='Lock')`) === 't') return;
