@@ -32,6 +32,13 @@ it("uses the server revision and refreshes a stale clock command", async () => {
     if (name === "set_online_satellite_clock_v1") {
       return Promise.resolve({ data: { outcome: "stale" }, error: null });
     }
+    if (name === "get_online_satellite_bubble_evidence_v1") {
+      return { abortSignal: async () => ({
+        data: { handNo: "8", stateVersion: 3, status: "complete", survivingCount: 1,
+          eliminations: [{ seat: 2, startingStack: "10" }, { seat: 7, startingStack: "30" }] },
+        error: null,
+      }) };
+    }
     return {
       abortSignal: () => {
         reads += 1;
@@ -54,6 +61,9 @@ it("uses the server revision and refreshes a stale clock command", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Chia ván mới" }));
   expect(await screen.findByText("Bàn đang chơi một ván.")).toBeVisible();
   expect(startHand).toHaveBeenCalledWith(tableId);
+  fireEvent.click(screen.getByRole("button", { name: "Kiểm tra ván mới nhất" }));
+  expect(await screen.findByText("Còn 1 người có chip.")).toBeVisible();
+  expect(screen.getByText("Ghế 7 · 30 chip đầu ván")).toBeVisible();
 });
 
 it("sends the manager's full schedule and opens only the confirmed table", async () => {

@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { onlinePokerClient } from "@/lib/onlinePoker/client";
 import SatelliteBlindSchedule from "./SatelliteBlindSchedule";
+import SatelliteBubbleEvidence from "./SatelliteBubbleEvidence";
 
 const pilotIdentifier = z.string().uuid();
 const tableSnapshot = z.object({
@@ -110,6 +111,9 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
             )}
             {clock.isError && <p role="alert">Chưa xác nhận được lệnh. Trạng thái bàn đã được tải lại.</p>}
             {clock.data === "stale" && <p role="status">Đồng hồ đã thay đổi. Hãy kiểm tra trạng thái mới.</p>}
+            {snapshot.data.canManage && pilot.success && actorId && (
+              <SatelliteBubbleEvidence pilotId={pilot.data} actorId={actorId} />
+            )}
           </div>
         )}
     </section>
