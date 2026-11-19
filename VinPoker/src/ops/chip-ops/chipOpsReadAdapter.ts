@@ -36,15 +36,16 @@ export async function loadChipOpsTournamentOptions(
   client: OpsClient,
   clubId: string,
   signal?: AbortSignal,
+  tournamentId?: string,
 ): Promise<ChipOpsTournamentOption[]> {
   const query = client
     .from("tournaments")
     .select("id, name, status, start_time, phase")
     .eq("club_id", clubId)
-    .is("deleted_at", null)
-    .order("start_time", { ascending: false })
-    .limit(200);
-  const result = await (signal ? query.abortSignal(signal) : query);
+    .is("deleted_at", null);
+  const scoped = tournamentId ? query.eq("id", tournamentId).limit(1)
+    : query.order("start_time", { ascending: false }).limit(200);
+  const result = await (signal ? scoped.abortSignal(signal) : scoped);
   if (result.error || !Array.isArray(result.data)) throw new Error("CHIP_OPS_TOURNAMENT_READ_FAILED");
   return result.data.map((row) => ({
     id: row.id,

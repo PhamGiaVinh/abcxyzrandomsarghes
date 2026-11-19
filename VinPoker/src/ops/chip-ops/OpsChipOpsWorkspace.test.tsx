@@ -184,3 +184,12 @@ it("aborts timed-out reads before allowing an explicit fresh read", async () => 
   view.unmount();
   expect(nextSignal.aborted).toBe(true);
 });
+
+it("opens an older tour only after an exact lookup within the selected club", async () => {
+  h.tournament = "older-tour";
+  h.load.mockResolvedValueOnce([{id:"recent-tour",name:"Recent tour"}])
+    .mockResolvedValueOnce([{id:"older-tour",name:"Older tour"}]);
+  render(<OpsChipOpsWorkspace />);
+  await waitFor(() => expect(h.inventory).toHaveBeenCalledWith(h.client,"older-tour",expect.any(AbortSignal)));
+  expect(h.load).toHaveBeenNthCalledWith(2,h.client,"A",expect.any(AbortSignal),"older-tour");
+});
