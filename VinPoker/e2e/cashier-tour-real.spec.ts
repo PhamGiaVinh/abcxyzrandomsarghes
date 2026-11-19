@@ -2272,6 +2272,48 @@ test('current owner rake closes once and exports the immutable event-day snapsho
 });
 
 
+test('opens older Chip Ops inventory only for an exact eligible tournament', async ({ page }) => {
+  test.skip(process.env.LOCAL_CHIP_HISTORY_PROBE !== '1', 'Disposable Chip Ops history fixtures required');
+  await loginOwner(page);
+  const base = '/ops/chip-ops?club=a2000000-0000-4000-8000-000000000001';
+  const older = 'bd200000-0000-4000-8000-000000000201';
+  const deleted = 'bd200000-0000-4000-8000-000000000202';
+  const foreign = 'bd200000-0000-4000-8000-000000000203';
+  const picker = page.getByLabel('Giải đấu', { exact: true });
+  const inventory = page.getByText('Chip vật lý đã phát', { exact: true });
+  const inventoryRequests: string[] = [];
+  const inventoryPath = '/rest/v1/rpc/get_issued_chip_inventory';
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === inventoryPath) {
+      inventoryRequests.push(request.postDataJSON().p_tournament_id);
+    }
+  });
+
+  await page.goto(base);
+  await expect(picker.locator('option')).toHaveCount(201);
+  await expect(picker.locator(`option[value="${older}"]`)).toHaveCount(0);
+  const read = page.waitForResponse(response => new URL(response.url()).pathname === inventoryPath);
+  await page.goto(`${base}&t=${older}`);
+  expect((await read).ok()).toBe(true);
+  await expect(picker).toHaveValue(older);
+  await expect(inventory).toBeVisible();
+  for (const denied of [deleted, foreign]) {
+    await page.goto(`${base}&t=${denied}`);
+    await expect(page.getByText('CHIP_TOURNAMENT_SCOPE_INVALID', { exact: true })).toBeVisible();
+    await expect(inventory).toHaveCount(0);
+  }
+  expect(inventoryRequests).toEqual([older]);
+  writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/, '-chip-history-http.json'), JSON.stringify({
+    kind: 'ISOLATED_CHIP_HISTORY_BROWSER',
+    sha: process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+    pickerLimit: 200,
+    olderAccepted: true,
+    deletedDenied: true,
+    foreignDenied: true,
+    qualification: false,
+  }));
+});
+
 test('final current Floor Cashier prizes close over real Auth HTTP',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED!=='1','Explicit isolated full34 prize-close stage only');test.setTimeout(180_000);
  const owner=await loginOwner(page),staff=(await loginFixtureStaff()).slice(0,3),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000005',club='a2000000-0000-4000-8000-000000000001';

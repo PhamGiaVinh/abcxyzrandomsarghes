@@ -65,6 +65,10 @@ on:
       - "VinPoker/src/pages/ops/TourCashierWorkbench.tsx"
   workflow_dispatch:
     inputs:
+      chip_history_probe:
+        description: Read-only historical Chip Ops browser proof with disposable current schema and zero audience
+        type: boolean
+        default: false
       source_batch_probe:
         description: Isolated bounded source batch344; requires full pending_source_probe
         type: boolean
@@ -281,6 +285,7 @@ jobs:
           LOCAL_OPERATIONS_REST_POOL: ${{ inputs.operations_rest_pool || '10' }}
           LOCAL_CLOCK_CANDIDATE_PROBE: ${{ inputs.clock_candidate_probe && '1' || '0' }}
           LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope || 'none' }}
+          LOCAL_CHIP_HISTORY_PROBE: ${{ github.event_name == 'workflow_dispatch' && inputs.chip_history_probe && '1' || '0' }}
           LOCAL_SOURCE_GENERATION_PROBE: ${{ (steps.schema-mode.outputs.package == 'source342' || (github.event_name == 'workflow_dispatch' && inputs.source_generation_probe)) && '1' || '0' }}
           LOCAL_PENDING_SOURCE_PROBE: ${{ (steps.schema-mode.outputs.package == 'source342' || (github.event_name == 'workflow_dispatch' && inputs.pending_source_probe)) && '1' || '0' }}
           LOCAL_SOURCE_BATCH_PROBE: ${{ (steps.schema-mode.outputs.package == 'source342' || (github.event_name == 'workflow_dispatch' && inputs.source_batch_probe)) && '1' || '0' }}
