@@ -29,11 +29,12 @@ vi.mock("./financeReadAdapter", () => ({
   loadFinanceSummary: mock.loadFinanceSummary,
 }));
 vi.mock("./FinanceWorkspaceView", () => ({
-  FinanceWorkspaceView: ({ clubName, summary, loading, onRefresh, blockedReason }: {
+  FinanceWorkspaceView: ({ clubName, range, summary, loading, onRefresh, blockedReason }: {
     clubName: string; summary: { revenue: { total: number } } | null; loading: boolean;
     onRefresh:()=>void;
     blockedReason:string|null;
-  }) => <div>{clubName}: {loading ? "loading" : summary?.revenue.total ?? "empty"}<span data-testid="verified-summary">{summary?.revenue.total??'none'}</span><button onClick={onRefresh}>Refresh</button>{blockedReason&&<span>{blockedReason}</span>}</div>,
+    range: { to: string };
+  }) => <div>{clubName}: {loading ? "loading" : summary?.revenue.total ?? "empty"}<span data-testid="verified-summary">{summary?.revenue.total??'none'}</span><span data-testid="verified-cutoff">{range.to}</span><button onClick={onRefresh}>Refresh</button>{blockedReason&&<span>{blockedReason}</span>}</div>,
 }));
 
 import OpsFinanceWorkspace from "./OpsFinanceWorkspace";
@@ -53,6 +54,24 @@ describe("Finance club scope", () => {
     await act(async()=>vi.advanceTimersByTimeAsync(5000));expect(screen.getByTestId('verified-summary').textContent).toBe('100');
     await act(async()=>reject(Error('FINANCE_SUMMARY_RPC_UNAVAILABLE')));expect(screen.getByTestId('verified-summary').textContent).toBe('none');
     expect(screen.getByText('FINANCE_SUMMARY_RPC_UNAVAILABLE')).toBeTruthy();
+  });
+
+  it('keeps the confirmed cutoff attached to the figures across Vietnam midnight', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2035-09-30T23:59:59.999+07:00'));
+    let finish!: (reply: unknown) => void;
+    mock.loadFinanceSummary.mockResolvedValueOnce({ revenue: { total: 100 } })
+      .mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    render(<OpsFinanceWorkspace />);
+    await screen.findByText('Club A: 100');
+    vi.setSystemTime(new Date('2035-10-01T00:00:00.001+07:00'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(mock.loadFinanceSummary).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('verified-summary')).toHaveTextContent('100');
+    expect(screen.getByTestId('verified-cutoff')).toHaveTextContent('2035-09-30T16:59:59.999Z');
+    await act(async () => finish({ revenue: { total: 200 } }));
+    expect(screen.getByTestId('verified-summary')).toHaveTextContent('200');
+    expect(screen.getByTestId('verified-cutoff')).toHaveTextContent('2035-09-30T17:00:00.001Z');
   });
 
   it('clears previously verified totals across capability reauthentication for the same club',async()=>{
