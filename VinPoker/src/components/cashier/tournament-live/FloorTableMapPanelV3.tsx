@@ -123,6 +123,7 @@ function ScopedFloorTableMapPanelV3({
   const [restorableEntries, setRestorableEntries] = useState<FloorRestorableEntry[]>([]);
   const [restoreTarget, setRestoreTarget] = useState<{ scope: string; entryId: string; name: string; destination: { tableId: string; seatNumber: number } } | null>(null);
   const [pendingMoves, setPendingMoves] = useState<FloorPendingTrackerMove[]>([]);
+  const hasPendingMove = pendingMoves.some(move => move.status === "pending");
   const [secondaryLoadError, setSecondaryLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [rosterReady, setRosterReady] = useState(false);
@@ -348,7 +349,7 @@ function ScopedFloorTableMapPanelV3({
   }, [actorId, sessionEpoch, tournament.id, tournamentEnded, v3.enabled, load, liveReadId, supabase]);
 
   useEffect(() => {
-    if (!pendingMoves.some((move) => move.status === "pending")) return;
+    if (!hasPendingMove) return;
     const timer = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       const refresh = refreshInBackground.current;
@@ -356,7 +357,7 @@ function ScopedFloorTableMapPanelV3({
       else void load(true);
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [load, pendingMoves]);
+  }, [load, hasPendingMove]);
 
   useEffect(() => {
     if (!selectedTable) return;

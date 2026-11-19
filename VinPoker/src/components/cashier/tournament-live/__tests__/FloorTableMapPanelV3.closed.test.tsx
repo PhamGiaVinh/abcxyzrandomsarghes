@@ -228,6 +228,19 @@ it("queues a pending-move tick behind a slow fallback read of the same tour", as
   expect(screen.getByRole("button", { name: /Bàn 8, 0\/9 ghế/ })).toBeInTheDocument();
 });
 
+it("keeps the pending-move cadence when a fresh array reports the same pending state", async () => {
+  vi.useFakeTimers();
+  state.moves.mockImplementation(async () => ({ ok: true, data: [{ status: "pending", pendingMoveId: "move-1" }] }));
+  const view = render(<FloorTableMapPanelV3 tournament={tour("live")} refreshTrigger={0} />);
+  await act(async () => {});
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  view.rerender(<FloorTableMapPanelV3 tournament={tour("live")} refreshTrigger={1} />);
+  await act(async () => {});
+  expect(state.moves).toHaveBeenCalledTimes(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  expect(state.moves).toHaveBeenCalledTimes(3);
+});
+
 it("uses component publication hints without waiting for the incomplete CDC fallback", async () => {
   vi.useFakeTimers();
   await act(async()=>{render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0}/>);});
