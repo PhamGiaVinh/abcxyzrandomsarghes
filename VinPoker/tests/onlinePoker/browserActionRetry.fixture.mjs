@@ -11,6 +11,8 @@ export async function verifyBrowserActionRetry({ sql, actor, handId, seat }) {
   const actionRequests = [];
   let writes = 0;
   let droppedAfterCommit = false;
+  const logs = [];
+  const statuses = [];
   let vite;
   const server = createServer(async (req, res) => {
     if (req.url === '/__action-retry-fixture') {
@@ -27,6 +29,7 @@ export async function verifyBrowserActionRetry({ sql, actor, handId, seat }) {
       const intent = JSON.parse(body);
       actionRequests.push(intent);
       const response = await handler(new Request(base + req.url, { method: 'POST', headers: req.headers, body }));
+      statuses.push(response.status);
       const raw = await response.text();
       if (actionRequests.length === 1 && response.ok && writes === 1
         && sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${handId}'`) === '1') {
@@ -35,7 +38,9 @@ export async function verifyBrowserActionRetry({ sql, actor, handId, seat }) {
         return;
       }
       res.writeHead(response.status, { 'content-type': 'application/json' }).end(raw);
-    } catch {
+    } catch (error) {
+      statuses.push(500);
+      console.error('Browser fixture bridge error class:', error?.name);
       res.writeHead(500).end();
     }
   });
@@ -79,7 +84,7 @@ export async function verifyBrowserActionRetry({ sql, actor, handId, seat }) {
   };
   const handler = loadCreateAction((_url, key) => key === 'ANON_TEST'
     ? { auth: { getUser: async supplied => ({ data: { user: supplied === token ? { id: actor } : null }, error: null }) } }
-    : admin, [], base, undefined, { engine, adapter });
+    : admin, logs, base, undefined, { engine, adapter });
   process.env.VITE_SUPABASE_URL = base;
   process.env.VITE_SUPABASE_PUBLISHABLE_KEY = 'local-publishable';
   let browser;
@@ -94,10 +99,20 @@ export async function verifyBrowserActionRetry({ sql, actor, handId, seat }) {
       }));
     }, { id: actor, access_token: token });
     await page.goto(base + '/__action-retry-fixture');
-    const receipt = await page.evaluate(async ({ handId, seat }) => {
-      const { onlinePokerClient } = await import('/src/lib/onlinePoker/client.ts');
-      return onlinePokerClient.submitAction({ handId, seat, type: 'fold' });
-    }, { handId, seat });
+    let receipt;
+    try {
+      receipt = await page.evaluate(async ({ handId, seat }) => {
+        const { onlinePokerClient } = await import('/src/lib/onlinePoker/client.ts');
+        return onlinePokerClient.submitAction({ handId, seat, type: 'fold' });
+      }, { handId, seat });
+    } catch (error) {
+      const outcomes = logs.flat().map(line => {
+        try { const item = JSON.parse(line); return { outcome: item.outcome, http: item.http }; }
+        catch { return {}; }
+      });
+      console.error(JSON.stringify({ statuses, outcomes, writes, droppedAfterCommit }));
+      throw error;
+    }
     assert.ok(droppedAfterCommit, 'Browser must lose the reply after PostgreSQL commits');
     assert.equal(actionRequests.length, 2);
     assert.deepEqual(actionRequests[0], actionRequests[1]);
