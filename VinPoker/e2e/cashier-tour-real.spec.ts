@@ -2279,7 +2279,7 @@ test('opens older Chip Ops inventory only for an exact eligible tournament', asy
   const older = 'bd200000-0000-4000-8000-000000000201';
   const deleted = 'bd200000-0000-4000-8000-000000000202';
   const foreign = 'bd200000-0000-4000-8000-000000000203';
-  const picker = page.getByLabel('Giải đấu', { exact: true });
+  const picker = page.locator('label').filter({ hasText: 'Giải đấu' }).locator('select');
   const inventory = page.getByText('Chip vật lý đã phát', { exact: true });
   const inventoryRequests: string[] = [];
   const inventoryPath = '/rest/v1/rpc/get_issued_chip_inventory';
@@ -2289,13 +2289,18 @@ test('opens older Chip Ops inventory only for an exact eligible tournament', asy
     }
   });
 
-  await page.goto(base);
-  await expect(picker.locator('option')).toHaveCount(201);
-  await expect(picker.locator(`option[value="${older}"]`)).toHaveCount(0);
+  const normalList = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === '/rest/v1/tournaments' && url.searchParams.get('limit') === '200';
+  });
   const read = page.waitForResponse(response => new URL(response.url()).pathname === inventoryPath);
   await page.goto(`${base}&t=${older}`);
+  const normalOptions = await (await normalList).json();
+  expect(normalOptions).toHaveLength(200);
+  expect(normalOptions.some((row: { id: string }) => row.id === older)).toBe(false);
   expect((await read).ok()).toBe(true);
   await expect(picker).toHaveValue(older);
+  await expect(picker.locator('option')).toHaveCount(202);
   await expect(inventory).toBeVisible();
   for (const denied of [deleted, foreign]) {
     await page.goto(`${base}&t=${denied}`);

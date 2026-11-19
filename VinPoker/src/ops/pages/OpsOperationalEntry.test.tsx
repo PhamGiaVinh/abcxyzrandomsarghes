@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OpsModuleGate } from "./OpsEntryResolver";
 import { getOpsModule, type OpsModuleId } from "@/ops/registry/opsModuleRegistry";
@@ -56,6 +56,21 @@ describe("operational module document entry", () => {
   it("does not redirect the existing tour cashier writer back into the legacy counter", () => {
     mount("cashier", "/ops/cashier/tour"); expect(replace).not.toHaveBeenCalled();
     expect(screen.getByText("child workspace")).toBeInTheDocument();
+  });
+  it("keeps the historical chip link through single-club resolution", async () => {
+    function LocationSearch() { return <div>{useLocation().search}</div>; }
+    render(<MemoryRouter initialEntries={["/ops/chip-ops?t=historical-tour"]}>
+      <OpsModuleGate capability="chip-ops"><LocationSearch /></OpsModuleGate>
+    </MemoryRouter>);
+    expect(await screen.findByText("?club=club-a&t=historical-tour")).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+  });
+  it("does not load historical chip data in an unauthorized club", () => {
+    render(<MemoryRouter initialEntries={["/ops/chip-ops?club=club-b&t=historical-tour"]}>
+      <OpsModuleGate capability="chip-ops"><div>chip history</div></OpsModuleGate>
+    </MemoryRouter>);
+    expect(screen.queryByText("chip history")).not.toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
   });
   it.each(["loading", "error", "no-module", "wrong-club"])("never opens an unverified scope: %s", kind => {
     if (kind === "loading") h.loading = true;

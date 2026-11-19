@@ -17,7 +17,7 @@ type OpsWorkspaceContextValue = {
   verifiedSuperAdminClubs: ReadonlyMap<string, OpsSuperAdminClub>;
   rememberVerifiedSuperAdminClub: (club: OpsSuperAdminClub) => void;
   registerRealtimeCleanup: (cleanup: () => void) => () => void;
-  selectWorkspace: (module: OpsModuleDefinition, clubId: string) => Promise<void>;
+  selectWorkspace: (module: OpsModuleDefinition, clubId: string, chipTournament?: string) => Promise<void>;
 };
 
 const OpsWorkspaceContext = createContext<OpsWorkspaceContextValue | null>(null);
@@ -46,7 +46,7 @@ export function OpsWorkspaceProvider({ children }: { children: ReactNode }) {
     return () => realtimeCleanup.current.delete(cleanup);
   }, []);
 
-  const selectWorkspace = useCallback(async (module: OpsModuleDefinition, clubId: string) => {
+  const selectWorkspace = useCallback(async (module: OpsModuleDefinition, clubId: string, chipTournament?: string) => {
     const previousClubId = new URLSearchParams(location.search).get("club");
     if (previousClubId && previousClubId !== clubId) {
       for (const cleanup of realtimeCleanup.current) cleanup();
@@ -54,7 +54,9 @@ export function OpsWorkspaceProvider({ children }: { children: ReactNode }) {
       await queryClient.cancelQueries({ queryKey: ["ops", previousClubId] });
       queryClient.removeQueries({ queryKey: ["ops", previousClubId] });
     }
-    navigate(`${module.route}?club=${encodeURIComponent(clubId)}`);
+    const scope = new URLSearchParams({ club: clubId });
+    if (module.id === "chip-ops" && chipTournament) scope.set("t", chipTournament);
+    navigate(`${module.route}?${scope}`);
   }, [location.search, navigate, queryClient]);
 
   const value = useMemo<OpsWorkspaceContextValue>(() => ({
