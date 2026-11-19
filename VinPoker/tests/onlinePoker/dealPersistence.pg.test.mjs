@@ -3,6 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { dealNextHand } from '../../supabase/functions/_shared/pokerRuntime/dealNextHand.ts';
+import { applyAction } from '../../supabase/functions/_shared/pokerEngine/index.ts';
+import { actionToRow, deserializeAuthoritative, serializeAuthoritative } from '../../supabase/functions/_shared/pokerAdapter/index.ts';
 
 const tableId = 'ab510000-0000-4000-8000-000000000001';
 const first = 'ab510000-0000-4000-8000-000000000002';
@@ -91,4 +93,43 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql("SELECT count(*) FROM public.online_poker_hand_secrets"), '4');
   assert.equal(sql("SELECT sum(stack+total_committed) FROM public.online_poker_hand_seats"), '200');
   assert.equal(sql("SELECT has_function_privilege('authenticated','public.op_start_hand(jsonb,jsonb,jsonb,jsonb,jsonb,text,timestamptz,uuid)','EXECUTE')"), 'f');
+
+  const context = json(`SET ROLE service_role; SELECT public.op_load_action_context('${hand.handId}')`);
+  assert.equal(context.outcome, 'ok');
+  const before = deserializeAuthoritative(context.state, context.live_deck, context.holes);
+  const action = { type: 'fold', seat: 2 };
+  assert.equal(before.toAct, action.seat);
+  const folded = applyAction(before, action);
+  assert.equal(folded.error, undefined);
+  assert.equal(folded.state.status, 'complete');
+  const split = serializeAuthoritative(folded.state);
+  const args = {
+    action: actionToRow(action),
+    state: split.stateJson,
+    liveDeck: split.liveDeck,
+    events: folded.events.map(({ type, payload }) => ({ type, payload })),
+  };
+  const payload = Buffer.from(JSON.stringify(args)).toString('hex');
+  const submit = () => json(`
+    SET ROLE service_role;
+    WITH input AS (SELECT convert_from(decode('${payload}','hex'),'UTF8')::jsonb AS p)
+    SELECT public.op_submit_action('${hand.handId}', '${first}', p->'action', p->'state',
+      p->'liveDeck', p->'events', 0, NULL, 'disposable-g03-fold-retry') FROM input;
+  `);
+  const receipt = submit();
+  assert.equal(receipt.outcome, 'ok');
+  assert.equal(receipt.state_version, 1);
+  assert.deepEqual(submit(), receipt);
+  assert.equal(sql('SELECT count(*) FROM public.online_poker_actions'), '1');
+  assert.equal(sql("SELECT string_agg(stack::text,',' ORDER BY seat_no) FROM public.online_poker_hand_seats"), '95,105');
+  const next = await dealNextHand(admin, tableId, null);
+  assert.ok(next.ok, JSON.stringify(next));
+  assert.equal(next.handNo, 2);
+  assert.equal(next.buttonSeat, 5);
+  assert.equal(
+    sql(`SELECT string_agg(starting_stack::text,',' ORDER BY seat_no)
+      FROM public.online_poker_hand_seats WHERE hand_id='${next.handId}'`),
+    '95,105',
+    'The following hand must start from the previous hand’s terminal stacks',
+  );
 });
