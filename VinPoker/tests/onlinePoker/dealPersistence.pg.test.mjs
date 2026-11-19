@@ -3,8 +3,8 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { dealNextHand } from '../../supabase/functions/_shared/pokerRuntime/dealNextHand.ts';
-import { applyAction } from '../../supabase/functions/_shared/pokerEngine/index.ts';
-import { actionToRow, deserializeAuthoritative, serializeAuthoritative } from '../../supabase/functions/_shared/pokerAdapter/index.ts';
+import { applyAction, createHand, shuffledDeck } from '../../supabase/functions/_shared/pokerEngine/index.ts';
+import { actionToRow, deserializeAuthoritative, ENGINE_VERSION, serializeAuthoritative } from '../../supabase/functions/_shared/pokerAdapter/index.ts';
 
 const tableId = 'ab510000-0000-4000-8000-000000000001';
 const first = 'ab510000-0000-4000-8000-000000000002';
@@ -161,4 +161,32 @@ test('the shared server deal persists one native hand with consistent public and
     '95,105',
     'The following hand must start from the previous hand’s terminal stacks',
   );
+
+  const shortTable = 'ab510000-0000-4000-8000-000000000004';
+  const shortHand = 'ab510000-0000-4000-8000-000000000005';
+  sql(`
+    INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
+    VALUES ('${shortTable}','Disposable blind all-in TEST',5,10,0,1000,10);
+    INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status)
+    VALUES ('${shortTable}',2,'${first}',5,'sitting'), ('${shortTable}',5,'${second}',10,'sitting');
+  `);
+  let seed = 1977;
+  const deck = shuffledDeck(() => seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0);
+  const allIn = createHand({
+    handId: shortHand, tableId: shortTable, handNo: 1, buttonSeat: 2, sb: 5n, bb: 10n,
+  }, [...deck], [{ seat: 2, playerId: first, stack: 5n }, { seat: 5, playerId: second, stack: 10n }]);
+  assert.equal(allIn.error, undefined);
+  assert.equal(allIn.state.status, 'complete');
+  assert.deepEqual(allIn.state.seats.map(seat => seat.stack), [0n, 15n]);
+  const terminal = serializeAuthoritative(allIn.state);
+  const started = await admin.rpc('op_start_hand', {
+    p_state: terminal.stateJson, p_deck: deck, p_board_future: terminal.liveDeck,
+    p_holes: terminal.holes, p_events: allIn.events.map(({ type, payload }) => ({ type, payload })),
+    p_engine_version: ENGINE_VERSION, p_act_deadline: null, p_actor_user_id: null,
+  });
+  assert.equal(started.data.outcome, 'ok');
+  assert.equal(sql(`SELECT status FROM public.online_poker_hands WHERE id='${shortHand}'`), 'complete');
+  assert.equal(sql(`SELECT string_agg(stack::text,',' ORDER BY seat_no)
+    FROM public.online_poker_seats WHERE table_id='${shortTable}'`), '0,15',
+    'An immediately complete deal must also persist its terminal stacks');
 });
