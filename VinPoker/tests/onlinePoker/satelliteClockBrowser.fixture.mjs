@@ -3,15 +3,23 @@ import { chromium } from '@playwright/test';
 import { createServer } from 'node:http';
 import { createServer as createVite } from 'vite';
 
-export async function verifySatelliteClockBrowser({ sql, actor, pilot }) {
+export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketScenario }) {
   const statements = {
     get_online_satellite_table_v1: "public.get_online_satellite_table_v1((p->>'p_pilot_id')::uuid)",
     provision_online_satellite_table_v1:
       "public.provision_online_satellite_table_v1((p->>'p_pilot_id')::uuid,p->'p_levels',(p->>'p_qualification_slots')::integer)",
     set_online_satellite_clock_v1:
       "public.set_online_satellite_clock_v1((p->>'p_pilot_id')::uuid,(p->>'p_expected_revision')::bigint,(p->>'p_running')::boolean)",
+    get_my_online_satellite_result_v1: "public.get_my_online_satellite_result_v1((p->>'p_pilot_id')::uuid)",
+    get_online_satellite_test_issuance_v1: "public.get_online_satellite_test_issuance_v1((p->>'p_pilot_id')::uuid)",
+    issue_online_satellite_test_tickets_v1:
+      "public.issue_online_satellite_test_tickets_v1((p->>'p_pilot_id')::uuid,(p->>'p_request_id')::uuid,(p->>'p_expires_at')::timestamptz)",
+    get_my_online_satellite_test_ticket_v1: "public.get_my_online_satellite_test_ticket_v1((p->>'p_pilot_id')::uuid)",
+    redeem_online_satellite_test_ticket_v1:
+      "public.redeem_online_satellite_test_ticket_v1((p->>'p_ticket_id')::uuid,(p->>'p_destination_id')::uuid)",
   };
   let vite;
+  let droppedIssueReply = false;
   const server = createServer(async (req, res) => {
     const path = new URL(req.url, 'http://127.0.0.1').pathname;
     if (path === '/__satellite-clock-fixture') {
@@ -29,9 +37,15 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot }) {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const encoded = Buffer.concat(chunks).toString('hex');
-      const result = sql(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+      const requestActor = req.headers['x-disposable-fixture-role'] === 'participant' ? ticketScenario.player : actor;
+      const result = sql(`SET ROLE authenticated; SET request.jwt.claim.sub='${requestActor}';
         WITH input AS (SELECT convert_from(decode('${encoded}','hex'),'UTF8')::jsonb AS p)
         SELECT COALESCE(${statements[rpc]}, 'null'::jsonb) FROM input`);
+      if (rpc === 'issue_online_satellite_test_tickets_v1' && !droppedIssueReply && JSON.parse(result).outcome === 'ok') {
+        droppedIssueReply = true;
+        res.destroy();
+        return;
+      }
       res.writeHead(200, { 'content-type': 'application/json' }).end(result);
     } catch (error) {
       console.error(error.message);
@@ -44,7 +58,9 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot }) {
     vite = await createVite({ server: { middlewareMode: true, hmr: false }, appType: 'custom' });
     browser = await chromium.launch();
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    await page.goto(`http://127.0.0.1:${server.address().port}/__satellite-clock-fixture?actor=${actor}&pilot=${pilot}`);
+    const fixtureUrl = (user, targetPilot) =>
+      `http://127.0.0.1:${server.address().port}/__satellite-clock-fixture?actor=${user}&pilot=${targetPilot}`;
+    await page.goto(fixtureUrl(actor, pilot));
     await page.getByRole('spinbutton', { name: 'Small blind', exact: true }).fill('5', { timeout: 15000 });
     await page.getByRole('spinbutton', { name: 'Big blind', exact: true }).fill('10');
     await page.getByRole('button', { name: 'Tạo bàn và khóa lịch' }).click();
@@ -60,6 +76,24 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot }) {
     assert.equal(sql(`SELECT revision||':'||(running_since IS NULL)::text
       FROM online_satellite_private.table_clocks WHERE pilot_id='${pilot}'`), '3:true');
     console.log('CHROMIUM_SATELLITE_CLOCK_UI_SDK_POSTGRES_PASS');
+    await page.goto(fixtureUrl(actor, ticketScenario.pilot));
+    await page.getByLabel('Hạn dùng (giờ Việt Nam)').fill('2099-01-01T18:00');
+    await page.getByRole('button', { name: 'Phát vé TEST', exact: true }).click();
+    await page.getByText('Đã phát 2 vé TEST cho Disposable browser ticket target.', { exact: true }).waitFor();
+    assert.ok(droppedIssueReply);
+    const participant = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await participant.setExtraHTTPHeaders({ 'x-disposable-fixture-role': 'participant' });
+    await participant.goto(fixtureUrl(ticketScenario.player, ticketScenario.pilot));
+    await participant.getByRole('button', { name: 'Đổi vé TEST', exact: true }).click();
+    await participant.getByText('Đã tạo entry TEST tại giải đích.', { exact: true }).waitFor();
+    const entry = () => sql(`SELECT id FROM online_satellite_private.test_target_entries
+      WHERE destination_id='${ticketScenario.destination}' AND player_user_id='${ticketScenario.player}'`);
+    const firstEntry = entry();
+    assert.match(firstEntry, /^[0-9a-f-]{36}$/);
+    await participant.reload();
+    await participant.getByText('Đã tạo entry TEST tại giải đích.', { exact: true }).waitFor();
+    assert.equal(entry(), firstEntry);
+    console.log('CHROMIUM_SATELLITE_TICKET_ISSUE_LOST_REPLY_AND_REDEEM_DISTINCT_ACTORS_PASS');
   } finally {
     await browser?.close();
     await vite?.close();
