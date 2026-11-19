@@ -136,10 +136,39 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.get_online_satellite_pilot_v1(p_pilot_id uuid)
+RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_actor uuid := auth.uid();
+  v_result jsonb;
+BEGIN
+  SELECT pg_catalog.jsonb_build_object(
+    'pilotId',p.id,'destinationName',t.name,'registrationClosesAt',p.registration_closes_at,
+    'startingStack',p.starting_stack,'seatLimit',p.seat_limit,
+    'entryId',(SELECT e.id FROM online_satellite_private.entries e
+      WHERE e.pilot_id=p.id AND e.player_user_id=v_actor),
+    'acceptingEntries',coalesce(g.enabled,false) AND p.registration_closes_at > pg_catalog.statement_timestamp()
+      AND (SELECT count(*) FROM online_satellite_private.entries e WHERE e.pilot_id=p.id) < p.seat_limit
+  ) INTO v_result
+  FROM online_satellite_private.pilots p
+  JOIN public.tournaments t ON t.id=p.destination_tournament_id AND t.club_id=p.club_id
+  LEFT JOIN online_satellite_private.registration_gate g ON g.club_id=p.club_id
+  WHERE p.id=p_pilot_id AND v_actor IS NOT NULL AND EXISTS (
+    SELECT 1 FROM public.club_members m WHERE m.club_id=p.club_id AND m.player_user_id=v_actor
+  );
+  IF v_result IS NULL THEN RAISE EXCEPTION 'SATELLITE_PILOT_NOT_AVAILABLE' USING ERRCODE='42501'; END IF;
+  RETURN v_result;
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.create_online_satellite_pilot_v1(uuid,uuid,uuid,timestamptz,integer,integer)
   FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.register_online_satellite_pilot_v1(uuid)
   FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_online_satellite_pilot_v1(uuid)
+  FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.create_online_satellite_pilot_v1(uuid,uuid,uuid,timestamptz,integer,integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.register_online_satellite_pilot_v1(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_online_satellite_pilot_v1(uuid) TO authenticated;
 COMMIT;

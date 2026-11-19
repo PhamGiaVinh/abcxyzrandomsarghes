@@ -56,6 +56,7 @@ DECLARE
   v_created jsonb;
   v_first jsonb;
   v_retry jsonb;
+  v_view jsonb;
   v_pilot uuid;
 BEGIN
   BEGIN
@@ -85,7 +86,18 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN
     IF SQLERRM <> 'SATELLITE_PILOT_NOT_AVAILABLE' THEN RAISE; END IF;
   END;
+  BEGIN
+    PERFORM public.get_online_satellite_pilot_v1(v_pilot);
+    RAISE EXCEPTION 'a TD without linked membership read player registration';
+  EXCEPTION WHEN insufficient_privilege THEN
+    IF SQLERRM <> 'SATELLITE_PILOT_NOT_AVAILABLE' THEN RAISE; END IF;
+  END;
   PERFORM set_config('request.jwt.claim.sub','ef100000-0000-4000-8000-000000000005',true);
+  v_view := public.get_online_satellite_pilot_v1(v_pilot);
+  IF v_view->>'destinationName' IS DISTINCT FROM 'Destination TEST A'
+    OR v_view->>'acceptingEntries' IS DISTINCT FROM 'true' OR v_view->>'entryId' IS NOT NULL THEN
+    RAISE EXCEPTION 'the eligible player cannot verify the pilot before registration';
+  END IF;
   v_first := public.register_online_satellite_pilot_v1(v_pilot);
   v_retry := public.register_online_satellite_pilot_v1(v_pilot);
   IF v_first->>'entryId' IS NULL OR v_first->>'idempotent' <> 'false'
@@ -118,6 +130,10 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub','ef100000-0000-4000-8000-000000000005',true);
   IF public.register_online_satellite_pilot_v1(v_pilot)->>'idempotent' IS DISTINCT FROM 'true' THEN
     RAISE EXCEPTION 'disabling registration hid a committed entry receipt';
+  END IF;
+  IF public.get_online_satellite_pilot_v1(v_pilot)->>'entryId' IS NULL
+    OR public.get_online_satellite_pilot_v1(v_pilot)->>'acceptingEntries' IS DISTINCT FROM 'false' THEN
+    RAISE EXCEPTION 'closed registration did not preserve the player view of their entry';
   END IF;
 END $test$;
 ROLLBACK;

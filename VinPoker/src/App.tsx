@@ -116,6 +116,9 @@ const TournamentDisplay = lazy(() => import("./pages/TournamentDisplay"));
 // GE-2D online-poker shell (dark; gated by FEATURES.onlinePoker)
 const OnlinePoker = lazy(() => import("./pages/OnlinePoker"));
 const OnlinePokerTable = lazy(() => import("./pages/OnlinePokerTable"));
+const OnlineSatelliteRegistration = import.meta.env.VITE_ONLINE_SATELLITE_PILOT === "true"
+  ? lazy(() => import("./pages/OnlineSatelliteRegistration"))
+  : null;
 // DEV-ONLY visual harness for the poker table. Gated to import.meta.env.DEV so the route AND
 // its lazy chunk are tree-shaken out of the production build (the dead ternary branch drops
 // the dynamic import). Reached only at /__dev/table; not linked anywhere.
@@ -415,6 +418,9 @@ const App = () => {
                 {/* GE-2D online-poker LOBBY — keeps Layout chrome. The TABLE route is
                     chrome-less above (full-screen). Pages self-gate on FEATURES.onlinePoker. */}
                 <Route path="/poker" element={<OnlinePoker />} />
+                {FEATURES.onlinePoker && OnlineSatelliteRegistration && (
+                  <Route path="/poker/satellite/:pilotId" element={<OnlineSatelliteRegistration />} />
+                )}
                 <Route path="/cashier" element={<CashierDashboard />} />
                 <Route path="/dealer-board" element={<DealerControlBoard />} />
                 <Route path="/tracker" element={<TrackerDashboard />} />
