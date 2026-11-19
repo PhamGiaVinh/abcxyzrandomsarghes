@@ -40,6 +40,31 @@ export async function withSatelliteEdgeHttp(statusPath, run) {
     headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
     body: JSON.stringify(body), signal: AbortSignal.timeout(8_000),
   });
+  const sockets = [];
+  const observeTable = async (tableId) => Promise.all(players.map(async ({ token }) => {
+    const client = createClient(status.API_URL, status.ANON_KEY, { accessToken: async () => token });
+    sockets.push(client);
+    await client.realtime.setAuth();
+    const completed = new Map();
+    await new Promise((resolve, reject) => {
+      client.channel(`edge-action-${tableId}`).on('postgres_changes', {
+        event: 'UPDATE', schema: 'public', table: 'online_poker_hands', filter: `table_id=eq.${tableId}`,
+      }, ({ new: row }) => {
+        if (row.status === 'complete') completed.set(row.id, { revision: Number(row.state_version), at: performance.now() });
+      }).subscribe((state, error) => {
+        if (state === 'SUBSCRIBED') resolve();
+        if (state === 'CHANNEL_ERROR' || state === 'TIMED_OUT' || state === 'CLOSED') {
+          reject(new Error(`Disposable action subscription: ${state}`, { cause: error }));
+        }
+      });
+    });
+    return async (handId) => {
+      const deadline = performance.now() + 8_000;
+      while (!completed.has(handId) && performance.now() < deadline) await delay(20);
+      assert.ok(completed.has(handId), 'Missing committed action on subscribed table');
+      return completed.get(handId);
+    };
+  }));
   try {
     const deadline = performance.now() + 30_000;
     let response;
@@ -49,9 +74,13 @@ export async function withSatelliteEdgeHttp(statusPath, run) {
     }
     assert.equal(response?.status, 200, `Disposable Edge ping failed: ${startError ?? child.exitCode ?? 'HTTP'}`);
     assert.deepEqual(await response.json(), { ok: true });
-    await run({ post, players });
+    await run({ post, players, observeTable });
   } finally {
     child.kill();
     await exited;
+    await Promise.all(sockets.map(async (client) => {
+      await client.removeAllChannels();
+      client.realtime.disconnect();
+    }));
   }
 }

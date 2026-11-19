@@ -317,7 +317,7 @@ test('the shared server deal persists one native hand with consistent public and
     await verifySatelliteRealtime({ sql, statusPath: realtimeFixture, first, spectator,
       practiceHand: practice.handId, satelliteHand: satellite.handId, secondaryHand: secondaryDeal.handId });
     const { withSatelliteEdgeHttp } = await import('./satelliteEdgeHttp.fixture.mjs');
-    await withSatelliteEdgeHttp(realtimeFixture, async ({ post, players }) => {
+    await withSatelliteEdgeHttp(realtimeFixture, async ({ post, players, observeTable }) => {
       const rejected = await post({ op: 'ping' }, 'invalid-fixture-token');
       assert.equal(rejected.status, 401);
       console.log('SATELLITE_DENO_HTTP_REAL_AUTH_ACCEPTANCE_PASS');
@@ -337,12 +337,15 @@ test('the shared server deal persists one native hand with consistent public and
         SELECT public.provision_online_satellite_table_v1('${actionPilot}',
           '[{"starts_at_second":0,"small_blind":5,"big_blind":10,"big_blind_ante":0}]',1)`).tableId;
       assert.equal(clockCommand(td.actor,actionPilot,1,true).outcome, 'ok');
+      const observers = await observeTable(actionTable);
       const acknowledged = [];
+      const peerDelivered = [];
       const acted = new Set();
       for (let i = 0; i < 8; i++) {
         const started = await post({ op: 'start_hand', tableId: actionTable, idempotencyKey: crypto.randomUUID() });
         const start = await started.json();
         assert.equal(started.status, 200, `Edge start rejected: ${start.error ?? started.status}`);
+        assert.equal(start.outcome, 'ok');
         const active = json(`SELECT json_build_object('actor',s.user_id,'seat',s.seat_no)
           FROM public.online_poker_hands h JOIN public.online_poker_seats s
             ON s.table_id=h.table_id AND s.seat_no=h.to_act_seat WHERE h.id='${start.hand_id}'`);
@@ -356,15 +359,23 @@ test('the shared server deal persists one native hand with consistent public and
         assert.equal(response.status, 200, `Edge action rejected: ${receipt.error ?? response.status}`);
         assert.equal(receipt.ok, true);
         assert.equal(receipt.stateVersion, 1);
+        const deliveries = await Promise.all(observers.map(read => read(start.hand_id)));
+        assert.deepEqual(deliveries.map(event => event.revision), [receipt.stateVersion, receipt.stateVersion]);
+        peerDelivered.push(deliveries[participant === td ? 1 : 0].at - before);
         acted.add(participant.actor);
       }
       assert.equal(acted.size, 2);
       assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${actionTable}' AND status='complete'`), '8');
       assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${actionTable}'`), '200');
       acknowledged.sort((left,right) => left-right);
+      peerDelivered.sort((left,right) => left-right);
       console.log('SATELLITE_EDGE_ACTION_HTTP_DIAGNOSTIC', JSON.stringify({
         tables: 1, players: acted.size, completedHands: 8, completedAcks: acknowledged.length,
         p95Ms: Math.round(acknowledged[Math.ceil(acknowledged.length * .95)-1]), chips: 200, capacityQualified: false,
+      }));
+      console.log('SATELLITE_ACTION_TO_PEER_REALTIME_DIAGNOSTIC', JSON.stringify({
+        tables: 1, authenticatedSockets: observers.length, completedPeerUpdates: peerDelivered.length,
+        p95Ms: Math.round(peerDelivered[Math.ceil(peerDelivered.length * .95)-1]), capacityQualified: false,
       }));
     });
     return;
