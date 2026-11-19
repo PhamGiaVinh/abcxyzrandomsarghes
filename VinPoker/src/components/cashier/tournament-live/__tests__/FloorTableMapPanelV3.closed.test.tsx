@@ -204,6 +204,55 @@ it("reconciles missing source changes even when a partial channel reports health
   expect(screen.getByText("TEST table 7", {exact:false})).toBeInTheDocument();
 });
 
+it("coalesces pending moves and reconnect hints behind a slow fallback read", async () => {
+  vi.useFakeTimers();
+  state.moves.mockResolvedValue({ ok: true, data: [{ status: "pending", pendingMoveId: "move-1" }] });
+  await act(async () => {
+    render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />);
+  });
+  let finish!: (value: unknown) => void;
+  state.roster.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  expect(state.roster).toHaveBeenCalledTimes(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  expect(state.roster).toHaveBeenCalledTimes(2);
+  expect(state.moves).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    window.dispatchEvent(new Event("online"));
+    live.channels[0].status?.("SUBSCRIBED");
+    live.channels[0].changes[0].read();
+    await vi.advanceTimersByTimeAsync(200);
+  });
+  expect(state.roster).toHaveBeenCalledTimes(2);
+  expect(state.entries).toHaveBeenCalledTimes(2);
+  expect(state.restorable).toHaveBeenCalledTimes(2);
+
+  state.roster.mockResolvedValue({ ok: true, data: [table(8)] });
+  await act(async () => {
+    finish({ ok: true, data: [table(7)] });
+  });
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "true");
+  await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+  expect(state.roster).toHaveBeenCalledTimes(3);
+  expect(state.entries).toHaveBeenCalledTimes(3);
+  expect(state.restorable).toHaveBeenCalledTimes(3);
+  expect(state.moves).toHaveBeenCalledTimes(3);
+  expect(screen.getByRole("button", { name: /Bàn 8, 0\/9 ghế/ })).toBeInTheDocument();
+});
+
+it("keeps the pending-move cadence when a fresh array reports the same pending state", async () => {
+  vi.useFakeTimers();
+  state.moves.mockImplementation(async () => ({ ok: true, data: [{ status: "pending", pendingMoveId: "move-1" }] }));
+  const view = render(<FloorTableMapPanelV3 tournament={tour("live")} actorId={null} refreshTrigger={0} />);
+  await act(async () => {});
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  view.rerender(<FloorTableMapPanelV3 tournament={tour("live")} actorId={null} refreshTrigger={1} />);
+  await act(async () => {});
+  expect(state.moves).toHaveBeenCalledTimes(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  expect(state.moves).toHaveBeenCalledTimes(3);
+});
+
 it("uses component publication hints without waiting for the incomplete CDC fallback", async () => {
   vi.useFakeTimers();
   await act(async()=>{render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0}/>);});

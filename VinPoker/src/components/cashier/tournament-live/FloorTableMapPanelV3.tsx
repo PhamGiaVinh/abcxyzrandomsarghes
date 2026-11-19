@@ -123,6 +123,7 @@ function ScopedFloorTableMapPanelV3({
   const [restorableEntries, setRestorableEntries] = useState<FloorRestorableEntry[]>([]);
   const [restoreTarget, setRestoreTarget] = useState<{ scope: string; entryId: string; name: string; destination: { tableId: string; seatNumber: number } } | null>(null);
   const [pendingMoves, setPendingMoves] = useState<FloorPendingTrackerMove[]>([]);
+  const hasPendingMove = pendingMoves.some(move => move.status === "pending");
   const [secondaryLoadError, setSecondaryLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [rosterReady, setRosterReady] = useState(false);
@@ -190,6 +191,7 @@ function ScopedFloorTableMapPanelV3({
   currentReadScope.current = readScope;
   const readSequence = useRef(0);
   const liveHintEpoch = useRef(0);
+  const refreshInBackground = useRef<(() => Promise<void>) | null>(null);
   const liveReadId = useId();
   const load = useCallback(async (silent = false, onRosterVerified?: () => void) => {
     const sequence = ++readSequence.current;
@@ -288,6 +290,7 @@ function ScopedFloorTableMapPanelV3({
       try { failures = await load(true) ? 0 : Math.min(failures + 1, 4); }
       finally { reading = false; if (active && queued) schedule(); }
     };
+    refreshInBackground.current = refresh;
     const invalidate = () => {
       if (!active) return;
       // Keep writes fenced until a read covers the latest hint; allow same-scope display progress.
@@ -335,6 +338,7 @@ function ScopedFloorTableMapPanelV3({
     document.addEventListener("visibilitychange", resume);
     poll();
     return () => {
+      refreshInBackground.current = null;
       active = false; clearTimeout(debounce); clearTimeout(fallback);
       publication.unsubscribe();
       window.removeEventListener("online", resume);
@@ -345,12 +349,15 @@ function ScopedFloorTableMapPanelV3({
   }, [actorId, sessionEpoch, tournament.id, tournamentEnded, v3.enabled, load, liveReadId, supabase]);
 
   useEffect(() => {
-    if (!pendingMoves.some((move) => move.status === "pending")) return;
+    if (!hasPendingMove) return;
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load(true);
+      if (document.visibilityState !== "visible") return;
+      const refresh = refreshInBackground.current;
+      if (refresh) void refresh();
+      else void load(true);
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [load, pendingMoves]);
+  }, [load, hasPendingMove]);
 
   useEffect(() => {
     if (!selectedTable) return;
