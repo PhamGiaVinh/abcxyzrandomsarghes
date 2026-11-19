@@ -13,15 +13,15 @@ const correction = "d9000000-0000-4000-8000-000000000001";
 const ticket = `(SELECT id FROM public.satellite_tickets WHERE source_tournament_id='${source}' AND serial_no=1)`;
 const children = new Set();
 const trackerAssertion = "supabase/pending-tests/satellite_reversal_tracker_start_assert.sql";
-const trackerStart = expected => `
+const trackerStart = (rosterCondition = "id=" + ticket) => `
     SELECT set_config('request.jwt.claim.sub','${owner}',true);
-    SELECT tournament_table_id,table_session_id,1 AS control_epoch
-    FROM public.tournament_seats WHERE table_session_id='d9000000-0000-4000-8000-000000000023'
+    SELECT id AS tournament_table_id,table_session_id,1 AS control_epoch
+    FROM public.tournament_tables WHERE table_session_id='d9000000-0000-4000-8000-000000000023'
     \\gset
     \\set target_id ${target}
-    \\set expected_start ${expected}
-    SELECT CASE WHEN '${expected}'='success' THEN redeemed_for_player_id::text ELSE '' END AS roster_player_id
-      FROM public.satellite_tickets WHERE id=${ticket}
+    \\set expected_start success
+    SELECT redeemed_for_player_id AS roster_player_id
+      FROM public.satellite_tickets WHERE ${rosterCondition}
     \\gset
     \\i ${trackerAssertion}`;
 
@@ -91,7 +91,7 @@ try {
 
   await race("sat-hand-first", "sat-reversal-second", { sql: `
     BEGIN;
-    ${trackerStart("success")}
+    ${trackerStart()}
     SELECT pg_sleep(8);
     COMMIT;` }, `
     BEGIN;
@@ -118,11 +118,23 @@ try {
       AND NOT EXISTS(SELECT 1 FROM public.satellite_redemption_reversals WHERE ticket_id=${ticket});`),
   "remove only the committed fixture hand"), "t");
 
+  assert.equal(await checked(start("sat-attach-survivor", `
+    WITH attached AS (
+      UPDATE public.tournament_seats s
+      SET tournament_table_id=tt.id, table_session_id=tt.table_session_id
+      FROM public.tournament_tables tt, public.tournament_entries e, public.satellite_tickets t
+      WHERE tt.table_session_id='d9000000-0000-4000-8000-000000000023'
+        AND t.target_tournament_id=tt.tournament_id AND t.status='redeemed' AND t.id<>${ticket}
+        AND e.registration_id=t.registration_id AND s.entry_id=e.id AND s.is_active
+        AND s.table_id IN (tt.id,tt.table_id)
+      RETURNING s.id
+    ) SELECT count(*) FROM attached;`), "attach another redeemed seat"), "1");
+
   await race("sat-reversal-first", "sat-hand-second", {
     files: ["-v", "hold_reversal_commit=on", "-f", "supabase/pending-tests/satellite_redemption_reversal_v1.sql"],
   }, `
     BEGIN;
-    ${trackerStart("table_has_no_players")}
+    ${trackerStart(`target_tournament_id='${target}' AND status='redeemed' AND id<>${ticket}`)}
     COMMIT;
     DO $test$
     BEGIN
@@ -139,7 +151,8 @@ try {
     END $test$;`);
 
   assert.equal(await checked(start("sat-hand-final", `
-    SELECT NOT EXISTS(SELECT 1 FROM public.tournament_hands WHERE tournament_id='${target}')
+    SELECT (SELECT count(*)=1 FROM public.tournament_hands WHERE tournament_id='${target}' AND status='in_progress')
+      AND NOT EXISTS(SELECT 1 FROM public.tournament_hands WHERE id='${hand}')
       AND (SELECT count(*)=1 FROM public.satellite_redemption_reversals WHERE ticket_id=${ticket});`),
   "final reversal/hand state"), "t");
 } finally {
