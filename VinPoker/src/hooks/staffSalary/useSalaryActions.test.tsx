@@ -29,10 +29,10 @@ it('does not publish a late old-session salary approval result',async()=>{
  let resolve!:(v:unknown)=>void;f.rpc.mockReturnValueOnce(new Promise(r=>{resolve=r;}));const v=mount();let result!:Promise<unknown>;await act(async()=>{result=v.result.current.approve.mutateAsync().catch(e=>e);});f.auth={...f.auth,session:{access_token:'TEST_SALARY_B'}};v.rerender();await act(async()=>{resolve({data:receipts.approve,error:null});await result;});expect(f.success).not.toHaveBeenCalled();
 });
 it('does not mark a run from outside the selected club and period',async()=>{
- f.rpc.mockResolvedValue({data:{...saved,rows:[]},error:null});const v=mount();await act(async()=>{await expect(v.result.current.markPaid.mutateAsync(runId)).rejects.toThrow();});expect(f.rpc.mock.calls.some(c=>c[0]==='mark_staff_salary_paid')).toBe(false);
+ f.rpc.mockResolvedValue({data:{...saved,rows:[]},error:null});const v=mount();await act(async()=>{await expect(v.result.current.markPaid.mutateAsync({runId,method:"cash"})).rejects.toThrow();});expect(f.rpc.mock.calls.some(c=>c[0]==='mark_staff_salary_paid')).toBe(false);
 });
 it.each(['voided','locked'])('does not call a %s idempotent response a paid salary',async(status)=>{
- f.rpc.mockImplementation(fn=>Promise.resolve({data:fn==='get_staff_salary_report'?saved:{status,run_id:runId,idempotent:true},error:null}));const v=mount();await act(async()=>{await expect(v.result.current.markPaid.mutateAsync(runId)).rejects.toThrow();});expect(f.success).not.toHaveBeenCalled();
+ f.rpc.mockImplementation(fn=>Promise.resolve({data:fn==='get_staff_salary_report'?saved:{status,run_id:runId,idempotent:true},error:null}));const v=mount();await act(async()=>{await expect(v.result.current.markPaid.mutateAsync({runId,method:"cash"})).rejects.toThrow();});expect(f.success).not.toHaveBeenCalled();
 });
 it('rejects an approval receipt echoing another club',async()=>{
  f.rpc.mockResolvedValue({data:{...receipts.approve,club_id:'other'},error:null});const v=mount();await act(async()=>{await expect(v.result.current.approve.mutateAsync()).rejects.toThrow();});expect(f.success).not.toHaveBeenCalled();
@@ -44,10 +44,10 @@ it('accepts the short canonical already-approved receipt',async()=>{
  f.rpc.mockResolvedValue({data:{status:'approved',idempotent:true},error:null});const v=mount();await act(async()=>{await v.result.current.approve.mutateAsync();});expect(f.success).toHaveBeenCalledTimes(1);
 });
 it('accepts the short canonical already-paid receipt for the exact run',async()=>{
- f.rpc.mockImplementation(fn=>Promise.resolve({data:fn==='get_staff_salary_report'?saved:{status:'paid',run_id:runId,idempotent:true},error:null}));const v=mount();await act(async()=>{await v.result.current.markPaid.mutateAsync(runId);});expect(f.success).toHaveBeenCalledTimes(1);
+ f.rpc.mockImplementation(fn=>Promise.resolve({data:fn==='get_staff_salary_report'?saved:{status:'paid',run_id:runId,idempotent:true},error:null}));const v=mount();await act(async()=>{await v.result.current.markPaid.mutateAsync({runId,method:"cash"});});expect(f.success).toHaveBeenCalledTimes(1);
 });
 it.each([{...saved,club_id:'other'},{...saved,period_year:2027},{...saved,period_month:11},{...saved,header:{status:'submitted'}}])('refuses payment on an unverified or unapproved report %j',async(data)=>{
- f.rpc.mockResolvedValue({data,error:null});const v=mount();await act(async()=>{await expect(v.result.current.markPaid.mutateAsync(runId)).rejects.toThrow();});expect(f.rpc.mock.calls.some(c=>c[0]==='mark_staff_salary_paid')).toBe(false);
+ f.rpc.mockResolvedValue({data,error:null});const v=mount();await act(async()=>{await expect(v.result.current.markPaid.mutateAsync({runId,method:"cash"})).rejects.toThrow();});expect(f.rpc.mock.calls.some(c=>c[0]==='mark_staff_salary_paid')).toBe(false);
 });
 it('does not issue another action while an approval is still in flight',async()=>{
  let resolve!:(v:unknown)=>void;f.rpc.mockReturnValueOnce(new Promise(r=>{resolve=r;}));const v=mount();let result!:Promise<unknown>;await act(async()=>{result=v.result.current.approve.mutateAsync();});await act(async()=>{await expect(v.result.current.reject.mutateAsync('TEST reason')).rejects.toThrow();await expect(v.result.current.chot.mutateAsync()).rejects.toThrow();});expect(f.rpc).toHaveBeenCalledTimes(1);await act(async()=>{resolve({data:receipts.approve,error:null});await result;});
@@ -56,16 +56,16 @@ it('bounds a stalled mutation without automatically resending it',async()=>{
  vi.useFakeTimers();f.rpc.mockReturnValueOnce(new Promise(()=>{}));const v=mount();let result!:Promise<unknown>;await act(async()=>{result=v.result.current.chot.mutateAsync().catch(e=>e);});await act(async()=>vi.advanceTimersByTimeAsync(20001));expect(await result).toBeInstanceOf(Error);expect(f.rpc).toHaveBeenCalledTimes(1);expect(f.success).not.toHaveBeenCalled();
 });
 it('times out the payment pre-read without ever sending a payment intent',async()=>{
- vi.useFakeTimers();f.rpc.mockReturnValueOnce(new Promise(()=>{}));const v=mount();let result!:Promise<unknown>;await act(async()=>{result=v.result.current.markPaid.mutateAsync(runId).catch(e=>e);});await act(async()=>vi.advanceTimersByTimeAsync(10001));expect(await result).toBeInstanceOf(Error);expect(f.rpc.mock.calls.map(c=>c[0])).toEqual(['get_staff_salary_report']);
+ vi.useFakeTimers();f.rpc.mockReturnValueOnce(new Promise(()=>{}));const v=mount();let result!:Promise<unknown>;await act(async()=>{result=v.result.current.markPaid.mutateAsync({runId,method:"cash"}).catch(e=>e);});await act(async()=>vi.advanceTimersByTimeAsync(10001));expect(await result).toBeInstanceOf(Error);expect(f.rpc.mock.calls.map(c=>c[0])).toEqual(['get_staff_salary_report']);
 });
 it('ignores a captured fire-and-forget action after session replacement',()=>{
  const v=mount(),old=v.result.current.chot.mutate;f.auth={...f.auth,session:{access_token:'TEST_SALARY_B'}};v.rerender();expect(()=>old()).not.toThrow();expect(f.rpc).not.toHaveBeenCalled();
 });
 it('does not send a payment after its pre-read completes in an abandoned session',async()=>{
- let resolve!:(v:unknown)=>void;f.rpc.mockReturnValueOnce(new Promise(r=>{resolve=r;}));const v=mount();let result!:Promise<unknown>;await act(async()=>{result=v.result.current.markPaid.mutateAsync(runId).catch(e=>e);});f.auth={...f.auth,session:{access_token:'TEST_SALARY_NEW'}};v.rerender();await act(async()=>{resolve({data:saved,error:null});await result;});expect(f.rpc.mock.calls.map(c=>c[0])).toEqual(['get_staff_salary_report']);expect(f.success).not.toHaveBeenCalled();
+ let resolve!:(v:unknown)=>void;f.rpc.mockReturnValueOnce(new Promise(r=>{resolve=r;}));const v=mount();let result!:Promise<unknown>;await act(async()=>{result=v.result.current.markPaid.mutateAsync({runId,method:"cash"}).catch(e=>e);});f.auth={...f.auth,session:{access_token:'TEST_SALARY_NEW'}};v.rerender();await act(async()=>{resolve({data:saved,error:null});await result;});expect(f.rpc.mock.calls.map(c=>c[0])).toEqual(['get_staff_salary_report']);expect(f.success).not.toHaveBeenCalled();
 });
 it('does not send a second payment intent for a PT month summary of daily cash already paid',async()=>{
- f.rpc.mockImplementation(fn=>Promise.resolve({data:fn==='get_staff_salary_report'?{...saved,rows:[{...saved.rows[0],employment_type:'part_time'}]}:receipts.markPaid,error:null}));const v=mount();await act(async()=>{await expect(v.result.current.markPaid.mutateAsync(runId)).rejects.toThrow();});expect(f.rpc.mock.calls.map(c=>c[0])).toEqual(['get_staff_salary_report']);expect(f.success).not.toHaveBeenCalled();
+ f.rpc.mockImplementation(fn=>Promise.resolve({data:fn==='get_staff_salary_report'?{...saved,rows:[{...saved.rows[0],employment_type:'part_time'}]}:receipts.markPaid,error:null}));const v=mount();await act(async()=>{await expect(v.result.current.markPaid.mutateAsync({runId,method:"cash"})).rejects.toThrow();});expect(f.rpc.mock.calls.map(c=>c[0])).toEqual(['get_staff_salary_report']);expect(f.success).not.toHaveBeenCalled();
 });
 it.skipIf(!process.env.VINPOKER_STAFF_NATIVE_ACTION_REPORT)('consumes the exact captured canonical native workflow and idempotent receipt shapes',async()=>{
  const fs=await import('node:fs');const native=JSON.parse(fs.readFileSync(process.env.VINPOKER_STAFF_NATIVE_ACTION_REPORT!,'utf8'));expect(native.rollbackExact).toBe(true);const s=Object.fromEntries(native.stages.map((x:any)=>[x.stage,x.data])) as Record<string,any>;
@@ -83,11 +83,11 @@ it('re-reads an already paid FT run after an unknown payment outcome and a remou
   throw Error('unexpected RPC');
  });
  const first=mount();let outcome!:Promise<unknown>;
- await act(async()=>{outcome=first.result.current.markPaid.mutateAsync(runId).catch(e=>e);});
+ await act(async()=>{outcome=first.result.current.markPaid.mutateAsync({runId,method:"cash"}).catch(e=>e);});
  await act(async()=>vi.advanceTimersByTimeAsync(20001));
  expect(await outcome).toBeInstanceOf(Error);expect(f.success).not.toHaveBeenCalled();
  first.unmount();const second=mount();
- await act(async()=>{await second.result.current.markPaid.mutateAsync(runId);});
+ await act(async()=>{await second.result.current.markPaid.mutateAsync({runId,method:"cash"});});
  expect(f.rpc.mock.calls.map(c=>c[0])).toEqual(['get_staff_salary_report','mark_staff_salary_paid','get_staff_salary_report','mark_staff_salary_paid']);
  expect(writes).toBe(1);expect(f.success).toHaveBeenCalledTimes(1);
 });
