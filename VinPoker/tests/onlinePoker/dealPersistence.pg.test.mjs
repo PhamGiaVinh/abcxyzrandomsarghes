@@ -146,7 +146,10 @@ test('the shared server deal persists one native hand with consistent public and
   `);
   sql(file('../../supabase/pending-migrations/20261119204101_online_satellite_deal_levels.sql'));
   sql(file('../../supabase/pending-migrations/20261119204315_online_satellite_deal_commit_fence.sql'));
-  const level = () => json(`SET ROLE service_role; SELECT public.op_read_satellite_deal_level('${tableId}')`);
+  const level = (id = tableId) => {
+    assert.match(id, /^[0-9a-f-]{36}$/);
+    return json(`SET ROLE service_role; SELECT public.op_read_satellite_deal_level('${id}')`);
+  };
   assert.deepEqual(level(), { mode: 'practice' });
   const clubId = 'ab510000-0000-4000-8000-000000000016';
   const pilotId = 'ab510000-0000-4000-8000-000000000017';
@@ -181,24 +184,34 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql("SELECT to_regprocedure('public.op_preserve_bba_hand_state()') IS NULL"), 't');
   sql(anteMigration);
 
-  const reads = {
-    online_poker_tables: `SELECT row_to_json(t) FROM public.online_poker_tables t WHERE id='${tableId}'`,
-    online_poker_seats: `SELECT json_agg(s) FROM public.online_poker_seats s WHERE table_id='${tableId}'`,
-    online_poker_hands: `SELECT COALESCE((SELECT json_build_object('hand_no',hand_no,'button_seat',button_seat)
-      FROM public.online_poker_hands WHERE table_id='${tableId}' ORDER BY hand_no DESC LIMIT 1),'null'::json)`,
-  };
   const admin = {
     from(table) {
-      assert.ok(Object.hasOwn(reads, table));
+      let id;
+      const read = () => {
+        assert.match(id, /^[0-9a-f-]{36}$/);
+        const reads = {
+          online_poker_tables: `SELECT row_to_json(t) FROM public.online_poker_tables t WHERE id='${id}'`,
+          online_poker_seats: `SELECT json_agg(s) FROM public.online_poker_seats s WHERE table_id='${id}'`,
+          online_poker_hands: `SELECT COALESCE((SELECT json_build_object('hand_no',hand_no,'button_seat',button_seat)
+            FROM public.online_poker_hands WHERE table_id='${id}' ORDER BY hand_no DESC LIMIT 1),'null'::json)`,
+        };
+        assert.ok(Object.hasOwn(reads, table));
+        return { data: json(reads[table]), error: null };
+      };
       const query = {
-        select: () => query, eq: () => query, order: () => query, limit: () => query,
-        maybeSingle: async () => ({ data: json(reads[table]), error: null }),
-        then: resolve => resolve({ data: json(reads[table]), error: null }),
+        select: () => query, order: () => query, limit: () => query,
+        eq(column, value) {
+          assert.equal(column, table === 'online_poker_tables' ? 'id' : 'table_id');
+          id = value;
+          return query;
+        },
+        maybeSingle: async () => read(),
+        then: resolve => resolve(read()),
       };
       return query;
     },
     async rpc(name, args) {
-      if (name === 'op_read_satellite_deal_level') return { data: level(), error: null };
+      if (name === 'op_read_satellite_deal_level') return { data: level(args.p_table_id), error: null };
       assert.equal(name, 'op_start_hand');
       const data = json(startStatement(args));
       return { data, error: null };
@@ -553,7 +566,7 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${sideHand}'`), '3');
 
   const anteTable = 'ab510000-0000-4000-8000-000000000014';
-  const anteHand = 'ab510000-0000-4000-8000-000000000015';
+  const preparedAnteHand = 'ab510000-0000-4000-8000-000000000015';
   sql(`
     INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
     VALUES ('${anteTable}','Disposable BBA TEST',5,10,0,1000,100);
@@ -561,7 +574,7 @@ test('the shared server deal persists one native hand with consistent public and
     VALUES ('${anteTable}',2,'${first}',100,'sitting'), ('${anteTable}',5,'${second}',14,'sitting');
   `);
   const anteDeal = createHand({
-    handId: anteHand, tableId: anteTable, handNo: 1, buttonSeat: 2, sb: 5n, bb: 10n, bigBlindAnte: 10n,
+    handId: preparedAnteHand, tableId: anteTable, handNo: 1, buttonSeat: 2, sb: 5n, bb: 10n, bigBlindAnte: 10n,
   }, [...deck], [{ seat: 2, playerId: first, stack: 100n }, { seat: 5, playerId: second, stack: 14n }]);
   assert.equal(anteDeal.error, undefined);
   const anteSplit = serializeAuthoritative(anteDeal.state);
@@ -589,13 +602,32 @@ test('the shared server deal persists one native hand with consistent public and
     p_state: { ...currentAnteArgs.p_state, satelliteLevel: { clockRevision: '2', levelStartSecond: '60' } },
   };
   assert.throws(() => json(startStatement(staleAnteArgs)), /online_satellite_stale_deal_level/);
+  const clockWriter = session('g03-satellite-clock-writer');
+  const waitingDeal = session('g03-satellite-stale-deal');
+  try {
+    clockWriter.send(`BEGIN;
+      UPDATE online_satellite_private.table_clocks SET revision=3 WHERE table_id='${anteTable}';
+      \\echo satellite_clock_locked`);
+    await clockWriter.waitFor('satellite_clock_locked');
+    waitingDeal.send(startStatement(currentAnteArgs));
+    await waitForPostgresLock('g03-satellite-stale-deal');
+    clockWriter.send('COMMIT;');
+    await clockWriter.finish();
+    await assert.rejects(waitingDeal.finish(), /online_satellite_stale_deal_level/);
+  } finally {
+    clockWriter.stop();
+    waitingDeal.stop();
+  }
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${anteTable}'`), '0');
   sql(`UPDATE public.online_poker_tables SET sb=4,bb=8 WHERE id='${anteTable}'`);
-  const anteReceipt = await admin.rpc('op_start_hand', currentAnteArgs);
-  assert.equal(anteReceipt.data?.outcome, 'ok', JSON.stringify(anteReceipt));
+  const anteReceipt = await dealNextHand(admin, anteTable, null);
+  assert.equal(anteReceipt.ok, true, JSON.stringify(anteReceipt));
+  const anteHand = anteReceipt.handId;
   assert.equal(sql(`SELECT state_schema_version FROM public.online_poker_hands WHERE id='${anteHand}'`), '2');
+  const loadedAnte = json(`SET ROLE service_role; SELECT public.op_load_action_context('${anteHand}')`);
+  const reloadedAnte = deserializeAuthoritative(loadedAnte.state, loadedAnte.live_deck, loadedAnte.holes);
   const fold = { type: 'fold', seat: 2 };
-  const anteSettled = applyAction(anteDeal.state, fold);
+  const anteSettled = applyAction(reloadedAnte, fold);
   assert.equal(anteSettled.error, undefined);
   const anteFinal = serializeAuthoritative(anteSettled.state);
   const submitAnteFold = (state) => {
@@ -629,7 +661,7 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(json(submitAnteFold(anteFinal.stateJson)).outcome, 'ok');
   assert.equal(anteSeatStacks(), '95,19');
   assert.deepEqual(json(`SELECT satellite_deal_level FROM public.online_poker_hands WHERE id='${anteHand}'`),
-    { clockRevision: '2', levelStartSecond: '120', sb: '5', bb: '10', bigBlindAnte: '10' });
+    { clockRevision: '3', levelStartSecond: '120', sb: '5', bb: '10', bigBlindAnte: '10' });
   assert.equal(sql(`SELECT state->'seats'->1->>'deadAnte' FROM public.online_poker_hands WHERE id='${anteHand}'`), '4');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
