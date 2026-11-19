@@ -26,6 +26,16 @@ function openControl() {
   );
 }
 
+it("shows an unassigned player a waiting state without a table link", async () => {
+  rpc.mockReturnValue({ abortSignal: async () => ({
+    data: { status: "unassigned", tableId: null }, error: null,
+  }) });
+  openControl();
+  expect(await screen.findByText("Bạn chưa được xếp bàn.")).toBeVisible();
+  expect(screen.queryByRole("link", { name: "Vào bàn" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
 it("shows the participant's own qualification on their closed table", async () => {
   const ticketId = "ab510000-0000-4000-8000-000000000032";
   const destinationId = "ab510000-0000-4000-8000-000000000018";

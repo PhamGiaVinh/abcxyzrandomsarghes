@@ -27,6 +27,10 @@ const unprovisioned = z.object({
   clockRevision: z.null(),
   canProvision: z.boolean(),
 });
+const unassigned = z.object({
+  status: z.literal("unassigned"),
+  tableId: z.null(),
+});
 const clockReceipt = z.object({ outcome: z.enum(["ok", "stale"]) });
 const ownResult = z.object({ qualified: z.boolean(), destinationName: z.string(), lockedAt: z.string() });
 
@@ -51,7 +55,7 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
       const { data, error } = await client.rpc("get_online_satellite_table_v1" as never,
         { p_pilot_id: pilotId } as never).abortSignal(signal);
       if (error) throw error;
-      return z.union([tableSnapshot, unprovisioned]).nullable().parse(data);
+      return z.union([tableSnapshot, unprovisioned, unassigned]).nullable().parse(data);
     },
     retry: false,
   });
@@ -95,6 +99,7 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
             <Button variant="outline" onClick={() => void snapshot.refetch()}>Thử lại</Button>
           </div>
         ) : !snapshot.data ? <p>Bàn chưa sẵn sàng hoặc bạn chưa có quyền truy cập.</p>
+        : snapshot.data.status === "unassigned" ? <p role="status">Bạn chưa được xếp bàn.</p>
         : snapshot.data.status === "unprovisioned" ? (
           snapshot.data.canProvision && pilot.success
             ? <SatelliteBlindSchedule pilotId={pilot.data} onCreated={() => void snapshot.refetch()} />
@@ -130,7 +135,7 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
               {snapshot.data.canManage && snapshot.data.status !== "closed"
                 && (!snapshot.data.qualificationReached || snapshot.data.running) && (
                 <Button variant="outline" disabled={clock.isPending || deal.isPending}
-                  onClick={() => snapshot.data?.status !== "unprovisioned" && snapshot.data && clock.mutate(snapshot.data)}>
+                  onClick={() => snapshot.data?.tableId && clock.mutate(snapshot.data)}>
                   {clock.isPending ? "Đang gửi…" : snapshot.data.running ? "Tạm dừng đồng hồ" : "Chạy đồng hồ"}
                 </Button>
               )}
