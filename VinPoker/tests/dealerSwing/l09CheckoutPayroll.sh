@@ -11,14 +11,14 @@ observe() {
   db -c "SELECT coalesce((SELECT wait_event_type || ':' || wait_event FROM pg_stat_activity WHERE application_name='$1'), 'none')"
 }
 
-while IFS='|' read -r sample workload actor club attendance month; do
+while IFS='|' read -r sample workload actor payroll_actor club attendance month; do
   writer_pid=''
   if [[ "$workload" != baseline ]]; then
     PGAPPNAME="l09-writer-$sample" db > "$out/save-$sample.jsonl" <<SQL &
 BEGIN;
 SET LOCAL statement_timeout='5s';
 SET LOCAL ROLE authenticated;
-SET LOCAL request.jwt.claim.sub='$actor';
+SET LOCAL request.jwt.claim.sub='$payroll_actor';
 SELECT clock_timestamp() AS started \gset
 SELECT public.save_payroll_period_v2('$club',extract(year FROM date '$month')::int,
   extract(month FROM date '$month')::int,date '$month',(date '$month' + interval '1 month - 1 day')::date,
@@ -72,7 +72,7 @@ SQL
   wait "$checkout_pid"
   jq -e -c --arg wait "$observed" 'select(.success == true) + {wait_observed:$wait}' "$out/checkout-$sample.jsonl" >> "$out/checkout.jsonl"
   test "$(db -c "SELECT count(*) FROM public.dealer_attendance WHERE id='$attendance' AND status='checked_out' AND check_out_time IS NOT NULL AND total_worked_minutes_today >= 0")" = 1
-done < <(db -F '|' -c 'SELECT sample,workload,actor_id,payroll_club_id,attendance_id,month_start FROM public.l09_checkout_fixture ORDER BY sample')
+done < <(db -F '|' -c 'SELECT sample,workload,actor_id,payroll_actor_id,payroll_club_id,attendance_id,month_start FROM public.l09_checkout_fixture ORDER BY sample')
 
 jq -s '
   if length != 80 then error("incomplete checkout capture") else
