@@ -301,4 +301,28 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT status FROM public.online_poker_tables WHERE id='${closingTable}'`), 'closed');
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${closingTable}'`), '0');
   assert.equal(sql(`SELECT sum(amount) FROM public.online_poker_chip_ledger WHERE table_id='${closingTable}'`), '15');
+
+  const pausedTable = 'ab510000-0000-4000-8000-000000000008';
+  const pausedHand = 'ab510000-0000-4000-8000-000000000009';
+  sql(`
+    INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
+    VALUES ('${pausedTable}','Disposable ordinary deal pause TEST',5,10,0,1000,100);
+    INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status)
+    VALUES ('${pausedTable}',2,'${first}',100,'sitting'), ('${pausedTable}',5,'${second}',100,'sitting');
+  `);
+  const ordinary = createHand({
+    handId: pausedHand, tableId: pausedTable, handNo: 1, buttonSeat: 2, sb: 5n, bb: 10n,
+  }, [...deck], [{ seat: 2, playerId: first, stack: 100n }, { seat: 5, playerId: second, stack: 100n }]);
+  assert.equal(ordinary.error, undefined);
+  assert.equal(ordinary.state.status, 'betting');
+  const ordinaryState = serializeAuthoritative(ordinary.state);
+  const ordinaryArgs = {
+    p_state: ordinaryState.stateJson, p_deck: deck, p_board_future: ordinaryState.liveDeck,
+    p_holes: ordinaryState.holes, p_events: ordinary.events.map(({type, payload}) => ({type, payload})),
+    p_engine_version: ENGINE_VERSION, p_act_deadline: '2030-01-01T12:00:00Z', p_actor_user_id: null,
+  };
+  sql(`UPDATE public.online_poker_tables SET status='paused' WHERE id='${pausedTable}'`);
+  const paused = await admin.rpc('op_start_hand', ordinaryArgs);
+  assert.equal(paused.data.outcome, 'rejected', 'A prepared regular deal must not start after a pause commits');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${pausedTable}'`), '0');
 });
