@@ -37,6 +37,9 @@ BEGIN
       AND NOT EXISTS (
         SELECT 1 FROM online_satellite_private.table_clocks c WHERE c.table_id = s.table_id
       )
+      AND NOT EXISTS (
+        SELECT 1 FROM public.online_poker_tables t WHERE t.id=s.table_id AND t.is_satellite
+      )
       AND s.last_seen_at < now() - make_interval(secs => p_stale_secs)
       -- sit-race guard: a freshly (re)claimed seat keeps a fresh joined_at even if its
       -- last_seen_at is old, so require BOTH to be stale.

@@ -12,10 +12,12 @@ DECLARE
 BEGIN
   IF TG_OP <> 'INSERT' THEN
     SELECT EXISTS (SELECT 1 FROM online_satellite_private.table_clocks WHERE table_id=OLD.table_id)
+      OR EXISTS (SELECT 1 FROM public.online_poker_tables WHERE id=OLD.table_id AND is_satellite)
     INTO source_bound;
   END IF;
   IF TG_OP <> 'DELETE' THEN
     SELECT EXISTS (SELECT 1 FROM online_satellite_private.table_clocks WHERE table_id=NEW.table_id)
+      OR EXISTS (SELECT 1 FROM public.online_poker_tables WHERE id=NEW.table_id AND is_satellite)
     INTO target_bound;
   END IF;
   IF source_bound OR target_bound THEN

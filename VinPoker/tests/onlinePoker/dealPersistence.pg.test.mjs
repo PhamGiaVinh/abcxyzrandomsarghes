@@ -766,6 +766,7 @@ test('the shared server deal persists one native hand with consistent public and
     FROM public.online_poker_seats WHERE table_id='${setupReceipt.tableId}'`);
   assert.deepEqual(provisionedStacks(), [135,145]);
   const reapPractice = 'ab510000-0000-4000-8000-000000000020';
+  const missingBinding = 'ab510000-0000-4000-8000-000000000022';
   sql(`
     ALTER TABLE public.online_poker_tables ADD COLUMN host_user_id uuid REFERENCES auth.users(id);
     ALTER TABLE public.online_poker_seats ADD COLUMN last_seen_at timestamptz NOT NULL DEFAULT now();
@@ -776,15 +777,21 @@ test('the shared server deal persists one native hand with consistent public and
   sql(file('../../supabase/pending-migrations/20261119205341_online_satellite_exclude_practice_reaper.sql'));
   sql(`
     INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default,host_user_id)
-    VALUES ('${reapPractice}','Disposable practice reaper TEST',5,10,0,1000,100,'${spectator}');
+    VALUES ('${reapPractice}','Disposable practice reaper TEST',5,10,0,1000,100,'${spectator}'),
+      ('${missingBinding}','Disposable missing Satellite binding TEST',5,10,0,1000,100,NULL);
     INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status,joined_at,last_seen_at)
-    VALUES ('${reapPractice}',1,'${spectator}',100,'sitting',now()-interval '2 hours',now()-interval '2 hours');
+    VALUES ('${reapPractice}',1,'${spectator}',100,'sitting',now()-interval '2 hours',now()-interval '2 hours'),
+      ('${missingBinding}',1,'${first}',100,'sitting',now()-interval '2 hours',now()-interval '2 hours');
+    UPDATE public.online_poker_tables SET is_satellite=true WHERE id='${missingBinding}';
     UPDATE public.online_poker_seats SET joined_at=now()-interval '2 hours',last_seen_at=now()-interval '2 hours'
     WHERE table_id='${setupReceipt.tableId}';
   `);
   assert.deepEqual(json('SET ROLE service_role; SELECT public.op_reap_stale_seats(3600)'), { outcome: 'ok', reaped: 1 });
   assert.equal(sql(`SELECT status FROM public.online_poker_seats WHERE table_id='${reapPractice}'`), 'empty');
   assert.deepEqual(provisionedStacks(), [135,145]);
+  assert.equal(sql(`SELECT stack FROM public.online_poker_seats WHERE table_id='${missingBinding}' AND user_id='${first}'`), '100');
+  assert.throws(() => sql(`UPDATE public.online_poker_seats SET user_id=NULL WHERE table_id='${missingBinding}'`),
+    /online_satellite_roster_is_fixed/);
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
