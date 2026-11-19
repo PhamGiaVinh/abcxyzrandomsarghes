@@ -1,14 +1,31 @@
 import {render,screen,fireEvent} from '@testing-library/react';
 import {afterEach,beforeEach,describe,it,expect,vi} from 'vitest';
 const read=vi.hoisted(()=>({data:[] as unknown[],isLoading:false,isFetching:false,dataUpdatedAt:0,isError:false,error:null as unknown,refetch:vi.fn()}));
+const navigation = vi.hoisted(() => ({ navigate: vi.fn(), showInbox: false }));
 vi.mock('@/hooks/useTournaments',()=>({useTournaments:()=>read}));
 vi.mock('@tanstack/react-query',()=>({useQueryClient:()=>({invalidateQueries:vi.fn()})}));
-vi.mock('react-router-dom',()=>({useNavigate:()=>vi.fn()}));
+vi.mock('react-router-dom',()=>({useNavigate:()=>navigation.navigate}));
 vi.mock('@/integrations/supabase/SupabaseClientContext',()=>({useSupabaseClient:()=>({})}));
 vi.mock('@/ops/auth/OpsAuthProvider',()=>({useOpsAuth:()=>({user:{id:'floor-test'}})}));
 vi.mock('@/ops/auth/OpsCapabilityProvider',()=>({useOpsCapabilities:()=>({loading:false,clubs:[{id:'club-test',name:'Quads TEST'}],floorClubIds:['club-test'],scope:[{club_id:'club-test',can_owner:false}],isSuperAdmin:false,scopeError:null,metadataError:null})}));
 vi.mock('@/ops/workspace/OpsWorkspaceProvider',()=>({useOpsWorkspace:()=>({selectedClubId:'club-test'})}));
-vi.mock('@/components/floor/FloorVoiceAlertInbox',()=>({FloorVoiceAlertInbox:()=>null}));
+vi.mock('@/components/floor/FloorVoiceAlertInbox',()=>({
+  FloorVoiceAlertInbox: ({ tournaments, onSelect }: {
+    tournaments: Array<{ id: string }>;
+    onSelect: (tournamentId: string, alertId: string) => void;
+  }) => navigation.showInbox && tournaments.length > 0
+    ? <button onClick={() => onSelect(tournaments[0].id, 'alert-test')}>Mở cảnh báo TEST</button>
+    : null,
+}));
+vi.mock('@/lib/featureFlags', async importOriginal => {
+  const original = await importOriginal<typeof import('@/lib/featureFlags')>();
+  return {
+    ...original,
+    get FEATURES() {
+      return { ...original.FEATURES, trackerVoiceInput: navigation.showInbox };
+    },
+  };
+});
 vi.mock('@/ops/opsMutations',()=>({createTournament:vi.fn(),updateTournament:vi.fn(),updateTournamentLive:vi.fn(),mutationError:()=> 'TEST failure'}));
 import OpsTournaments from './OpsTournaments';
 describe('Floor tournament read states',()=>{
@@ -23,7 +40,7 @@ describe('Floor tournament read states',()=>{
   read.isFetching=true;view.rerender(<OpsTournaments/>);expect(view.container.querySelector('time')).toBeNull();
   read.isFetching=false;read.isError=true;view.rerender(<OpsTournaments/>);expect(view.container.querySelector('time')).toBeNull();
  });
- afterEach(()=>vi.useRealTimers());
+ afterEach(()=>{vi.useRealTimers();navigation.showInbox=false;navigation.navigate.mockClear();});
  beforeEach(()=>{read.data=[];read.isLoading=false;read.isFetching=false;read.dataUpdatedAt=0;read.isError=false;read.error=null;read.refetch.mockReset();});
  it('shows a query failure instead of claiming zero tournaments and offers retry',()=>{
   read.isError=true;read.error={code:'PGRST201',message:'ambiguous relationship'};
@@ -37,6 +54,13 @@ describe('Floor tournament read states',()=>{
   render(<OpsTournaments/>);
   expect(screen.getByText('TEST active tournament')).toBeInTheDocument();
   expect(screen.queryByText('Đã kết thúc')).not.toBeInTheDocument();
+ });
+ it('opens the Floor tables route with the selected club, tournament and alert', () => {
+  navigation.showInbox = true;
+  read.data = [{id:'tour-test',name:'TEST Floor alert',status:'active',start_time:'2026-10-14T10:00:00Z',buy_in:0,players_remaining:8,current_level:1,current_blinds:null}];
+  render(<OpsTournaments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Mở cảnh báo TEST' }));
+  expect(navigation.navigate).toHaveBeenCalledExactlyOnceWith('/ops/floor/tournaments/tour-test/tables?club=club-test&alert=alert-test');
  });
  it('labels registration-open tournaments without presenting them as completed',()=>{
   read.data=[{id:'tour-test',name:'TEST registration open',status:'registration_open',start_time:'2026-10-14T10:00:00Z',buy_in:0,players_remaining:8,current_level:1,current_blinds:null}];
