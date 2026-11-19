@@ -1286,9 +1286,9 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayro
                 finance.approvalRiskLevel === "blocked" ? "text-destructive" :
                 finance.approvalRiskLevel === "review" ? "text-warning" : "text-success"
               }`}>
-                Trạng thái sẵn sàng chi trả: {
-                  finance.approvalRiskLevel === "blocked" ? "Không nên chi trước khi đối chiếu" :
-                  finance.approvalRiskLevel === "review" ? "Cần kiểm tra trước khi duyệt" : "Sẵn sàng duyệt"
+                Đối chiếu bảng lương: {
+                  finance.approvalRiskLevel === "blocked" ? "Có chênh lệch thực lãnh" :
+                  finance.approvalRiskLevel === "review" ? "Cần đối chiếu ca làm" : "Không phát hiện chênh lệch"
                 }
               </div>
               <ul className="text-[11px] text-muted-foreground mt-0.5 space-y-0.5">
