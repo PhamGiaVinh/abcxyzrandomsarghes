@@ -154,6 +154,11 @@ function publicWire(): WirePublicHandState {
 }
 
 describe('wirePublicToView — projection + secrecy', () => {
+  it('preserves the blind and ante recorded for the hand', () => {
+    const wire = publicWire();
+    wire.config = { ...wire.config, sb: '40', bb: '80', bigBlindAnte: '80', schemaVersion: 2 };
+    expect(wirePublicToView(wire).blinds).toEqual({ sb: '40', bb: '80', bigBlindAnte: '80' });
+  });
   it('maps config/board/pot and sets isButton/isToAct flags from the wire', () => {
     const v = wirePublicToView(publicWire());
     expect(v.handId).toBe('h1');

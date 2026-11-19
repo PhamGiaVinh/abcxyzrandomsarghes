@@ -496,6 +496,7 @@ export function wirePublicToView(
     handId: wire.config.handId,
     tableId: wire.config.tableId,
     handNo: wire.config.handNo,
+    blinds: { sb: wire.config.sb, bb: wire.config.bb, bigBlindAnte: wire.config.bigBlindAnte },
     street: wire.street,
     board: [...wire.board],
     pot: wire.pot,

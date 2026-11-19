@@ -98,6 +98,7 @@ function buildRingView(meta: LiveTableMeta, hand: PublicHandView | null, seats: 
     handId: hand?.handId ?? '',
     tableId: meta.id,
     handNo: hand?.handNo ?? 0,
+    blinds: hand?.blinds,
     street: hand?.street ?? 'preflop',
     board: hand?.board ?? [],
     pot: hand?.pot ?? '0',
@@ -460,7 +461,12 @@ export default function OnlinePokerTable() {
           <Button asChild variant="ghost" size="sm"><Link to="/poker"><ChevronLeft className="h-4 w-4" /> Sảnh</Link></Button>
         )}
         <h1 className="truncate text-base font-semibold">{table.name}</h1>
-        <Badge variant="outline" className="tabular-nums text-[11px]">{fmtChips(table.sb)}/{fmtChips(table.bb)}</Badge>
+        {(!isSatellite || hand?.blinds) && (
+          <Badge variant="outline" className="tabular-nums text-[11px]">
+            {fmtChips(hand?.blinds?.sb ?? table.sb)}/{fmtChips(hand?.blinds?.bb ?? table.bb)}
+            {hand?.blinds?.bigBlindAnte && ` · Ante ${fmtChips(hand.blinds.bigBlindAnte)}`}
+          </Badge>
+        )}
         <Button
           variant="ghost"
           size="icon"
@@ -510,11 +516,11 @@ export default function OnlinePokerTable() {
           (N8) instead of pushing it up — the felt keeps its full size every turn, no resize. */}
       <div className="relative flex min-h-0 w-full flex-1 items-center justify-center">
         {cinematic && showing ? (
-          <AllInRunout hand={showing.ringView} bb={table.bb} skin={feltSkin} onDone={() => setDwell(null)} />
+          <AllInRunout hand={showing.ringView} bb={showing.ringView.blinds?.bb ?? table.bb} skin={feltSkin} onDone={() => setDwell(null)} />
         ) : (
           <SeatRing
             hand={feltView}
-            bb={table.bb}
+            bb={feltView.blinds?.bb ?? table.bb}
             winnerSeats={feltWinners}
             dealSignal={dealSignal}
             dealSeats={dealSeats}
@@ -534,7 +540,7 @@ export default function OnlinePokerTable() {
             Hidden during the all-in cinematic (it shows its own hero). Lifts above the action
             dock while it's my turn so the buttons never cover the cards. */}
         {!(cinematic && showing) && (
-          <HeroHud hand={feltView} bb={table.bb} />
+          <HeroHud hand={feltView} bb={feltView.blinds?.bb ?? table.bb} />
         )}
 
         {/* ── bottom overlay (N8) — result / action dock / waiting hint float over the felt's
@@ -551,7 +557,7 @@ export default function OnlinePokerTable() {
                 handNo={showing.ringView.handNo}
                 seats={showing.ringView.seats}
                 mySeat={showing.ringView.mySeat}
-                bb={table.bb}
+                bb={hand?.blinds?.bb ?? table.bb}
               />
             </div>
           </div>
@@ -567,7 +573,7 @@ export default function OnlinePokerTable() {
                 logic + sizing are unchanged; only its container moves.
                 pointer-events-none here — ActionBar re-enables taps per control group so its
                 empty centre lets felt taps (and the hero HUD) through. */}
-            <ActionBar hand={hand!} legal={legal ?? undefined} bb={table.bb} busy={submitting} onAction={submit} />
+            <ActionBar hand={hand!} legal={legal ?? undefined} bb={hand?.blinds?.bb ?? table.bb} busy={submitting} onAction={submit} />
           </div>
         )}
 
