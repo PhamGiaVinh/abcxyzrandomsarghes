@@ -222,3 +222,17 @@ it("does not auto-advance from a late expired prior-tournament snapshot", async 
   await act(async () => old({ data: expired, error: null }));
   expect(db.invoke).not.toHaveBeenCalled();
 });
+
+it('catches up elapsed seconds when browser clock advances between ticks', async () => {
+  db.rpc.mockResolvedValue({data:{...payload('a',7),is_running:true},error:null});
+  vi.useFakeTimers();
+  const start = new Date('2026-11-19T09:00:00Z');
+  vi.setSystemTime(start);
+  render(<ClockPanel tournamentId="a" />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(screen.getByText('10:00')).toBeInTheDocument();
+
+  vi.setSystemTime(new Date(start.getTime() + 59_000));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+  expect(screen.getByText('9:00')).toBeInTheDocument();
+});

@@ -57,7 +57,7 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
   const readSequence = useRef(0);
   const mounted = useRef(false);
   const [loadedScope, setLoadedScope] = useState<string | null>(null);
-  const [storedClock, setClock] = useState<ClockData | null>(null);
+  const [storedClock, setClock] = useState<(ClockData & { receivedAt: number }) | null>(null);
   const clock = loadedScope === scope ? storedClock : null;
   const [readError, setReadError] = useState(false);
   const [unknownActionScope,setUnknownActionScope]=useState<string|null>(null);
@@ -89,7 +89,7 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
       const c = data as unknown as ClockData;
       if (!c || c.tournament_id !== tournamentId || !Number.isFinite(c.remaining_seconds)
         || typeof c.is_running !== "boolean") throw new Error("Clock context unavailable");
-      setClock(c);
+      setClock({ ...c, receivedAt: Date.now() });
       setUnknownActionScope(null);
       setLoadedScope(scope);
       setLocalRemaining(c.remaining_seconds);
@@ -159,6 +159,14 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
     }
   }, [clock, loading, user?.id, scope, tournamentId, loadClock, t]);
 
+  useEffect(() => {
+    const refreshVisibleClock = () => {
+      if (document.visibilityState === "visible" && !actionRef.current) void loadClock();
+    };
+    document.addEventListener("visibilitychange", refreshVisibleClock);
+    return () => document.removeEventListener("visibilitychange", refreshVisibleClock);
+  }, [loadClock]);
+
   const advanceToNextLevel = useCallback(async () => {
     if (!clock?.next_level || advancingRef.current?.scope === scope) return;
     const operation = { scope };
@@ -173,20 +181,18 @@ export function ClockPanel({ tournamentId, refreshTrigger }: { tournamentId: str
   const hasRemainingTime = localRemaining > 0;
   useEffect(() => {
     if (!clock || !isRunning || !hasRemainingTime) return;
-    const interval = setInterval(() => {
-      setLocalRemaining((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    const tick = () => {
+      const elapsed = Math.floor(Math.max(0, Date.now() - clock.receivedAt) / 1000);
+      const remaining = Math.max(0, clock.remaining_seconds - elapsed);
+      setLocalRemaining((previous) => Math.min(previous, remaining));
+    };
+    const interval = setInterval(tick, 1000);
+    tick();
     return () => clearInterval(interval);
   }, [clock, isRunning, hasRemainingTime]);
 
   useEffect(() => {
-    if (!loading && isRunning && localRemaining === 0 && autoNextLevel && clock?.next_level && advancingRef.current?.scope !== scope) {
+    if (document.visibilityState !== "hidden" && !loading && isRunning && localRemaining === 0 && autoNextLevel && clock?.next_level && advancingRef.current?.scope !== scope) {
       advanceToNextLevel();
     }
   }, [loading, localRemaining, isRunning, autoNextLevel, clock, advanceToNextLevel, scope]);
