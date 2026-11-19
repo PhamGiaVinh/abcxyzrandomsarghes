@@ -5,7 +5,7 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS online_satellite_private.table_clocks (
   table_id uuid PRIMARY KEY REFERENCES public.online_poker_tables(id),
   pilot_id uuid NOT NULL UNIQUE REFERENCES online_satellite_private.pilots(id),
-  elapsed_seconds bigint NOT NULL DEFAULT 0 CHECK (elapsed_seconds >= 0),
+  elapsed_seconds numeric(20,6) NOT NULL DEFAULT 0 CHECK (elapsed_seconds >= 0 AND elapsed_seconds <> 'NaN'::numeric),
   running_since timestamptz CHECK (pg_catalog.isfinite(running_since)),
   revision bigint NOT NULL DEFAULT 1 CHECK (revision > 0)
 );
@@ -50,7 +50,7 @@ AS $$
       SELECT starts_at_second, small_blind, big_blind, big_blind_ante
       FROM online_satellite_private.blind_levels
       WHERE pilot_id = c.pilot_id AND starts_at_second <= c.elapsed_seconds
-        + floor(GREATEST(0, extract(epoch FROM statement_timestamp() - c.running_since)))
+        + GREATEST(0, extract(epoch FROM statement_timestamp() - c.running_since))
       ORDER BY starts_at_second DESC
       LIMIT 1
     ) l ON true

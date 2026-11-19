@@ -33,7 +33,7 @@ BEGIN
   SELECT l.* INTO level_row FROM online_satellite_private.blind_levels l
     WHERE l.pilot_id = clock_row.pilot_id
       AND l.starts_at_second <= clock_row.elapsed_seconds
-        + floor(extract(epoch FROM deal_time - clock_row.running_since))
+        + extract(epoch FROM deal_time - clock_row.running_since)
     ORDER BY l.starts_at_second DESC LIMIT 1;
   IF NOT FOUND OR expected IS DISTINCT FROM jsonb_build_object(
       'clockRevision', clock_row.revision::text, 'levelStartSecond', level_row.starts_at_second::text)

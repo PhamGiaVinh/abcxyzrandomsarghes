@@ -185,6 +185,7 @@ test('the shared server deal persists one native hand with consistent public and
     UPDATE public.online_poker_tables SET club_id=NULL WHERE id='${tableId}'`);
   sql(file('../../supabase/pending-migrations/20261119205002_online_satellite_seat_ownership_fence.sql'));
   sql(file('../../supabase/pending-migrations/20261119205132_online_satellite_provision_table.sql'));
+  sql(file('../../supabase/pending-migrations/20261119205447_online_satellite_set_clock.sql'));
   const setupPilot = 'ab510000-0000-4000-8000-000000000019';
   sql(`
     INSERT INTO online_satellite_private.registration_gate(club_id,enabled) VALUES ('${clubId}',true);
@@ -245,6 +246,14 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal((await dealNextHand(admin, tableId, first)).reason, 'disabled');
   assert.equal(sql('SELECT count(*) FROM public.online_poker_hands'), '0');
   sql('UPDATE public.online_poker_config SET enabled=true');
+  const clockCommand = (actor, pilot, revision, running) => json(`SET ROLE authenticated;
+    SET request.jwt.claim.sub='${actor}';
+    SELECT public.set_online_satellite_clock_v1('${pilot}',${revision},${running})`);
+  assert.throws(() => clockCommand(spectator, setupPilot, 1, true), /SATELLITE_PILOT_MANAGER_REQUIRED/);
+  assert.deepEqual(clockCommand(first, setupPilot, 1, true), { outcome: 'ok', revision: '2', running: true });
+  assert.deepEqual(clockCommand(first, setupPilot, 1, false), { outcome: 'stale', revision: '2', running: true });
+  assert.deepEqual(clockCommand(first, setupPilot, 2, false), { outcome: 'ok', revision: '3', running: false });
+  assert.equal((await dealNextHand(admin, setupReceipt.tableId, null)).reason, 'table_not_open');
   const hand = await dealNextHand(admin, tableId, first);
   assert.ok(hand.ok, JSON.stringify(hand));
   assert.equal(hand.handNo, 1);
@@ -649,6 +658,7 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(anteReceipt.ok, true, JSON.stringify(anteReceipt));
   const anteHand = anteReceipt.handId;
   assert.equal(sql(`SELECT state_schema_version FROM public.online_poker_hands WHERE id='${anteHand}'`), '2');
+  assert.deepEqual(clockCommand(first, pilotId, 3, false), { outcome: 'ok', revision: '4', running: false });
   const loadedAnte = json(`SET ROLE service_role; SELECT public.op_load_action_context('${anteHand}')`);
   const reloadedAnte = deserializeAuthoritative(loadedAnte.state, loadedAnte.live_deck, loadedAnte.holes);
   const fold = { type: 'fold', seat: 2 };
