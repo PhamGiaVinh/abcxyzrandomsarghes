@@ -37,11 +37,14 @@ const Auth = () => {
   });
 
   const next = searchParams.get("next");
-  const returnTarget = safeOpsDocumentTarget(next) ?? safeSatelliteReturnTarget(next);
+  const satelliteReturnTarget = safeSatelliteReturnTarget(next);
+  const returnTarget = safeOpsDocumentTarget(next) ?? satelliteReturnTarget;
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
   if (user) {
-    return returnTarget ? <DocumentRedirect to={returnTarget} /> : <Navigate to="/account" replace />;
+    return returnTarget
+      ? <DocumentRedirect to={returnTarget} preserveCurrentLocation={!satelliteReturnTarget} />
+      : <Navigate to="/account" replace />;
   }
 
   const signIn = async () => {
