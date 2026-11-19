@@ -395,6 +395,11 @@ test('the shared server deal persists one native hand with consistent public and
         completedHands: expectedHands, recoveredMissedHands: 1, subsequentHandsDelivered: 1, chips: 200,
       }));
       const { verifySatellitePlayBrowser } = await import('./satellitePlayBrowser.fixture.mjs');
+      // This disposable schema starts at the core poker migration. Match the
+      // existing open-table reader shape without replaying historical writers.
+      sql(`ALTER TABLE public.online_poker_tables
+        ADD COLUMN IF NOT EXISTS host_user_id uuid REFERENCES auth.users(id);
+        NOTIFY pgrst, 'reload schema';`);
       await verifySatellitePlayBrowser({ apiUrl, anonKey, players, tableId: actionTable, post,
         nextActor: (handId) => sql(`SELECT s.user_id FROM public.online_poker_hands h JOIN public.online_poker_seats s
           ON s.table_id=h.table_id AND s.seat_no=h.to_act_seat WHERE h.id='${handId}'`),

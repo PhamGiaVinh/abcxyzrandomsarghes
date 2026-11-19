@@ -9,6 +9,7 @@ export async function verifySatellitePlayBrowser({ apiUrl, anonKey, players, tab
     define: {
       'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(apiUrl),
       'import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(anonKey),
+      'import.meta.env.VITE_ONLINE_SATELLITE_RUNTIME': JSON.stringify('true'),
     },
     plugins: [{ name: 'disposable-play-entry', configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
