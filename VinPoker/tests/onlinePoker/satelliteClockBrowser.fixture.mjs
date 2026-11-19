@@ -8,6 +8,8 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketSce
     get_online_satellite_table_v1: "public.get_online_satellite_table_v1((p->>'p_pilot_id')::uuid)",
     get_online_satellite_round_operations_v1:
       "public.get_online_satellite_round_operations_v1((p->>'p_pilot_id')::uuid)",
+    move_online_satellite_round_seat_v2:
+      "public.move_online_satellite_round_seat_v2((p->>'p_pilot_id')::uuid,(p->>'p_seat_id')::uuid,(p->>'p_destination')::uuid,(p->>'p_destination_seat')::int,(p->>'p_expected_round')::bigint,(p->>'p_expected_placement')::bigint)",
     provision_online_satellite_table_v1:
       "public.provision_online_satellite_table_v1((p->>'p_pilot_id')::uuid,p->'p_levels',(p->>'p_qualification_slots')::integer)",
     provision_online_satellite_two_tables_v1:
@@ -106,6 +108,25 @@ export async function verifySatelliteClockBrowser({ sql, actor, pilot, ticketSce
     await page.getByRole('spinbutton', { name: 'Small blind', exact: true }).fill('5');
     await page.getByRole('spinbutton', { name: 'Big blind', exact: true }).fill('10');
     await page.getByRole('button', { name: 'Tạo bàn và khóa lịch' }).click();
+    await page.getByRole('button', { name: 'Chuyển ghế', exact: true }).waitFor();
+    const { seat, anchor, target } = JSON.parse(sql(`SELECT json_build_object(
+      'seat',s.id,'anchor',c.table_id,'target',m.table_id)
+      FROM online_satellite_private.table_clocks c
+      JOIN online_satellite_private.round_tables m ON m.pilot_id=c.pilot_id AND m.table_id<>c.table_id
+      JOIN public.online_poker_seats s ON s.table_id=c.table_id AND s.seat_no=1
+      WHERE c.pilot_id='${twoTablePilot}'`));
+    const chooseMove = async (tableId, seatNo) => {
+      await page.getByLabel('Người cần chuyển').selectOption(seat);
+      await page.getByLabel('Ghế đích').selectOption(`${tableId}:${seatNo}`);
+      await page.getByRole('button', { name: 'Chuyển ghế', exact: true }).click();
+      await page.getByText('Đã chuyển ghế.', { exact: true }).waitFor();
+      assert.equal(sql(`SELECT table_id||':'||seat_no||':'||stack FROM public.online_poker_seats WHERE id='${seat}'`),
+        `${tableId}:${seatNo}:100`);
+    };
+    await chooseMove(target, 3);
+    await page.getByLabel('Người cần chuyển').locator('option').filter({ hasText: 'Bàn 2 · Ghế 3' }).waitFor({ state: 'attached' });
+    await chooseMove(anchor, 1);
+    console.log('CHROMIUM_SATELLITE_MOVE_SEAT_ROUND_AND_PLACEMENT_PASS');
     await page.getByRole('button', { name: 'Chạy đồng hồ' }).click();
     await page.getByText('Đồng hồ đang chạy', { exact: true }).waitFor();
     await page.getByRole('button', { name: 'Mở vòng tiếp theo' }).click();

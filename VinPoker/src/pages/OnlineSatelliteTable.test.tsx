@@ -26,6 +26,36 @@ function openControl() {
   );
 }
 
+it("sends the observed seat placement and round when the TD moves a player", async () => {
+  const secondTable = "ab510000-0000-4000-8000-000000000035";
+  const seatId = "ab510000-0000-4000-8000-000000000036";
+  rpc.mockImplementation(name => {
+    if (name === "move_online_satellite_round_seat_v2") {
+      return Promise.resolve({ data: { outcome: "ok" }, error: null });
+    }
+    return { abortSignal: async () => ({
+      data: name === "get_online_satellite_round_operations_v1" ? {
+        roundNo: "2", tables: [
+          { tableId, maxSeats: 2, status: "open", roundStatus: "complete",
+            seats: [{ id: seatId, seatNo: 1, stack: "100", canMove: true, placementRevision: "7" }] },
+          { tableId: secondTable, maxSeats: 2, status: "open", roundStatus: "complete", seats: [] },
+        ],
+      } : { tableId, status: "open", clockRevision: "1", running: true,
+        canManage: true, canPlay: true, canProvision: false, roundNo: "2" },
+      error: null,
+    }) };
+  });
+  openControl();
+  fireEvent.change(await screen.findByLabelText("Người cần chuyển"), { target: { value: seatId } });
+  fireEvent.change(screen.getByLabelText("Ghế đích"), { target: { value: `${secondTable}:2` } });
+  fireEvent.click(screen.getByRole("button", { name: "Chuyển ghế" }));
+  expect(await screen.findByText("Đã chuyển ghế.")).toBeVisible();
+  expect(rpc).toHaveBeenCalledWith("move_online_satellite_round_seat_v2", {
+    p_pilot_id: pilotId, p_seat_id: seatId, p_destination: secondTable, p_destination_seat: 2,
+    p_expected_round: "2", p_expected_placement: "7",
+  });
+});
+
 it("provisions a two-table pilot when the TD selects two tables", async () => {
   const secondTableId = "ab510000-0000-4000-8000-000000000035";
   rpc.mockImplementation(name => name === "provision_online_satellite_two_tables_v1"
