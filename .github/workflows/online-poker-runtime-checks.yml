@@ -18,6 +18,7 @@ on:
       - "VinPoker/tsconfig.engine.json"
       - "VinPoker/supabase/migrations/20260817000000_online_poker_core.sql"
       - "VinPoker/supabase/migrations/20260817000001_online_poker_realtime.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_pilot_registration.sql"
       - "VinPoker/supabase/migrations/20260820000000_online_poker_runtime_rpcs.sql"
       - "VinPoker/supabase/pending-migrations/*_online_poker_complete_deal_stack_writeback.sql"
       - "VinPoker/supabase/pending-migrations/*_online_poker_bba_state_fence.sql"
