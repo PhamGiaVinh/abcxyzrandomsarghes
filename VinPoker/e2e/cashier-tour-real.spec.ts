@@ -160,6 +160,43 @@ for (const name of required) {
 
 const scopeReadFailures=new WeakMap<Page,{status:number;path:string;code?:string;gatewayClass?:string;observedAtMs?:number;requestStartedAtMs?:number}[]>();
 
+test("private Satellite invite crosses from Ops to member registration and survives reload", async ({ page, browser, baseURL }) => {
+  test.skip(process.env.LOCAL_SATELLITE_BROWSER_PROBE !== "1", "Requires the isolated Satellite fixture");
+  const clubId = "a2000000-0000-4000-8000-000000000001";
+  await loginOwner(page);
+  await page.goto(`/ops/floor?club=${clubId}`);
+  await expect(page.getByRole("heading", { name: "Tạo satellite thử" })).toBeVisible();
+  await page.getByLabel("Giải đích thử").selectOption({ label: "Satellite destination browser TEST" });
+  await page.getByLabel("Hạn đăng ký (giờ Việt Nam)").fill("2099-04-18T22:30");
+  await page.getByLabel("Chip thử mỗi người").fill("10000");
+  await page.getByLabel("Số ghế trên một bàn").fill("2");
+  await page.getByRole("button", { name: "Tạo link đăng ký thử" }).click();
+  const link = page.getByRole("link", { name: /\/poker\/satellite\// });
+  await expect(link).toBeVisible();
+  const path = await link.getAttribute("href");
+  expect(path).toMatch(/^\/poker\/satellite\/[0-9a-f-]+$/);
+  await link.click();
+  await expect(page.getByRole("heading", { name: "Đăng ký satellite thử" })).toBeVisible();
+
+  const member = await browser.newContext();
+  try {
+    const registration = await member.newPage();
+    await registration.goto(new URL(path!, baseURL).href);
+    await registration.getByRole("link", { name: "Đăng nhập" }).click();
+    await registration.locator('input[type="email"]:visible').fill(process.env.LOCAL_SATELLITE_PLAYER_EMAIL!);
+    await registration.locator('input[type="password"]:visible').fill(process.env.LOCAL_SATELLITE_PLAYER_PASSWORD!);
+    await registration.getByRole("tabpanel").getByRole("button").click();
+    await expect(registration).toHaveURL(new URL(path!, baseURL).href);
+    await registration.getByRole("button", { name: "Đăng ký một ghế" }).click();
+    await expect(registration.getByText("Máy chủ đã xác nhận đăng ký.")).toBeVisible();
+    await registration.reload();
+    await expect(registration.getByText("Máy chủ đã xác nhận đăng ký.")).toBeVisible();
+    await expect(registration.getByRole("button", { name: "Đăng ký một ghế" })).toHaveCount(0);
+  } finally {
+    await member.close();
+  }
+});
+
 async function loginOwner(page: Page) {
   const api = process.env.LOCAL_SUPABASE_URL!.replace(/\/$/, "");
   const anon = process.env.LOCAL_SUPABASE_ANON_KEY!;

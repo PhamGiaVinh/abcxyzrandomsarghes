@@ -1118,7 +1118,24 @@ fi
 # browser performs real Auth/Data API calls; no request route is intercepted.
 floor_redraw_build=off
 if [[ "$operations_candidate_probe" == 1 ]]; then floor_redraw_build=preview; fi
+satellite_browser_probe=0
+satellite_source="$repo_root/supabase/pending-migrations/20261119143438_online_satellite_pilot_registration.sql"
+if [[ "$schema_mode" == current && -f "$satellite_source" ]]; then
+  satellite_browser_probe=1
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$satellite_source"
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v player_id="$player_id" <<'SATELLITE_FIXTURE'
+INSERT INTO online_satellite_private.registration_gate(club_id,enabled)
+VALUES ('a2000000-0000-4000-8000-000000000001',true);
+INSERT INTO public.club_members(club_id,player_user_id,member_card_id)
+VALUES ('a2000000-0000-4000-8000-000000000001',:'player_id'::uuid,'SATELLITE-BROWSER-TEST');
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,starting_stack)
+VALUES ('ae520000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001',
+        'Satellite destination browser TEST','registering','registering',now()+interval '1 day',0,10000);
+NOTIFY pgrst, 'reload schema';
+SATELLITE_FIXTURE
+fi
 (cd "$repo_root" && \
+  VITE_ONLINE_SATELLITE_PILOT="$([[ "$satellite_browser_probe" == 1 ]] && echo true || echo false)" \
   VITE_SUPABASE_URL="http://$browser_gateway:8000" \
   VITE_SUPABASE_PUBLISHABLE_KEY="$anon_key" \
   VITE_OPS_TOUR_CASHIER=production \
@@ -1405,12 +1422,21 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_SUPABASE_ANON_KEY="$anon_key" \
   --env LOCAL_OWNER_EMAIL="$owner_email" \
   --env LOCAL_OWNER_PASSWORD="$owner_password" \
+  --env LOCAL_SATELLITE_BROWSER_PROBE="$satellite_browser_probe" \
+  --env LOCAL_SATELLITE_PLAYER_EMAIL="$player_email" \
+  --env LOCAL_SATELLITE_PLAYER_PASSWORD="$player_password" \
   --env LOCAL_SUPABASE_STORAGE_KEY="$storage_key" \
   --env LOCAL_REFUND_REGISTRATION_ID="$refund_registration_id" \
   --env LOCAL_REFUND_REFERENCE_CODE="$refund_reference_code" \
   mcr.microsoft.com/playwright:v1.60.0-noble \
   npx playwright test "${test_args[@]}"
 }
+if [[ "$satellite_browser_probe" == 1 ]]; then
+  run_browser_proof '' '' 'private Satellite invite crosses from Ops to member registration and survives reload'
+  satellite_entries="$(docker exec "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres -c "
+    SELECT count(*) FROM online_satellite_private.entries;")"
+  [[ "$satellite_entries" == 1 ]]
+fi
 prepare_current_movement_schema() {
   node "$repo_root/scripts/ops/prepare-cashier-runtime-dependencies.mjs" "$test_root/clock-pre32-fixture.sql" --restore-clock-pre32
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
