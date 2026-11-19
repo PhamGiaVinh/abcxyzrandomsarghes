@@ -10,6 +10,7 @@ import SatelliteBubbleEvidence from "./SatelliteBubbleEvidence";
 import SatelliteTestTicket from "./SatelliteTestTicket";
 import SatelliteTestTicketIssuance from "./SatelliteTestTicketIssuance";
 import SatelliteRoundOperations from "./SatelliteRoundOperations";
+import SatelliteRoundBubbleEvidence from "./SatelliteRoundBubbleEvidence";
 
 const pilotIdentifier = z.string().uuid();
 const tableSnapshot = z.object({
@@ -210,6 +211,10 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
             {openRound.data && <p role="status">{roundMessages[openRound.data]}</p>}
             {openRound.isError && <p role="alert">Chưa xác nhận được lệnh mở vòng.</p>}
             {lockRoundResult.data && <p role="status">{roundResultMessages[lockRoundResult.data]}</p>}
+            {lockRoundResult.data === "bubble_review_required" && snapshot.data.canManage
+              && snapshot.data.roundNo && pilot.success && actorId && (
+              <SatelliteRoundBubbleEvidence pilotId={pilot.data} actorId={actorId} roundNo={snapshot.data.roundNo} />
+            )}
             {lockRoundResult.isError && <p role="alert">Chưa xác nhận được lệnh khóa kết quả toàn vòng.</p>}
             {deal.data?.outcome === "ok" && <p role="status">Máy chủ đã chia ván mới.</p>}
             {deal.data?.outcome === "already_active" && <p role="status">Bàn đang chơi một ván.</p>}

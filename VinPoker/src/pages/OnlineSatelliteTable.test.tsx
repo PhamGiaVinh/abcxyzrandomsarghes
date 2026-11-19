@@ -128,13 +128,17 @@ it("uses the whole-round result command and surfaces the bubble review outcome",
   rpc.mockImplementation(name => name === "lock_online_satellite_round_result_v1"
     ? Promise.resolve({ data: { outcome: "bubble_review_required" }, error: null })
     : { abortSignal: async () => ({
-      data: { tableId, clockRevision: "5", running: false, status: "paused",
+      data: name === "get_online_satellite_round_bubble_v1" ? {
+        roundNo: "2", qualificationSlots: 3, survivors: 2, unfilledSlots: 1,
+        hands: [{ tableId, handId, handVersion: 3, eliminations: [{ seatNo: 4, startingStack: "125" }] }],
+      } : { tableId, clockRevision: "5", running: false, status: "paused",
         canManage: true, canPlay: false, canProvision: false, roundNo: "2" },
       error: null,
     }) });
   openControl();
   fireEvent.click(await screen.findByRole("button", { name: "Khóa kết quả toàn vòng" }));
   expect(await screen.findByText("Còn thiếu người nhận suất. TD cần phân xử bubble.")).toBeVisible();
+  expect(await screen.findByText("Ghế 4 bị loại · stack đầu hand 125 chip")).toBeVisible();
   expect(rpc).toHaveBeenCalledWith("lock_online_satellite_round_result_v1",
     { p_pilot_id: pilotId, p_expected_round: "2" });
 });
