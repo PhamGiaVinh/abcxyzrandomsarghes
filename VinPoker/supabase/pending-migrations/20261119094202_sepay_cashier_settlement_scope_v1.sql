@@ -108,6 +108,7 @@ BEGIN
     AND bt.transfer_type = 'in'
     AND bt.api_verified_at IS NOT NULL
     AND a.club_id = p_club_id
+    AND (bt.club_id IS NULL OR bt.club_id = p_club_id)
     AND (
       (p_bank_transaction_id IS NOT NULL AND bt.id = p_bank_transaction_id AND bt.status IN ('unmatched', 'matched', 'ignored'))
       OR (p_bank_transaction_id IS NULL AND ((p_scope = 'actionable' AND bt.status = 'unmatched') OR (p_scope = 'resolved' AND bt.status IN ('matched', 'ignored'))))
