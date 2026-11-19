@@ -43,7 +43,7 @@ BEGIN
     attendance_id := gen_random_uuid();
     INSERT INTO auth.users(id) VALUES (owner_id), (other_owner_id);
     INSERT INTO public.profiles(user_id, display_name) VALUES
-      (owner_id, 'L09 TEST owner A'), (other_owner_id, 'L09 TEST owner B');
+      (owner_id, 'L09 TEST owner A ' || sample), (other_owner_id, 'L09 TEST owner B ' || sample);
     INSERT INTO public.clubs(id, owner_id, name, region, status) VALUES
       (club_a, owner_id, 'L09 TEST A ' || sample, 'TEST', 'approved'),
       (club_b, other_owner_id, 'L09 TEST B ' || sample, 'TEST', 'approved');
