@@ -123,10 +123,14 @@ function LiveHubContent({
     : liveTableCount;
   const { t } = useTranslation();
 
-  // "Cập nhật … trước" — stamp the moment the hub data last changed (each poll for a
-  // live event re-stamps, so the header stays fresh; a finished event freezes).
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  useEffect(() => { setLastUpdated(new Date()); }, [feed, publicSnapshot, tables, storyFeed]);
+  const tableFreshness = publicSnapshot?.access === "public" && publicSnapshot.tournamentId === tournamentId
+    ? publicSnapshot.sections.tables?.freshness
+    : undefined;
+  const tablePublishedAt = realtimeEnabled && !networkError && tableFreshness?.state === "current"
+    ? tableFreshness.publishedAt
+    : null;
+  const publishedTime = tablePublishedAt ? Date.parse(tablePublishedAt) : NaN;
+  const lastUpdated = Number.isFinite(publishedTime) ? new Date(publishedTime) : null;
 
   // Public table-map picker (legacy stacked layout): which table to feature.
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
