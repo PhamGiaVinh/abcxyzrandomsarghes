@@ -841,4 +841,36 @@ describe("closed Cashier shift correction", () => {
     }finally{cleanup();visibility.mockRestore();network.mockRestore();vi.useRealTimers();}
   });
 
+  it('coalesces typing and sends an immediate scan without refreshing the shift', async () => {
+    prepareCash(async () => ({data:null,error:null}));
+    render(<TourCashierWorkbench />);
+    await screen.findByRole('button', {name:'Chờ tại quầy · 1'});
+    const scanner = screen.getByPlaceholderText('Quét QR, thẻ hội viên, mã CK; hoặc tìm tên, số điện thoại');
+    const reads = () => mock.rpc.mock.calls.filter(([name]) => name === 'cashier_tour_worklist_v1');
+    const initial = reads().length;
+    const bootstrapReads = mock.tourIs.mock.calls.length;
+    const query = 'TEST-scan';
+    vi.useFakeTimers({toFake:['setTimeout','clearTimeout']});
+    try {
+      for (let index = 1; index <= query.length; index++) {
+        fireEvent.change(scanner, {target:{value:query.slice(0,index)}});
+        await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+      }
+      expect(reads()).toHaveLength(initial);
+      fireEvent.keyDown(scanner, {key:'Enter'});
+      await act(async () => {});
+      expect(reads()).toHaveLength(initial + 1);
+      expect(reads().at(-1)?.[1]).toMatchObject({p_query:query,p_bucket:'all'});
+      await act(async () => { await vi.advanceTimersByTimeAsync(180); });
+      expect(reads()).toHaveLength(initial + 1);
+      expect(mock.tourIs).toHaveBeenCalledTimes(bootstrapReads);
+      fireEvent.change(scanner, {target:{value:'search'}});
+      await act(async () => { await vi.advanceTimersByTimeAsync(179); });
+      expect(reads()).toHaveLength(initial + 1);
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(reads()).toHaveLength(initial + 2);
+      expect(reads().at(-1)?.[1]).toMatchObject({p_query:'search'});
+    } finally { cleanup(); vi.useRealTimers(); }
+  });
+
 });
