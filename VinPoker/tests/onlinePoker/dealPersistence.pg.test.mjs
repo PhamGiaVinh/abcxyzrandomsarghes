@@ -289,9 +289,36 @@ test('the shared server deal persists one native hand with consistent public and
     const satellite = await dealNextHand(admin, setupReceipt.tableId, first);
     assert.equal(practice.ok, true, JSON.stringify(practice));
     assert.equal(satellite.ok, true, JSON.stringify(satellite));
+    sql(file('../../supabase/pending-migrations/20261119222500_online_satellite_round_deal_fence.sql'));
+    sql(file('../../supabase/pending-migrations/20261119223500_online_satellite_shared_round_clock.sql'));
+    sql(file('../../supabase/pending-migrations/20261119224000_online_satellite_round_table_reads.sql'));
+    const secondary = 'ab510000-0000-4000-8000-000000000044';
+    const anchor = 'ab510000-0000-4000-8000-000000000045';
+    const realtimePilot = 'ab510000-0000-4000-8000-000000000046';
+    const fourth = 'ab510000-0000-4000-8000-000000000047';
+    sql(`INSERT INTO auth.users(id) VALUES ('${fourth}');
+      INSERT INTO online_satellite_private.pilots VALUES
+      ('${realtimePilot}','${clubId}','${destination}','${first}','${realtimePilot}',now(),100,4);
+      INSERT INTO online_satellite_private.entries(pilot_id,player_user_id) VALUES
+      ${[first,second,spectator,fourth].map(user => `('${realtimePilot}','${user}')`).join(',')};
+      INSERT INTO public.online_poker_tables(id,club_id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
+      VALUES ('${secondary}','${clubId}','Disposable Realtime secondary',5,10,0,0,100),
+        ('${anchor}','${clubId}','Disposable Realtime anchor',5,10,0,0,100);
+      INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status)
+      VALUES ('${secondary}',1,'${first}',100,'sitting'),('${secondary}',2,'${second}',100,'sitting'),
+        ('${anchor}',1,'${spectator}',100,'sitting'),('${anchor}',2,'${fourth}',100,'sitting');
+      UPDATE public.online_poker_tables SET is_satellite=true WHERE id IN ('${secondary}','${anchor}');
+      INSERT INTO online_satellite_private.table_clocks(table_id,pilot_id,running_since,qualification_slots)
+      VALUES ('${anchor}','${realtimePilot}',statement_timestamp(),1);
+      INSERT INTO online_satellite_private.blind_levels VALUES ('${realtimePilot}',0,5,10,0);
+      INSERT INTO online_satellite_private.round_tables(table_id,pilot_id) VALUES
+      ('${anchor}','${realtimePilot}'),('${secondary}','${realtimePilot}');
+      SELECT online_satellite_private.open_next_round('${realtimePilot}');`);
+    const secondaryDeal = await dealNextHand(admin, secondary, first);
+    assert.equal(secondaryDeal.ok, true, JSON.stringify(secondaryDeal));
     const { verifySatelliteRealtime } = await import('./satelliteRealtime.fixture.mjs');
     await verifySatelliteRealtime({ sql, statusPath: realtimeFixture, first, spectator,
-      practiceHand: practice.handId, satelliteHand: satellite.handId });
+      practiceHand: practice.handId, satelliteHand: satellite.handId, secondaryHand: secondaryDeal.handId });
     return;
   }
   assert.throws(() => clockCommand(spectator, setupPilot, 1, true), /SATELLITE_PILOT_MANAGER_REQUIRED/);

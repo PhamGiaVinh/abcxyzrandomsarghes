@@ -13,7 +13,7 @@ async function observe(predicate, label) {
   assert.fail(label);
 }
 
-export async function verifySatelliteRealtime({ sql, statusPath, first, spectator, practiceHand, satelliteHand }) {
+export async function verifySatelliteRealtime({ sql, statusPath, first, spectator, practiceHand, satelliteHand, secondaryHand }) {
   const status = JSON.parse(readFileSync(statusPath, 'utf8'));
   assert.equal(status.API_URL, 'http://127.0.0.1:54321');
   assert.ok(status.JWT_SECRET && status.ANON_KEY, 'Isolated fixture credentials unavailable');
@@ -69,6 +69,19 @@ export async function verifySatelliteRealtime({ sql, statusPath, first, spectato
     const privateEvent = seen[0].find(row => row.id === satelliteHand);
     assert.doesNotMatch(JSON.stringify(privateEvent), /"(?:holeCards|deck|board_future|server_seed)"\s*:/);
     console.log('SUPABASE_REALTIME_SATELLITE_REGISTERED_DELIVERY_FOREIGN_AND_ANON_ISOLATION_PASS');
+    const secondary = await Promise.all(clients.map(client => client.from('online_poker_hands')
+      .select('id').eq('id', secondaryHand)));
+    assert.deepEqual(secondary.map(({ error, data }) => [error?.code ?? null, data?.length]), [[null,1],[null,0],[null,0]]);
+    receipt(secondaryHand);
+    await observe(() => received(seen[0], secondaryHand) === 1, 'Assigned socket must receive the secondary-table event');
+    const secondBarrier = receipt(practiceHand);
+    await observe(() => seen.every(events => events.some(row => row.id === practiceHand
+      && Number(row.state_version) === secondBarrier)), 'All sockets must receive the secondary-table barrier');
+    assert.equal(received(seen[1], secondaryHand), 0);
+    assert.equal(received(seen[2], secondaryHand), 0);
+    assert.doesNotMatch(JSON.stringify(seen[0].find(row => row.id === secondaryHand)),
+      /"(?:holeCards|deck|board_future|server_seed)"\s*:/);
+    console.log('SUPABASE_REALTIME_SATELLITE_SECONDARY_TABLE_ASSIGNED_ONLY_PASS');
   } finally {
     await Promise.all(clients.map(async (client) => {
       await client.removeAllChannels();
