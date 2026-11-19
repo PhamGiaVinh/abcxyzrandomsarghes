@@ -31,7 +31,7 @@ it('writes whole VND amounts for PT and FT using either supported format', async
   fireEvent.change(screen.getByLabelText('Lương giờ cho PT'),{target:{value:'100000'}});
   fireEvent.change(screen.getByLabelText('Lương tháng cho FT'),{target:{value:'100.000'}});
   fireEvent.click(screen.getByRole('button',{name:'Áp lương cho 2 dealer'}));
-  fireEvent.click(screen.getByRole('button',{name:'Áp lương',exact:true}));
+  fireEvent.click(screen.getByRole('button',{name:'Áp lương'}));
   await vi.waitFor(() => expect(mock.update).toHaveBeenNthCalledWith(2,{monthly_salary_vnd:100000,base_rate_vnd:3846,hourly_rate_vnd:481}));
   expect(mock.update).toHaveBeenNthCalledWith(1,{hourly_rate_vnd:100000,monthly_salary_vnd:0});
 });

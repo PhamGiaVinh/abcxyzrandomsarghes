@@ -29,7 +29,7 @@ const MAX_INTEGER_RATE_VND = 2_147_483_647;
 function parseVnd(input: string, max: number): number | null {
   const value = input.trim();
   if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)$/.test(value)) return null;
-  const amount = Number(value.replaceAll(".", ""));
+  const amount = Number(value.replace(/\./g, ""));
   return Number.isSafeInteger(amount) && amount > 0 && amount <= max ? amount : null;
 }
 const fmt = (n: number) => n.toLocaleString("vi-VN");
