@@ -1113,9 +1113,12 @@ test('the shared server deal persists one native hand with consistent public and
   console.log('POSTGRES_SATELLITE_ROUND_WAIT_STALE_PERMIT_ROLLBACK_PASS');
   sql(file('../../supabase/pending-migrations/20261119223500_online_satellite_shared_round_clock.sql'));
   const sharedPilot = 'ab510000-0000-4000-8000-000000000033';
+  const sharedDestination = 'ab510000-0000-4000-8000-000000000036';
   const tables = ['ab510000-0000-4000-8000-000000000034', 'ab510000-0000-4000-8000-000000000035'];
-  sql(`INSERT INTO online_satellite_private.pilots VALUES
-    ('${sharedPilot}','${clubId}','${destination}','${first}','${sharedPilot}',now(),10,4);
+  sql(`INSERT INTO public.tournaments VALUES ('${sharedDestination}','${clubId}','Disposable two-table award target');
+    INSERT INTO online_satellite_private.test_destinations VALUES ('${sharedDestination}','${clubId}');
+    INSERT INTO online_satellite_private.pilots VALUES
+    ('${sharedPilot}','${clubId}','${sharedDestination}','${first}','${sharedPilot}',now(),10,4);
     INSERT INTO online_satellite_private.entries(pilot_id,player_user_id) VALUES
     ${[first, second, third, spectator].map(actor => `('${sharedPilot}','${actor}')`).join(',')};
     INSERT INTO public.online_poker_tables(id,club_id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
@@ -1230,6 +1233,10 @@ test('the shared server deal persists one native hand with consistent public and
   sql(file('../../supabase/pending-migrations/20261119232500_online_satellite_lock_round_result.sql'));
   const lockSharedRound = (actor, round) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
     SELECT public.lock_online_satellite_round_result_v1('${sharedPilot}',${round})`);
+  const issueSharedTickets = () => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+    SELECT public.issue_online_satellite_test_tickets_v1(
+      '${sharedPilot}','ab510000-0000-4000-8000-000000000037','2099-01-01T00:00:00Z')`);
+  assert.deepEqual(issueSharedTickets(), { outcome: 'not_ready' });
   assert.throws(() => lockSharedRound(third, 1), /SATELLITE_PILOT_MANAGER_REQUIRED/);
   assert.deepEqual(lockSharedRound(first, 2), { outcome: 'stale' });
   assert.deepEqual(lockSharedRound(first, 1), { outcome: 'ok', idempotent: false, qualifiedCount: 2 });
@@ -1239,6 +1246,21 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_tables WHERE id IN ('${tables.join("','")}')
     AND status='closed'`), '2');
   console.log('POSTGRES_SATELLITE_LOCK_COMPLETE_ROUND_RESULT_PASS');
+  assert.deepEqual(issueSharedTickets(), { outcome: 'ok', idempotent: false, ticketCount: 2 });
+  assert.deepEqual(issueSharedTickets(), { outcome: 'ok', idempotent: true, ticketCount: 2 });
+  const sharedTickets = json(`SELECT json_agg(json_build_object('ticketId',t.id,'actor',e.player_user_id))
+    FROM online_satellite_private.test_tickets t JOIN online_satellite_private.entries e ON e.id=t.entry_id
+    WHERE t.pilot_id='${sharedPilot}'`);
+  assert.deepEqual(sharedTickets.map(({ actor }) => actor).sort(), [second, spectator].sort());
+  for (const { actor, ticketId } of sharedTickets) {
+    const redeemed = json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+      SELECT public.redeem_online_satellite_test_ticket_v1('${ticketId}','${sharedDestination}')`);
+    assert.equal(redeemed.outcome, 'ok');
+    assert.equal(redeemed.idempotent, false);
+  }
+  assert.equal(sql(`SELECT count(*) FROM online_satellite_private.test_target_entries
+    WHERE destination_id='${sharedDestination}'`), '2');
+  console.log('POSTGRES_SATELLITE_COMPLETE_ROUND_TEST_TICKETS_REDEEM_PASS');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
