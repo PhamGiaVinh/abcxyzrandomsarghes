@@ -849,6 +849,55 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(bubbleEvidence(first).survivingCount, 2, 'A status change cannot rewrite a settled hand');
   sql(`UPDATE public.online_poker_seats SET status='sitting'
     WHERE table_id='${setupReceipt.tableId}' AND user_id='${second}'`);
+  const bubblePilot = 'ab510000-0000-4000-8000-000000000023';
+  const bubbleTable = 'ab510000-0000-4000-8000-000000000024';
+  const bubbleHand = 'ab510000-0000-4000-8000-000000000025';
+  const bubblePlayers = contestants.map(player => ({ ...player, stack: player.seat === 7 ? 30n : player.stack }));
+  sql(`
+    INSERT INTO online_satellite_private.pilots VALUES
+      ('${bubblePilot}','${clubId}','${destination}','${first}','${bubblePilot}',now(),30,3);
+    INSERT INTO online_satellite_private.entries(pilot_id,player_user_id) VALUES
+      ('${bubblePilot}','${first}'), ('${bubblePilot}','${second}'), ('${bubblePilot}','${third}');
+    INSERT INTO public.online_poker_tables(id,club_id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
+      VALUES ('${bubbleTable}','${clubId}','Disposable bubble TEST',5,10,0,0,30);
+    INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status) VALUES
+      ${bubblePlayers.map(player => `('${bubbleTable}',${player.seat},'${player.playerId}',${player.stack},'sitting')`).join(',')};
+    INSERT INTO online_satellite_private.blind_levels VALUES ('${bubblePilot}',0,5,10,0);
+    INSERT INTO online_satellite_private.table_clocks(table_id,pilot_id,running_since)
+      VALUES ('${bubbleTable}','${bubblePilot}',statement_timestamp());
+  `);
+  const bubbleDeal = createHand({
+    handId: bubbleHand, tableId: bubbleTable, handNo: 1, buttonSeat: 2, sb: 5n, bb: 10n,
+  }, [...deck], bubblePlayers);
+  assert.equal(bubbleDeal.error, undefined);
+  const bubbleSplit = serializeAuthoritative(bubbleDeal.state);
+  assert.equal(json(startStatement({
+    p_state: { ...bubbleSplit.stateJson, satelliteLevel: { clockRevision: '1', levelStartSecond: '0' } },
+    p_deck: deck, p_board_future: bubbleSplit.liveDeck, p_holes: bubbleSplit.holes,
+    p_events: bubbleDeal.events.map(({ type, payload }) => ({ type, payload })),
+    p_engine_version: ENGINE_VERSION, p_act_deadline: '2030-01-01T12:00:00Z', p_actor_user_id: first,
+  })).outcome, 'ok');
+  for (let version = 0; version < 3; version++) {
+    const context = json(`SET ROLE service_role; SELECT public.op_load_action_context('${bubbleHand}')`);
+    const state = deserializeAuthoritative(context.state, context.live_deck, context.holes);
+    const player = bubblePlayers.find(item => item.seat === state.toAct);
+    assert.ok(player);
+    const action = { type: 'allin', seat: player.seat };
+    const applied = applyAction(state, action);
+    assert.equal(applied.error, undefined);
+    const split = serializeAuthoritative(applied.state);
+    const input = Buffer.from(JSON.stringify({ action: actionToRow(action), state: split.stateJson,
+      deck: split.liveDeck, events: applied.events.map(({ type, payload }) => ({ type, payload })) })).toString('hex');
+    assert.equal(json(`SET ROLE service_role;
+      WITH input AS (SELECT convert_from(decode('${input}','hex'),'UTF8')::jsonb AS p)
+      SELECT public.op_submit_action('${bubbleHand}', '${player.playerId}', p->'action', p->'state',
+        p->'deck', p->'events', ${version}, NULL, 'disposable-g03-bubble-${version}') FROM input`).outcome, 'ok');
+  }
+  assert.deepEqual(json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+    SELECT public.get_online_satellite_bubble_evidence_v1('${bubblePilot}')`), {
+    handId: bubbleHand, handNo: '1', stateVersion: 3, status: 'complete', survivingCount: 1,
+    eliminations: [{ seat: 2, startingStack: '10' }, { seat: 7, startingStack: '30' }],
+  });
   const reapPractice = 'ab510000-0000-4000-8000-000000000020';
   const missingBinding = 'ab510000-0000-4000-8000-000000000022';
   sql(`
