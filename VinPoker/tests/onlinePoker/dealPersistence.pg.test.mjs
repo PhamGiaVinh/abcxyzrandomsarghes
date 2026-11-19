@@ -1170,17 +1170,21 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(Object.hasOwn(reconnectRound(third), 'roundNo'), false);
   console.log('POSTGRES_SATELLITE_ROUND_STATE_TD_SCOPE_PASS');
   sql(file('../../supabase/pending-migrations/20261119231000_online_satellite_round_seat_move.sql'));
+  sql(file('../../supabase/pending-migrations/20261119231500_online_satellite_move_placement_revision.sql'));
   const survivor = json(`SELECT json_build_object('id',id,'actor',user_id,'stack',stack)
     FROM public.online_poker_seats WHERE table_id='${tables[1]}' AND stack>0`);
   const move = (actor, expected, destinationSeat) => json(`SET ROLE authenticated;
-    SET request.jwt.claim.sub='${actor}'; SELECT public.move_online_satellite_round_seat_v1(
-      '${sharedPilot}','${survivor.id}','${tables[0]}',${destinationSeat},${expected})`);
+    SET request.jwt.claim.sub='${actor}'; SELECT public.move_online_satellite_round_seat_v2(
+      '${sharedPilot}','${survivor.id}','${tables[0]}',${destinationSeat},${expected},0)`);
   const totalRoundChips = () => sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id IN ('${tables.join("','")}')`);
   const totalBeforeMove = totalRoundChips();
   assert.throws(() => move(third, 1, 3), /SATELLITE_PILOT_MANAGER_REQUIRED/);
   assert.deepEqual(move(first, 0, 3), { outcome: 'stale', roundNo: '1' });
   assert.deepEqual(move(first, 1, 1), { outcome: 'invalid_destination' });
-  assert.deepEqual(move(first, 1, 3), { outcome: 'ok', tableId: tables[0], seatNo: 3 });
+  assert.deepEqual(move(first, 1, 3), { outcome: 'ok', tableId: tables[0], seatNo: 3, placementRevision: '1' });
+  assert.deepEqual(move(first, 1, 4), { outcome: 'stale_placement', placementRevision: '1' });
+  assert.equal(sql(`SELECT seat_no FROM public.online_poker_seats WHERE id='${survivor.id}'`), '3');
+  assert.equal(sql("SELECT has_function_privilege('authenticated','public.move_online_satellite_round_seat_v1(uuid,uuid,uuid,int,bigint)','EXECUTE')"), 'f');
   assert.equal(totalRoundChips(), totalBeforeMove);
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_seats WHERE user_id='${survivor.actor}'
     AND table_id IN ('${tables.join("','")}')`), '1');
