@@ -24,6 +24,7 @@ import {
 } from "@/ops/opsMutations";
 import type { Tournament } from "@/types/tournament";
 import { FloorVoiceAlertInbox } from "@/components/floor/FloorVoiceAlertInbox";
+import OnlineSatellitePilotSetup from "@/ops/floor/OnlineSatellitePilotSetup";
 import { FEATURES } from "@/lib/featureFlags";
 import { tournamentStatusCategory, tournamentStatusLabel, type TournamentStatusCategory } from "@/lib/tournament/statusPresentation";
 
@@ -266,6 +267,16 @@ export default function OpsTournaments() {
           onSelect={(id, alertId) => navigate(`/ops/floor/tournaments/${id}/tables?club=${encodeURIComponent(activeClub)}&alert=${encodeURIComponent(alertId)}`)}
         />
       )}
+
+      {FEATURES.onlinePoker && import.meta.env.VITE_ONLINE_SATELLITE_PILOT === "true"
+        && activeClub && user && !authLoading && !tourReadError && (
+          <OnlineSatellitePilotSetup
+            key={JSON.stringify([user.id, sessionReadEpoch(session), activeClub])}
+            actorId={user.id}
+            clubId={activeClub}
+            destinations={allVMs.filter(tournament => tournament.statusKey !== "closed")}
+          />
+        )}
 
       {metadataError && <div className="rounded-xl bg-amber-400/8 px-3 py-2 text-[12px] text-amber-300/90">{metadataError}</div>}
       <div className="rounded-xl bg-emerald-400/8 px-3 py-2 text-[12px] text-emerald-300/90">
