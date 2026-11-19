@@ -409,19 +409,47 @@ test('the shared server deal persists one native hand with consistent public and
     const state = deserializeAuthoritative(loaded.state, loaded.live_deck, loaded.holes);
     assert.equal(state.toAct, contestant.seat);
     const action = { type: 'allin', seat: contestant.seat };
-    const applied = applyAction(state, action);
-    assert.equal(applied.error, undefined);
-    const split = serializeAuthoritative(applied.state);
-    const encoded = Buffer.from(JSON.stringify({
-      action: actionToRow(action), state: split.stateJson, liveDeck: split.liveDeck,
-      events: applied.events.map(({ type, payload }) => ({ type, payload })),
-    })).toString('hex');
-    const receipt = json(`
-      SET ROLE service_role;
-      WITH input AS (SELECT convert_from(decode('${encoded}','hex'),'UTF8')::jsonb AS p)
-      SELECT public.op_submit_action('${sideHand}', '${contestant.playerId}', p->'action', p->'state',
-        p->'liveDeck', p->'events', ${version}, NULL, 'disposable-g03-side-${version}') FROM input;
-    `);
+    const statement = (intent, requestKey) => {
+      const applied = applyAction(state, intent);
+      assert.equal(applied.error, undefined);
+      const split = serializeAuthoritative(applied.state);
+      const encoded = Buffer.from(JSON.stringify({
+        action: actionToRow(intent), state: split.stateJson, liveDeck: split.liveDeck,
+        events: applied.events.map(({ type, payload }) => ({ type, payload })),
+      })).toString('hex');
+      return `
+        SET ROLE service_role;
+        WITH input AS (SELECT convert_from(decode('${encoded}','hex'),'UTF8')::jsonb AS p)
+        SELECT public.op_submit_action('${sideHand}', '${contestant.playerId}', p->'action', p->'state',
+          p->'liveDeck', p->'events', ${version}, NULL, '${requestKey}') FROM input;
+      `;
+    };
+    const playerSubmit = statement(action, `disposable-g03-side-${version}`);
+    let receipt;
+    if (version === 0) {
+      sql(`UPDATE public.online_poker_hands SET act_deadline=now()-interval '5 seconds' WHERE id='${sideHand}'`);
+      assert.equal(sweep().hands.find(item => item.hand_id === sideHand).state_version, version);
+      const player = session('g03-action-player');
+      const timeout = session('g03-action-timeout');
+      try {
+        player.send('BEGIN;\n' + playerSubmit + '\n\\echo player_action_uncommitted');
+        await player.waitFor('player_action_uncommitted');
+        timeout.send(statement(forcedTimeoutAction(state, contestant.seat), `timeout_${sideHand}_${version}`));
+        await waitForPostgresLock('g03-action-timeout');
+        player.send('COMMIT;');
+        const [committed, stale] = await Promise.all([player.finish(), timeout.finish()]);
+        receipt = JSON.parse(committed[0]);
+        const rejected = JSON.parse(stale.at(-1));
+        assert.deepEqual(rejected, { outcome: 'race_lost', expected: 0, actual: 1 });
+        assert.equal(sql(`SELECT count(*) FROM public.online_poker_actions WHERE hand_id='${sideHand}'`), '1');
+        assert.ok(!sweep().hands.some(item => item.hand_id === sideHand));
+      } finally {
+        player.stop();
+        timeout.stop();
+      }
+    } else {
+      receipt = json(playerSubmit);
+    }
     assert.equal(receipt.outcome, 'ok');
     assert.equal(receipt.state_version, version + 1);
   }
