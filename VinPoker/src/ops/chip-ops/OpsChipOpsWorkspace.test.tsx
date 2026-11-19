@@ -193,3 +193,14 @@ it("opens an older tour only after an exact lookup within the selected club", as
   await waitFor(() => expect(h.inventory).toHaveBeenCalledWith(h.client,"older-tour",expect.any(AbortSignal)));
   expect(h.load).toHaveBeenNthCalledWith(2,h.client,"A",expect.any(AbortSignal),"older-tour");
 });
+
+it("keeps inventory and bagging unavailable when the exact lookup returns another tour", async () => {
+  h.tournament = "older-tour";
+  h.load.mockResolvedValueOnce([{ id: "recent-tour", name: "Recent tour" }])
+    .mockResolvedValueOnce([{ id: "different-tour", name: "Different tour" }]);
+  render(<OpsChipOpsWorkspace />);
+
+  expect(await screen.findByText("CHIP_TOURNAMENT_SCOPE_INVALID")).toBeTruthy();
+  expect(h.inventory).not.toHaveBeenCalled();
+  expect(screen.queryByText("bagging-actions")).toBeNull();
+});
