@@ -84,8 +84,8 @@ export default function OpsClubAccounts() {
   }, [client]);
 
   useEffect(() => {
-    if (!clubId && ownerClubs.length === 1) setClubId(ownerClubs[0].club_id);
-  }, [clubId, ownerClubs]);
+    if (!canManageClub && ownerClubs.length === 1) setClubId(ownerClubs[0].club_id);
+  }, [canManageClub, ownerClubs]);
   useEffect(() => {
     void load(scopedClubId);
   }, [scopedClubId, load]);
