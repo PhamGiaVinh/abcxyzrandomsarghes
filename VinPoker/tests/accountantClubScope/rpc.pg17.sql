@@ -48,7 +48,8 @@ BEGIN
     PERFORM public.save_payroll_period_v2(club_a, 2026, 11, '2026-11-01', '2026-11-30', '[]',
       '16660000-0000-4000-8000-000000000022');
     RAISE EXCEPTION 'Dealer payroll accepted a different club';
-  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  EXCEPTION WHEN raise_exception THEN
+    ASSERT SQLERRM = 'Actor is not authorized for payroll club ' || club_a;
   END;
 
   BEGIN
@@ -96,7 +97,8 @@ BEGIN
     PERFORM public.save_payroll_period_v2(club_b, 2026, 12, '2026-12-01', '2026-12-31', '[]',
       '16660000-0000-4000-8000-000000000025');
     RAISE EXCEPTION 'Dealer payroll accepted revoked membership';
-  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  EXCEPTION WHEN raise_exception THEN
+    ASSERT SQLERRM = 'Actor is not authorized for payroll club ' || club_b;
   END;
   BEGIN
     PERFORM public.record_club_expense(p_club_id=>club_b, p_category=>'misc', p_amount_vnd=>10000,
