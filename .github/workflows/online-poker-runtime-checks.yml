@@ -114,7 +114,13 @@ jobs:
           supabase status --workdir "$fixture" --output json >"$fixture/status.json"
           git fetch --no-tags origin 6a1e68f9601d4830eae3120577a9c76b98bcb26a
           export POKER_ISOLATED_REALTIME_STATUS="$fixture/status.json"
-          node --experimental-transform-types --test tests/onlinePoker/dealPersistence.pg.test.mjs
+          if ! node --experimental-transform-types --test tests/onlinePoker/dealPersistence.pg.test.mjs; then
+            db_container="$(docker ps -a --filter 'name=supabase_db_' --format '{{.Names}}')"
+            if [[ "$db_container" =~ ^supabase_db_[a-zA-Z0-9_.-]+$ ]]; then
+              docker logs --tail 180 "$db_container" 2>&1 | grep -E 'FATAL:|PANIC:|ERROR:|server process|signal|database system' | tail -n 30 || true
+            fi
+            exit 1
+          fi
 
   online-poker-runtime:
     runs-on: ubuntu-24.04
