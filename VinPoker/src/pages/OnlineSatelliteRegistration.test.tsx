@@ -74,3 +74,21 @@ it("hides the pilot and the action when the server cannot verify scope", async (
   expect(screen.queryByText("Giải đích TEST")).toBeNull();
   expect(rpc).toHaveBeenCalledExactlyOnceWith("get_online_satellite_pilot_v1", { p_pilot_id: pilotId });
 });
+
+it("recovers the committed entry by reading after the register response is lost and entries close", async () => {
+  rpc.mockResolvedValueOnce({ data: verified, error: null })
+    .mockRejectedValueOnce(new Error("response lost"))
+    .mockResolvedValueOnce({ data: { ...verified, entryId, acceptingEntries: false }, error: null });
+  open();
+  fireEvent.click(await screen.findByRole("button", { name: "Đăng ký một ghế" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Chưa xác nhận được đăng ký");
+  expect(screen.queryByText("Máy chủ đã xác nhận đăng ký.")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Tải lại" }));
+  expect(await screen.findByText("Máy chủ đã xác nhận đăng ký.")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Đăng ký một ghế" })).toBeNull();
+  expect(rpc.mock.calls.map(([name]) => name)).toEqual([
+    "get_online_satellite_pilot_v1",
+    "register_online_satellite_pilot_v1",
+    "get_online_satellite_pilot_v1",
+  ]);
+});
