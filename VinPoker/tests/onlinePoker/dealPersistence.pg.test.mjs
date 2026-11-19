@@ -209,6 +209,7 @@ test('the shared server deal persists one native hand with consistent public and
   sql(file('../../supabase/pending-migrations/20261119213644_online_satellite_bubble_evidence.sql'));
   sql(file('../../supabase/pending-migrations/20261119214450_online_satellite_lock_result.sql'));
   sql(file('../../supabase/pending-migrations/20261119215034_online_satellite_issue_test_tickets.sql'));
+  sql(file('../../supabase/pending-migrations/20261119215158_online_satellite_redeem_test_ticket.sql'));
   const setupPilot = 'ab510000-0000-4000-8000-000000000019';
   sql(`
     INSERT INTO online_satellite_private.registration_gate(club_id,enabled) VALUES ('${clubId}',true);
@@ -1007,6 +1008,42 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT e.player_user_id FROM online_satellite_private.test_tickets ticket
     JOIN online_satellite_private.entries e ON e.id=ticket.entry_id
     WHERE ticket.pilot_id='${exactBubble.bubblePilot}'`), second);
+  const seeTicket = (actor) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT COALESCE(public.get_my_online_satellite_test_ticket_v1('${exactBubble.bubblePilot}'),'null'::jsonb)`);
+  assert.equal(seeTicket(first), null);
+  const delivered = seeTicket(second);
+  assert.equal(delivered.destinationId, destination);
+  assert.equal(delivered.testEntryId, null);
+  const redeemTest = (actor, target = destination) => `SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT public.redeem_online_satellite_test_ticket_v1('${delivered.ticketId}','${target}');`;
+  assert.throws(() => sql(redeemTest(first)), /SATELLITE_TEST_TICKET_NOT_AVAILABLE/);
+  assert.throws(() => sql(redeemTest(second, clubId)), /SATELLITE_TEST_TICKET_NOT_AVAILABLE/);
+  sql(`UPDATE online_satellite_private.test_ticket_batches SET issued_at='2000-01-01',expires_at='2000-01-02'
+    WHERE pilot_id='${exactBubble.bubblePilot}'`);
+  assert.deepEqual(json(redeemTest(second)), { outcome: 'expired' });
+  assert.equal(sql('SELECT count(*) FROM online_satellite_private.test_target_entries'), '0');
+  sql(`UPDATE online_satellite_private.test_ticket_batches SET issued_at=clock_timestamp(),expires_at='2099-01-01'
+    WHERE pilot_id='${exactBubble.bubblePilot}'`);
+  const separateFirst = session('g03-test-ticket-first');
+  const separateSecond = session('g03-test-ticket-second');
+  try {
+    separateFirst.send(`BEGIN; ${redeemTest(second)}
+      \\echo test_ticket_entry_uncommitted`);
+    await separateFirst.waitFor('test_ticket_entry_uncommitted');
+    separateSecond.send(redeemTest(second));
+    await waitForPostgresLock('g03-test-ticket-second');
+    separateFirst.send('COMMIT;');
+    const [written, replayed] = await Promise.all([separateFirst.finish(), separateSecond.finish()]);
+    const receipt = JSON.parse(written[0]);
+    assert.equal(receipt.outcome, 'ok');
+    assert.equal(receipt.idempotent, false);
+    assert.deepEqual(JSON.parse(replayed.at(-1)), { ...receipt, idempotent: true });
+    assert.equal(seeTicket(second).testEntryId, receipt.testEntryId);
+  } finally {
+    separateFirst.stop();
+    separateSecond.stop();
+  }
+  assert.equal(sql('SELECT count(*) FROM online_satellite_private.test_target_entries'), '1');
   assert.deepEqual(lockResult(first,boundaryPilot), { outcome: 'ok', idempotent: false, qualifiedCount: 2 });
   assert.deepEqual(lockResult(first,boundaryPilot), { outcome: 'ok', idempotent: true, qualifiedCount: 2 });
   assert.equal(sql(`SELECT status FROM public.online_poker_tables WHERE id='${boundary.tableId}'`), 'closed');

@@ -30,6 +30,7 @@ on:
       - "VinPoker/supabase/pending-migrations/*_online_satellite_bubble_evidence.sql"
       - "VinPoker/supabase/pending-migrations/*_online_satellite_lock_result.sql"
       - "VinPoker/supabase/pending-migrations/*_online_satellite_issue_test_tickets.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_redeem_test_ticket.sql"
       - "VinPoker/supabase/migration-archive/historical-never-replay/20260923000000_online_poker_seat_heartbeat.sql"
       - "VinPoker/supabase/pending-migrations/ROLLBACK_*_online_poker_complete_deal_stack_writeback.sql"
       - "VinPoker/supabase/migration-archive/legacy-unapplied/20260907000000_op_submit_action_settlement_seat_writeback.sql"
