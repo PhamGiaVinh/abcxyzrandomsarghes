@@ -23,7 +23,7 @@ it.each(['-100000','1e3','100,000','100.00','2147483648'])('blocks an invalid PT
   expect(mock.update).not.toHaveBeenCalled();
 });
 
-it('writes whole VND amounts for PT and FT using either supported format', async () => {
+it.each(['write rejected', 'response lost after commit'])('retries only FT after %s', async (failure) => {
   const readQuery = {eq:vi.fn().mockReturnThis(),maybeSingle:vi.fn()
     .mockResolvedValueOnce({data:dealers[0],error:null})
     .mockResolvedValueOnce({data:dealers[1],error:null})};
@@ -45,10 +45,16 @@ it('writes whole VND amounts for PT and FT using either supported format', async
   expect(await screen.findByText('Đã xác minh: TEST PT.')).toBeInTheDocument();
   expect(screen.getByText('Chưa xác minh: TEST FT.')).toBeInTheDocument();
 
-  readQuery.maybeSingle.mockResolvedValueOnce({data:{...dealers[1],
-    monthly_salary_vnd:100000,base_rate_vnd:3846,hourly_rate_vnd:481},error:null});
+  const ftRates = {monthly_salary_vnd:100000,base_rate_vnd:3846,hourly_rate_vnd:481};
+  const alreadyCommitted = failure === 'response lost after commit';
+  readQuery.maybeSingle.mockResolvedValueOnce({
+    data: alreadyCommitted ? {...dealers[1], ...ftRates} : dealers[1], error:null,
+  });
+  if (!alreadyCommitted) mock.written.mockResolvedValueOnce({data:ftRates,error:null});
   fireEvent.click(screen.getByRole('button',{name:'Áp lương cho 1 dealer'}));
   fireEvent.click(screen.getByRole('button',{name:'Áp lương',exact:true}));
   expect(await screen.findByText('Đã xác minh: TEST FT.')).toBeInTheDocument();
-  expect(mock.update).toHaveBeenCalledTimes(2);
+  expect(readQuery.eq).toHaveBeenNthCalledWith(6, 'id', 'ft');
+  expect(mock.update).toHaveBeenCalledTimes(alreadyCommitted ? 2 : 3);
+  if (!alreadyCommitted) expect(mock.update).toHaveBeenNthCalledWith(3, ftRates);
 });
