@@ -136,6 +136,9 @@ export default function OnlinePokerTable() {
   const seatContext = useRef({ key: seatContextKey });
   if (seatContext.current.key !== seatContextKey) seatContext.current = { key: seatContextKey };
   const [sitIntent, setSitIntent] = useState<{ seat: number; context: object } | null>(null);
+  useEffect(() => {
+    if (!seatsVerified) setSitIntent(null);
+  }, [seatsVerified]);
   const sitSeat = sitIntent?.context === seatContext.current ? sitIntent.seat : null;
   const [submitting, setSubmitting] = useState(false);
   const [bustOpen, setBustOpen] = useState(false);

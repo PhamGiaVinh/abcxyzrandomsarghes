@@ -77,6 +77,22 @@ describe('OnlinePokerTable — PR C stale-table cleanup', () => {
     expect(screen.queryByRole('dialog', { name: 'Ngồi vào ghế 1' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Ghế 1.*Ngồi/i })).toBeVisible();
   });
+  it('requires a fresh seat choice after a same-table read failure recovers', () => {
+    h.useTableMeta.mockReturnValue(meta());
+    h.useTableHand.mockReturnValue(thState());
+    const { rerender } = renderTable();
+    fireEvent.click(screen.getByRole('button', { name: /Ghế 1.*Ngồi/i }));
+    expect(screen.getByRole('dialog', { name: 'Ngồi vào ghế 1' })).toBeVisible();
+
+    h.useTableHand.mockReturnValue(thState({ seatReadStatus: 'unavailable' }));
+    rerender(<MemoryRouter><OnlinePokerTable /></MemoryRouter>);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    h.useTableHand.mockReturnValue(thState());
+    rerender(<MemoryRouter><OnlinePokerTable /></MemoryRouter>);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ghế 1.*Ngồi/i })).toBeVisible();
+  });
   it.each(['table', 'actor'])('ignores an old ledger response after %s changes', async (kind) => {
     h.useTableMeta.mockReturnValue(meta()); h.useTableHand.mockReturnValue(thState());
     let resolveOld!: (rows: unknown[]) => void;
