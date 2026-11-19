@@ -52,7 +52,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - name: Verify native start-hand persistence using the server engine
+        env:
+          VERIFY_POKER_BROWSER_RETRY: '1'
         run: node --experimental-transform-types --test tests/onlinePoker/dealPersistence.pg.test.mjs
 
   online-poker-runtime:

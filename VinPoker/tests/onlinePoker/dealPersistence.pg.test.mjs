@@ -98,6 +98,7 @@ test('the shared server deal persists one native hand with consistent public and
     CREATE FUNCTION public.update_updated_at_column() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at=now(); RETURN NEW; END $$;
     ${file('../../supabase/migrations/20260817000000_online_poker_core.sql')}
     ${file('../../supabase/migrations/20260820000000_online_poker_runtime_rpcs.sql')}
+    GRANT SELECT ON public.online_poker_actions TO service_role;
     ${archivedFunction('op_submit_action', '20260907000000_op_submit_action_settlement_seat_writeback.sql')}
     ${archivedFunction('op_stand_up', '20260908000000_op_stand_up_block_folded_midhand.sql')}
     ${archivedFunction('op_close_table_if_empty', '20261002000000_op_auto_close_empty_table.sql', 'historical-never-replay')}
@@ -345,4 +346,8 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${pausedTable}'`), '0');
   sql(`UPDATE public.online_poker_seats SET status='sitting_out' WHERE table_id='${pausedTable}' AND seat_no=7`);
   assert.equal((await admin.rpc('op_start_hand', ordinaryArgs)).data.outcome, 'ok');
+  if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
+    const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
+    await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
+  }
 });
