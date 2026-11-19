@@ -289,6 +289,20 @@ describe("TrackerFloorAlertLane", () => {
     expect(screen.getByText(/Action gốc #4/)).toBeVisible();
   });
 
+  it("does not open a Floor deep link whose server row belongs to a different tournament", async () => {
+    vi.mocked(listTrackerFloorAlerts).mockResolvedValueOnce({
+      ok: true,
+      alerts: [{ ...baseAlert, tournament_id: "tournament-2" }],
+    });
+    render(
+      <MemoryRouter initialEntries={["/ops/floor/tournaments/tournament-1/tables?club=club-1&alert=alert-1"]}>
+        <TrackerFloorAlertLane tournamentId="tournament-1" />
+      </MemoryRouter>,
+    );
+    await screen.findByText("Không có cảnh báo bàn đang mở");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("only dismisses a voided hand after a fresh server check", async () => {
     voidState.value = true;
     render(<MemoryRouter><TrackerFloorAlertLane tournamentId="tournament-1" /></MemoryRouter>);

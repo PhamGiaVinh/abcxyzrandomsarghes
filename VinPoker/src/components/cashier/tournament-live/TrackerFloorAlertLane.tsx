@@ -76,7 +76,7 @@ function ScopedTrackerFloorAlertLane({ tournamentId, actorId }: TrackerFloorAler
           if ("error" in result) setError(result.error);
           else {
             if (flight.queued) continue;
-            setAlerts([...result.alerts]); setError(null);
+            setAlerts(result.alerts.filter(alert => alert.tournament_id === tournamentId)); setError(null);
           }
           setLoading(false);
         } while (flight.queued && current());
@@ -117,10 +117,10 @@ function ScopedTrackerFloorAlertLane({ tournamentId, actorId }: TrackerFloorAler
   }, [reload, supabase, tournamentId]);
 
   useEffect(() => {
-    if (!targetAlertId || loading) return;
+    if (!targetAlertId || loading || error) return;
     const target = alerts.find((alert) => alert.id === targetAlertId);
     if (target?.hand_id) setReviewAlert(target);
-  }, [alerts, loading, targetAlertId]);
+  }, [alerts, error, loading, targetAlertId]);
 
   const transition = async (alert: TrackerFloorAlert, action: string, note: string | null = null, confirmed=false) => {
     if (!alive.current || transitioningId || error || transitionRecovery.blocked) return;
