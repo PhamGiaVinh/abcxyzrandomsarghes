@@ -132,7 +132,11 @@ export default function OnlinePokerTable() {
   const seatsVerified = seatReadStatus === 'ready';
   const table = useTableMeta(tableId);
 
-  const [sitSeat, setSitSeat] = useState<number | null>(null);
+  const seatContextKey = JSON.stringify([user?.id ?? null, tableId]);
+  const seatContext = useRef({ key: seatContextKey });
+  if (seatContext.current.key !== seatContextKey) seatContext.current = { key: seatContextKey };
+  const [sitIntent, setSitIntent] = useState<{ seat: number; context: object } | null>(null);
+  const sitSeat = sitIntent?.context === seatContext.current ? sitIntent.seat : null;
   const [submitting, setSubmitting] = useState(false);
   const [bustOpen, setBustOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -349,17 +353,19 @@ export default function OnlinePokerTable() {
     // open the dialog for a seat the player already occupies (server would then reject).
     if (loading || !seatsVerified) return;
     if (seated) { toast.info('Bạn đã ngồi ở bàn này rồi.'); return; }
-    setSitSeat(seatNo);
+    setSitIntent({ seat: seatNo, context: seatContext.current });
   };
 
   const confirmSit = async (buyin: string) => {
     if (sitSeat == null || !seatsVerified || seated || seats.some(seat => seat.seatNo === sitSeat)) return;
+    const context = seatContext.current;
     markPokerSoundGesture(); // first deliberate table action → unlock audio
     try {
       const res = (await actions.sitOpen(sitSeat, buyin)) as RpcOutcome;
-      if (res?.outcome === 'ok') { toast.success(`Đã ngồi vào ghế ${sitSeat}`); setSitSeat(null); refresh(); }
+      if (context !== seatContext.current) return;
+      if (res?.outcome === 'ok') { toast.success(`Đã ngồi vào ghế ${sitSeat}`); setSitIntent(null); refresh(); }
       else toast.error(vn(res?.outcome));
-    } catch { toast.error('Không ngồi được, thử lại.'); }
+    } catch { if (context === seatContext.current) toast.error('Không ngồi được, thử lại.'); }
   };
 
   const leave = async () => {
@@ -369,7 +375,7 @@ export default function OnlinePokerTable() {
         // Clear local seat-bound UI at once so I can immediately re-join (don't wait for
         // the poll). mySeatNo is seats-authoritative, so refresh() drops `seated` too.
         toast.success('Đã rời bàn.');
-        setSitSeat(null);
+        setSitIntent(null);
         setBustOpen(false);
         bustHandledRef.current = false;
         refresh();
@@ -689,7 +695,7 @@ export default function OnlinePokerTable() {
 
       <SitDownDialog
         open={sitSeat != null && seatsVerified}
-        onOpenChange={(v) => { if (!v) setSitSeat(null); }}
+        onOpenChange={(v) => { if (!v) setSitIntent(null); }}
         seatNo={sitSeat}
         tableName={table.name}
         sb={table.sb}

@@ -8,6 +8,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
+vi.mock('@/lib/onlinePoker/client', () => ({ loadBuyinsLive: vi.fn().mockResolvedValue([]) }));
+
 const h = vi.hoisted(() => ({ useTableHand: vi.fn(), useTableMeta: vi.fn(), useParams: vi.fn() }));
 // E5 — toggle FEATURES.onlinePokerRebuy per test (all other flags keep their real values).
 const ff = vi.hoisted(() => ({ rebuy: false }));
@@ -38,7 +40,7 @@ const bettingHand = (toAct: number) => ({
 });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const thState = (over: any = {}) => ({
-  hand: null, seats: [], mySeatNo: null, myUserId: 'u1', hostUserId: null, amIHost: false, legal: null, loading: false, refresh: vi.fn(),
+  hand: null, seats: [], seatReadStatus: 'ready', mySeatNo: null, myUserId: 'u1', hostUserId: null, amIHost: false, legal: null, loading: false, refresh: vi.fn(),
   actions: {
     sitOpen: vi.fn().mockResolvedValue({ outcome: 'ok' }),
     leaveTable: vi.fn().mockResolvedValue({ outcome: 'ok' }),
