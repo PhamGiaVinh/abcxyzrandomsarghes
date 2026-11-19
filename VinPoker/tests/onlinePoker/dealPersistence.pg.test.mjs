@@ -316,6 +316,12 @@ test('the shared server deal persists one native hand with consistent public and
     const { verifySatelliteRealtime } = await import('./satelliteRealtime.fixture.mjs');
     await verifySatelliteRealtime({ sql, statusPath: realtimeFixture, first, spectator,
       practiceHand: practice.handId, satelliteHand: satellite.handId, secondaryHand: secondaryDeal.handId });
+    const { withSatelliteEdgeHttp } = await import('./satelliteEdgeHttp.fixture.mjs');
+    await withSatelliteEdgeHttp(realtimeFixture, async ({ post }) => {
+      const rejected = await post({ op: 'ping' }, 'invalid-fixture-token');
+      assert.equal(rejected.status, 401);
+      console.log('SATELLITE_DENO_HTTP_REAL_AUTH_ACCEPTANCE_PASS');
+    });
     return;
   }
   assert.throws(() => clockCommand(spectator, setupPilot, 1, true), /SATELLITE_PILOT_MANAGER_REQUIRED/);

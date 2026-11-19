@@ -113,6 +113,9 @@ jobs:
       - uses: supabase/setup-cli@v2
         with:
           version: 2.101.0
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
       - run: npm ci
       - name: Verify real Realtime delivery for the disposable satellite
         env:
