@@ -7,6 +7,8 @@ on:
       - "VinPoker/supabase/functions/online-poker-*/**"
       - "VinPoker/supabase/functions/_shared/poker*/**"
       - "VinPoker/tests/onlinePoker/**"
+      - "VinPoker/src/pages/OnlineSatelliteTable*"
+      - "VinPoker/src/pages/SatelliteBlindSchedule.tsx"
       - "VinPoker/src/lib/onlinePoker/client.ts"
       - "VinPoker/tests/pokerEngine/**"
       - "VinPoker/tests/pokerAdapter/**"
@@ -91,7 +93,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck:engine
       - name: Verify engine, adapter and runner state
-        run: npx vitest run tests/pokerEngine tests/pokerAdapter tests/onlinePoker/tableRunner.test.ts tests/onlinePoker/submitTransportRetry.test.ts
+        run: npx vitest run tests/pokerEngine tests/pokerAdapter tests/onlinePoker/tableRunner.test.ts tests/onlinePoker/submitTransportRetry.test.ts src/pages/OnlineSatelliteTable.test.tsx
       - name: Verify the manual deal handler with fixture transport
         run: node --experimental-transform-types --test tests/onlinePoker/manualDeal.handler.test.mjs
       - uses: denoland/setup-deno@v2
