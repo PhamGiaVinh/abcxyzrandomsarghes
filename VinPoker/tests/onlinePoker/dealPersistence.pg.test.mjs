@@ -206,6 +206,7 @@ test('the shared server deal persists one native hand with consistent public and
   sql(file('../../supabase/pending-migrations/20261119205002_online_satellite_seat_ownership_fence.sql'));
   sql(file('../../supabase/pending-migrations/20261119205132_online_satellite_provision_table.sql'));
   sql(file('../../supabase/pending-migrations/20261119205447_online_satellite_set_clock.sql'));
+  sql(file('../../supabase/pending-migrations/20261119213644_online_satellite_bubble_evidence.sql'));
   const setupPilot = 'ab510000-0000-4000-8000-000000000019';
   sql(`
     INSERT INTO online_satellite_private.registration_gate(club_id,enabled) VALUES ('${clubId}',true);
@@ -810,6 +811,13 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(reopenSatellite(spectator), null);
   const provisionedContext = json(`SET ROLE service_role;
     SELECT public.op_load_action_context('${provisionedDeal.handId}')`);
+  const bubbleEvidence = (actor) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT COALESCE(public.get_online_satellite_bubble_evidence_v1('${setupPilot}'),'null'::jsonb)`);
+  assert.deepEqual(bubbleEvidence(first), {
+    handId: provisionedDeal.handId, handNo: '1', stateVersion: 0, status: 'betting',
+    survivingCount: null, eliminations: null,
+  });
+  assert.equal(bubbleEvidence(second), null);
   const provisionedState = deserializeAuthoritative(
     provisionedContext.state, provisionedContext.live_deck, provisionedContext.holes,
   );
@@ -832,6 +840,10 @@ test('the shared server deal persists one native hand with consistent public and
   const provisionedStacks = () => json(`SELECT json_agg(stack ORDER BY seat_no)
     FROM public.online_poker_seats WHERE table_id='${setupReceipt.tableId}'`);
   assert.deepEqual(provisionedStacks(), [135,145]);
+  assert.deepEqual(bubbleEvidence(first), {
+    handId: provisionedDeal.handId, handNo: '1', stateVersion: 1, status: 'complete',
+    survivingCount: 2, eliminations: [],
+  });
   const reapPractice = 'ab510000-0000-4000-8000-000000000020';
   const missingBinding = 'ab510000-0000-4000-8000-000000000022';
   sql(`
