@@ -198,6 +198,11 @@ test('the shared server deal persists one native hand with consistent public and
     SELECT public.provision_online_satellite_table_v1('${setupPilot}',
       '[{"starts_at_second":0,"small_blind":5,"big_blind":10,"big_blind_ante":0},
         {"starts_at_second":60,"small_blind":10,"big_blind":20,"big_blind_ante":20}]')`;
+  assert.deepEqual(json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+    SELECT public.get_online_satellite_table_v1('${setupPilot}')`), {
+    tableId: null, clockRevision: null, running: false, status: 'unprovisioned',
+    canManage: true, canPlay: true, canProvision: true,
+  });
   assert.throws(() => sql(setup(spectator)), /SATELLITE_PILOT_MANAGER_REQUIRED/);
   const setupReceipt = json(setup(first));
   assert.equal(setupReceipt.idempotent, false);
@@ -729,7 +734,7 @@ test('the shared server deal persists one native hand with consistent public and
   const reopenSatellite = (actor) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
     SELECT COALESCE(public.get_online_satellite_table_v1('${setupPilot}'),'null'::jsonb)`);
   assert.deepEqual(reopenSatellite(first), { tableId: setupReceipt.tableId, clockRevision: '5',
-    running: false, status: 'paused', canManage: true, canPlay: true });
+    running: false, status: 'paused', canManage: true, canPlay: true, canProvision: false });
   assert.deepEqual(reopenSatellite(second), { ...reopenSatellite(first), canManage: false });
   assert.equal(reopenSatellite(spectator), null);
   const provisionedContext = json(`SET ROLE service_role;

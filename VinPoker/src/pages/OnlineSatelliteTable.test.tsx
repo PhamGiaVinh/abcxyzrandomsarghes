@@ -23,7 +23,7 @@ it("uses the server revision and refreshes a stale clock command", async () => {
         reads += 1;
         return Promise.resolve({
           data: { tableId, clockRevision: String(reads + 3), running: reads > 1,
-            status: reads > 1 ? "open" : "paused", canManage: true, canPlay: true },
+            status: reads > 1 ? "open" : "paused", canManage: true, canPlay: true, canProvision: false },
           error: null,
         });
       },

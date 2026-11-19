@@ -4,6 +4,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
+import SatelliteBlindSchedule from "./SatelliteBlindSchedule";
 
 const pilotIdentifier = z.string().uuid();
 const tableSnapshot = z.object({
@@ -13,6 +14,13 @@ const tableSnapshot = z.object({
   status: z.enum(["open", "paused", "closed"]),
   canManage: z.boolean(),
   canPlay: z.boolean(),
+  canProvision: z.literal(false),
+});
+const unprovisioned = z.object({
+  status: z.literal("unprovisioned"),
+  tableId: z.null(),
+  clockRevision: z.null(),
+  canProvision: z.boolean(),
 });
 const clockReceipt = z.object({ outcome: z.enum(["ok", "stale"]) });
 
@@ -28,7 +36,7 @@ export default function OnlineSatelliteTable() {
       const { data, error } = await client.rpc("get_online_satellite_table_v1" as never,
         { p_pilot_id: pilotId } as never).abortSignal(signal);
       if (error) throw error;
-      return tableSnapshot.nullable().parse(data);
+      return z.union([tableSnapshot, unprovisioned]).nullable().parse(data);
     },
     retry: false,
   });
@@ -56,6 +64,11 @@ export default function OnlineSatelliteTable() {
             <Button variant="outline" onClick={() => void snapshot.refetch()}>Thử lại</Button>
           </div>
         ) : !snapshot.data ? <p>Bàn chưa sẵn sàng hoặc bạn chưa có quyền truy cập.</p>
+        : snapshot.data.status === "unprovisioned" ? (
+          snapshot.data.canProvision && pilot.success
+            ? <SatelliteBlindSchedule pilotId={pilot.data} onCreated={() => void snapshot.refetch()} />
+            : <p role="status">Bàn chưa được tạo.</p>
+        )
         : (
           <div className="space-y-3">
             <p role="status">{snapshot.data.status === "closed" ? "Bàn đã đóng"
@@ -66,7 +79,7 @@ export default function OnlineSatelliteTable() {
               )}
               {snapshot.data.canManage && snapshot.data.status !== "closed" && (
                 <Button variant="outline" disabled={clock.isPending}
-                  onClick={() => snapshot.data && clock.mutate(snapshot.data)}>
+                  onClick={() => snapshot.data?.status !== "unprovisioned" && snapshot.data && clock.mutate(snapshot.data)}>
                   {clock.isPending ? "Đang gửi…" : snapshot.data.running ? "Tạm dừng đồng hồ" : "Chạy đồng hồ"}
                 </Button>
               )}

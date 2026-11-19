@@ -18,6 +18,7 @@ const trackerVoiceUatEnabled = import.meta.env.VITE_TRACKER_VOICE_UAT_ENABLED ==
 const isTrackerVoiceUatPreviewRoute = isTrackerVoiceUatRoute(window.location.pathname, trackerVoiceUatEnabled);
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
+import { FEATURES } from "@/lib/featureFlags";
 import { Layout } from "@/components/Layout";
 import { UpdateNotifier } from "@/components/UpdateNotifier";
 import { UpdateOverlay } from "@/components/UpdateOverlay";
