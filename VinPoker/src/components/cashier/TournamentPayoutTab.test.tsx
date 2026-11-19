@@ -3,16 +3,17 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TournamentPayoutTab } from "./TournamentPayoutTab";
 
-const { read, withinClubs } = vi.hoisted(() => ({ read: vi.fn(), withinClubs: vi.fn() }));
+const { read, withinClubs, directRead } = vi.hoisted(() => ({ read: vi.fn(), withinClubs: vi.fn(), directRead: vi.fn() }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: "cashier" }, session: null }) }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { from: () => {
   const query = { select: () => query, in: (...args: unknown[]) => { withinClubs(...args); return query; },
-    not: () => query, order: () => query, limit: () => query, abortSignal: read };
+    not: () => query, order: () => query, limit: () => query, abortSignal: read,
+    eq: (_column: string, id: string) => ({abortSignal: () => ({maybeSingle: () => directRead(id)})}) };
   return query;
 } } }));
 vi.mock("./tournament-live/PrizePayoutTrackingSection", () => ({ PrizePayoutTrackingSection: ({ tournamentId }: { tournamentId: string }) => <p>Payment:{tournamentId}</p> }));
 afterEach(cleanup);
-beforeEach(() => { read.mockReset(); withinClubs.mockClear(); });
+beforeEach(() => { read.mockReset(); withinClubs.mockClear(); directRead.mockReset().mockResolvedValue({data:null,error:null}); });
 const mount = (entry = "/cashier?tab=tournament_payouts") => render(<MemoryRouter initialEntries={[entry]}><TournamentPayoutTab clubIds={["club-a"]} /></MemoryRouter>);
 const tours = [{ id: "tour-a", name: "Giải A", start_time: "2026-11-03" }, { id: "tour-b", name: "Giải B", start_time: "2026-11-02" }];
 describe("cashier payout tournament selection", () => {
@@ -37,4 +38,14 @@ describe("cashier payout tournament selection", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
     expect(screen.queryByText(/^Payment:/)).not.toBeInTheDocument();
   });
+});
+
+it('opens an authorized historical tournament outside the latest list via an exact scoped lookup', async () => {
+  read.mockResolvedValue({data:tours,error:null});
+  directRead.mockResolvedValue({data:{id:'tour-old',name:'Giải cũ',start_time:'2025-01-01'},error:null});
+  mount('/cashier?tab=tournament_payouts&tournament=tour-old');
+  expect(await screen.findByText('Payment:tour-old')).toBeInTheDocument();
+  expect(directRead).toHaveBeenCalledWith('tour-old');
+  expect(withinClubs).toHaveBeenCalledTimes(2);
+  expect(screen.getByLabelText('Giải đấu')).toHaveValue('tour-old');
 });
