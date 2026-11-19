@@ -60,16 +60,20 @@ export type NextActionKey =
 const num = (v: unknown): number => (typeof v === "number" && isFinite(v) ? v : 0);
 const numOrNull = (v: unknown): number | null => (typeof v === "number" && isFinite(v) ? v : null);
 const str = (v: unknown, fallback = "unknown"): string => (typeof v === "string" && v ? v : fallback);
+const count = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 
 /** Defensive parse of the RPC's Json result. Returns null only when input is unusable. */
 export function parsePlayerIntelligence(raw: unknown): PlayerIntelligence | null {
-  if (!raw || typeof raw !== "object") return null;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const r = raw as Record<string, any>;
-  const status: ProfileStatus =
-    r.profileStatus === "verified" || r.profileStatus === "provisional" ? r.profileStatus : "new";
+  const status = r.profileStatus;
+  if (status !== "verified" && status !== "provisional" && status !== "new") return null;
   const conf: ConfidenceLevel =
     r.confidence === "high" || r.confidence === "medium" ? r.confidence : "low";
-  const vs = r.verifiedSample ?? {};
+  const vs = r.verifiedSample;
+  if (!vs || !count(vs.totalEntries) || !count(vs.uniqueEvents) || !count(vs.reentries)
+    || vs.uniqueEvents > vs.totalEntries || vs.reentries > vs.totalEntries
+    || (status === "new") !== (vs.totalEntries === 0)) return null;
   const res = r.results ?? {};
   const bands = r.bands ?? {};
   const sq = r.sourceQuality ?? {};
@@ -88,10 +92,10 @@ export function parsePlayerIntelligence(raw: unknown): PlayerIntelligence | null
     profileStatus: status,
     confidence: conf,
     verifiedSample: {
-      totalEntries: num(vs.totalEntries),
-      uniqueEvents: num(vs.uniqueEvents),
-      reentries: num(vs.reentries),
-      lastPlayedAt: typeof vs.lastPlayedAt === "string" ? vs.lastPlayedAt : null,
+      totalEntries: vs.totalEntries,
+      uniqueEvents: vs.uniqueEvents,
+      reentries: vs.reentries,
+      lastPlayedAt: typeof vs.lastPlayedAt === "string" && Number.isFinite(Date.parse(vs.lastPlayedAt)) ? vs.lastPlayedAt : null,
     },
     results: {
       itmRate: numOrNull(res.itmRate),
