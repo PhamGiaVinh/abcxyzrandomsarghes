@@ -317,11 +317,7 @@ test('the shared server deal persists one native hand with consistent public and
     await verifySatelliteRealtime({ sql, statusPath: realtimeFixture, first, spectator,
       practiceHand: practice.handId, satelliteHand: satellite.handId, secondaryHand: secondaryDeal.handId });
     const { withSatelliteEdgeHttp } = await import('./satelliteEdgeHttp.fixture.mjs');
-    await withSatelliteEdgeHttp(realtimeFixture, async ({ post, players, observeTable, apiUrl, anonKey }) => {
-      const rejected = await post({ op: 'ping' }, 'invalid-fixture-token');
-      assert.equal(rejected.status, 401);
-      console.log('SATELLITE_DENO_HTTP_REAL_AUTH_ACCEPTANCE_PASS');
-      const [td, guest] = players;
+    const prepareTable = ([td, guest]) => {
       const hostClub = crypto.randomUUID();
       const targetTour = crypto.randomUUID();
       const actionPilot = crypto.randomUUID();
@@ -337,6 +333,14 @@ test('the shared server deal persists one native hand with consistent public and
         SELECT public.provision_online_satellite_table_v1('${actionPilot}',
           '[{"starts_at_second":0,"small_blind":5,"big_blind":10,"big_blind_ante":0}]',1)`).tableId;
       assert.equal(clockCommand(td.actor,actionPilot,1,true).outcome, 'ok');
+      return actionTable;
+    };
+    await withSatelliteEdgeHttp(realtimeFixture, async ({ post, players, loginPlayer, observeTable, apiUrl, anonKey }) => {
+      const rejected = await post({ op: 'ping' }, 'invalid-fixture-token');
+      assert.equal(rejected.status, 401);
+      console.log('SATELLITE_DENO_HTTP_REAL_AUTH_ACCEPTANCE_PASS');
+      const [td] = players;
+      const actionTable = prepareTable(players);
       let observers = await observeTable(actionTable);
       const acknowledged = [];
       const peerDelivered = [];
@@ -406,6 +410,9 @@ test('the shared server deal persists one native hand with consistent public and
       });
       assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${actionTable}' AND status='complete'`), '12');
       assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${actionTable}'`), '200');
+      const { verifyConcurrentSatelliteTables } = await import('./satelliteConcurrent.fixture.mjs');
+      const participants = [...players, ...await Promise.all(Array.from({ length: 4 }, loginPlayer))];
+      await verifyConcurrentSatelliteTables({ sql, json, post, participants, prepareTable, observeTable });
     });
     return;
   }

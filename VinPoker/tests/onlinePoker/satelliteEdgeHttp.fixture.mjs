@@ -41,7 +41,7 @@ export async function withSatelliteEdgeHttp(statusPath, run) {
     body: JSON.stringify(body), signal: AbortSignal.timeout(8_000),
   });
   const sockets = [];
-  const observeTable = async (tableId) => Promise.all(players.map(async ({ token }) => {
+  const observeTable = async (tableId, participants = players) => Promise.all(participants.map(async ({ token }) => {
     const client = createClient(status.API_URL, status.ANON_KEY, { accessToken: async () => token });
     sockets.push(client);
     await client.realtime.setAuth();
@@ -88,7 +88,7 @@ export async function withSatelliteEdgeHttp(statusPath, run) {
     }
     assert.equal(response?.status, 200, `Disposable Edge ping failed: ${startError ?? child.exitCode ?? 'HTTP'}`);
     assert.deepEqual(await response.json(), { ok: true });
-    await run({ post, players, observeTable, apiUrl: status.API_URL, anonKey: status.ANON_KEY });
+    await run({ post, players, loginPlayer, observeTable, apiUrl: status.API_URL, anonKey: status.ANON_KEY });
   } finally {
     child.kill();
     await exited;
