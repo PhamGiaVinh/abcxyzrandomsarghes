@@ -146,6 +146,9 @@ test('the shared server deal persists one native hand with consistent public and
   `);
   sql(file('../../supabase/pending-migrations/20261119204101_online_satellite_deal_levels.sql'));
   sql(file('../../supabase/pending-migrations/20261119204315_online_satellite_deal_commit_fence.sql'));
+  sql(file('../../supabase/pending-migrations/20261119204831_online_satellite_private_table_reads.sql'));
+  sql(`GRANT SELECT ON public.online_poker_tables, public.online_poker_seats,
+    public.online_poker_hand_snapshots TO anon, authenticated`);
   const level = (id = tableId) => {
     assert.match(id, /^[0-9a-f-]{36}$/);
     return json(`SET ROLE service_role; SELECT public.op_read_satellite_deal_level('${id}')`);
@@ -662,6 +665,22 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(anteSeatStacks(), '95,19');
   assert.deepEqual(json(`SELECT satellite_deal_level FROM public.online_poker_hands WHERE id='${anteHand}'`),
     { clockRevision: '3', levelStartSecond: '120', sb: '5', bb: '10', bigBlindAnte: '10' });
+  const visibleSatellite = `SELECT json_build_array(
+    (SELECT count(*) FROM public.online_poker_tables WHERE id='${anteTable}'),
+    (SELECT count(*) FROM public.online_poker_seats WHERE table_id='${anteTable}'),
+    (SELECT count(*) FROM public.online_poker_hands WHERE id='${anteHand}'),
+    (SELECT count(*) FROM public.online_poker_hand_seats WHERE hand_id='${anteHand}'),
+    (SELECT count(*) FROM public.online_poker_hand_events WHERE hand_id='${anteHand}'),
+    (SELECT count(*) FROM public.online_poker_hand_snapshots WHERE hand_id='${anteHand}')
+  )`;
+  sql(`INSERT INTO public.online_poker_hand_snapshots(hand_id,at_seq,state)
+    SELECT id,0,state FROM public.online_poker_hands WHERE id='${anteHand}' ON CONFLICT DO NOTHING`);
+  assert.deepEqual(json(`SET ROLE anon; ${visibleSatellite}`), [0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(json(`SET ROLE authenticated; SET request.jwt.claim.sub='${spectator}'; ${visibleSatellite}`),
+    [0, 0, 0, 0, 0, 0]);
+  assert.deepEqual(json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}'; ${visibleSatellite}`),
+    json(visibleSatellite));
+  assert.equal(sql(`SET ROLE anon; SELECT count(*) FROM public.online_poker_tables WHERE id='${tableId}'`), '1');
   assert.equal(sql(`SELECT state->'seats'->1->>'deadAnte' FROM public.online_poker_hands WHERE id='${anteHand}'`), '4');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
