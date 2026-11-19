@@ -31,8 +31,12 @@ export function FnbClubContributionCard({
   loading: boolean;
   error: boolean;
 }) {
-  const hasData = !!report && report.orderCount > 0;
-  const contribution = report ? report.revenue - report.cogs : 0;
+  const hasData = !!report && (
+    report.orderCount > 0 || report.revenue !== 0 || report.cogs !== 0 ||
+    report.compCount > 0 || report.compCogs !== 0 ||
+    report.dailyTrend.length > 0 || Object.values(report.statusCounts).some((count) => count > 0)
+  );
+  const contribution = report ? report.revenue - report.cogs - report.compCogs : 0;
 
   return (
     <Card className="p-4 gradient-card border-primary/40 space-y-3">
@@ -44,7 +48,7 @@ export function FnbClubContributionCard({
         <InsightLabelBadge label="Observed Pattern" />
       </div>
       <p className="text-[11px] text-muted-foreground">
-        Doanh thu − giá vốn (COGS) của quầy F&B <strong>toàn CLB</strong>, từ {window.fromLabel} đến{" "}
+        Doanh thu − giá vốn (COGS) − chi phí món tặng của quầy F&B <strong>toàn CLB</strong>, từ {window.fromLabel} đến{" "}
         {window.toLabel}. <strong>KHÔNG chia theo từng giải</strong> — F&B bán ở quầy chung, dữ liệu không gắn
         với giải cụ thể, nên không cộng vào biên đóng góp mỗi giải ở trên.
       </p>
@@ -60,12 +64,12 @@ export function FnbClubContributionCard({
         FEATURES.seriesEmptyExplainer ? (
           <EmptyExplainer
             what="Doanh thu F&B toàn CLB trong kỳ"
-            why="chưa có đơn F&B nào (đã thanh toán) trong khoảng thời gian series này."
+            why="báo cáo trả tổng ròng bằng 0 và không có chi tiết phát sinh trong kỳ."
             how="Bán F&B qua quầy/QR trong kỳ — đơn đã thanh toán sẽ tự vào đây (toàn CLB, không chia theo giải)."
           />
         ) : (
           <p className="text-xs text-muted-foreground border border-dashed border-border rounded-md p-3">
-            Chưa có đơn F&B nào trong khoảng thời gian này.
+            Báo cáo trả tổng ròng bằng 0 và không có chi tiết phát sinh trong kỳ.
           </p>
         )
       ) : (
@@ -79,10 +83,13 @@ export function FnbClubContributionCard({
               strong
               danger={contribution < 0}
             />
+            {(report!.compCount > 0 || report!.compCogs !== 0) && (
+              <Tile label="Chi phí món tặng" value={formatVndShort(report!.compCogs)} muted />
+            )}
             <Tile label="Số đơn" value={countFmt.format(report!.orderCount)} muted />
           </div>
           <ExplainHint term="biên đóng góp F&B">
-            Tiền quầy F&B thực sự giữ lại: <b>doanh thu − giá vốn nguyên liệu (COGS)</b>. Đây là doanh thu
+            Biên đóng góp của quầy F&B bằng <b>doanh thu − giá vốn nguyên liệu (COGS) − chi phí món tặng</b>. Đây là doanh thu
             THẬT của CLB (khác buy-in là tiền chạy qua). Nhưng vẫn <b>chưa trừ</b> lương nhân sự, marketing,
             mặt bằng — nên chưa phải lợi nhuận. Con số gộp cho cả CLB trong kỳ, không tách theo giải vì đơn
             F&B không gắn với giải nào.

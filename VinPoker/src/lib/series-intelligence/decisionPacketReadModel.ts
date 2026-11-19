@@ -93,7 +93,9 @@ export async function resolveForecastActualScoringPairV1(input: {
   if (forecast && forecast.provenanceCompleteness !== "complete") reasons.push("forecast_provenance_incomplete");
   if (forecast && !forecast.forecastIdentityEligible) reasons.push("forecast_not_identity_eligible");
   if (packet && forecast && (packet.packet.clubId !== forecast.clubId || packet.packet.eventId !== forecast.eventId || packet.packet.targetMetric !== forecast.targetMetric || packet.packet.forecastSnapshotId !== forecast.snapshotId)) reasons.push("target_metric_mismatch");
-  if (forecast && (!forecast.forecastIssuedAt || !forecast.asOfTs || Date.parse(forecast.forecastIssuedAt) > Date.parse(packet?.packet.asOfTs ?? ""))) reasons.push("outcome_precedes_forecast");
+  const packetCutoff = Date.parse(packet?.packet.asOfTs ?? "");
+  if (forecast && (!Number.isFinite(Date.parse(forecast.asOfTs ?? ""))
+      || !(Date.parse(forecast.forecastIssuedAt ?? "") <= packetCutoff))) reasons.push("outcome_precedes_forecast");
 
   if (truth.resolution.state === "needs_reconciliation") reasons.push("reconciliation_required");
   if (truth.resolution.state === "conflict") reasons.push(truth.resolution.reason === "stale_reconciliation" ? "stale_reconciliation" : "actual_conflict");
@@ -104,7 +106,7 @@ export async function resolveForecastActualScoringPairV1(input: {
   if (actual && actual.scope !== "event_total") reasons.push("actual_scope_mismatch");
   if (actual && !isFinal(actual)) reasons.push("actual_not_final");
   if (actual && (actual.sourceTimestampState !== "exact" || !actual.sourceTimestamp)) reasons.push("outcome_precedes_forecast");
-  if (actual && packet && actual.sourceTimestamp && Date.parse(actual.sourceTimestamp) <= Date.parse(packet.packet.asOfTs)) reasons.push("outcome_precedes_forecast");
+  if (actual && packet && !(Date.parse(actual.sourceTimestamp ?? "") > packetCutoff)) reasons.push("outcome_precedes_forecast");
   if (actual && packet) {
     const metric = metricForTarget(actual, packet.packet.targetMetric);
     if (!(["present", "explicit_zero"] as const).includes(metric.availability as "present" | "explicit_zero")) reasons.push("actual_metric_missing");

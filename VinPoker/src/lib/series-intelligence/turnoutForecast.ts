@@ -151,9 +151,10 @@ const DISCLAIMER =
 // ---------- pre-event feature extraction ----------
 function localParts(iso: string | null): { weekday: number; quarter: number; hourSlot: number } | null {
   if (!iso) return null;
-  const d = new Date(iso);
+  // The supported club calendar is Vietnam business time (UTC+7).
+  const d = new Date(Date.parse(iso) + 7 * 60 * 60 * 1000);
   if (Number.isNaN(d.getTime())) return null;
-  return { weekday: d.getDay(), quarter: Math.floor(d.getMonth() / 3), hourSlot: Math.floor(d.getHours() / 6) };
+  return { weekday: d.getUTCDay(), quarter: Math.floor(d.getUTCMonth() / 3), hourSlot: Math.floor(d.getUTCHours() / 6) };
 }
 
 interface PreFeatures {
@@ -375,7 +376,7 @@ function trainRows(events: SeriesEvent[], calendarFeatures = false, censoring = 
 // merely by sharing an object with the CV path). A separate scoring layer joins the later-known actual to
 // produce ScoredForecast[]. CV error, baseline comparison, and future calibration all REDUCE over this one
 // artifact — there is no second evaluation code path that could disagree or leak.
-export const ENGINE_VERSION = "turnout-ridge-1"; // provenance stub; full structured provenance is B2
+export const ENGINE_VERSION = "turnout-ridge-2"; // Vietnam business calendar features
 
 export interface ForecastPoint {
   eventId: string;

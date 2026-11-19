@@ -29,7 +29,7 @@ const MAX_INTEGER_RATE_VND = 2_147_483_647;
 function parseVnd(input: string, max: number): number | null {
   const value = input.trim();
   if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)$/.test(value)) return null;
-  const amount = Number(value.replaceAll(".", ""));
+  const amount = Number(value.replace(/\./g, ""));
   return Number.isSafeInteger(amount) && amount > 0 && amount <= max ? amount : null;
 }
 const fmt = (n: number) => n.toLocaleString("vi-VN");
@@ -50,6 +50,7 @@ export function BulkSalaryDialog({
   const [ftMonthlyInput, setFtMonthlyInput] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ confirmed: string[]; pending: string[] } | null>(null);
 
   const hasSalary = (d: DealerRecord) =>
     d.employment_type === "part_time"
@@ -111,51 +112,61 @@ export function BulkSalaryDialog({
     }
     setSaving(true);
     try {
-      let updated = 0;
-      const errors: string[] = [];
-
-      // PT: one grouped update — same hourly for the whole selection.
-      if (ptHourly && selPt.length > 0) {
-        const { error } = await supabase
-          .from("dealers")
-          .update({ hourly_rate_vnd: ptHourly, monthly_salary_vnd: 0 })
-          .in("id", selPt.map((d) => d.id));
-        if (error) errors.push(`PT: ${error.message}`);
-        else updated += selPt.length;
+      const confirmed = new Set<string>();
+      const pending: string[] = [];
+      const targets = [
+        ...(ptHourly === null ? [] : selPt.map((dealer) => ({
+          dealer, rates: { hourly_rate_vnd: ptHourly, monthly_salary_vnd: 0 },
+        }))),
+        ...(ftMonthly === null ? [] : selFt.map((dealer) => {
+          const hours = dealer.standard_hours_per_shift && dealer.standard_hours_per_shift > 0
+            ? dealer.standard_hours_per_shift : 8;
+          return { dealer, rates: {
+            monthly_salary_vnd: ftMonthly,
+            base_rate_vnd: Math.round(ftMonthly / WORKING_DAYS_PER_MONTH),
+            hourly_rate_vnd: Math.round(ftMonthly / WORKING_DAYS_PER_MONTH / hours),
+          } };
+        })),
+      ];
+      for (const { dealer, rates } of targets) {
+        const keys = Object.keys(rates) as Array<"monthly_salary_vnd" | "base_rate_vnd" | "hourly_rate_vnd">;
+        const matches = (row: Pick<DealerRecord, "monthly_salary_vnd" | "base_rate_vnd" | "hourly_rate_vnd"> | null) => !!row && keys.every((key) => row[key] === rates[key]);
+        const current = await supabase.from("dealers").select("employment_type,monthly_salary_vnd,base_rate_vnd,hourly_rate_vnd")
+          .eq("club_id", dealer.club_id).eq("id", dealer.id).maybeSingle();
+        if (current.error || !current.data || current.data.employment_type !== dealer.employment_type) {
+          pending.push(dealer.full_name);
+          continue;
+        }
+        if (matches(current.data)) {
+          confirmed.add(dealer.id);
+          continue;
+        }
+        let update = supabase.from("dealers").update(rates).eq("club_id", dealer.club_id).eq("id", dealer.id);
+        update = dealer.employment_type === null
+          ? update.is("employment_type", null) : update.eq("employment_type", dealer.employment_type);
+        for (const key of keys) {
+          const previous = dealer[key];
+          update = previous === null ? update.is(key, null) : update.eq(key, previous);
+        }
+        if (dealer.employment_type !== "part_time") {
+          const previous = dealer.standard_hours_per_shift;
+          update = previous === null ? update.is("standard_hours_per_shift", null) : update.eq("standard_hours_per_shift", previous);
+        }
+        const written = await update.select("employment_type,monthly_salary_vnd,base_rate_vnd,hourly_rate_vnd").maybeSingle();
+        if (!written.error && matches(written.data)) confirmed.add(dealer.id);
+        else pending.push(dealer.full_name);
       }
 
-      // FT: derive base/hourly per the dealer's own standard hours (defaults 8),
-      // exactly like AddDealerDialog — group by hours so each group is one update.
-      if (ftMonthly && selFt.length > 0) {
-        const byHours = new Map<number, DealerRecord[]>();
-        for (const d of selFt) {
-          const h = d.standard_hours_per_shift && d.standard_hours_per_shift > 0
-            ? d.standard_hours_per_shift : 8;
-          byHours.set(h, [...(byHours.get(h) ?? []), d]);
-        }
-        for (const [hours, group] of byHours) {
-          const { error } = await supabase
-            .from("dealers")
-            .update({
-              monthly_salary_vnd: ftMonthly,
-              base_rate_vnd: Math.round(ftMonthly / WORKING_DAYS_PER_MONTH),
-              hourly_rate_vnd: Math.round(ftMonthly / WORKING_DAYS_PER_MONTH / hours),
-            })
-            .in("id", group.map((d) => d.id));
-          if (error) errors.push(`FT (${hours}h): ${error.message}`);
-          else updated += group.length;
-        }
-      }
-
-      if (updated > 0) {
-        toast.success(`Đã áp lương cho ${updated} dealer`);
+      setSelected((previous) => new Set([...previous].filter((id) => !confirmed.has(id))));
+      setResult({
+        confirmed: targets.filter(({ dealer }) => confirmed.has(dealer.id)).map(({ dealer }) => dealer.full_name),
+        pending,
+      });
+      if (confirmed.size > 0) {
+        toast.success(`Đã xác minh lương cho ${confirmed.size}/${targets.length} dealer`);
         onDone();
       }
-      if (errors.length) toast.error(errors.join(" · "));
-      if (updated > 0 && errors.length === 0) {
-        setOpen(false);
-        reset();
-      }
+      if (pending.length > 0) toast.error("Có dealer chưa xác minh được mức lương.");
     } catch (e: any) {
       toast.error(e?.message ?? "Lỗi áp lương");
     } finally {
@@ -280,6 +291,12 @@ export function BulkSalaryDialog({
             </div>
           </div>
 
+          {result && (
+            <div role="status" className="text-xs">
+              {result.confirmed.length > 0 && <p>Đã xác minh: {result.confirmed.join(", ")}.</p>}
+              {result.pending.length > 0 && <p>Chưa xác minh: {result.pending.join(", ")}.</p>}
+            </div>
+          )}
           {/* Footer */}
           <div className="flex justify-end gap-2 border-t border-border pt-2">
             <Button variant="outline" className="border-border" onClick={() => { setOpen(false); reset(); }}>
