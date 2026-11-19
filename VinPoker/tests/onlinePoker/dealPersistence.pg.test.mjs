@@ -10,6 +10,7 @@ import { actionToRow, deserializeAuthoritative, ENGINE_VERSION, serializeAuthori
 const tableId = 'ab510000-0000-4000-8000-000000000001';
 const first = 'ab510000-0000-4000-8000-000000000002';
 const second = 'ab510000-0000-4000-8000-000000000003';
+const spectator = 'ab510000-0000-4000-8000-000000000013';
 
 function sql(source) {
   const result = spawnSync('psql', ['-X', '-Atq', '-v', 'ON_ERROR_STOP=1'], {
@@ -97,15 +98,20 @@ test('the shared server deal persists one native hand with consistent public and
     CREATE FUNCTION public.has_role(uuid, public.app_role) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT false $$;
     CREATE FUNCTION public.update_updated_at_column() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at=now(); RETURN NEW; END $$;
     ${file('../../supabase/migrations/20260817000000_online_poker_core.sql')}
+    CREATE PUBLICATION supabase_realtime;
+    ${file('../../supabase/migrations/20260817000001_online_poker_realtime.sql')}
     ${file('../../supabase/migrations/20260820000000_online_poker_runtime_rpcs.sql')}
     GRANT SELECT ON public.online_poker_actions TO service_role;
+    GRANT SELECT ON public.online_poker_hands, public.online_poker_hand_seats,
+      public.online_poker_hand_events TO anon, authenticated;
+    GRANT SELECT ON public.online_poker_hand_secrets TO authenticated;
     ${archivedFunction('op_submit_action', '20260907000000_op_submit_action_settlement_seat_writeback.sql')}
     ${archivedFunction('op_stand_up', '20260908000000_op_stand_up_block_folded_midhand.sql')}
     ${archivedFunction('op_close_table_if_empty', '20261002000000_op_auto_close_empty_table.sql', 'historical-never-replay')}
     CREATE TRIGGER trg_op_close_empty AFTER UPDATE OF user_id ON public.online_poker_seats
     FOR EACH ROW WHEN (OLD.user_id IS NOT NULL AND NEW.user_id IS NULL)
     EXECUTE FUNCTION public.op_close_table_if_empty();
-    INSERT INTO auth.users VALUES ('${first}'), ('${second}');
+    INSERT INTO auth.users VALUES ('${first}'), ('${second}'), ('${spectator}');
     INSERT INTO public.online_poker_tables(id,name,sb,bb,min_buyin,max_buyin,starting_stack_default)
     VALUES ('${tableId}','Disposable TEST',5,10,0,1000,100);
     INSERT INTO public.online_poker_seats(table_id,seat_no,user_id,stack,status)
@@ -114,12 +120,13 @@ test('the shared server deal persists one native hand with consistent public and
   assert.deepEqual(json(`
     SELECT json_object_agg(proname, md5(prosrc))
     FROM pg_proc WHERE pronamespace='public'::regnamespace
-      AND proname IN ('op_start_hand','op_submit_action','op_stand_up','op_close_table_if_empty')
+      AND proname IN ('op_start_hand','op_submit_action','op_stand_up','op_close_table_if_empty','op_get_my_hole_cards')
   `), {
     op_start_hand: '10282a2bb252d87125652c048de5d502',
     op_submit_action: 'b0dd7ff7cd2d70b84198d35de5f14f6e',
     op_stand_up: '140a23e7260f0d70a11c097c7986061f',
     op_close_table_if_empty: '905b8fbbdbf57aa27598e51027a64b52',
+    op_get_my_hole_cards: 'f950e9a194084a44cfbc13e23783e129',
   });
   sql(file('../../supabase/pending-migrations/20261119193713_online_poker_complete_deal_stack_writeback.sql'));
 
@@ -161,6 +168,38 @@ test('the shared server deal persists one native hand with consistent public and
   `);
   assert.deepEqual(state, { count: 1, pot: 15, publicSecret: false });
   assert.equal(sql("SELECT count(*) FROM public.online_poker_hand_secrets"), '4');
+  const holeView = actor => json(`
+    SET request.jwt.claim.sub='${actor}'; SET ROLE authenticated;
+    SELECT public.op_get_my_hole_cards('${hand.handId}')
+  `);
+  const ownA = holeView(first);
+  const ownB = holeView(second);
+  assert.equal(ownA.outcome, 'ok');
+  assert.equal(ownA.seat, 2);
+  assert.equal(ownB.outcome, 'ok');
+  assert.equal(ownB.seat, 5);
+  assert.equal(ownA.cards.length, 2);
+  assert.equal(ownB.cards.length, 2);
+  assert.equal(new Set([...ownA.cards, ...ownB.cards].map(card => JSON.stringify(card))).size, 4,
+    'Each player sees only the two cards of their own seat');
+  assert.deepEqual(holeView(spectator), { outcome: 'not_seated' });
+  assert.equal(sql(`SET request.jwt.claim.sub='${first}'; SET ROLE authenticated;
+    SELECT count(*) FROM public.online_poker_hand_secrets`), '0');
+  assert.equal(sql("SELECT has_function_privilege('anon','public.op_get_my_hole_cards(uuid)','EXECUTE')"), 'f');
+  const publicRows = json(`
+    SET ROLE anon;
+    SELECT json_build_object('state',h.state,'seats',
+      (SELECT jsonb_agg(to_jsonb(s)) FROM public.online_poker_hand_seats s WHERE s.hand_id=h.id),
+      'events',(SELECT jsonb_agg(e.payload) FROM public.online_poker_hand_events e WHERE e.hand_id=h.id))
+    FROM public.online_poker_hands h WHERE h.id='${hand.handId}'
+  `);
+  assert.equal(publicRows.seats.length, 2);
+  assert.ok(publicRows.events.length > 0);
+  assert.ok(publicRows.seats.every(row => row.revealed_cards === null));
+  assert.doesNotMatch(JSON.stringify(publicRows), /"(?:cards|holeCards|deck|board_future|server_seed)"\s*:/);
+  assert.equal(sql(`SELECT string_agg(tablename,',' ORDER BY tablename)
+    FROM pg_publication_tables WHERE pubname='supabase_realtime' AND schemaname='public'`),
+  'online_poker_hand_seats,online_poker_hands,online_poker_seats');
   assert.equal(sql("SELECT sum(stack+total_committed) FROM public.online_poker_hand_seats"), '200');
   assert.equal(sql("SELECT has_function_privilege('authenticated','public.op_start_hand(jsonb,jsonb,jsonb,jsonb,jsonb,text,timestamptz,uuid)','EXECUTE')"), 'f');
   const standDuringHand = json(`
