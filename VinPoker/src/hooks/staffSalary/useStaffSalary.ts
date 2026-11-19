@@ -323,6 +323,8 @@ export function useSalaryActions(
     retry:false,
     mutationFn: async ({ runId, method, reference }: { runId: string; method: "cash" | "bank_transfer"; reference?: string }) => {
       if (guardMock()) return null;
+      const paymentReference = reference?.trim();
+      if (method === "bank_transfer" && !paymentReference) throw Object.assign(Error("Nhập mã tham chiếu chuyển khoản."), { context });
       return run(
         "mark_staff_salary_paid",
         { p_run_id: runId, p_payment_method: method, p_payment_reference: method === "bank_transfer" ? paymentReference : null },
