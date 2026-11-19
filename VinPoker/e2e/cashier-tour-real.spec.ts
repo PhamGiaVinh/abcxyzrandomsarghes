@@ -2332,6 +2332,26 @@ test('measures bounded Floor alerts on isolated PostgREST', async ({ page }) => 
   expect(unauthorized.error).toBeNull();
   expect(unauthorized.data).toEqual([]);
 
+  const measuredWideReads: string[] = [];
+  page.on('request', request => {
+    const url = new URL(request.url());
+    if (url.pathname === '/rest/v1/tournaments' && url.searchParams.get('select')?.startsWith('*')) {
+      measuredWideReads.push(url.pathname);
+    }
+  });
+  await page.goto(`/ops/alerts?club=${club}`);
+  const list = page.getByRole('region', { name: 'Cảnh báo Voice Tracker' });
+  const oldest = 'Floor alert history TEST 1';
+  const onSecondPage = 'Floor alert history TEST 52';
+  await expect(list.getByText(oldest, { exact: true })).toBeVisible();
+  await expect(list.getByText(onSecondPage, { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Trang sau' }).click();
+  await expect(list.getByText(onSecondPage, { exact: true })).toBeVisible();
+  await expect(list.getByText('Floor alert history TEST 53', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Trang trước' }).click();
+  await expect(list.getByText(oldest, { exact: true })).toBeVisible();
+  expect(measuredWideReads).toEqual([]);
+
   const scenarios = [];
   for (const size of [10, 100, 1000]) {
     const ids = [oldTour, ...Array.from({ length: size - 1 }, (_, index) =>
@@ -2359,7 +2379,7 @@ test('measures bounded Floor alerts on isolated PostgREST', async ({ page }) => 
   writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/, '-floor-alert-read-http.json'), JSON.stringify({
     kind: 'ISOLATED_FLOOR_ALERT_HTTP_COMPARISON',
     sha: process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-    sameTimestampCursor: true, oldAlertRetained: true, foreignActorDenied: true,
+    sameTimestampCursor: true, oldAlertRetained: true, foreignActorDenied: true, browserPaging: true,
     scenarios, qualification: false,
   }, null, 2));
   expect(scenarios.every(scenario => scenario.errors.bounded === 0)).toBe(true);
