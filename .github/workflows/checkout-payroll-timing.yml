@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/checkout-payroll-timing.yml'
       - 'VinPoker/tests/dealerSwing/l09CheckoutPayroll.*'
+      - 'VinPoker/tests/dealerSwing/l08BulkSalaryConcurrency.sh'
 permissions:
   actions: read
   contents: read
@@ -48,6 +49,9 @@ jobs:
           node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
           export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
           node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Verify stale bulk salary updates with independent database connections
+        working-directory: VinPoker
+        run: bash tests/dealerSwing/l08BulkSalaryConcurrency.sh
       - name: Measure checkout and payroll with independent database connections
         working-directory: VinPoker
         run: |
