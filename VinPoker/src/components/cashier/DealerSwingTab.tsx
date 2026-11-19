@@ -262,7 +262,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   ), []);
 
   const { data: dealers, loading: dealersLoading, error: dealersError, refetch: refetchDealers } = useCheckedInDealers(filteredClubIds);
-  const { data: checkedOutDealers, refetch: refetchCheckedOut } = useTodayCheckedOutDealers(filteredClubIds);
+  const { data: checkedOutDealers, error: checkedOutError, refetch: refetchCheckedOut } = useTodayCheckedOutDealers(filteredClubIds);
   const { data: allDealers, loading: allDealersLoading, error: allDealersError } = useAllDealers(filteredClubIds);
   const { data: tables, loading: tablesLoading, error: tablesError, refetch: refetchTables } = useDealerOperationalTables(filteredClubIds);
   const poolTables = tables;
@@ -2447,7 +2447,9 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
                   processing={processing}
                   totalDealers={allDealersLoading || allDealersError ? null : allDealers.filter(d => d.status === 'active').length}
                   checkedInCount={checkedInCount}
-                  checkedOutDealers={checkedOutDealers ?? []}
+                  checkedOutDealers={checkedOutError ? [] : checkedOutDealers ?? []}
+                  checkedOutError={checkedOutError}
+                  onRetryCheckedOut={refetchCheckedOut}
                   onSendToBreak={(attId) => setBreakDurationOpen(attId)}
                   onCheckinOpen={() => { loadCheckinDealers(); setCheckinOpen(true); }}
                   onCheckoutOpen={() => setCheckoutOpen(true)}
@@ -3525,7 +3527,7 @@ function StaleCleanupCard({
 
 function RosterPanel({
   dealers, assignments, swingConfigs, processing, totalDealers, checkedInCount,
-  checkedOutDealers, onSendToBreak, onCheckinOpen, onCheckoutOpen,
+  checkedOutDealers, checkedOutError, onRetryCheckedOut, onSendToBreak, onCheckinOpen, onCheckoutOpen,
   onBatchCheckout, onReCheckin, breakPolicies, onMealBreak, mealBreakAvailability,
 }: {
   dealers: DealerAttendance[];
@@ -3535,6 +3537,8 @@ function RosterPanel({
   totalDealers: number | null;
   checkedInCount?: number;
   checkedOutDealers: DealerAttendance[];
+  checkedOutError: string | null;
+  onRetryCheckedOut: () => void;
   onSendToBreak: (attendanceId: string) => void;
   onCheckinOpen: () => void;
   onCheckoutOpen: () => void;
@@ -3827,6 +3831,12 @@ function RosterPanel({
         )}
 
         {/* Đã check-out section — collapsible, max 3 visible by default */}
+        {checkedOutError && (
+          <div role="alert" className="flex items-center gap-2 text-sm text-muted-foreground">
+            Chưa xác minh được danh sách dealer đã ra ca.
+            <Button type="button" variant="outline" size="sm" onClick={onRetryCheckedOut}>Thử lại</Button>
+          </div>
+        )}
         {checkedOutDealers.length > 0 && (
           <CollapsibleSection
             items={checkedOutDealers}
