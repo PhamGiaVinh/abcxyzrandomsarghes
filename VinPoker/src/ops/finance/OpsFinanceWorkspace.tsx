@@ -69,7 +69,8 @@ export default function OpsFinanceWorkspace() {
       onRefresh={() => setRevision((value) => value + 1)}
     />
     {clubId && !capabilities.loading && !capabilities.scopeError && <TourRevenuePanel key={clubId} clubId={clubId} />}
-    {clubId && OPS_CASHIER_MUTATIONS_ENABLED && <CashierCashflowPanel key={`${clubId}:${range.from}:${range.to}`} clubId={clubId} range={range} />}
+    {clubId && !capabilities.loading && !capabilities.scopeError && state.clubId === clubId && state.summary
+      && OPS_CASHIER_MUTATIONS_ENABLED && <CashierCashflowPanel key={`${clubId}:${range.from}:${range.to}`} clubId={clubId} range={range} />}
   </>);
 }
 
