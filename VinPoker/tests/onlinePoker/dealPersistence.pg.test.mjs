@@ -1261,6 +1261,29 @@ test('the shared server deal persists one native hand with consistent public and
   assert.equal(sql(`SELECT count(*) FROM online_satellite_private.test_target_entries
     WHERE destination_id='${sharedDestination}'`), '2');
   console.log('POSTGRES_SATELLITE_COMPLETE_ROUND_TEST_TICKETS_REDEEM_PASS');
+  sql(file('../../supabase/pending-migrations/20261119233500_online_satellite_provision_two_tables.sql'));
+  const preparedPilot = 'ab510000-0000-4000-8000-000000000038';
+  sql(`INSERT INTO online_satellite_private.pilots VALUES
+    ('${preparedPilot}','${clubId}','${sharedDestination}','${first}','${preparedPilot}',now(),100,4);
+    INSERT INTO online_satellite_private.entries(pilot_id,player_user_id) VALUES
+    ${[first,second,third,spectator].map(actor => `('${preparedPilot}','${actor}')`).join(',')};`);
+  const provisionPair = actor => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    SELECT public.provision_online_satellite_two_tables_v1('${preparedPilot}',
+      '[{"starts_at_second":0,"small_blind":5,"big_blind":10,"big_blind_ante":0}]',2)`);
+  assert.throws(() => provisionPair(third), /SATELLITE_PILOT_MANAGER_REQUIRED/);
+  const pair = provisionPair(first);
+  assert.equal(pair.idempotent, false);
+  assert.equal(new Set(pair.tableIds).size, 2);
+  assert.deepEqual(provisionPair(first), { ...pair, idempotent: true });
+  assert.deepEqual(json(`SELECT json_agg(size ORDER BY size) FROM (
+    SELECT count(*) AS size FROM online_satellite_private.round_tables m
+    JOIN public.online_poker_seats s ON s.table_id=m.table_id
+    WHERE m.pilot_id='${preparedPilot}' GROUP BY m.table_id) counts`), [2,2]);
+  assert.deepEqual(json(`SELECT json_build_object('players',count(DISTINCT s.user_id),'chips',sum(s.stack))
+    FROM online_satellite_private.round_tables m JOIN public.online_poker_seats s ON s.table_id=m.table_id
+    WHERE m.pilot_id='${preparedPilot}'`), { players:4, chips:400 });
+  assert.equal(level(pair.tableIds[1],first).mode, 'paused');
+  console.log('POSTGRES_SATELLITE_PROVISION_BALANCED_TWO_TABLES_PASS');
   if (process.env.VERIFY_POKER_BROWSER_RETRY === '1') {
     const { verifyBrowserActionRetry } = await import('./browserActionRetry.fixture.mjs');
     await verifyBrowserActionRetry({ sql, actor: second, handId: next.handId, seat: 5 });
