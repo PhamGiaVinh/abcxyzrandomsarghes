@@ -106,7 +106,7 @@ export function OpsModuleGate({
   }
 
   return (
-    <SuperAdminClubGate clubId={clubId}>
+    <SuperAdminClubGate key={clubId} clubId={clubId}>
       {content}
     </SuperAdminClubGate>
   );

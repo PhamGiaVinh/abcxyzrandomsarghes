@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { Link, MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OpsModuleGate } from "./OpsEntryResolver";
 import { getOpsModule, type OpsModuleId } from "@/ops/registry/opsModuleRegistry";
@@ -91,5 +91,24 @@ describe("operational module document entry", () => {
     h.superAdmin = true; h.clubs = []; h.verify.mockResolvedValue(null);
     mount("fnb"); await screen.findByText(/Không xác minh được CLB/);
     expect(replace).not.toHaveBeenCalled();
+  });
+  it("clears a verified Chip Ops surface while a different club is being verified", async () => {
+    h.superAdmin = true;
+    h.clubs = [];
+    let finish!: (value: unknown) => void;
+    const verification = new Promise(resolve => { finish = resolve; });
+    h.verify.mockImplementation((clubId: string) => clubId === "club-a"
+      ? Promise.resolve({ club_id: "club-a", club_name: "A" })
+      : verification);
+    render(<MemoryRouter initialEntries={["/ops/chip-ops?club=club-a&t=tour-a"]}>
+      <Link to="/ops/chip-ops?club=club-b&t=tour-b">Switch club</Link>
+      <OpsModuleGate capability="chip-ops"><div>chip history</div></OpsModuleGate>
+    </MemoryRouter>);
+    expect(await screen.findByText("chip history")).toBeInTheDocument();
+    await act(async () => screen.getByRole("link", { name: "Switch club" }).click());
+    expect(h.verify).toHaveBeenLastCalledWith("club-b");
+    expect(screen.queryByText("chip history")).not.toBeInTheDocument();
+    await act(async () => finish(null));
+    expect(await screen.findByText(/Không xác minh được CLB/)).toBeInTheDocument();
   });
 });
