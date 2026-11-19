@@ -665,8 +665,9 @@ test("Cashier scans open the same verified registration over real HTTP", async (
     && response.request().postDataJSON()?.p_bucket === "completed");
   await page.getByRole("button", { name: /Đã tự hoàn tất/ }).click();
   const fixture = (await (await fixtureRead).json()).rows.find((row: { player_name: string }) => row.player_name.startsWith("Người chơi Edge TEST"));
-  expect(fixture?.reference_code).toMatch(/^[\w-]+$/);
+  expect(fixture?.reference_code).toMatch(/^[\w-]{4,}$/);
   const code: string = fixture.reference_code;
+  const scanPayload = JSON.stringify({ receipt_code: code });
   const scanner = page.getByPlaceholder("Quét QR, thẻ hội viên, mã CK; hoặc tìm tên, số điện thoại");
   const dialog = page.getByRole("dialog", { name: `Chi tiết buy-in ${fixture.player_name}` });
   const counts = { worklist: 0, lookup: 0, shifts: 0, tours: 0, summary: 0 };
@@ -682,21 +683,26 @@ test("Cashier scans open the same verified registration over real HTTP", async (
   for (let index = 0; index < 20; index++) {
     const before = { ...counts };
     await scanner.fill("");
-    await scanner.pressSequentially(code, { delay: 10 });
+    await scanner.pressSequentially(scanPayload, { delay: 10 });
     const afterTyping = { ...counts };
     const start = performance.now();
-    const read = page.waitForResponse(response => response.url().endsWith("/rpc/cashier_tour_worklist_v1")
-      && response.request().postDataJSON()?.p_query === code);
+    const read = page.waitForResponse(response => {
+      if (!response.url().endsWith("/rpc/cashier_tour_worklist_v1")) return false;
+      const args = response.request().postDataJSON();
+      return args?.p_query === code && args?.p_bucket === "all";
+    });
     await scanner.press("Enter");
     const result = await read;
     expect(result.ok()).toBe(true);
     const payload = await result.json();
     expect(payload.ok).toBe(true);
     expect(payload.rows.map((row: { id: string }) => row.id)).toEqual([fixture.id]);
+    const httpBodyReadyMs = performance.now() - start;
     await expect(dialog.getByText(code, { exact: true })).toBeVisible();
     const afterReady = { ...counts };
     samples.push({
       enterToReadyMs: performance.now() - start,
+      httpBodyReadyMs,
       worklistWhileTyping: afterTyping.worklist - before.worklist,
       worklistAfterEnter: afterReady.worklist - afterTyping.worklist,
       lookupReads: afterReady.lookup - before.lookup,
@@ -726,7 +732,7 @@ test("Cashier scans open the same verified registration over real HTTP", async (
     samples,
     p95Ms: ordered[18],
     slowSearchWorklistReads: counts.worklist - slowSearchStart,
-    scope: "Serial repeated reference-code scans of one completed fixture on Chromium, 375×844",
+    scope: "Serial JSON-wrapped reference-code scans of one completed fixture on Chromium, 375×844",
     qualification: false,
   }, null, 2));
 });
