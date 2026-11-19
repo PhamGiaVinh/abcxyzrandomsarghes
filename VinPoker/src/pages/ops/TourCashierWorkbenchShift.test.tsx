@@ -859,10 +859,12 @@ describe("closed Cashier shift correction", () => {
           await act(async () => { await vi.advanceTimersByTimeAsync(10); });
         }
         expect(reads()).toHaveLength(initial + scan);
+        expect(screen.queryByRole('dialog', { name: 'Chi tiết buy-in TEST-CASH-PLAYER' })).toBeNull();
         fireEvent.keyDown(scanner, { key: 'Enter' });
         await act(async () => {});
         expect(reads()).toHaveLength(initial + scan + 1);
         expect(reads().at(-1)?.[1]).toMatchObject({ p_query: code, p_bucket: 'all' });
+        expect(screen.getByRole('dialog', { name: 'Chi tiết buy-in TEST-CASH-PLAYER' })).toBeInTheDocument();
       }
       await act(async () => { await vi.advanceTimersByTimeAsync(180); });
       expect(reads()).toHaveLength(initial + 20);
