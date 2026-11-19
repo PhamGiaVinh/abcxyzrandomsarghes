@@ -1,5 +1,4 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import OnlineSatellitePilotSetup from "./OnlineSatellitePilotSetup";
 
@@ -17,9 +16,9 @@ vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
 const clubId = "ef200000-0000-4000-8000-000000000001";
 const destination = { id: "ef300000-0000-4000-8000-000000000001", name: "Giải đích TEST" };
 const pilotId = "ef300000-0000-4000-8000-000000000002";
-const open = () => render(<MemoryRouter>
-  <OnlineSatellitePilotSetup actorId="owner-a" clubId={clubId} destinations={[destination]} />
-</MemoryRouter>);
+const open = () => render(
+  <OnlineSatellitePilotSetup actorId="owner-a" clubId={clubId} destinations={[destination]} />,
+);
 
 beforeEach(() => {
   rpc.mockReset();

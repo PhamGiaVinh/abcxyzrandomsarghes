@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
 import { z } from "zod";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
@@ -110,9 +109,9 @@ export default function OnlineSatellitePilotSetup({ actorId, clubId, destination
     <CardContent className="space-y-3">
       {pilotId ? <div className="space-y-2">
         <p role="status">Máy chủ đã tạo đăng ký thử. Chia sẻ link với thành viên CLB.</p>
-        <Link className="break-all underline" to={`/poker/satellite/${pilotId}`}>
+        <a className="break-all underline" href={`/poker/satellite/${pilotId}`}>
           {new URL(`/poker/satellite/${pilotId}`, window.location.origin).href}
-        </Link>
+        </a>
       </div> : <form className="grid gap-3 sm:grid-cols-2" onSubmit={createPilot}>
         <div className="space-y-1">
           <Label htmlFor="satellite-pilot-target">Giải đích thử</Label>
