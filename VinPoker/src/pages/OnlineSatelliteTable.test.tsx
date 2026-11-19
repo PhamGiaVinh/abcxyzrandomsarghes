@@ -51,6 +51,21 @@ it("uses the observed round and explains when another table is still playing", a
     { p_pilot_id: pilotId, p_expected_round: "2" });
 });
 
+it("uses the whole-round result command and surfaces the bubble review outcome", async () => {
+  rpc.mockImplementation(name => name === "lock_online_satellite_round_result_v1"
+    ? Promise.resolve({ data: { outcome: "bubble_review_required" }, error: null })
+    : { abortSignal: async () => ({
+      data: { tableId, clockRevision: "5", running: false, status: "paused",
+        canManage: true, canPlay: false, canProvision: false, roundNo: "2" },
+      error: null,
+    }) });
+  openControl();
+  fireEvent.click(await screen.findByRole("button", { name: "Khóa kết quả toàn vòng" }));
+  expect(await screen.findByText("Còn thiếu người nhận suất. TD cần phân xử bubble.")).toBeVisible();
+  expect(rpc).toHaveBeenCalledWith("lock_online_satellite_round_result_v1",
+    { p_pilot_id: pilotId, p_expected_round: "2" });
+});
+
 it("shows the participant's own qualification on their closed table", async () => {
   const ticketId = "ab510000-0000-4000-8000-000000000032";
   const destinationId = "ab510000-0000-4000-8000-000000000018";
