@@ -124,6 +124,26 @@ describe("closed Cashier shift correction", () => {
     });
   });
 
+  it('rejects blank cash counts but submits an explicitly counted zero', async () => {
+    mock.openShift = {id:'active-shift',opening_cash:0,opened_at:'2026-09-15T08:00:00Z'};
+    const confirm = vi.spyOn(window,'confirm').mockReturnValue(true);
+    try {
+      render(<TourCashierWorkbench />);
+      const button = await screen.findByRole('button',{name:'Chốt ca'});
+      const input = screen.getByPlaceholderText('VND');
+      fireEvent.change(input,{target:{value:'  '}});
+      fireEvent.click(button);
+      expect(await screen.findByText('Nhập số tiền thực đếm hợp lệ.')).toBeInTheDocument();
+      expect(confirm).not.toHaveBeenCalled();
+      fireEvent.change(input,{target:{value:'0'}});
+      fireEvent.click(button);
+      await waitFor(() => expect(mock.rpc.mock.calls.some(([name,args]) =>
+        name === 'cashier_close_shift_v1' && args.p_counted_cash === 0)).toBe(true));
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
   it.each(['toursNull','closedNull'] as const)('rejects unverified bootstrap list %s and retries explicitly',async(mode)=>{
     mock.bootstrapFailure=mode;render(<TourCashierWorkbench/>);
     expect(await screen.findByText('Không tải được danh sách tour hoặc ca thu ngân. Bấm Làm mới để thử lại.')).toBeInTheDocument();

@@ -673,7 +673,7 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
           <input inputMode="numeric" value={countedCash} onChange={(event) => setCountedCash(event.target.value)} placeholder="VND"
             className="w-28 rounded-lg border border-white/15 bg-[#08110c] p-2 text-white" /></label>
         <button type="button" disabled={busy} onClick={() => {
-          const amount = Number(countedCash);
+          const amount = countedCash.trim() === "" ? NaN : Number(countedCash);
           if (!Number.isSafeInteger(amount) || amount < 0) { setError("Nhập số tiền thực đếm hợp lệ."); return; }
           if (!window.confirm(`Chốt ca chung với tiền mặt thực đếm ${formatMoney(amount)}?`)) return;
           void mutate("cashier_close_shift_v1", { p_shift_id: shift.id, p_counted_cash: amount }, (result) => {
@@ -685,7 +685,7 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
           <input inputMode="numeric" value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} placeholder="Tiền đầu ca (VND)"
             className="ml-auto w-40 rounded-lg border border-white/15 bg-[#08110c] p-2 text-white" />
           <button type="button" disabled={busy || !worklist?.enabled} onClick={() => {
-            const amount = Number(openingCash);
+            const amount = openingCash.trim() === "" ? NaN : Number(openingCash);
             if (!Number.isSafeInteger(amount) || amount < 0) { setError("Nhập tiền đầu ca hợp lệ."); return; }
             void mutate("cashier_open_shift_v1", { p_club_id: clubId, p_opening_cash: amount }, () => {
               setNotice("Đã mở ca chung."); setOpeningCash("");
