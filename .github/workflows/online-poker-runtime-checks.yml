@@ -17,6 +17,7 @@ on:
       - "VinPoker/supabase/pending-migrations/*_online_poker_complete_deal_stack_writeback.sql"
       - "VinPoker/supabase/pending-migrations/*_online_poker_bba_state_fence.sql"
       - "VinPoker/supabase/pending-migrations/ROLLBACK_*_online_poker_bba_state_fence.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_deal_levels.sql"
       - "VinPoker/supabase/pending-migrations/ROLLBACK_*_online_poker_complete_deal_stack_writeback.sql"
       - "VinPoker/supabase/migration-archive/legacy-unapplied/20260907000000_op_submit_action_settlement_seat_writeback.sql"
       - "VinPoker/supabase/migration-archive/legacy-unapplied/20260908000000_op_stand_up_block_folded_midhand.sql"
@@ -60,6 +61,8 @@ jobs:
           cache-dependency-path: VinPoker/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - name: Fetch exact G02 registration dependency
+        run: git fetch --no-tags origin 6a1e68f9601d4830eae3120577a9c76b98bcb26a
       - name: Verify native start-hand persistence using the server engine
         env:
           VERIFY_POKER_BROWSER_RETRY: '1'

@@ -132,6 +132,50 @@ test('the shared server deal persists one native hand with consistent public and
   const anteMigration = file('../../supabase/pending-migrations/20261119203153_online_poker_bba_state_fence.sql');
   const anteRollback = file('../../supabase/pending-migrations/ROLLBACK_20261119203153_online_poker_bba_state_fence.sql');
   sql(anteMigration);
+
+  const registration = spawnSync('git', ['show',
+    '6a1e68f9601d4830eae3120577a9c76b98bcb26a:VinPoker/supabase/pending-migrations/20261119143438_online_satellite_pilot_registration.sql'],
+  { encoding: 'utf8' });
+  assert.equal(registration.status, 0, registration.stderr);
+  sql(`
+    ALTER TABLE public.clubs ADD COLUMN owner_id uuid REFERENCES auth.users(id);
+    CREATE TABLE public.tournaments(id uuid PRIMARY KEY, club_id uuid REFERENCES public.clubs(id), name text);
+    CREATE TABLE public.club_floors(club_id uuid, user_id uuid);
+    CREATE TABLE public.club_members(club_id uuid, player_user_id uuid);
+    ${registration.stdout}
+  `);
+  sql(file('../../supabase/pending-migrations/20261119204101_online_satellite_deal_levels.sql'));
+  const level = () => json(`SET ROLE service_role; SELECT public.op_read_satellite_deal_level('${tableId}')`);
+  assert.deepEqual(level(), { mode: 'practice' });
+  const clubId = 'ab510000-0000-4000-8000-000000000016';
+  const pilotId = 'ab510000-0000-4000-8000-000000000017';
+  const destination = 'ab510000-0000-4000-8000-000000000018';
+  sql(`
+    INSERT INTO public.clubs(id,owner_id) VALUES ('${clubId}','${first}');
+    INSERT INTO public.tournaments VALUES ('${destination}','${clubId}','Disposable ticket target');
+    INSERT INTO online_satellite_private.pilots VALUES
+      ('${pilotId}','${clubId}','${destination}','${first}','${pilotId}',now(),100,2);
+    INSERT INTO online_satellite_private.table_clocks(table_id,pilot_id) VALUES ('${tableId}','${pilotId}');
+    INSERT INTO online_satellite_private.blind_levels VALUES
+      ('${pilotId}',0,5,10,0), ('${pilotId}',60,10,20,20);
+  `);
+  assert.deepEqual(level(), { mode: 'unavailable' });
+  sql(`UPDATE public.online_poker_tables SET club_id='${clubId}' WHERE id='${tableId}'`);
+  assert.deepEqual(level(), { mode: 'paused' });
+  const atBoundary = (elapsed) => json(`
+    WITH tick AS (
+      UPDATE online_satellite_private.table_clocks
+      SET elapsed_seconds=${elapsed}, running_since=statement_timestamp() WHERE table_id='${tableId}'
+      RETURNING 1
+    ) SELECT count(*) FROM tick;
+  `);
+  assert.equal(atBoundary(10), 1);
+  assert.deepEqual(level(), { mode: 'ready', clockRevision: '1', levelStartSecond: '0', sb: '5', bb: '10', bigBlindAnte: '0' });
+  assert.equal(atBoundary(60), 1);
+  assert.deepEqual(level(), { mode: 'ready', clockRevision: '1', levelStartSecond: '60', sb: '10', bb: '20', bigBlindAnte: '20' });
+  assert.throws(() => sql(`SET ROLE authenticated; SELECT public.op_read_satellite_deal_level('${tableId}')`), /permission denied/);
+  sql(`DELETE FROM online_satellite_private.table_clocks WHERE table_id='${tableId}';
+    UPDATE public.online_poker_tables SET club_id=NULL WHERE id='${tableId}'`);
   sql(anteRollback);
   assert.equal(sql("SELECT to_regprocedure('public.op_preserve_bba_hand_state()') IS NULL"), 't');
   sql(anteMigration);
