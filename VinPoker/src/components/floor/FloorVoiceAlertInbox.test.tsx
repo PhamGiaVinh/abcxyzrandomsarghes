@@ -22,8 +22,9 @@ vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
   return { useSupabaseClient: () => client };
 });
 
+const resolveLocation = vi.hoisted(() => vi.fn((): { tableNumber?: number; handNumber?: number; unavailable?: boolean } => ({ tableNumber: 5, handNumber: 12 })));
 vi.mock("@/lib/tracker-floor-alerts/useTrackerFloorAlertLocations", () => ({
-  useTrackerFloorAlertLocations: () => () => ({ tableNumber: 5, handNumber: 12 }),
+  useTrackerFloorAlertLocations: () => resolveLocation,
 }));
 
 import { FloorVoiceAlertInbox } from "./FloorVoiceAlertInbox";
@@ -35,6 +36,13 @@ afterEach(() => {
 });
 
 describe("FloorVoiceAlertInbox", () => {
+  it("reports a failed location read without presenting it as loading", async () => {
+    resolveLocation.mockReturnValueOnce({ unavailable: true });
+    render(<FloorVoiceAlertInbox tournaments={[{ id: "tour-1", name: "Giải TEST" }]} onSelect={vi.fn()} />);
+    expect(await screen.findByRole("button", { name: /Chưa xác minh được bàn.*Mở cảnh báo/i })).toBeVisible();
+    expect(screen.queryByText(/Bàn đang tải/)).not.toBeInTheDocument();
+  });
+
   it("opens an operational alert without suggesting a hand change", async () => {
     query.abortSignal.mockResolvedValueOnce({ data: [
       { ...alert, alert_kind: "display_issue", hand_id: null, title: "Màn hình bàn sai" },

@@ -81,7 +81,9 @@ export function FloorVoiceAlertInbox({ tournaments, onSelect }: {
       <div className="space-y-2">
         {alerts.map((alert) => {
           const location = locationFor(alert);
-          const reviewHand = alert.hand_id && alert.alert_kind !== "display_issue" && !location?.handVoided;
+          const reviewHand = alert.hand_id && alert.alert_kind !== "display_issue" && !location?.handVoided && !location?.unavailable;
+          const tableLabel = location?.unavailable ? "Chưa xác minh được bàn"
+            : location?.tableNumber != null ? `Bàn ${location.tableNumber}` : "Bàn đang tải";
           return <div
             key={alert.id}
             className="rounded-xl border border-amber-300/20 bg-black/20 px-3 py-2 text-sm text-foreground"
@@ -89,7 +91,7 @@ export function FloorVoiceAlertInbox({ tournaments, onSelect }: {
             <button className="block w-full rounded-lg p-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300" type="button" onClick={() => onSelect(alert.tournament_id, alert.id)}>
               <span className="block font-semibold">{alert.title}</span>
               <span className="block text-xs text-muted-foreground">
-                {names.get(alert.tournament_id) ?? "Giải đấu"} · {location?.tableNumber != null ? `Bàn ${location.tableNumber}` : "Bàn đang tải"}
+                {names.get(alert.tournament_id) ?? "Giải đấu"} · {tableLabel}
                 {location?.handNumber != null ? ` · Hand #${location.handNumber}` : ""}
                 {Number.isFinite(Date.parse(alert.updated_at)) && (
                   <> · Cập nhật <time dateTime={alert.updated_at}>{formatDateTime(alert.updated_at)}</time></>
