@@ -20,6 +20,7 @@ const tableSnapshot = z.object({
   canPlay: z.boolean(),
   canProvision: z.literal(false),
   qualificationReached: z.boolean().optional(),
+  roundNo: z.string().regex(/^(0|[1-9][0-9]*)$/).optional(),
 });
 const unprovisioned = z.object({
   status: z.literal("unprovisioned"),
@@ -32,6 +33,17 @@ const unassigned = z.object({
   tableId: z.null(),
 });
 const clockReceipt = z.object({ outcome: z.enum(["ok", "stale"]) });
+const roundMessages = {
+  ok: "Đã mở vòng chơi.",
+  stale: "Số vòng đã thay đổi. Trạng thái đã được tải lại.",
+  paused: "Chạy đồng hồ trước khi mở vòng.",
+  round_still_playing: "Còn bàn chưa hoàn tất vòng hiện tại.",
+  qualification_reached: "Giải đã chạm ngưỡng suất TEST.",
+  rebalance_required: "Cần cân bàn trước khi mở vòng tiếp theo.",
+};
+const roundReceipt = z.object({ outcome: z.enum([
+  "ok", "stale", "paused", "round_still_playing", "qualification_reached", "rebalance_required",
+]) });
 const ownResult = z.object({ qualified: z.boolean(), destinationName: z.string(), lockedAt: z.string() });
 
 export default function OnlineSatelliteTable() {
@@ -87,6 +99,15 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
     mutationFn: (tableId: string) => onlinePokerClient.startHand(tableId),
     onSettled: () => snapshot.refetch(),
   });
+  const openRound = useMutation({
+    mutationFn: async (roundNo: string) => {
+      const { data, error } = await client.rpc("open_online_satellite_round_v1" as never,
+        { p_pilot_id: pilotId, p_expected_round: roundNo } as never);
+      if (error) throw error;
+      return roundReceipt.parse(data).outcome;
+    },
+    onSettled: () => snapshot.refetch(),
+  });
 
   return (
     <section className="mx-auto max-w-xl space-y-4 px-4 py-6">
@@ -134,19 +155,30 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
               )}
               {snapshot.data.canManage && snapshot.data.status !== "closed"
                 && (!snapshot.data.qualificationReached || snapshot.data.running) && (
-                <Button variant="outline" disabled={clock.isPending || deal.isPending}
+                <Button variant="outline" disabled={clock.isPending || deal.isPending || openRound.isPending}
                   onClick={() => snapshot.data?.tableId && clock.mutate(snapshot.data)}>
                   {clock.isPending ? "Đang gửi…" : snapshot.data.running ? "Tạm dừng đồng hồ" : "Chạy đồng hồ"}
                 </Button>
               )}
+              {snapshot.data.canManage && snapshot.data.status !== "closed" && snapshot.data.roundNo !== undefined && (
+                <Button variant="outline" disabled={!snapshot.data.running || openRound.isPending || clock.isPending || deal.isPending}
+                  onClick={() => {
+                    const table = snapshot.data;
+                    if (table?.tableId && table.roundNo !== undefined) openRound.mutate(table.roundNo);
+                  }}>
+                  {openRound.isPending ? "Đang mở vòng…" : "Mở vòng tiếp theo"}
+                </Button>
+              )}
               {snapshot.data.canManage && snapshot.data.running && snapshot.data.status === "open"
                 && !snapshot.data.qualificationReached && (
-                <Button variant="outline" disabled={clock.isPending || deal.isPending}
+                <Button variant="outline" disabled={clock.isPending || deal.isPending || openRound.isPending}
                   onClick={() => snapshot.data?.tableId && deal.mutate(snapshot.data.tableId)}>
                   {deal.isPending ? "Đang gửi lệnh…" : "Chia ván mới"}
                 </Button>
               )}
             </div>
+            {openRound.data && <p role="status">{roundMessages[openRound.data]}</p>}
+            {openRound.isError && <p role="alert">Chưa xác nhận được lệnh mở vòng.</p>}
             {deal.data?.outcome === "ok" && <p role="status">Máy chủ đã chia ván mới.</p>}
             {deal.data?.outcome === "already_active" && <p role="status">Bàn đang chơi một ván.</p>}
             {(deal.isError || deal.data?.outcome === "disabled") && (

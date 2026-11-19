@@ -36,6 +36,21 @@ it("shows an unassigned player a waiting state without a table link", async () =
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
+it("uses the observed round and explains when another table is still playing", async () => {
+  rpc.mockImplementation(name => name === "open_online_satellite_round_v1"
+    ? Promise.resolve({ data: { outcome: "round_still_playing", roundNo: "2" }, error: null })
+    : { abortSignal: async () => ({
+      data: { tableId, clockRevision: "5", running: true, status: "open",
+        canManage: true, canPlay: false, canProvision: false, roundNo: "2" },
+      error: null,
+    }) });
+  openControl();
+  fireEvent.click(await screen.findByRole("button", { name: "Mở vòng tiếp theo" }));
+  expect(await screen.findByText("Còn bàn chưa hoàn tất vòng hiện tại.")).toBeVisible();
+  expect(rpc).toHaveBeenCalledWith("open_online_satellite_round_v1",
+    { p_pilot_id: pilotId, p_expected_round: "2" });
+});
+
 it("shows the participant's own qualification on their closed table", async () => {
   const ticketId = "ab510000-0000-4000-8000-000000000032";
   const destinationId = "ab510000-0000-4000-8000-000000000018";
