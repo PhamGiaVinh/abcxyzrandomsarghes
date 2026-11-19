@@ -2272,6 +2272,99 @@ test('current owner rake closes once and exports the immutable event-day snapsho
 });
 
 
+test('measures bounded Floor alerts on isolated PostgREST', async ({ page }) => {
+  test.skip(process.env.LOCAL_FLOOR_ALERT_READ_PROBE !== '1', 'Disposable Floor alert history required');
+  test.setTimeout(120_000);
+  const token = await loginOwner(page);
+  const api = process.env.LOCAL_SUPABASE_URL!;
+  const anon = process.env.LOCAL_SUPABASE_ANON_KEY!;
+  const club = 'a2000000-0000-4000-8000-000000000001';
+  const oldTour = 'a3000000-0000-4000-8000-000000000001';
+  const open = ['open', 'acknowledged', 'in_progress'];
+  const columns = 'id,tournament_id,physical_table_id,hand_id,title,priority,status';
+  const observations: { status: number; requestBytes: number; responseBytes: number; ms: number }[] = [];
+  const makeReader = (actorToken: string) => createClient(api, anon, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      headers: { Authorization: `Bearer ${actorToken}` },
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        const start = performance.now();
+        const response = await fetch(input, { ...init, signal: AbortSignal.timeout(3_000) });
+        const payload = await response.clone().arrayBuffer();
+        observations.push({
+          status: response.status,
+          requestBytes: Buffer.byteLength(url.pathname + url.search),
+          responseBytes: payload.byteLength,
+          ms: performance.now() - start,
+        });
+        return response;
+      },
+    },
+  });
+  const reader = makeReader(token);
+  function bounded(client: ReturnType<typeof makeReader>) {
+    return client.from('tracker_floor_alerts')
+      .select(columns + ',created_at,tournaments!tracker_floor_alerts_tournament_id_fkey!inner(name)')
+      .eq('club_id', club).eq('tournaments.club_id', club).is('tournaments.deleted_at', null)
+      .in('status', open).order('created_at').order('id').limit(51);
+  }
+  const first = await bounded(reader);
+  expect(first.error).toBeNull();
+  const pageRows = first.data as unknown as { id: string; tournament_id: string; created_at: string }[];
+  expect(pageRows).toHaveLength(51);
+  expect(pageRows.every(row => row.tournament_id === oldTour)).toBe(true);
+  const cursor = pageRows[49];
+  const next = await bounded(reader)
+    .or(`created_at.gt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.gt.${cursor.id})`);
+  expect(next.error).toBeNull();
+  expect((next.data as unknown as { id: string }[]).map(row => row.id)).toEqual([
+    pageRows[50].id, 'bd310000-0000-4000-8000-000000000052',
+  ]);
+
+  const other = createClient(api, anon, { auth: { persistSession: false, autoRefreshToken: false } });
+  const { data: otherAuth, error: otherError } = await other.auth.signInWithPassword({
+    email: process.env.LOCAL_FLOOR_ALERT_OTHER_EMAIL!, password: process.env.LOCAL_FLOOR_ALERT_OTHER_PASSWORD!,
+  });
+  expect(otherError).toBeNull();
+  expect(Boolean(otherAuth.session)).toBe(true);
+  const unauthorized = await bounded(makeReader(otherAuth.session!.access_token));
+  expect(unauthorized.error).toBeNull();
+  expect(unauthorized.data).toEqual([]);
+
+  const scenarios = [];
+  for (const size of [10, 100, 1000]) {
+    const ids = [oldTour, ...Array.from({ length: size - 1 }, (_, index) =>
+      'bd300000-0000-4000-8000-' + String(index + 1).padStart(12, '0'))];
+    const baselineStart = observations.length;
+    const errors = { baseline: 0, bounded: 0 };
+    for (let sample = 0; sample < 12; sample++) {
+      const existing = async () => {
+        const result = await reader.from('tracker_floor_alerts').select(columns)
+          .in('tournament_id', ids).in('status', open).order('created_at');
+        if (result.error) errors.baseline++;
+        else expect(result.data).toHaveLength(52);
+      };
+      const candidate = async () => {
+        const result = await bounded(reader);
+        if (result.error) errors.bounded++;
+        else expect(result.data).toHaveLength(51);
+      };
+      // Alternate order to avoid giving either reader all the cold calls.
+      if (sample % 2 === 0) { await existing(); await candidate(); }
+      else { await candidate(); await existing(); }
+    }
+    scenarios.push({ size, errors, responseSamples: observations.slice(baselineStart) });
+  }
+  writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/, '-floor-alert-read-http.json'), JSON.stringify({
+    kind: 'ISOLATED_FLOOR_ALERT_HTTP_COMPARISON',
+    sha: process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+    sameTimestampCursor: true, oldAlertRetained: true, foreignActorDenied: true,
+    scenarios, qualification: false,
+  }, null, 2));
+  expect(scenarios.every(scenario => scenario.errors.bounded === 0)).toBe(true);
+});
+
 test('final current Floor Cashier prizes close over real Auth HTTP',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED!=='1','Explicit isolated full34 prize-close stage only');test.setTimeout(180_000);
  const owner=await loginOwner(page),staff=(await loginFixtureStaff()).slice(0,3),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000005',club='a2000000-0000-4000-8000-000000000001';
