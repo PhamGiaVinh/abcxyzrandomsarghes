@@ -313,4 +313,7 @@ BEGIN
   EXCEPTION WHEN check_violation THEN NULL;
   END;
 END $$;
+\if :{?hold_reversal_commit}
+SELECT pg_sleep(8);
+\endif
 COMMIT;
