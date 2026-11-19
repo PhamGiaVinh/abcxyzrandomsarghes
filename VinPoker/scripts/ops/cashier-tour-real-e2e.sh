@@ -1775,6 +1775,28 @@ fi
 # Validate the fresh46-attendance fixture before the first browser handover.
 # Later checkout stages intentionally make those attendances ineligible.
 if [[ "$schema_mode" == current && "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
+if [[ "${LOCAL_PAYOUT_HISTORY_PROBE:-0}" == 1 ]]; then
+  [[ "$schema_mode" == current && "$audience_count" == 0 ]]
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PAYOUT_HISTORY'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+     OR NOT EXISTS (SELECT FROM public.clubs WHERE id='ad200000-0000-4000-8000-000000000002' AND name='Other tenant check-in TEST') THEN
+    RAISE EXCEPTION 'Missing disposable Cashier club';
+  END IF;
+END $$;
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,registration_closed_at)
+SELECT ('bd100000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+       'a2000000-0000-4000-8000-000000000001','Payout history TEST '||n,
+       'registering','registering',now()-n*interval '1 day',100000,0,0,
+       CASE WHEN n<=101 THEN now()-n*interval '1 day' END
+FROM generate_series(1,102) n;
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,registration_closed_at)
+VALUES ('bd100000-0000-4000-8000-000000000103','ad200000-0000-4000-8000-000000000002',
+        'Other club payout TEST','registering','registering',now()-interval '103 days',100000,0,0,now()-interval '103 days');
+PAYOUT_HISTORY
+  run_browser_proof '' '' 'opens an older payout through the exact scoped Data API'
+  exit 0
+fi
 if [[ "$diagnostic_scope" != none ]]; then
   loaded_phase_checkpoint "targeted-$diagnostic_scope-start"
   if [[ "$diagnostic_scope" == cashier-payment ]]; then
@@ -1890,28 +1912,6 @@ assert.equal(fence.before,after);assert.equal(clock.phase,'stopped');assert.equa
 fence.after=after;fence.unchanged=true;fence.phase='unchanged-through-targeted-audience';writeFileSync(dir+'/operations-schema-freeze-http.json',JSON.stringify(fence,null,2));
 writeFileSync(dir+'/targeted-operations-result-http.json',JSON.stringify({kind:'TARGETED_OPERATIONAL_REPRODUCTION_NOT_FULL_ACCEPTANCE',phase:'passed',scope,sha,viewers:Number(count),runtimeScope:'base31 plus healthy reentry, Undo and prize-close source preparation as in historical failures',schemaUnchanged:true,audienceContinuous:true,sourceGenerationCandidate,fullAudiencePhase:audience.phase,fullAudienceChecks:audience.checks,qualification:false,productionChanged:false,limits:'Only the selected diagnostic case ran with healthy concurrent audience reads. No hand-delivery qualification: full audience checks are preserved separately. Does not replace full operations/HUD qualification, prove historical failure cause, or exercise the clock business flow.'},null,2));
 TARGETED_FINAL_RECEIPT
-  exit 0
-fi
-if [[ "${LOCAL_PAYOUT_HISTORY_PROBE:-0}" == 1 ]]; then
-  [[ "$schema_mode" == current && "$audience_count" == 0 ]]
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PAYOUT_HISTORY'
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
-     OR NOT EXISTS (SELECT FROM public.clubs WHERE id='ad200000-0000-4000-8000-000000000002' AND name='Other tenant check-in TEST') THEN
-    RAISE EXCEPTION 'Missing disposable Cashier club';
-  END IF;
-END $$;
-INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,registration_closed_at)
-SELECT ('bd100000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
-       'a2000000-0000-4000-8000-000000000001','Payout history TEST '||n,
-       'registering','registering',now()-n*interval '1 day',100000,0,0,
-       CASE WHEN n<=101 THEN now()-n*interval '1 day' END
-FROM generate_series(1,102) n;
-INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,registration_closed_at)
-VALUES ('bd100000-0000-4000-8000-000000000103','ad200000-0000-4000-8000-000000000002',
-        'Other club payout TEST','registering','registering',now()-interval '103 days',100000,0,0,now()-interval '103 days');
-PAYOUT_HISTORY
-  run_browser_proof '' '' 'opens an older payout through the exact scoped Data API'
   exit 0
 fi
 run_browser_proof
