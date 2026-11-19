@@ -4,6 +4,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
+import { onlinePokerClient } from "@/lib/onlinePoker/client";
 import SatelliteBlindSchedule from "./SatelliteBlindSchedule";
 
 const pilotIdentifier = z.string().uuid();
@@ -61,6 +62,9 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
     },
     onSettled: () => snapshot.refetch(),
   });
+  const deal = useMutation({
+    mutationFn: (tableId: string) => onlinePokerClient.startHand(tableId),
+  });
 
   return (
     <section className="mx-auto max-w-xl space-y-4 px-4 py-6">
@@ -87,12 +91,23 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
                 <Button asChild><Link to={`/poker/table/${snapshot.data.tableId}`}>Vào bàn</Link></Button>
               )}
               {snapshot.data.canManage && snapshot.data.status !== "closed" && (
-                <Button variant="outline" disabled={clock.isPending}
+                <Button variant="outline" disabled={clock.isPending || deal.isPending}
                   onClick={() => snapshot.data?.status !== "unprovisioned" && snapshot.data && clock.mutate(snapshot.data)}>
                   {clock.isPending ? "Đang gửi…" : snapshot.data.running ? "Tạm dừng đồng hồ" : "Chạy đồng hồ"}
                 </Button>
               )}
+              {snapshot.data.canManage && snapshot.data.running && snapshot.data.status === "open" && (
+                <Button variant="outline" disabled={clock.isPending || deal.isPending}
+                  onClick={() => snapshot.data?.tableId && deal.mutate(snapshot.data.tableId)}>
+                  {deal.isPending ? "Đang gửi lệnh…" : "Chia ván mới"}
+                </Button>
+              )}
             </div>
+            {deal.data?.outcome === "ok" && <p role="status">Máy chủ đã chia ván mới.</p>}
+            {deal.data?.outcome === "already_active" && <p role="status">Bàn đang chơi một ván.</p>}
+            {(deal.isError || deal.data?.outcome === "disabled") && (
+              <p role="alert">Chưa chia được ván. Kiểm tra đồng hồ và số người còn chip.</p>
+            )}
             {clock.isError && <p role="alert">Chưa xác nhận được lệnh. Trạng thái bàn đã được tải lại.</p>}
             {clock.data === "stale" && <p role="status">Đồng hồ đã thay đổi. Hãy kiểm tra trạng thái mới.</p>}
           </div>

@@ -5,6 +5,8 @@ import { expect, it, vi } from "vitest";
 import OnlineSatelliteTable from "./OnlineSatelliteTable";
 
 const rpc = vi.hoisted(() => vi.fn());
+const startHand = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/onlinePoker/client", () => ({ onlinePokerClient: { startHand } }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: "owner-test" }, loading: false }) }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({
   useSupabaseClient: () => ({ rpc }),
@@ -48,6 +50,10 @@ it("uses the server revision and refreshes a stale clock command", async () => {
   expect(await screen.findByRole("button", { name: "Tạm dừng đồng hồ" })).toBeVisible();
   expect(screen.getByText("Đồng hồ đã thay đổi. Hãy kiểm tra trạng thái mới.")).toBeVisible();
   expect(screen.getByRole("link", { name: "Vào bàn" })).toHaveAttribute("href", `/poker/table/${tableId}`);
+  startHand.mockResolvedValue({ outcome: "already_active" });
+  fireEvent.click(screen.getByRole("button", { name: "Chia ván mới" }));
+  expect(await screen.findByText("Bàn đang chơi một ván.")).toBeVisible();
+  expect(startHand).toHaveBeenCalledWith(tableId);
 });
 
 it("sends the manager's full schedule and opens only the confirmed table", async () => {
