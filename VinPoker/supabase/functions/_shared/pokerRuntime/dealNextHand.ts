@@ -24,8 +24,8 @@ export interface AdminClient {
 }
 
 export type DealReason =
-  | 'table_not_found' | 'table_not_open' | 'seats_load_failed'
-  | 'not_enough_players' | 'could_not_start_hand' | 'already_active' | 'start_hand_failed';
+  | 'table_not_found' | 'table_not_open' | 'seats_load_failed' | 'previous_hand_unavailable'
+  | 'not_enough_players' | 'could_not_start_hand' | 'already_active' | 'disabled' | 'start_hand_failed';
 
 export type DealResult =
   | { ok: true; tableId: string; handId: string; handNo: number; buttonSeat: number }
@@ -36,6 +36,19 @@ export function nextButton(prev: number | null, seatNos: number[]): number {
   if (prev == null) return seatNos[0];
   const after = seatNos.filter((s) => s > prev);
   return after.length ? after[0] : seatNos[0];
+}
+
+/** Both deal paths use the same confirmed hand sequence and clockwise rotation. */
+export function nextHandPosition(previous: { hand_no: unknown; button_seat: unknown } | null, seatNos: number[]) {
+  if (previous === null) return { handNo: 1, button: nextButton(null, seatNos) };
+  if (!previous || typeof previous !== 'object') return null;
+  const rawHandNo = previous.hand_no;
+  const handNo = typeof rawHandNo === 'number' || (typeof rawHandNo === 'string' && /^\d+$/.test(rawHandNo))
+    ? Number(rawHandNo) : NaN;
+  const button = previous.button_seat;
+  if (!Number.isSafeInteger(handNo) || handNo < 1 || handNo >= Number.MAX_SAFE_INTEGER
+    || typeof button !== 'number' || !Number.isInteger(button) || button < 1 || button > 10) return null;
+  return { handNo: handNo + 1, button: nextButton(button, seatNos) };
 }
 
 /**
@@ -65,15 +78,16 @@ export async function dealNextHand(
   );
   if (seated.length < 2) return { ok: false, tableId, reason: 'not_enough_players' };
 
-  const { data: last } = await admin
+  const { data: last, error: lastError } = await admin
     .from('online_poker_hands')
     .select('hand_no, button_seat')
     .eq('table_id', tableId)
     .order('hand_no', { ascending: false }).limit(1).maybeSingle();
 
-  const handNo = Number(last?.hand_no ?? 0) + 1;
   const seatNos = seated.map((s) => s.seat_no).sort((a, b) => a - b);
-  const button = nextButton(last?.button_seat ?? null, seatNos);
+  const position = lastError ? null : nextHandPosition(last, seatNos);
+  if (!position) return { ok: false, tableId, reason: 'previous_hand_unavailable' };
+  const { handNo, button } = position;
 
   const handId = crypto.randomUUID();
   const seatInputs = buildSeatInputs(seated);
@@ -105,7 +119,10 @@ export async function dealNextHand(
   });
   if (error) return { ok: false, tableId, reason: 'start_hand_failed' };
   if (data?.outcome === 'already_active') return { ok: false, tableId, reason: 'already_active' };
-  if (data?.outcome !== 'ok') return { ok: false, tableId, reason: 'start_hand_failed' };
+  if (data?.outcome === 'disabled') return { ok: false, tableId, reason: 'disabled' };
+  if (data?.outcome !== 'ok' || data.hand_id !== handId || data.state_version !== 0) {
+    return { ok: false, tableId, reason: 'start_hand_failed' };
+  }
 
   return { ok: true, tableId, handId, handNo, buttonSeat: button };
 }

@@ -7,24 +7,32 @@
 
 import { describe, it, expect } from 'vitest';
 import { runTableRunner } from '../../supabase/functions/_shared/pokerRuntime/tableRunner.ts';
-import { nextButton } from '../../supabase/functions/_shared/pokerRuntime/dealNextHand.ts';
+import { nextButton, nextHandPosition } from '../../supabase/functions/_shared/pokerRuntime/dealNextHand.ts';
+
+it('uses a confirmed first hand or rotates after a valid previous hand, refusing malformed history', () => {
+  expect(nextHandPosition(null, [2, 5])).toEqual({ handNo: 1, button: 2 });
+  expect(nextHandPosition({ hand_no: '7', button_seat: 5 }, [2, 5])).toEqual({ handNo: 8, button: 2 });
+  expect(nextHandPosition({ hand_no: null, button_seat: 2 }, [2, 5])).toBeNull();
+  expect(nextHandPosition({ hand_no: 7, button_seat: null }, [2, 5])).toBeNull();
+});
 
 interface Stage {
   enabled?: boolean;
+  lastHandUnavailable?: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   due?: any; diag?: any; table?: any; seats?: any[]; lastHand?: any; startHand?: any | (() => any);
 }
 
 function makeAdmin(stage: Stage) {
-  const calls = { startHand: 0, rpc: [] as string[] };
+  const calls = { startHand: 0, rpc: [] as string[], startStates: [] as unknown[] };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const ok = (data: any) => ({ data, error: null });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function builder(rows: any) {
+  function builder(rows: any, unavailable = false) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const b: any = {
       select: () => b, eq: () => b, order: () => b, limit: () => b,
-      maybeSingle: () => Promise.resolve(ok(rows)),
+      maybeSingle: () => Promise.resolve(unavailable ? { data: null, error: { code: 'TEST' } } : ok(rows)),
       // awaitable for array selects (online_poker_seats)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       then: (f: any, r?: any) => Promise.resolve(ok(rows)).then(f, r),
@@ -35,7 +43,7 @@ function makeAdmin(stage: Stage) {
     from(tbl: string) {
       if (tbl === 'online_poker_tables') return builder(stage.table ?? null);
       if (tbl === 'online_poker_seats') return builder(stage.seats ?? []);
-      if (tbl === 'online_poker_hands') return builder(stage.lastHand ?? null);
+      if (tbl === 'online_poker_hands') return builder(stage.lastHand ?? null, stage.lastHandUnavailable);
       return builder(null);
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,8 +54,9 @@ function makeAdmin(stage: Stage) {
       if (fn === 'op_table_runner_diag') return Promise.resolve(ok(stage.diag ?? { outcome: 'ok', tables: [] }));
       if (fn === 'op_start_hand') {
         calls.startHand++;
+        calls.startStates.push(_args?.p_state);
         const sh = typeof stage.startHand === 'function' ? stage.startHand() : stage.startHand;
-        return Promise.resolve(ok(sh ?? { outcome: 'ok', hand_id: 'h1', state_version: 0 }));
+        return Promise.resolve(ok(sh ?? { outcome: 'ok', hand_id: _args?.p_state?.config?.handId, state_version: 0 }));
       }
       return Promise.resolve(ok(null));
     },
@@ -79,7 +88,6 @@ describe('runTableRunner — deals eligible tables', () => {
       enabled: true,
       due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
       table: TABLE, seats: TWO_FUNDED, lastHand: null,
-      startHand: { outcome: 'ok', hand_id: 'h1', state_version: 0 },
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = await runTableRunner(admin as any);
@@ -91,6 +99,14 @@ describe('runTableRunner — deals eligible tables', () => {
 });
 
 describe('runTableRunner — skips & idempotency', () => {
+  it('does not reset the button or hand number when the previous-hand read fails', async () => {
+    const { admin, calls } = makeAdmin({ enabled: true, due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
+      table: TABLE, seats: TWO_FUNDED, lastHandUnavailable: true });
+    const result = await runTableRunner(admin);
+    expect(result.errors).toBe(1);
+    expect(result.dealt).toBe(0);
+    expect(calls.startHand).toBe(0);
+  });
   it('skips (does not deal) a table that already has an active hand (op_start_hand → already_active)', async () => {
     const { admin } = makeAdmin({
       enabled: true,
@@ -158,12 +174,37 @@ describe('runTableRunner — dry-run never deals & reports skip reasons', () => 
 });
 
 describe('runTableRunner — no secret output', () => {
+  it('does not report a hand dealt when the receipt identifies a different hand', async () => {
+    const { admin } = makeAdmin({
+      enabled: true,
+      due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
+      table: TABLE, seats: TWO_FUNDED,
+      startHand: { outcome: 'ok', hand_id: 'different-hand', state_version: 0 },
+    });
+    const result = await runTableRunner(admin);
+    expect(result.dealt).toBe(0);
+    expect(result.errors).toBe(1);
+  });
+
+  it('derives the next hand from the persisted hand when a new runner takes over', async () => {
+    const { admin, calls } = makeAdmin({
+      enabled: true,
+      due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
+      table: TABLE, seats: TWO_FUNDED, lastHand: { hand_no: 7, button_seat: 2 },
+    });
+    const result = await runTableRunner(admin);
+
+    expect(result.dealt).toBe(1);
+    expect(calls.startStates).toHaveLength(1);
+    expect(calls.startStates[0]).toMatchObject({ config: { handNo: 8, buttonSeat: 1 } });
+    expect(JSON.stringify(calls.startStates[0])).not.toMatch(/"deck"|"holeCards"/);
+  });
+
   it('result telemetry contains no cards/deck/holes', async () => {
     const { admin } = makeAdmin({
       enabled: true,
       due: { outcome: 'ok', tables: [{ table_id: 't1' }] },
       table: TABLE, seats: TWO_FUNDED, lastHand: null,
-      startHand: { outcome: 'ok' },
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = await runTableRunner(admin as any);
