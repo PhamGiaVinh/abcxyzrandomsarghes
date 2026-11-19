@@ -1167,7 +1167,36 @@ test('the shared server deal persists one native hand with consistent public and
   assert.throws(() => openSharedRound(third, 0), /SATELLITE_PILOT_MANAGER_REQUIRED/);
   assert.deepEqual(openSharedRound(first, 0), { outcome: 'ok', roundNo: '1' });
   assert.deepEqual(openSharedRound(first, 0), { outcome: 'stale', roundNo: '1' });
-  assert.deepEqual(clockCommand(first,sharedPilot,1,false), { outcome: 'ok', revision: '2', running: false });
+  let preparedSecondaryDeal;
+  await dealNextHand({
+    ...admin,
+    rpc: (name, args) => {
+      if (name !== 'op_start_hand') return admin.rpc(name, args);
+      preparedSecondaryDeal = args;
+      return { data: null, error: { code: 'isolated_fixture_capture' } };
+    },
+  }, tables[1], first);
+  assert.ok(preparedSecondaryDeal);
+  const pausedClock = session('g04-pause-clock');
+  const queuedDeal = session('g04-queued-deal');
+  try {
+    pausedClock.send(`BEGIN; SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
+      SELECT public.set_online_satellite_clock_v1('${sharedPilot}',1,false);
+      \\echo shared_clock_paused_uncommitted`);
+    await pausedClock.waitFor('shared_clock_paused_uncommitted');
+    queuedDeal.send(`\\set ON_ERROR_STOP off
+      ${startStatement(preparedSecondaryDeal)}
+      \\echo :SQLSTATE
+      \\set ON_ERROR_STOP on`);
+    await waitForPostgresLock('g04-queued-deal');
+    pausedClock.send('COMMIT;');
+    const [paused, rejected] = await Promise.all([pausedClock.finish(), queuedDeal.finish()]);
+    assert.deepEqual(JSON.parse(paused[0]), { outcome: 'ok', revision: '2', running: false });
+    assert.deepEqual(rejected, ['23514']);
+  } finally {
+    pausedClock.stop();
+    queuedDeal.stop();
+  }
   assert.equal(level(tables[0], first).mode, 'paused');
   assert.equal(level(tables[1], first).mode, 'paused');
   assert.equal((await dealNextHand(admin, tables[0], null)).reason, 'table_not_open');
