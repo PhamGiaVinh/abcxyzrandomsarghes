@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 
 const createdTable = z.object({ tableId: z.string().uuid() });
+const createdPair = z.object({ tableIds: z.tuple([z.string().uuid(), z.string().uuid()]) })
+  .refine(({ tableIds }) => tableIds[0] !== tableIds[1]);
 const blindFields = [
   ["starts_at_second", "Mốc bắt đầu (giây)"],
   ["small_blind", "Small blind"],
@@ -26,6 +28,7 @@ export default function SatelliteBlindSchedule({ pilotId, onCreated }: {
     if (sending) return;
     const form = new FormData(event.currentTarget);
     const slots = Number(form.get("qualificationSlots"));
+    const twoTables = form.get("twoTables") === "on";
     const levels = Array.from({ length: levelCount }, (_, index) =>
       Object.fromEntries(blindFields.map(([field]) => [field, Number(form.get(`${field}-${index}`))])));
     if (!Number.isInteger(slots) || slots < 1 || slots > 9
@@ -38,13 +41,15 @@ export default function SatelliteBlindSchedule({ pilotId, onCreated }: {
     setSending(true);
     setMessage(null);
     try {
-      const { data, error } = await client.rpc("provision_online_satellite_table_v1" as never, {
+      const command = twoTables ? "provision_online_satellite_two_tables_v1" : "provision_online_satellite_table_v1";
+      const { data, error } = await client.rpc(command as never, {
         p_pilot_id: pilotId,
         p_levels: levels,
         p_qualification_slots: slots,
       } as never);
       if (error) throw error;
-      createdTable.parse(data);
+      if (twoTables) createdPair.parse(data);
+      else createdTable.parse(data);
       onCreated();
     } catch {
       setMessage("Chưa xác nhận được việc tạo bàn. Kiểm tra số người đã đăng ký và thử lại với cùng lịch blind.");
@@ -59,6 +64,10 @@ export default function SatelliteBlindSchedule({ pilotId, onCreated }: {
       <span>Số suất TEST</span>
       <Input name="qualificationSlots" type="number" inputMode="numeric" min="1" max="9" step="1"
         defaultValue={1} required disabled={sending} />
+    </label>
+    <label className="flex items-center gap-2 text-sm">
+      <input name="twoTables" type="checkbox" disabled={sending} />
+      Tạo hai bàn TEST (tối thiểu 4 người)
     </label>
     {Array.from({ length: levelCount }, (_, index) => (
       <fieldset key={index} disabled={sending} className="grid grid-cols-2 gap-3 rounded-md border p-3">

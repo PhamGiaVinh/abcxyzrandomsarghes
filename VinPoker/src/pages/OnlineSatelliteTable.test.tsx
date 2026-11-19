@@ -26,6 +26,24 @@ function openControl() {
   );
 }
 
+it("provisions a two-table pilot when the TD selects two tables", async () => {
+  const secondTableId = "ab510000-0000-4000-8000-000000000035";
+  rpc.mockImplementation(name => name === "provision_online_satellite_two_tables_v1"
+    ? Promise.resolve({ data: { tableIds: [tableId, secondTableId] }, error: null })
+    : { abortSignal: async () => ({
+      data: { status: "unprovisioned", tableId: null, clockRevision: null, canProvision: true }, error: null,
+    }) });
+  openControl();
+  fireEvent.click(await screen.findByRole("checkbox", { name: /Tạo hai bàn TEST/ }));
+  fireEvent.change(screen.getByLabelText("Small blind"), { target: { value: "5" } });
+  fireEvent.change(screen.getByLabelText("Big blind"), { target: { value: "10" } });
+  fireEvent.click(screen.getByRole("button", { name: "Tạo bàn và khóa lịch" }));
+  await waitFor(() => expect(rpc).toHaveBeenCalledWith("provision_online_satellite_two_tables_v1", {
+    p_pilot_id: pilotId, p_qualification_slots: 1,
+    p_levels: [{ starts_at_second: 0, small_blind: 5, big_blind: 10, big_blind_ante: 0 }],
+  }));
+});
+
 it("shows an unassigned player a waiting state without a table link", async () => {
   rpc.mockReturnValue({ abortSignal: async () => ({
     data: { status: "unassigned", tableId: null }, error: null,
