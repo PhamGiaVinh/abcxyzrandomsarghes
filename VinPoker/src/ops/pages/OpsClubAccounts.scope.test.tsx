@@ -3,9 +3,10 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import OpsClubAccounts from "./OpsClubAccounts";
 
-const mock = vi.hoisted(() => ({ club: "a", user: "owner-a", read: vi.fn(), invoke: vi.fn() }));
+const mock = vi.hoisted(() => ({ club: "a", otherClub: "", user: "owner-a", read: vi.fn(), invoke: vi.fn() }));
 beforeEach(() => {
   mock.club = "a";
+  mock.otherClub = "";
   mock.user = "owner-a";
   mock.read.mockReset();
   mock.invoke.mockReset();
@@ -27,10 +28,14 @@ it("does not report a revoke as confirmed when the response is for another invit
   expect(mock.invoke).toHaveBeenCalledExactlyOnceWith("ops-club-accounts", { body: { action: "revoke", invite_id: "invite-b" } });
 });
 vi.mock("@/ops/auth/OpsAuthProvider", () => ({ useOpsAuth: () => ({ user: { id: mock.user }, session: null }) }));
-vi.mock("@/ops/auth/OpsCapabilityProvider", () => ({ useOpsCapabilities: () => ({
-  scope: [{ club_id: mock.club, can_owner: true }], clubs: [{ id: mock.club, name: mock.club }],
-  loading: false, scopeError: null, hasOwnerAccess: true,
-}) }));
+vi.mock("@/ops/auth/OpsCapabilityProvider", () => ({ useOpsCapabilities: () => {
+  const clubs = [mock.club, mock.otherClub].filter(Boolean);
+  return {
+    scope: clubs.map(club_id => ({ club_id, can_owner: true })),
+    clubs: clubs.map(id => ({ id, name: id })),
+    loading: false, scopeError: null, hasOwnerAccess: true,
+  };
+} }));
 
 it("clears old invite actions when club authority changes and discards its late read", async () => {
   let finish!: (reply: unknown) => void;
@@ -68,4 +73,28 @@ it("keeps only the new actor's invite actions when the club does not change", as
   expect(mock.invoke).toHaveBeenCalledExactlyOnceWith("ops-club-accounts", {
     body: { action: "revoke", invite_id: "new-invite" },
   });
+});
+
+it("shows the selected club's invites when the same owner can operate both clubs", async () => {
+  const scrollIntoView = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  mock.otherClub = "b";
+  mock.read.mockImplementation((club: string) => Promise.resolve({ data: [
+    { id: `invite-${club}`, club_id: club, email_normalized: `${club}@example.test`, operator_role: "floor", status: "active" },
+  ], error: null }));
+  render(<MemoryRouter><OpsClubAccounts /></MemoryRouter>);
+  expect(mock.read).not.toHaveBeenCalled();
+  const selectClub = async (name: string) => {
+    fireEvent.keyDown(screen.getByLabelText("CLB"), { key: "Enter" });
+    fireEvent.keyDown(await screen.findByRole("option", { name }), { key: "Enter" });
+    expect(await screen.findByText(`${name}@example.test`)).toBeVisible();
+  };
+  try {
+    await selectClub("a");
+    await selectClub("b");
+    expect(screen.queryByText("a@example.test")).not.toBeInTheDocument();
+    expect(mock.read.mock.calls).toEqual([["a"], ["b"]]);
+  } finally {
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+  }
 });
