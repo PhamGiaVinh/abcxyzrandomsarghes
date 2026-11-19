@@ -8,6 +8,7 @@ DECLARE
   club_a constant uuid := '16660000-0000-4000-8000-000000000011';
   club_b constant uuid := '16660000-0000-4000-8000-000000000012';
   dealer_a constant uuid := '16660000-0000-4000-8000-000000000031';
+  staff_b constant uuid := '16660000-0000-4000-8000-000000000032';
   result jsonb;
 BEGIN
   ASSERT current_database() = 'vinpoker_ops_l01', 'Require disposable L01 database';
@@ -21,6 +22,9 @@ BEGIN
     VALUES (club_b, actor_b, owner_b);
   INSERT INTO public.dealers (id, club_id, full_name, status)
     VALUES (dealer_a, club_a, 'L01 dealer A', 'active');
+  INSERT INTO public.staff (
+    id, club_id, full_name, department, employment_type, monthly_salary_vnd, manual_bhxh_vnd, manual_tax_vnd
+  ) VALUES (staff_b, club_b, 'L01 staff B', 'service', 'part_time', 0, 0, 0);
 
   PERFORM set_config('request.jwt.claim.sub', actor_b::text, true);
   PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', actor_b, 'role', 'authenticated')::text, true);
@@ -103,6 +107,14 @@ BEGIN
   END;
   RESET ROLE;
   ASSERT (SELECT count(*) FROM public.club_expenses WHERE club_id = club_b) = 1;
+  ASSERT (SELECT count(*) FROM public.staff_salary_runs
+    WHERE club_id = club_b AND staff_id = staff_b AND period_year = 2026 AND period_month = 11) = 1;
+  ASSERT (SELECT count(*) FROM public.payroll_periods
+    WHERE club_id = club_b AND period_year = 2026 AND period_month = 11) = 1;
+  ASSERT NOT EXISTS (SELECT FROM public.staff_salary_runs
+    WHERE club_id = club_b AND period_year = 2026 AND period_month = 12);
+  ASSERT NOT EXISTS (SELECT FROM public.payroll_periods
+    WHERE club_id = club_b AND period_year = 2026 AND period_month = 12);
 END
 $test$;
 ROLLBACK;
