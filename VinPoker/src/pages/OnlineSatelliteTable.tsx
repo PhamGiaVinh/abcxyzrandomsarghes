@@ -17,6 +17,7 @@ const tableSnapshot = z.object({
   canManage: z.boolean(),
   canPlay: z.boolean(),
   canProvision: z.literal(false),
+  qualificationReached: z.boolean().optional(),
 });
 const unprovisioned = z.object({
   status: z.literal("unprovisioned"),
@@ -65,6 +66,7 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
   });
   const deal = useMutation({
     mutationFn: (tableId: string) => onlinePokerClient.startHand(tableId),
+    onSettled: () => snapshot.refetch(),
   });
 
   return (
@@ -86,18 +88,21 @@ export function OnlineSatelliteTableContent({ actorId, pilotId, loading = false 
         : (
           <div className="space-y-3">
             <p role="status">{snapshot.data.status === "closed" ? "Bàn đã đóng"
+              : snapshot.data.qualificationReached ? "Đã chạm ngưỡng suất TEST"
               : snapshot.data.running ? "Đồng hồ đang chạy" : "Đồng hồ đang tạm dừng"}</p>
             <div className="flex flex-wrap gap-2">
               {snapshot.data.canPlay && (
                 <Button asChild><Link to={`/poker/table/${snapshot.data.tableId}`}>Vào bàn</Link></Button>
               )}
-              {snapshot.data.canManage && snapshot.data.status !== "closed" && (
+              {snapshot.data.canManage && snapshot.data.status !== "closed"
+                && (!snapshot.data.qualificationReached || snapshot.data.running) && (
                 <Button variant="outline" disabled={clock.isPending || deal.isPending}
                   onClick={() => snapshot.data?.status !== "unprovisioned" && snapshot.data && clock.mutate(snapshot.data)}>
                   {clock.isPending ? "Đang gửi…" : snapshot.data.running ? "Tạm dừng đồng hồ" : "Chạy đồng hồ"}
                 </Button>
               )}
-              {snapshot.data.canManage && snapshot.data.running && snapshot.data.status === "open" && (
+              {snapshot.data.canManage && snapshot.data.running && snapshot.data.status === "open"
+                && !snapshot.data.qualificationReached && (
                 <Button variant="outline" disabled={clock.isPending || deal.isPending}
                   onClick={() => snapshot.data?.tableId && deal.mutate(snapshot.data.tableId)}>
                   {deal.isPending ? "Đang gửi lệnh…" : "Chia ván mới"}

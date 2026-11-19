@@ -25,6 +25,18 @@ function openControl() {
   );
 }
 
+it("shows the qualification boundary without offering another deal", async () => {
+  rpc.mockReturnValue({ abortSignal: async () => ({
+    data: { tableId, clockRevision: "4", running: true, status: "open",
+      canManage: true, canPlay: true, canProvision: false, qualificationReached: true },
+    error: null,
+  }) });
+  openControl();
+  expect(await screen.findByText("Đã chạm ngưỡng suất TEST")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Chia ván mới" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Tạm dừng đồng hồ" })).toBeVisible();
+});
+
 it("uses the server revision and refreshes a stale clock command", async () => {
   rpc.mockClear();
   let reads = 0;

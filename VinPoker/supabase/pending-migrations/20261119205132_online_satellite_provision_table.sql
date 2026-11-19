@@ -3,7 +3,7 @@
 BEGIN;
 
 CREATE FUNCTION public.provision_online_satellite_table_v1(
-  p_pilot_id uuid, p_levels jsonb, p_qualification_slots integer DEFAULT NULL
+  p_pilot_id uuid, p_levels jsonb, p_qualification_slots integer
 )
 RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
@@ -80,7 +80,7 @@ BEGIN
   IF entry_count NOT BETWEEN 2 AND pilot.seat_limit THEN
     RAISE EXCEPTION 'SATELLITE_PILOT_BAD_ROSTER' USING ERRCODE='23514';
   END IF;
-  IF p_qualification_slots IS NOT NULL AND p_qualification_slots NOT BETWEEN 1 AND entry_count THEN
+  IF p_qualification_slots IS NULL OR p_qualification_slots NOT BETWEEN 1 AND entry_count THEN
     RAISE EXCEPTION 'SATELLITE_PILOT_BAD_QUALIFICATION_SLOTS' USING ERRCODE='22023';
   END IF;
   SELECT small_blind,big_blind INTO first_sb,first_bb FROM jsonb_to_recordset(p_levels)

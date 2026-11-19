@@ -87,7 +87,12 @@ AS $$
     'status',COALESCE(t.status,'unprovisioned'),'canManage',access.can_manage,'canPlay',access.can_play,
     'canProvision',c.table_id IS NULL AND access.can_manage AND COALESCE(g.enabled,false)
       AND p.registration_closes_at <= statement_timestamp()
-  )
+  ) || CASE WHEN c.qualification_slots IS NULL THEN '{}'::jsonb ELSE jsonb_build_object(
+    'qualificationReached',c.qualification_slots >= (
+      SELECT count(*) FROM public.online_poker_seats s
+      WHERE s.table_id=c.table_id AND s.user_id IS NOT NULL AND s.stack>0
+    )
+  ) END
   FROM online_satellite_private.pilots p
   JOIN public.clubs club ON club.id=p.club_id
   LEFT JOIN online_satellite_private.table_clocks c ON c.pilot_id=p.id

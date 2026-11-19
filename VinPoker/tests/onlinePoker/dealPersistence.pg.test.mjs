@@ -215,16 +215,19 @@ test('the shared server deal persists one native hand with consistent public and
     INSERT INTO online_satellite_private.entries(pilot_id,player_user_id,registered_at) VALUES
       ('${setupPilot}','${first}',now()-interval '2 seconds'), ('${setupPilot}','${second}',now()-interval '1 second');
   `);
-  const setup = (actor) => `SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+  const setup = (actor, slots = 1) => `SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
     SELECT public.provision_online_satellite_table_v1('${setupPilot}',
       '[{"starts_at_second":0,"small_blind":5,"big_blind":10,"big_blind_ante":0},
-        {"starts_at_second":60,"small_blind":10,"big_blind":20,"big_blind_ante":20}]')`;
+        {"starts_at_second":60,"small_blind":10,"big_blind":20,"big_blind_ante":20}]',${slots ?? 'NULL'})`;
   assert.deepEqual(json(`SET ROLE authenticated; SET request.jwt.claim.sub='${first}';
     SELECT public.get_online_satellite_table_v1('${setupPilot}')`), {
     tableId: null, clockRevision: null, running: false, status: 'unprovisioned',
     canManage: true, canPlay: true, canProvision: true,
   });
   if (!realtimeFixture) assert.throws(() => sql(setup(spectator)), /SATELLITE_PILOT_MANAGER_REQUIRED/);
+  if (!realtimeFixture) {
+    assert.throws(() => sql(setup(first, null)), /SATELLITE_PILOT_BAD_QUALIFICATION_SLOTS/);
+  }
   const setupReceipt = json(setup(first));
   assert.equal(setupReceipt.idempotent, false);
   assert.deepEqual(json(setup(first)), { tableId: setupReceipt.tableId, idempotent: true });
@@ -806,7 +809,7 @@ test('the shared server deal persists one native hand with consistent public and
   const reopenSatellite = (actor) => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
     SELECT COALESCE(public.get_online_satellite_table_v1('${setupPilot}'),'null'::jsonb)`);
   assert.deepEqual(reopenSatellite(first), { tableId: setupReceipt.tableId, clockRevision: '5',
-    running: false, status: 'paused', canManage: true, canPlay: true, canProvision: false });
+    running: false, status: 'paused', canManage: true, canPlay: true, canProvision: false, qualificationReached: false });
   assert.deepEqual(reopenSatellite(second), { ...reopenSatellite(first), canManage: false });
   assert.equal(reopenSatellite(spectator), null);
   const provisionedContext = json(`SET ROLE service_role;
