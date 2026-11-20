@@ -5,6 +5,9 @@ DO $$ BEGIN
   END IF;
 END $$;
 \i supabase/pending-migrations/20261119093017_staff_self_ft_payslips_v1.sql
+\if :{?l05_browser}
+SET LOCAL l05.browser = 'on';
+\endif
 
 DO $fixture$
 DECLARE
@@ -45,6 +48,9 @@ BEGIN
   ASSERT result#>>'{payslips,0,status}' = 'approved' AND result#>>'{payslips,0,net_vnd}' = '4900000';
   ASSERT result#>>'{payslips,1,status}' = 'recorded_paid' AND result#>>'{payslips,1,net_vnd}' = '4800000';
   ASSERT result#>>'{payslips,1,payment_method}' = 'bank_transfer';
+  IF current_setting('l05.browser', true) = 'on' THEN
+    RETURN;
+  END IF;
   PERFORM set_config('request.jwt.claim.sub', owner_a::text, true);
   result := public.mark_staff_salary_paid(approved_run, 'bank_transfer', 'TEST-L05-TRANSFER');
   ASSERT result->>'status' = 'paid' AND (result->>'run_id')::uuid = approved_run;
@@ -70,4 +76,8 @@ BEGIN
   ASSERT public.get_my_staff_ft_payslips_v1(pt, club_b)->'payslips' = '[]'::jsonb;
 END
 $fixture$;
+\if :{?l05_browser}
+COMMIT;
+\else
 ROLLBACK;
+\endif
