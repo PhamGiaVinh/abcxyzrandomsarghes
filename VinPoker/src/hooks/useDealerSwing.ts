@@ -567,13 +567,16 @@ export function useTodayCheckedOutDealers(clubIds: string[]) {
     queryFn: async () => {
       if (!clubIds.length) return [];
 
-      // Step 1: get dealers with active checked_in today
-      const { data: activeToday } = await supabase
+      // Include open overnight shifts so an active dealer cannot appear in the return list.
+      const { data: activeToday, error: activeError } = await supabase
         .from("dealer_attendance")
-        .select("dealer_id")
+        .select("dealer_id,dealers!inner(club_id)")
         .in("dealers.club_id", clubIds)
-        .eq("status", "checked_in")
-        .gte("shift_date", today);
+        .eq("status", "checked_in");
+      if (activeError) return { data: [], error: activeError };
+      if (!Array.isArray(activeToday)) {
+        return { data: [], error: { message: "Chưa xác minh được danh sách ca đang mở." } };
+      }
       const activeIds = [...new Set((activeToday ?? []).map((a) => a.dealer_id))];
       // Step 2: get checked_out dealers, excluding active ones
       let query = supabase

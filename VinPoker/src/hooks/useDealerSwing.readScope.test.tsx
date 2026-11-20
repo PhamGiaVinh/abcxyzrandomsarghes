@@ -2,13 +2,14 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ user: { id: "actor-a" } as { id: string } | null, read: vi.fn(), callbacks: [] as Array<() => void> }));
+const state = vi.hoisted(() => ({ user: { id: "actor-a" } as { id: string } | null, read: vi.fn(), select: vi.fn(), not: vi.fn(), callbacks: [] as Array<() => void> }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: state.user }) }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   from: () => {
     let ids: string[] = [];
     const query = {
-      select: () => query, eq: () => query, is: () => query,
+      select: (value: string) => { state.select(value); return query; }, eq: () => query, is: () => query,
+      gte: () => query, not: (...args: string[]) => { state.not(...args); return query; },
       in: (_column: string, values: string[]) => { ids = values; return query; },
       order: () => query,
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
@@ -26,7 +27,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   removeChannel: vi.fn(),
 } }));
 
-import { useCheckedInDealers, useSwingConfigs } from "./useDealerSwing";
+import { useCheckedInDealers, useSwingConfigs, useTodayCheckedOutDealers } from "./useDealerSwing";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -251,4 +252,19 @@ describe("Dealer production read scope", () => {
     await act(async () => { window.dispatchEvent(new Event("online")); await vi.advanceTimersByTimeAsync(150); });
     expect(state.read).toHaveBeenCalledTimes(2);
   });
+});
+
+it('does not read checkout history if the active-shift lookup fails', async () => {
+  state.read.mockReset().mockResolvedValue({data:null,error:{message:'active shifts unavailable'}});
+  const hook = renderHook(() => useTodayCheckedOutDealers(['club-a']));
+  await waitFor(() => expect(hook.result.current.error).toBe('active shifts unavailable'));
+  expect(state.read).toHaveBeenCalledTimes(1);
+  expect(state.select).toHaveBeenLastCalledWith('dealer_id,dealers!inner(club_id)');
+});
+
+it('excludes dealers with open shifts from the checkout history', async () => {
+  state.read.mockReset().mockResolvedValueOnce(rows('rechecked')).mockResolvedValueOnce(rows('checked-out'));
+  const hook = renderHook(() => useTodayCheckedOutDealers(['club-a']));
+  await waitFor(() => expect(hook.result.current.data[0]?.id).toBe('checked-out'));
+  expect(state.not).toHaveBeenLastCalledWith('dealer_id','in','(rechecked)');
 });
