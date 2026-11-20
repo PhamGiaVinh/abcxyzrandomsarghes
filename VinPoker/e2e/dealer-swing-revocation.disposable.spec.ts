@@ -26,7 +26,7 @@ test("open Dealer Swing verifies revoked club scope on session refresh", async (
   expect(readFloor()).toEqual(expect.arrayContaining([expect.objectContaining({ club_id: clubB, can_cashier: true })]));
 
   const expiry = 4102444800;
-  const user = { id: actor, aud: "authenticated", role: "authenticated", email: "known.cashier@example.com", app_metadata: {}, user_metadata: {}, identities: [], created_at: "2026-08-09T00:00:00Z" };
+  const user = { id: actor, aud: "authenticated", role: "authenticated", email: "known.cashier@example.com", app_metadata: {}, user_metadata: {}, identities: [], email_confirmed_at: "2026-08-09T00:00:00.000Z", created_at: "2026-08-09T00:00:00Z" };
   const session = (revision: number) => ({
     access_token: `${Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url")}.${Buffer.from(JSON.stringify({ sub: actor, exp: expiry, iat: revision })).toString("base64url")}.`,
     expires_at: expiry, expires_in: 3600, refresh_token: "local-test-refresh", token_type: "bearer", user,
