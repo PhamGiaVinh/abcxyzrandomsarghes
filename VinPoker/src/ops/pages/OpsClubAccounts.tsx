@@ -2,7 +2,7 @@ import {
   type FormEvent,
   useCallback,
   useEffect,
-  useMemo,
+  useRef,
   useState,
 } from "react";
 import { Link, Navigate } from "react-router-dom";
@@ -26,6 +26,9 @@ import {
 } from "@/components/ui/select";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { useOpsCapabilities } from "@/ops/auth/OpsCapabilityProvider";
+import { useOpsAuth } from "@/ops/auth/OpsAuthProvider";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import {
   inviteStatusLabel,
   isOperatorInviteRole,
@@ -41,83 +44,112 @@ type InviteRow = {
 };
 
 export default function OpsClubAccounts() {
-  const client = useSupabaseClient();
   const capabilities = useOpsCapabilities();
-  const ownerClubs = useMemo(
-    () => capabilities.scope.filter((row) => row.can_owner),
-    [capabilities.scope],
-  );
-  const [clubId, setClubId] = useState("");
+  const { user, session } = useOpsAuth();
+  const actorScope = JSON.stringify([user?.id, sessionReadEpoch(session)]);
+  const [selection, setSelection] = useState({ actorScope: "", clubId: "" });
+  const ownerClubs = capabilities.scope.filter((row) => row.can_owner);
+  const selectedClubId = selection.actorScope === actorScope ? selection.clubId : "";
+  const clubId = ownerClubs.some(row => row.club_id === selectedClubId) ? selectedClubId
+    : ownerClubs.length === 1 ? ownerClubs[0].club_id : "";
+  if (capabilities.loading) return null;
+  if (!user || !capabilities.hasOwnerAccess || capabilities.scopeError) return <Navigate to="/ops" replace />;
+  return <ClubAccountScope key={JSON.stringify([actorScope, clubId])} clubId={clubId}
+    capabilities={capabilities} ownerClubs={ownerClubs} setClubId={clubId => setSelection({ actorScope, clubId })} />;
+}
+
+function ClubAccountScope({ clubId, capabilities, ownerClubs, setClubId }: {
+  clubId: string;
+  capabilities: ReturnType<typeof useOpsCapabilities>;
+  ownerClubs: ReturnType<typeof useOpsCapabilities>["scope"];
+  setClubId: (clubId: string) => void;
+}) {
+  const client = useSupabaseClient();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<OperatorInviteRole>("floor");
-  const [rows, setRows] = useState<InviteRow[]>([]);
+  const [rows, setRows] = useState<InviteRow[] | null>(null);
+  const [readError, setReadError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const active = useRef(false);
+  const sequence = useRef(0);
+  const writeBusy = useRef(false);
 
-  const load = useCallback(async (selectedClubId: string) => {
-    if (!selectedClubId) return setRows([]);
+  const load = useCallback(async () => {
+    if (!clubId || !active.current) return;
+    const generation = ++sequence.current;
+    setRows(null);
+    setReadError(false);
     // Generated Database types cannot include an unapplied migration. The API
     // boundary is covered by a contract test until types regenerate after apply.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (client.from as any)("club_operator_invites")
-      .select("id,club_id,email_normalized,operator_role,status")
-      .eq("club_id", selectedClubId).order("created_at", { ascending: false });
-    if (error) return setMessage("Chưa tải được danh sách lời mời.");
-    setRows(
-      (data ?? []).filter((row: InviteRow) =>
-        isOperatorInviteRole(row.operator_role)
-      ),
-    );
-  }, [client]);
+    try {
+      const { data, error } = await observeTrackerContextRead((client.from as any)("club_operator_invites")
+        .select("id,club_id,email_normalized,operator_role,status")
+        .eq("club_id", clubId).order("created_at", { ascending: false })) as { data: InviteRow[] | null; error: unknown };
+      if (error || !Array.isArray(data) || data.some(row => !row || row.club_id !== clubId
+        || typeof row.id !== "string" || !row.id || typeof row.email_normalized !== "string"
+        || !isOperatorInviteRole(row.operator_role) || !["pending", "active", "revoked"].includes(row.status))) {
+        throw new Error("invite_scope_unverified");
+      }
+      if (active.current && generation === sequence.current) setRows(data);
+    } catch {
+      if (active.current && generation === sequence.current) setReadError(true);
+    }
+  }, [client, clubId]);
 
   useEffect(() => {
-    if (!clubId && ownerClubs.length === 1) setClubId(ownerClubs[0].club_id);
-  }, [clubId, ownerClubs]);
-  useEffect(() => {
-    void load(clubId);
-  }, [clubId, load]);
-  if (capabilities.loading) return null;
-  if (!capabilities.hasOwnerAccess) return <Navigate to="/ops" replace />;
+    active.current = true;
+    void load();
+    return () => { active.current = false; sequence.current++; };
+  }, [load]);
+
+  const write = async (body: Record<string, string>, confirm: (data: Record<string, unknown>) => string | null) => {
+    if (writeBusy.current || !active.current) return;
+    writeBusy.current = true;
+    setLoading(true);
+    setMessage(null);
+    try {
+      const { data, error } = await client.functions.invoke("ops-club-accounts", { body });
+      if (error || !data || typeof data !== "object") throw new Error("invite_outcome_unverified");
+      if (!active.current) return;
+      const confirmed = confirm(data);
+      if (!confirmed) throw new Error("invite_outcome_unverified");
+      setMessage(confirmed);
+    } catch {
+      if (active.current) setMessage("Chưa xác minh được kết quả. Kiểm tra danh sách trước khi thao tác lại.");
+    } finally {
+      if (active.current) {
+        await load();
+        setLoading(false);
+      }
+      writeBusy.current = false;
+    }
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!clubId || !email.trim()) {
-      return setMessage("Chọn CLB và nhập email nhân viên.");
-    }
-    setLoading(true);
-    setMessage(null);
-    const { data, error } = await client.functions.invoke("ops-club-accounts", {
-      body: { action: "invite", club_id: clubId, email, operator_role: role },
+    if (!clubId || !email.trim()) return setMessage("Chọn CLB và nhập email nhân viên.");
+    await write({ action: "invite", club_id: clubId, email, operator_role: role }, data => {
+      if (typeof data.invite_id !== "string" || !data.invite_id) return null;
+      if ((data.status === "INVITED" || data.status === "RESENT") && data.invite_status === "pending") {
+        setEmail("");
+        return "Đã gửi email. Lời mời đang chờ nhân viên xác nhận.";
+      }
+      if ((data.status === "GRANTED_EXISTING" || data.status === "ALREADY_ACTIVE") && data.invite_status === "active") {
+        setEmail("");
+        return "Tài khoản đã có vai trò vận hành tại CLB này.";
+      }
+      return null;
     });
-    setLoading(false);
-    if (error || !data?.status) {
-      return setMessage(
-        data?.error === "INVITE_CONFIGURATION_REQUIRED"
-          ? "Hệ thống gửi lời mời chưa được cấu hình. Liên hệ quản trị hệ thống."
-          : "Không gửi được lời mời. Kiểm tra lại email hoặc thử lại.",
-      );
-    }
-    setEmail("");
-    setMessage(
-      data.status === "INVITED" || data.status === "RESENT"
-        ? "Đã gửi email để nhân viên tự đặt mật khẩu. Quyền hiển thị ở trạng thái chờ xác nhận."
-        : "Tài khoản đã xác nhận: đã cấp đúng quyền CLB, không đổi mật khẩu.",
-    );
-    await load(clubId);
   };
 
   const revoke = async (inviteId: string) => {
-    setLoading(true);
-    setMessage(null);
-    const { error } = await client.functions.invoke("ops-club-accounts", {
-      body: { action: "revoke", invite_id: inviteId },
-    });
-    setLoading(false);
-    if (error) return setMessage("Không thu hồi được quyền. Vui lòng thử lại.");
-    setMessage(
-      "Đã thu hồi quyền Floor/Cashier của CLB này. Tài khoản Auth không bị xóa.",
-    );
-    await load(clubId);
+    if (loading || !rows?.some(row => row.id === inviteId && row.club_id === clubId && row.status !== "revoked")) return;
+    await write({ action: "revoke", invite_id: inviteId }, data =>
+      data.invite_id === inviteId && data.invite_status === "revoked"
+        && (data.status === "REVOKED" || data.status === "ALREADY_REVOKED")
+        ? "Lời mời hoặc vai trò tại CLB này đã được thu hồi." : null);
   };
 
   return (
@@ -203,7 +235,7 @@ export default function OpsClubAccounts() {
             </div>
             <Button
               type="submit"
-              disabled={loading || !ownerClubs.length}
+              disabled={loading || !clubId}
               className="min-h-11 sm:col-span-2"
             >
               Gửi lời mời bảo mật
@@ -219,16 +251,18 @@ export default function OpsClubAccounts() {
       <Card className="border-white/10 bg-white/[0.035] text-white">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <ShieldCheck className="h-5 w-5 text-emerald-300" /> Quyền đã cấp
+            <ShieldCheck className="h-5 w-5 text-emerald-300" /> Lời mời và trạng thái quyền
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {!rows.length && (
+          {clubId && readError && <p role="alert">Chưa tải được danh sách lời mời. <button type="button" className="underline" onClick={() => void load()}>Thử lại</button></p>}
+          {clubId && !readError && rows === null && <p role="status">Đang xác minh lời mời của CLB…</p>}
+          {rows?.length === 0 && (
             <p className="text-sm text-zinc-400">
               Chưa có lời mời nào cho CLB này.
             </p>
           )}
-          {rows.map((row) => (
+          {rows?.map((row) => (
             <div
               key={row.id}
               className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-3 sm:flex-row sm:items-center sm:justify-between"
