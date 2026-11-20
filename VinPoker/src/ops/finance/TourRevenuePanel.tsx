@@ -44,7 +44,14 @@ export default function TourRevenuePanel({ clubId }: { clubId: string }) {
     const refresh = () => { if (document.visibilityState !== "hidden") void load(); };
     const timer = window.setInterval(refresh, 5_000);
     window.addEventListener("focus", refresh);
-    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); void client.removeChannel(channel); };
+    window.addEventListener("online", refresh);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      void client.removeChannel(channel);
+    };
   }, [client, clubId, revision]);
 
   useEffect(() => {

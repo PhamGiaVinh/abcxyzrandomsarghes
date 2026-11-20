@@ -65,6 +65,17 @@ it("polls when realtime is unavailable without overlapping requests", async () =
   await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
   expect(mock.live).toHaveBeenCalledTimes(2);
 });
+it("refreshes after reconnecting without waiting for the next poll", async () => {
+  vi.useFakeTimers();
+  render(<TourRevenuePanel clubId="club-a" />);
+  await act(async () => {});
+  expect(screen.getByText("90.000 đ")).toBeTruthy();
+
+  mock.live.mockResolvedValue(payload("club-a", 120000));
+  await act(async () => { window.dispatchEvent(new Event("online")); });
+  expect(mock.live).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("120.000 đ")).toBeTruthy();
+});
 it("clears failed reads instead of displaying old money as current", async () => {
   render(<TourRevenuePanel clubId="club-a" />); await screen.findByText("90.000 đ");
   mock.live.mockRejectedValue(new Error("unavailable"));
