@@ -2646,7 +2646,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    expect(accrued.balance_vnd).toBeGreaterThan(0);
    expect(Math.abs(accrued.balance_vnd-Math.floor(seconds*60000/3600))).toBeLessThanOrEqual(1);
    dealerPay.accrualMatches=true;
-   const finalizeIntent={p_request_id:crypto.randomUUID(),p_club_id:club,p_dealer_id:paidDealerId,p_reason:'Isolated TEST tour'});
+   const finalizeIntent={p_request_id:crypto.randomUUID(),p_club_id:club,p_dealer_id:paidDealerId,p_reason:'Isolated TEST tour'};
    const statement=await rpc('finalize_part_time_payroll_statement',finalizeIntent);
    expect(statement).toMatchObject({state:'finalized',net_amount_vnd:accrued.balance_vnd});
    expect((await rpc('finalize_part_time_payroll_statement',finalizeIntent)).statement_id).toBe(statement.statement_id);
