@@ -188,7 +188,10 @@ test('targeted runs stay separate from full acceptance and retain actual conserv
  assert.match(branch,/targeted canonical Cashier payment reproduction across ten fresh tours/);
  assert.match(branch,/real check-in HTTP commit, independent observation, exact retry and tenant boundary/);
  const targetedSelectors=[...branch.matchAll(/run_browser_proof '' '' '([^']+)'/g)].map(m=>m[1]);
- assert.equal(targetedSelectors.length,2);
+ assert.equal(targetedSelectors.length,3);
+ assert.ok(targetedSelectors.includes('Floor consolidation renders the 27 paid seats over real Auth HTTP'));
+ assert.match(branch,/consolidation_requires_disposable_fixture/);
+ assert.match(branch,/cashier-http-consolidation-browser-http\.json/);
  assert.ok(branch.indexOf('targeted-payment-locks-http.json')<branch.indexOf("run_browser_proof '' '' 'targeted canonical"));
  assert.ok(branch.indexOf('if [[ "$targeted_browser_status" != 0 ]];then exit "$targeted_browser_status";fi')<branch.indexOf('TARGETED_PAYMENT_CONSERVATION'));
  assert.match(branch,/wait "\$payment_lock_sampler_pid" \|\| targeted_observer_status=\$\?/);
