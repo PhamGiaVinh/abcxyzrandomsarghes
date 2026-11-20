@@ -2282,7 +2282,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const replayUi={desktop:false,mobile:false};
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
  const clockUi={started:false,paused:false,resumed:false};
- const fnb={guestOrder:false,guestPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
+ const fnb={guestOrder:false,guestPaidVisible:false,counterPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
  let swingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let guestContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
@@ -2341,6 +2341,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   await guestPage.getByRole('button',{name:'Xem thực đơn',exact:true}).click();
   await guestPage.getByRole('button',{name:'Thêm Operations TEST water',exact:true}).click();
   await guestPage.getByRole('button',{name:/^Xem đơn \(1 món\)/}).click();
+  await guestPage.getByPlaceholder('Tên của bạn (tuỳ chọn)').fill('Game table guest TEST');
   await guestPage.getByRole('button',{name:/^Tiền mặt/}).click();
   const [orderResponse]=await Promise.all([
    guestPage.waitForResponse(response=>response.url()===api+'/rest/v1/rpc/fnb_guest_create_order',{timeout:10000}),
@@ -2358,8 +2359,30 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   await expect(guestPage.getByText('Đã gửi đơn!',{exact:true})).toBeVisible();
   expect((await rpc('fnb_guest_create_order',orderIntent,guestHeaders)).order_id).toBe(order.order_id);
   fnb.guestOrder=true;
-  const paymentIntent={p_order_id:order.order_id,p_client_request_id:crypto.randomUUID()};
-  expect(await rpc('fnb_mark_paid',paymentIntent)).toMatchObject({status:'ok',idempotent:false,subtotal_vnd:20000,cogs_vnd:5000});
+  await page.goto('/fnb');
+  await page.getByRole('tab',{name:'Chờ thanh toán',exact:true}).click();
+  const pending=page.getByRole('tabpanel');
+  await expect(pending.getByText(/Game table guest TEST/)).toBeVisible();
+  const collect=pending.getByRole('button',{name:'Thu tiền',exact:true});
+  await collect.click();
+  const paymentDialog=page.getByRole('dialog',{name:'Thu tiền (trả trước)'});
+  await expect(paymentDialog.getByText('Tổng cộng',{exact:true}).locator('..').getByText(/20[.,]000/)).toBeVisible();
+  await paymentDialog.getByRole('button',{name:'Để sau',exact:true}).click();
+  await expect(paymentDialog).toBeHidden();
+  await expect(collect).toBeEnabled();
+  await collect.click();
+  const [paidResponse]=await Promise.all([
+   page.waitForResponse(response=>response.url()===api+'/rest/v1/rpc/fnb_mark_paid',{timeout:10000}),
+   paymentDialog.getByRole('button',{name:'Thu tiền',exact:true}).click(),
+  ]);
+  expect(paidResponse.ok()).toBe(true);
+  const paymentIntent=paidResponse.request().postDataJSON();
+  expect(paymentIntent.p_order_id===order.order_id).toBe(true);
+  expect(await paidResponse.json()).toMatchObject({status:'ok',idempotent:false,subtotal_vnd:20000,cogs_vnd:5000});
+  await expect(collect).toHaveCount(0);
+  await page.getByRole('tab',{name:'Đã thu',exact:true}).click();
+  await expect(page.getByRole('tabpanel').getByText(/Game table guest TEST/)).toBeVisible();
+  fnb.counterPaidVisible=true;
   expect(await rpc('fnb_mark_paid',paymentIntent)).toMatchObject({status:'ok',idempotent:true,order_id:order.order_id});
   fnb.paidOnce=true;
   await expect(guestPage.getByText('Đã nhận đơn!',{exact:true})).toBeVisible({timeout:20000});
