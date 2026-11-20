@@ -1793,6 +1793,7 @@ SELECT ('bd200000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
 FROM generate_series(1,203) n;
 CHIP_HISTORY
   run_browser_proof '' '' 'opens older Chip Ops inventory only for an exact eligible tournament'
+  if [[ "$current_schema_prepared" != 1 ]]; then install_current_paid_schema; fi
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     < "$repo_root/supabase/pending-tests/chip_history_bagging_browser_fixture.sql"
   LOCAL_CHIP_BAG_HISTORY_PROBE=1 run_browser_proof '' '' 'records and seals one bag through the historical Chip Ops link'
