@@ -18,7 +18,10 @@ vi.mock("./chipOpsReadAdapter", () => ({
 vi.mock("./ChipOpsWorkspaceView", () => ({ ChipOpsWorkspaceView: (p: { tournaments: { name: string }[]; inventory: unknown; loading: boolean; errorCode: string | null; onRefresh: () => void }) =>
   <div><div>{p.tournaments.map((t) => t.name).join(",")}</div><div>{JSON.stringify(p.inventory)}</div>
     <div>{p.errorCode}</div><button disabled={p.loading} onClick={p.onRefresh}>Refresh chip</button></div> }));
-vi.mock("./MultiDayBaggingPanel", () => ({ MultiDayBaggingPanel: () => <div>bagging-actions</div> }));
+vi.mock("./MultiDayBaggingPanel", () => ({
+  MultiDayBaggingPanel: ({ tournamentId }: { tournamentId: string }) =>
+    <div data-tournament-id={tournamentId}>bagging-actions</div>,
+}));
 import OpsChipOpsWorkspace from "./OpsChipOpsWorkspace";
 
 beforeEach(() => {
@@ -188,10 +191,11 @@ it("aborts timed-out reads before allowing an explicit fresh read", async () => 
 it("opens an older tour only after an exact lookup within the selected club", async () => {
   h.tournament = "older-tour";
   h.load.mockResolvedValueOnce([{id:"recent-tour",name:"Recent tour"}])
-    .mockResolvedValueOnce([{id:"older-tour",name:"Older tour"}]);
+    .mockResolvedValueOnce([{id:"older-tour",name:"Older tour",phase:"flight"}]);
   render(<OpsChipOpsWorkspace />);
   await waitFor(() => expect(h.inventory).toHaveBeenCalledWith(h.client,"older-tour",expect.any(AbortSignal)));
   expect(h.load).toHaveBeenNthCalledWith(2,h.client,"A",expect.any(AbortSignal),"older-tour");
+  expect(await screen.findByText("bagging-actions")).toHaveAttribute("data-tournament-id", "older-tour");
 });
 
 it("keeps inventory and bagging unavailable when the exact lookup returns another tour", async () => {
