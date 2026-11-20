@@ -264,7 +264,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   const { data: dealers, loading: dealersLoading, error: dealersError, refetch: refetchDealers } = useCheckedInDealers(filteredClubIds);
   const { data: checkedOutDealers, refetch: refetchCheckedOut } = useTodayCheckedOutDealers(filteredClubIds);
   const { data: allDealers, loading: allDealersLoading, error: allDealersError } = useAllDealers(filteredClubIds);
-  const { data: tables, loading: tablesLoading, error: tablesError, refetch: refetchTables } = useDealerOperationalTables(filteredClubIds);
+  const { data: tables, loading: tablesLoading, error: tablesError, refetch: refetchTables } = useDealerOperationalTables(filteredClubIds, true);
   const poolTables = tables;
   const poolLoading = tablesLoading;
   const poolError = tablesError;

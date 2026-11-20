@@ -186,6 +186,7 @@ function useRealtimeQuery<T>(
   const lifetime = useRef({ active: false, generation: 0 });
   const subscriptionGeneration = useRef(0);
   const generationRef = useRef(0);
+  const pendingRead = useRef<number | null>(null);
   const queryFnRef = useRef<() => Promise<any>>(queryFn);
   /** Unique per-hook-instance id to prevent channel name collision when
    *  multiple hooks subscribe to the same table (e.g. useCheckedInDealers
@@ -205,6 +206,7 @@ function useRealtimeQuery<T>(
     const capturedScope = scopeRef.current;
     const capturedLifetime = lifetime.current.generation;
     const gen = ++generationRef.current;
+    pendingRead.current = gen;
     const isCurrent = () => lifetime.current.active
       && lifetime.current.generation === capturedLifetime
       && capturedScope === scopeRef.current && gen === generationRef.current;
@@ -232,6 +234,7 @@ function useRealtimeQuery<T>(
       setSnapshotScope(capturedScope);
       snapshotScopeRef.current = capturedScope;
     } finally {
+      if (pendingRead.current === gen) pendingRead.current = null;
       if (isCurrent()) setLoading(false);
     }
   }, [actorId]);
@@ -300,7 +303,9 @@ function useRealtimeQuery<T>(
     const onResume = () => { if (canRefresh()) invalidate(); };
     document.addEventListener("visibilitychange", onResume);
     window.addEventListener("online", onResume);
-    const timer = window.setInterval(() => { if (active && canRefresh()) void refetch(); }, pollFallbackMs);
+    const timer = window.setInterval(() => {
+      if (active && canRefresh() && pendingRead.current === null) void refetch();
+    }, pollFallbackMs);
 
     return () => {
       active = false;
@@ -698,7 +703,7 @@ export function useActiveTables(clubIds: string[]) {
  * Floor. The legacy reader remains available to configuration screens that
  * still need raw game_tables metadata.
  */
-export function useDealerOperationalTables(clubIds: string[]) {
+export function useDealerOperationalTables(clubIds: string[], reconcileFloorSessions = false) {
   return useRealtimeQuery<GameTableRow>({
     queryFn: async () => {
       if (!FEATURES.floorTableControlV3) {
@@ -731,6 +736,9 @@ export function useDealerOperationalTables(clubIds: string[]) {
     realtimeTables: FEATURES.floorTableControlV3
       ? ["game_tables", "table_sessions", "tournament_tables", "dealer_assignments"]
       : ["game_tables"],
+    // An unstaffed close changes only Floor rows, which are not all published.
+    // Reconcile the authorized inventory while the operational Swing view is visible.
+    pollFallbackMs: FEATURES.floorTableControlV3 && reconcileFloorSessions ? 2000 : undefined,
     clubIds,
   });
 }

@@ -642,9 +642,19 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
     floorVisibleMs: null as number | null,
     swingVerifiedAfterReceiptMs: null as number | null,
     independentRosterClosed: false,
+    independentInventoryReleased: false,
+    unstaffedAlertCleared: false,
     independentAssignmentReleased: false,
+    swingViewAtEnd: 'unobserved',
+    swingInventoryHttpStatuses: [] as number[],
     qualification: false,
   };
+  swing.on('response', response => {
+    if (new URL(response.url()).pathname.endsWith('/rpc/get_club_table_inventory')) {
+      proof.swingInventoryHttpStatuses.push(response.status());
+    }
+  });
+  const battlefield = swing.getByText('BẢN ĐỒ CHIẾN TRƯỜNG', { exact: true });
   try {
     const opened = await rpc('floor_open_tournament_table_v3', {
       p_tournament_id: tourId, p_game_table_id: floorTable.id, p_control_mode: 'manual', p_request_id: crypto.randomUUID(),
@@ -666,8 +676,10 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
     await swing.goto('/dealer-swing');
     await selectDealerSwingClub(swing, 'Cashier Edge TEST');
     const swingCard = swing.locator(`#table-card-${floorTable.id}`);
+    const unstaffedAlert = swing.getByText('Floor session latency TEST • Thiếu dealer', { exact: true });
     await expect(swingCard).toBeVisible();
     if (staffed) await expect(swingCard.getByText('Floor close TEST dealer', { exact: true })).toBeVisible();
+    else await expect(unstaffedAlert).toBeVisible();
     await floor.goto(`/ops/floor/tournaments/${tourId}/tables?club=${clubId}`);
     const floorCard = floor.locator(`[data-testid="floor-table-roster-card"][data-floor-table-number="${floorTable.tableNumber}"]`);
     await floorCard.click();
@@ -689,12 +701,15 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
         proof.ackMs = performance.now() - started;
         expect(response.ok()).toBe(true);
         expect(body).toMatchObject({ ok: true, closed: true, table_session_id: opened.table_session_id });
-        await expect(swingCard).toHaveCount(0, { timeout: Math.max(1, 3000 - (performance.now() - started)) });
-        proof.swingVerifiedAfterReceiptMs = performance.now() - started;
         const roster = await rpc(floorRosterRpc, { p_tournament_id: tourId });
         expect(Array.isArray(roster)).toBe(true);
         expect(roster.some((row: { table_session_id: string }) => row.table_session_id === opened.table_session_id)).toBe(false);
         proof.independentRosterClosed = true;
+        const inventory = await rpc('get_club_table_inventory', { p_club_id: clubId });
+        expect(inventory.find((row: { game_table_id: string }) => row.game_table_id === floorTable.id)).toMatchObject({
+          availability_status: 'available', table_session_id: null, active_dealer_assignment_id: null,
+        });
+        proof.independentInventoryReleased = true;
         if (assignmentId) {
           expect(body.dealer_assignments_released).toBe(1);
           const response = await fetch(`${api}/rest/v1/dealer_assignments?select=table_session_id,status,released_at&id=eq.${assignmentId}`, { headers, signal: AbortSignal.timeout(5000) });
@@ -704,6 +719,14 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
           expect(assignments[0]).toMatchObject({ table_session_id: opened.table_session_id, status: 'completed', released_at: expect.any(String) });
           proof.independentAssignmentReleased = true;
         }
+        await expect(swingCard).toHaveCount(0, { timeout: Math.max(1, 3000 - (performance.now() - started)) });
+        await expect(battlefield).toBeVisible({ timeout: Math.max(1, 3000 - (performance.now() - started)) });
+        if (!staffed) {
+          await expect(unstaffedAlert).toHaveCount(0, { timeout: Math.max(1, 3000 - (performance.now() - started)) });
+          proof.unstaffedAlertCleared = true;
+        }
+        proof.swingVerifiedAfterReceiptMs = performance.now() - started;
+        expect(proof.swingVerifiedAfterReceiptMs).toBeLessThanOrEqual(3000);
       }),
       expect(floorCard).toHaveCount(0, { timeout: 3000 }).then(() => { proof.floorVisibleMs = performance.now() - started; }),
     ]);
@@ -713,6 +736,11 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
     }
     proof.phase = 'passed';
   } finally {
+    proof.swingViewAtEnd = await battlefield.isVisible() ? 'battlefield'
+      : await swing.getByRole('heading', { name: 'Không xác minh được dữ liệu Dealer Swing' }).isVisible() ? 'blocked-read'
+      : await swing.getByRole('heading', { name: 'Đang xác minh dữ liệu Dealer Swing…' }).isVisible() ? 'loading'
+      : await swing.getByRole('heading', { name: 'Chọn CLB để vận hành Dealer Swing' }).isVisible() ? 'club-selection'
+      : 'other';
     writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/, '-floor-swing-close-http.json'), JSON.stringify(proof, null, 2));
     await swingContext.close();
   }
