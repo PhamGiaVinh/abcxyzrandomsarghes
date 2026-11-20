@@ -1566,6 +1566,28 @@ test('active-table dealer checkout preserves work and reports an unstaffed table
 
 test('active checkout respects automatic OFF and rested replacement eligibility',async({page})=>{
  const mode=process.env.LOCAL_OPERATIONS_REPLACEMENT_ENABLED;test.skip(mode!=='off'&&mode!=='on'&&mode!=='rest-race'&&mode!=='off-race','Seventh isolated stage with exact current acquisition/rest/day contracts');test.setTimeout(60_000);
+ const probeReconnect=mode==='off'&&process.env.LOCAL_DEALER_RECONNECT_PROBE==='1';
+ let assignmentJoins=0,droppedChanges=0,holdChanges=false;
+ let disconnect: (() => Promise<void>) | undefined;
+ if(probeReconnect){
+  await page.routeWebSocket(url=>url.pathname.endsWith('/realtime/v1/websocket'),socket=>{
+   const server=socket.connectToServer();
+   server.onMessage(message=>{
+    let frame: Record<string,unknown>|unknown[];
+    try { frame=decodeClockWireFrame(typeof message==='string'?message:new Uint8Array(message)) as typeof frame; }
+    catch { socket.send(message);return; }
+    const topic=Array.isArray(frame)?frame[2]:frame?.topic;
+    const event=Array.isArray(frame)?frame[3]:frame?.event;
+    const payload=(Array.isArray(frame)?frame[4]:frame?.payload) as {status?:string}|undefined;
+    if(typeof topic==='string'&&topic.includes('swing:dealer_assignments+dealer_attendance:')&&event==='phx_reply'&&payload?.status==='ok'){
+     assignmentJoins++;
+     disconnect=()=>socket.close({code:1012});
+    }
+    if(holdChanges&&event==='postgres_changes'){droppedChanges++;return;}
+    socket.send(message);
+   });
+  });
+ }
  const owner=await loginOwner(page),staff=await loginFixtureStaff(),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
  const fixture=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!,'utf8')) as {handoverClubId:string;handovers:{n:number;table_id:string;session_id:string;incoming_attendance:string}[]};
  const context=fixture.handovers[mode==='off'?20:21],headers=(token:string)=>({apikey:anon,Authorization:`Bearer ${token}`,'Content-Type':'application/json'});
@@ -1582,10 +1604,21 @@ test('active checkout respects automatic OFF and rested replacement eligibility'
   const recent=candidates.find((r:{dealers:{full_name:string}})=>r.dealers.full_name==='Replacement eligibility TEST 3');expect(recent).toBeTruthy();const eligible=candidates.filter((r:{id:string})=>r.id!==recent.id);
   const before=await active();expect(before).toHaveLength(1);if(mode==='rest-race'||mode==='off-race')checkoutAttendance=before[0].attendance_id;else expect(before[0].attendance_id).toBe(context.incoming_attendance);
   await page.goto('/dealer-swing');await selectDealerSwingClub(page,'Handover latency TEST');const card=page.locator('#table-card-'+context.table_id);if(mode==='off'||mode==='on')await expect(card.getByText('Handover incoming TEST '+context.n,{exact:true})).toBeVisible({timeout:30_000});else await expect(card.getByText(/Replacement eligibility TEST [12]/)).toBeVisible({timeout:30_000});
+  if(probeReconnect){
+   await expect.poll(()=>assignmentJoins).toBeGreaterThan(0);
+   holdChanges=true;
+  }
   phase='checkout';const started=performance.now(),results=mode!=='on'?[await checkout()]:await Promise.all(Array.from({length:20},checkout));
   for(const result of results){expect(result.data.needs_replacement_table).toBe(context.table_id);expect(result.data.check_out_time).toBe(results[0].data.check_out_time);}
   const first=results.find(r=>r.data.idempotent!==true);expect(first).toBeTruthy();expect(results.filter(r=>r.data.idempotent!==true)).toHaveLength(1);
   if(mode!=='on'){
+   if(probeReconnect){
+    await expect.poll(()=>droppedChanges).toBeGreaterThan(0);
+    await expect(card.getByText('Handover incoming TEST '+context.n,{exact:true})).toBeVisible();
+    const previousJoins=assignmentJoins;
+    await disconnect!();
+    await expect.poll(()=>assignmentJoins,{timeout:10000}).toBeGreaterThan(previousJoins);
+   }
    expect(first!.data.auto_assigned_dealer,'Automatic replacement must respect OFF although checkout itself is manual').toBeNull();expect(await active()).toHaveLength(0);await expect(card.getByText('Chưa gán',{exact:true})).toBeVisible({timeout:5000});if(mode==='off')expect(await pool()).toEqual(candidates);else{const after=await pool();expect(after.filter((r:{current_state:string})=>r.current_state==='available')).toHaveLength(2);expect(after.find((r:{id:string})=>r.id===checkoutAttendance)?.current_state).toBe('checked_out');expect(after.find((r:{id:string})=>r.id===recent.id)).toEqual(recent);}
   }else{
    expect(eligible.map((r:{dealers:{full_name:string}})=>r.dealers.full_name)).toContain(first!.data.auto_assigned_dealer);
@@ -1593,7 +1626,7 @@ test('active checkout respects automatic OFF and rested replacement eligibility'
    await expect(card.getByText(first!.data.auto_assigned_dealer,{exact:true})).toBeVisible({timeout:5000});
    const after=await pool();expect(after.find((r:{id:string})=>r.id===recent.id)).toEqual(recent);expect(after.filter((r:{current_state:string})=>r.current_state==='assigned')).toHaveLength(1);
   }
-  const writeToVisibleMs=performance.now()-started,retry=await checkout();expect(retry.data.idempotent).toBe(true);expect(retry.data.check_out_time).toBe(results[0].data.check_out_time);observation={requests:results.length,first:1,replays:results.length-1,ackMs:first!.ms,retryMs:retry.ms,writeToVisibleMs};if(mode==='off'||mode==='on')expect(writeToVisibleMs).toBeLessThanOrEqual(3000);phase='passed';report();
+  const writeToVisibleMs=performance.now()-started,retry=await checkout();expect(retry.data.idempotent).toBe(true);expect(retry.data.check_out_time).toBe(results[0].data.check_out_time);observation={requests:results.length,first:1,replays:results.length-1,ackMs:first!.ms,retryMs:retry.ms,writeToVisibleMs,...(probeReconnect?{assignmentJoins,droppedChanges}:{})};if(!probeReconnect&&(mode==='off'||mode==='on'))expect(writeToVisibleMs).toBeLessThanOrEqual(3000);phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}
 });
 

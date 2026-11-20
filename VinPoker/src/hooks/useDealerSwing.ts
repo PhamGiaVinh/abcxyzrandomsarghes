@@ -288,9 +288,12 @@ function useRealtimeQuery<T>(
       );
     }
 
+    let hasSubscribed = false;
     channel.subscribe((status) => {
       if (status === "SUBSCRIBED") {
         console.debug("[useRealtimeQuery] Realtime connected:", selectedTables);
+        if (hasSubscribed && canRefresh()) invalidate();
+        hasSubscribed = true;
       }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
         console.warn("[useRealtimeQuery] Realtime error, falling back to poll");
