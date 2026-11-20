@@ -319,6 +319,16 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
       seat_id: body.p_seat_id, entry_id: body.p_expected_seat_entry_id, table_session_id: tableSessionId,
       payout_applied: false, revision: 7 + submissions.length } });
   });
+  if (native) await page.route("http://127.0.0.1:54321/rest/v1/rpc/close_tournament_table_v3", route => {
+    const body = route.request().postDataJSON();
+    expect(body.p_tournament_table_id).toBe(pair?.[0].table);
+    const receipt = query(`${authSql}
+      WITH input AS (SELECT :'body'::jsonb AS b)
+      SELECT public.close_tournament_table_v3((b->>'p_tournament_table_id')::uuid,
+        (b->>'p_expected_revision')::bigint,(b->>'p_request_id')::uuid) FROM input;`,
+    { body: JSON.stringify(body) });
+    return route.fulfill({ json: JSON.parse(receipt) });
+  });
   const samples: { position: number; clickToReceiptMs: number; receiptToNextActionMs: number;
     bodyReadToReadyFrameMs: number }[] = [];
   const runPair = async (warmup: boolean) => {
@@ -384,6 +394,12 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
     if (pair) {
       expect(query(`SELECT count(*) FROM public.tournament_entries
         WHERE tournament_id=:'tour'::uuid AND status='busted' AND current_stack=0;`, { tour: activeTour })).toBe("2");
+      const closeReply = page.waitForResponse(reply => new URL(reply.url()).pathname.endsWith("/close_tournament_table_v3"));
+      await page.getByRole("button", { name: "Xác nhận đóng bàn", exact: true }).click();
+      expect(await (await closeReply).json()).toMatchObject({ ok: true });
+      await expect(page.locator('[data-ops-action="floor.tables.open_roster"]')).toHaveCount(0);
+      expect(query(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id=:'session'::uuid;`,
+        { session: activeSession })).toBe("t");
     }
   };
   const pairs = native ? 22 : 1;
