@@ -56,3 +56,21 @@ jobs:
           fi
           psql -h localhost -U postgres -d ops_baseline_incompatible -v ON_ERROR_STOP=1 \
             -f tests/ops/disposableDb.incompatible.verify.sql
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          node-version: 22
+      - name: Verify open Dealer Swing against actual PostgreSQL revocation
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: VinPoker
+        env:
+          LOCAL_R02_BROWSER: '1'
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_PUBLISHABLE_KEY: local-fixture-only
+        run: |
+          set -euo pipefail
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c 'GRANT USAGE ON SCHEMA auth TO authenticated'
+          npm ci --ignore-scripts --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          npx playwright test e2e/dealer-swing-revocation.disposable.spec.ts --project chromium --workers 1
