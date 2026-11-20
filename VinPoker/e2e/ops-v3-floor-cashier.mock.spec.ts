@@ -254,11 +254,10 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
     ], { input: sql, encoding: "utf8", timeout: 10_000 }).trim();
   };
   const authSql = "SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001'; SET ROLE authenticated;";
-  const pair: { tour: string; table: string; session: string; seat: string; entry: string }[] | null = native
-    ? JSON.parse(query("SELECT fast_bust_test.seed_pair();")) : null;
-  const activeTour = pair?.[0].tour ?? tournamentId;
-  const activeSession = pair?.[0].session ?? tableSessionId;
-  if (pair) {
+  let pair: { tour: string; table: string; session: string; seat: string; entry: string }[] | null = null;
+  let activeTour = tournamentId;
+  if (native) {
+    test.setTimeout(240_000);
     await page.route("http://127.0.0.1:54321/rest/v1/tournaments?**", route => {
       const object = (route.request().headers().accept ?? "").includes("vnd.pgrst.object");
       const selected = { ...tournament, id: activeTour };
@@ -272,6 +271,7 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
   const submissions: unknown[] = [];
   await page.route("http://127.0.0.1:54321/rest/v1/rpc/get_floor_tournament_table_roster_v*", route => {
     if (pair) {
+      if (route.request().postDataJSON().p_tournament_id !== activeTour) return route.fulfill({ json: [] });
       const roster = JSON.parse(query(`${authSql}
         SELECT public.get_floor_tournament_table_roster_v7(:'tour'::uuid);`, { tour: activeTour }));
       for (const table of roster) for (const seat of table.seats) seat.display_name = `Floor fixture player ${seat.seat_number}`;
@@ -288,6 +288,7 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
     const body = route.request().postDataJSON();
     submissions.push(body);
     if (pair) {
+      expect(body.p_tournament_id).toBe(activeTour);
       const receipt = query(`${authSql}
         WITH input AS (SELECT :'body'::jsonb AS b)
         SELECT public.floor_operator_bust_seat_v1((b->>'p_tournament_id')::uuid,(b->>'p_tournament_table_id')::uuid,
@@ -302,35 +303,52 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
       seat_id: body.p_seat_id, entry_id: body.p_expected_seat_entry_id, table_session_id: tableSessionId,
       payout_applied: false, revision: 7 + submissions.length } });
   });
-  await page.goto(`/ops/floor/tournaments/${activeTour}/tables?club=${clubId}`);
-  await page.locator('[data-ops-action="floor.tables.open_roster"]').click();
-  const timings: { clickToReceiptMs: number; receiptToNextActionMs: number }[] = [];
-  for (const number of [1, 2]) {
-    const row = page.getByTestId(`floor-seat-row-${number}`);
-    await expect(row).toContainText(`Floor fixture player ${number}`);
-    await row.click();
-    await page.getByRole("button", { name: "Loại khỏi giải", exact: true }).click();
-    const response = page.waitForResponse(reply => new URL(reply.url()).pathname.endsWith("/floor_operator_bust_seat_v1"));
-    const started = performance.now();
-    await page.getByRole("button", { name: "Xác nhận loại", exact: true }).click();
-    expect(await (await response).json()).toMatchObject({ ok: true, payout_applied: false });
-    const received = performance.now();
-    await expect(row).not.toContainText(`Floor fixture player ${number}`);
-    const nextAction = number === 1 ? page.getByTestId("floor-seat-row-2")
-      : page.getByRole("button", { name: "Đóng bàn trống", exact: true });
-    await expect(nextAction).toBeEnabled();
-    timings.push({ clickToReceiptMs: received - started, receiptToNextActionMs: performance.now() - received });
-  }
-  expect(submissions).toEqual([1, 2].map(number => expect.objectContaining({
-    p_table_session_id: activeSession, p_seat_id: pair?.[number - 1].seat ?? `seat-${number}`,
-    p_expected_seat_entry_id: pair?.[number - 1].entry ?? `entry-${number}`, p_expected_control_epoch: 1,
-  })));
-  await page.getByRole("button", { name: "Đóng bàn trống", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Đóng bàn trống?" })).toBeVisible();
-  if (pair) {
-    expect(query(`SELECT count(*) FROM public.tournament_entries
-      WHERE tournament_id=:'tour'::uuid AND status='busted' AND current_stack=0;`, { tour: activeTour })).toBe("2");
-    console.log(JSON.stringify({ kind: "FLOOR_BUST_CHROMIUM_LOCAL_POSTGRES", samples: timings, qualification: false }));
+  const samples: { position: number; clickToReceiptMs: number; receiptToNextActionMs: number }[] = [];
+  const runPair = async (warmup: boolean) => {
+    submissions.length = 0;
+    if (native) pair = JSON.parse(query("SELECT fast_bust_test.seed_pair();"));
+    activeTour = pair?.[0].tour ?? tournamentId;
+    const activeSession = pair?.[0].session ?? tableSessionId;
+    await page.goto(`/ops/floor/tournaments/${activeTour}/tables?club=${clubId}`);
+    await page.locator('[data-ops-action="floor.tables.open_roster"]').click();
+    for (const number of [1, 2]) {
+      const row = page.getByTestId(`floor-seat-row-${number}`);
+      await expect(row).toContainText(`Floor fixture player ${number}`);
+      await row.click();
+      await page.getByRole("button", { name: "Loại khỏi giải", exact: true }).click();
+      const response = page.waitForResponse(reply => new URL(reply.url()).pathname.endsWith("/floor_operator_bust_seat_v1"));
+      const started = performance.now();
+      await page.getByRole("button", { name: "Xác nhận loại", exact: true }).click();
+      expect(await (await response).json()).toMatchObject({ ok: true, payout_applied: false });
+      const received = performance.now();
+      await expect(row).not.toContainText(`Floor fixture player ${number}`);
+      const nextAction = number === 1 ? page.getByTestId("floor-seat-row-2")
+        : page.getByRole("button", { name: "Đóng bàn trống", exact: true });
+      await expect(nextAction).toBeEnabled();
+      if (!warmup) samples.push({ position: number, clickToReceiptMs: received - started, receiptToNextActionMs: performance.now() - received });
+    }
+    expect(submissions).toEqual([1, 2].map(number => expect.objectContaining({
+      p_table_session_id: activeSession, p_seat_id: pair?.[number - 1].seat ?? `seat-${number}`,
+      p_expected_seat_entry_id: pair?.[number - 1].entry ?? `entry-${number}`, p_expected_control_epoch: 1,
+    })));
+    await page.getByRole("button", { name: "Đóng bàn trống", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Đóng bàn trống?" })).toBeVisible();
+    if (pair) {
+      expect(query(`SELECT count(*) FROM public.tournament_entries
+        WHERE tournament_id=:'tour'::uuid AND status='busted' AND current_stack=0;`, { tour: activeTour })).toBe("2");
+    }
+  };
+  const pairs = native ? 22 : 1;
+  for (let i = 0; i < pairs; i++) await runPair(native && i < 2);
+  if (native) {
+    const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1];
+    const distributions = [1, 2].map(position => {
+      const rows = samples.filter(sample => sample.position === position);
+      expect(rows).toHaveLength(20);
+      return { position, samples: rows.length, clickToReceiptP95Ms: p95(rows.map(row => row.clickToReceiptMs)),
+        receiptToNextActionP95Ms: p95(rows.map(row => row.receiptToNextActionMs)) };
+    });
+    console.log(JSON.stringify({ kind: "FLOOR_BUST_CHROMIUM_LOCAL_POSTGRES", warmupPairs: 2, distributions, samples, qualification: false }));
   }
 });
 
