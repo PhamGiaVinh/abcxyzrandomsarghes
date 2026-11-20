@@ -1779,13 +1779,13 @@ run_prize_close_proof() {
   [[ "$prize_history_before" == true || "$prize_history_before" == false || "$prize_history_before" == missing ]]
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PRIZE_CLOSE_FRESH_FIXTURE'
 BEGIN;
-DO $ BEGIN
+DO $$ BEGIN
  IF NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
  OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE frozen)
  OR EXISTS(SELECT 1 FROM public.tournaments WHERE id='a3000000-0000-4000-8000-000000000005')
  OR EXISTS(SELECT 1 FROM public.game_tables WHERE club_id='a2000000-0000-4000-8000-000000000001' AND table_number=94)
  THEN RAISE EXCEPTION 'prize_close_fresh_fixture_scope_required';END IF;
-END $;
+END $$;
 INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
 VALUES('a3000000-0000-4000-8000-000000000005','a2000000-0000-4000-8000-000000000001','Canonical paid prize TEST','registering','registering',now(),6000000,600000,0,false,0,0);
 INSERT INTO public.tournament_levels(id,tournament_id,level_number,small_blind,big_blind,ante,duration_minutes,is_break)
