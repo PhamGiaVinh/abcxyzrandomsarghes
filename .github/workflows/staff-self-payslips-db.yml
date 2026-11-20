@@ -3,12 +3,32 @@ on:
   pull_request:
     paths:
       - '.github/workflows/staff-self-payslips-db.yml'
+      - 'VinPoker/e2e/staff-ft-payslip.mock.spec.ts'
       - 'VinPoker/tests/staffSalary/l05Payslips.sql'
       - 'VinPoker/supabase/pending-migrations/20261119093017_staff_self_ft_payslips_v1.sql'
 permissions:
   actions: read
   contents: read
 jobs:
+  staff-self-payslips-chromium:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: npm ci
+      - run: npm exec -- playwright install --with-deps chromium
+      - name: Verify the employee sees the recorded payment on mobile
+        env:
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_PUBLISHABLE_KEY: local-publishable-key
+          VITE_STAFF_FT_PAYSLIPS_V1: 'true'
+        run: npm exec -- playwright test e2e/staff-ft-payslip.mock.spec.ts --workers=1
   staff-self-payslips-db:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
