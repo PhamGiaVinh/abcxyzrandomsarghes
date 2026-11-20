@@ -247,6 +247,22 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
   await installMockOpsSession(page);
   await page.setViewportSize({ width: 390, height: 844 });
   const native = process.env.FLOOR_BUST_BROWSER_DATABASE === "vinpoker_floor_bust_browser";
+  await page.addInitScript(() => {
+    const fetchRequest = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const response = await fetchRequest(input, init);
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === "http://127.0.0.1:54321/rest/v1/rpc/floor_operator_bust_seat_v1") {
+        const readBody = response.text.bind(response);
+        response.text = async () => {
+          const text = await readBody();
+          performance.mark("floor-bust-body-read");
+          return text;
+        };
+      }
+      return response;
+    };
+  });
   const query = (sql: string, variables: Record<string, string> = {}) => {
     return execFileSync("psql", ["-XAtq", "-h", "127.0.0.1", "-p", "5432",
       "-U", "postgres", "-d", "vinpoker_floor_bust_browser", "-v", "ON_ERROR_STOP=1",
@@ -303,7 +319,8 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
       seat_id: body.p_seat_id, entry_id: body.p_expected_seat_entry_id, table_session_id: tableSessionId,
       payout_applied: false, revision: 7 + submissions.length } });
   });
-  const samples: { position: number; clickToReceiptMs: number; receiptToNextActionMs: number }[] = [];
+  const samples: { position: number; clickToReceiptMs: number; receiptToNextActionMs: number;
+    bodyReadToReadyFrameMs: number }[] = [];
   const runPair = async (warmup: boolean) => {
     submissions.length = 0;
     if (native) pair = JSON.parse(query("SELECT fast_bust_test.seed_pair();"));
@@ -316,6 +333,26 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
       await expect(row).toContainText(`Floor fixture player ${number}`);
       await row.click();
       await page.getByRole("button", { name: "Loại khỏi giải", exact: true }).click();
+      await page.evaluate(position => {
+        const button = document.querySelector('[data-ops-action="floor.player.bust"]');
+        if (!button) throw new Error("Bust confirmation missing");
+        button.addEventListener("click", () => {
+          const start = `floor-bust-start-${position}`;
+          performance.mark(start);
+          const startTime = performance.getEntriesByName(start)[0].startTime;
+          const selector = position === 1 ? '[data-testid="floor-seat-row-2"]'
+            : '[data-ops-action="floor.tables.open_close_table"]';
+          const observe = () => {
+            const next = document.querySelector<HTMLButtonElement>(selector);
+            const dialog = document.querySelector('[role="alertdialog"][data-state="open"]');
+            const oldSeat = document.querySelector(`[data-testid="floor-seat-row-${position}"]`);
+            if (next && !next.disabled && !dialog && !oldSeat?.textContent?.includes(`Floor fixture player ${position}`)) {
+              performance.mark(`floor-bust-ready-${position}`);
+            } else if (performance.now() - startTime < 5_000) requestAnimationFrame(observe);
+          };
+          requestAnimationFrame(observe);
+        }, { once: true });
+      }, number);
       const response = page.waitForResponse(reply => new URL(reply.url()).pathname.endsWith("/floor_operator_bust_seat_v1"));
       const started = performance.now();
       await page.getByRole("button", { name: "Xác nhận loại", exact: true }).click();
@@ -325,7 +362,18 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
       const nextAction = number === 1 ? page.getByTestId("floor-seat-row-2")
         : page.getByRole("button", { name: "Đóng bàn trống", exact: true });
       await expect(nextAction).toBeEnabled();
-      if (!warmup) samples.push({ position: number, clickToReceiptMs: received - started, receiptToNextActionMs: performance.now() - received });
+      const receiptToNextActionMs = performance.now() - received;
+      await page.waitForFunction(position => performance.getEntriesByName(`floor-bust-ready-${position}`).length === 1, number);
+      const bodyReadToReadyFrameMs = await page.evaluate(position => {
+        const start = performance.getEntriesByName(`floor-bust-start-${position}`)[0].startTime;
+        const ready = performance.getEntriesByName(`floor-bust-ready-${position}`)[0].startTime;
+        const bodyRead = performance.getEntriesByName("floor-bust-body-read").find(entry => entry.startTime >= start);
+        if (!bodyRead) throw new Error("Bust response was not read by the browser SDK");
+        return ready - bodyRead.startTime;
+      }, number);
+      expect(bodyReadToReadyFrameMs).toBeGreaterThanOrEqual(0);
+      if (!warmup) samples.push({ position: number, clickToReceiptMs: received - started,
+        receiptToNextActionMs, bodyReadToReadyFrameMs });
     }
     expect(submissions).toEqual([1, 2].map(number => expect.objectContaining({
       p_table_session_id: activeSession, p_seat_id: pair?.[number - 1].seat ?? `seat-${number}`,
@@ -346,7 +394,8 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
       const rows = samples.filter(sample => sample.position === position);
       expect(rows).toHaveLength(20);
       return { position, samples: rows.length, clickToReceiptP95Ms: p95(rows.map(row => row.clickToReceiptMs)),
-        receiptToNextActionP95Ms: p95(rows.map(row => row.receiptToNextActionMs)) };
+        receiptToNextActionP95Ms: p95(rows.map(row => row.receiptToNextActionMs)),
+        bodyReadToReadyFrameP95Ms: p95(rows.map(row => row.bodyReadToReadyFrameMs)) };
     });
     console.log(JSON.stringify({ kind: "FLOOR_BUST_CHROMIUM_LOCAL_POSTGRES", warmupPairs: 2, distributions, samples, qualification: false }));
   }
