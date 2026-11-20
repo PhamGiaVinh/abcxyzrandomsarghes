@@ -10,6 +10,7 @@ import {financeBusinessToday,parseFinanceCore,assertFinanceCalendarScope} from '
 import {parseSeriesClubLivePulseV1} from '../src/lib/series-intelligence/seriesClubLivePulseV1';
 import {parseOpsIntelligenceContextV1} from '../src/ops/intelligence/opsIntelligenceContextV1';
 import {parseOpsIntelligenceTimelineV1} from '../src/ops/intelligence/opsIntelligenceTimelineV1';
+import {formatVND} from '../src/lib/format';
 import {clockBroadcastSignal,decodeClockWireFrame} from '../tests/publicHud/clockWireDiagnostics';
 import {audienceServerTiming,reentryServerTiming,audienceFailure} from '../scripts/ops/operations-audience-scope.mjs';
 import {classifyPublicHudHand} from '../supabase/functions/_shared/publicHudContribution';
@@ -201,7 +202,7 @@ async function loginFixtureStaff(){
    method:'POST',headers:{apikey:process.env.LOCAL_SUPABASE_ANON_KEY!,'Content-Type':'application/json'},body:JSON.stringify(row),signal:AbortSignal.timeout(10000),
   });
   const session=await response.json();expect(response.ok).toBe(true);expect(typeof session.access_token).toBe('string');expect(typeof session.user?.id).toBe('string');
-  return {token:session.access_token as string,userId:session.user.id as string};
+  return {token:session.access_token as string,userId:session.user.id as string,session};
  }));
  expect(new Set(identities.map(row=>row.userId)).size).toBe(20);
  return identities;
@@ -2283,7 +2284,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
  const dealerClose={checkedIn:false,assignmentVisible:false,assignmentReleased:false,breakRecorded:false,breakVisible:false};
  const dealerCheckout={committed:false,retryPreserved:false,breakEnded:false,swingUpdated:false};
- const dealerPay={accrualMatches:false,fixedStatement:false,paidOnce:false,selfBalanceCleared:false};
+ const dealerPay={accrualMatches:false,fixedStatement:false,paidOnce:false,selfBalanceCleared:false,financeMatched:false,mobileReceiptVisible:false};
  const clockUi={started:false,paused:false,resumed:false};
  const fnb={guestOrder:false,guestPaidVisible:false,counterPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
  const fnbTour={desktop:false,mobile:false};
@@ -2652,6 +2653,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    expect((await rpc('finalize_part_time_payroll_statement',finalizeIntent)).statement_id).toBe(statement.statement_id);
    dealerPay.fixedStatement=true;
    const payrollIntent={p_statement_id:statement.statement_id,p_payment_method:'cash',p_idempotency_key:crypto.randomUUID(),p_note:'Isolated TEST cash'};
+   const financeBeforePay=await readFinance();
    const payment=await rpc('pay_finalized_part_time_payroll_statement',payrollIntent,checkoutHeaders);
    expect(payment.amount_vnd).toBe(accrued.balance_vnd);
    const payrollRetry=await rpc('pay_finalized_part_time_payroll_statement',payrollIntent,checkoutHeaders);
@@ -2663,6 +2665,26 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
     expect.objectContaining({amount_vnd:accrued.balance_vnd,payment_method:'cash'}),
    ]);
    dealerPay.selfBalanceCleared=true;
+   const financeAfterPay=await readFinance();
+   expect(financeAfterPay.cost.ptWagePaid-financeBeforePay.cost.ptWagePaid).toBe(accrued.balance_vnd);
+   dealerPay.financeMatched=true;
+   const dealerContext=await browser.newContext({
+    baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:'vi-VN',viewport:{width:390,height:844},isMobile:true,hasTouch:true,
+   });
+   try{
+    const dealerPage=await dealerContext.newPage();
+    await dealerPage.addInitScript(({key,value})=>localStorage.setItem(key,JSON.stringify(value)),{
+     key:process.env.LOCAL_SUPABASE_STORAGE_KEY!,value:staff[0].session,
+    });
+    await dealerPage.goto('/dealer/salary');
+    await expect(dealerPage.getByRole('heading',{name:'Lương của tôi',exact:true})).toBeVisible();
+    const history=dealerPage.getByText('Lịch sử thanh toán',{exact:true}).locator('../..');
+    await expect(history.getByText(/· Tiền mặt$/)).toHaveCount(1);
+    await expect(history.getByText(formatVND(accrued.balance_vnd),{exact:true})).toBeVisible();
+    const currentBalance=dealerPage.getByText('Số dư chưa thanh toán',{exact:true}).locator('..');
+    await expect(currentBalance.getByText(formatVND(0),{exact:true})).toBeVisible();
+    dealerPay.mobileReceiptVisible=true;
+   }finally{await dealerContext.close();}
   }
   const ready=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(ready.ready).toBe(true);expect(ready.prize_total).toBe(18000000);expect(ready.reconcile_delta).toBe(0);
   const closed=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated canonical paid prize HTTP'});expect(closed.outcome).toBe('closed');expect(closed.prize_total).toBe(18000000);expect(closed.club_revenue).toBe(1800000);expect(closed.reconcile_delta).toBe(0);expect(closed.reconciled).toBe(true);prizeTotal=closed.prize_total;reconcileDelta=closed.reconcile_delta;
