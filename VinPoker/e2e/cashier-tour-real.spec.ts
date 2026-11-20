@@ -2288,9 +2288,11 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let phase='setup';
  let beforeCounts:number[]=[];
  let afterCounts:number[]=[];
+ let deferredCount=0;
+ let handFinished=false;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,qualification:false,productionChanged:false,
-  limits:'One dedicated TEST tour with 27 actual paid registrations. This check covers immediate transfers, browser refresh and conservation, without an active Tracker hand or a full tour close.'},null,2));
+  beforeCounts,afterCounts,deferredCount,handFinished,qualification:false,productionChanged:false,
+  limits:'One isolated TEST tour with 27 actual paid registrations. A zero-pot Tracker hand exercises deferred transfers and conservation. This is not a full tour close or load qualification.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -2298,7 +2300,8 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   return response.json();
  };
  const rpc=(name:string,args:Record<string,unknown>,token=owner)=>post('/rest/v1/rpc/'+name,args,token);
- type Table={tournament_table_id:string;table_number:number;max_seats:number;seats:{entry_id:string;chip_count:number}[]};
+ type Table={tournament_table_id:string;table_session_id:string;table_number:number;max_seats:number;control_epoch:number;
+  control_mode:string;seats:{entry_id:string;chip_count:number;seat_number:number}[]};
  const roster=async()=>(await rpc(floorRosterRpc,{p_tournament_id:tour})) as Table[];
  const identity=(tables:Table[])=>tables.flatMap(table=>table.seats.map(seat=>[seat.entry_id,seat.chip_count] as const))
   .sort((a,b)=>a[0].localeCompare(b[0]));
@@ -2306,7 +2309,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   report();
   for(let index=1;index<=4;index++){
    const result=await rpc('floor_open_tournament_table_v3',{p_tournament_id:tour,
-    p_game_table_id:'ac730000-0000-4000-8000-'+String(index).padStart(12,'0'),p_control_mode:'manual',p_request_id:crypto.randomUUID()});
+    p_game_table_id:'ac730000-0000-4000-8000-'+String(index).padStart(12,'0'),p_control_mode:index===2?'tracker':'manual',p_request_id:crypto.randomUUID()});
    expect(result.ok).toBe(true);
   }
   phase='canonical-cash-registration';report();
@@ -2326,7 +2329,10 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const frozen=identity(before);
   expect(new Set(frozen.map(([entry])=>entry)).size).toBe(27);
   expect(frozen.reduce((total,[,chips])=>total+chips,0)).toBe(540000);
-  const source=before.filter(table=>table.seats.length>0).sort((a,b)=>a.seats.length-b.seats.length)[0];
+  const target=before.find(table=>table.control_mode==='tracker')!;
+  expect(target.seats.length).toBeGreaterThanOrEqual(2);
+  expect(target.seats.length).toBeLessThan(9);
+  const source=before.filter(table=>table.control_mode==='manual'&&table.seats.length>0).sort((a,b)=>a.seats.length-b.seats.length)[0];
   await page.setViewportSize({width:1366,height:900});
   const phone=await mobileContext.newPage();
   await loginOwner(phone);
@@ -2341,12 +2347,51 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
    await expect(advice).toBeVisible();
    return {cards,advice,sourceCard:cards.and(map.locator(`[data-floor-table-number="${source.table_number}"]`))};
   }));
+  const read=async(path:string)=>{
+   const response=await fetch(api+path,{headers:{apikey:anon,Authorization:'Bearer '+owner},signal:AbortSignal.timeout(10000)});
+   expect(response.ok,path.split('?')[0]).toBe(true);
+   return response.json();
+  };
+  phase='tracker-hand-start';report();
+  const actor=(await read('/auth/v1/user')).id;
+  const started=await rpc('start_tracker_hand_v3',{p_tournament_id:tour,p_tournament_table_id:target.tournament_table_id,
+   p_table_session_id:target.table_session_id,p_control_epoch:target.control_epoch,p_hand_number:880014,
+   p_hand_time:new Date().toISOString(),p_created_by:actor,p_button_seat:target.seats[0].seat_number});
+  expect(started.status).toBe('success');
+  const [hand]=await read('/rest/v1/tournament_hands?select=id,status,hand_time,source_revision&id=eq.'+started.hand_id);
+  expect(hand.status).toBe('in_progress');
+  const playersPath='/rest/v1/hand_players?select=player_id,entry_number,seat_number,starting_stack&hand_id=eq.'+hand.id+'&order=seat_number';
+  const handPlayers=await read(playersPath);
+  expect(handPlayers).toHaveLength(target.seats.length);
   phase='confirmed-floor-write';report();
   await observers[0].sourceCard.click();
   await page.getByRole('button',{name:'Đóng & chuyển người',exact:true}).click();
   const dialog=page.getByRole('alertdialog',{name:'Đóng và chuyển toàn bộ người chơi?'});
-  await expect(dialog.getByText('Chuyển ngay',{exact:true})).toHaveCount(source.seats.length);
-  await dialog.getByRole('button',{name:'Xác nhận đóng & chuyển',exact:true}).click();
+  await expect.poll(()=>dialog.getByText('Chuyển sau ván',{exact:true}).count()).toBeGreaterThan(0);
+  deferredCount=await dialog.getByText('Chuyển sau ván',{exact:true}).count();
+  const [response]=await Promise.all([
+   page.waitForResponse(reply=>reply.url()===api+'/rest/v1/rpc/floor_break_table_v5' &&
+    reply.request().postDataJSON()?.p_tournament_table_id===source.tournament_table_id),
+   dialog.getByRole('button',{name:'Xác nhận đóng & chuyển',exact:true}).click(),
+  ]);
+  expect(response.ok()).toBe(true);
+  expect(await response.json()).toMatchObject({ok:true,closed:false,break_pending:true,pending_count:deferredCount});
+  for(const observer of observers)await expect(observer.sourceCard).toBeVisible();
+  expect(await read(playersPath)).toEqual(handPlayers);
+  const pending=await roster();
+  expect(pending).toHaveLength(4);
+  expect(pending.find(table=>table.tournament_table_id===source.tournament_table_id)?.seats).toHaveLength(deferredCount);
+  expect(identity(pending)).toEqual(frozen);
+  phase='tracker-hand-finish';report();
+  expect(await rpc('heartbeat_lock',{p_hand_id:hand.id,p_user_id:actor})).toMatchObject({status:'success'});
+  const payload={players:handPlayers.map((player:{starting_stack:number})=>({...player,ending_stack:player.starting_stack,
+   is_eliminated:false,side_pots:[],hole_cards:[]})),actions:[],community_cards:[],side_pots:[],hand_time:hand.hand_time,pot_size:0};
+  const intent={actor_id:actor,request_id:crypto.randomUUID(),tournament_id:tour,tournament_table_id:target.tournament_table_id,
+   hand_id:hand.id,table_session_id:target.table_session_id,control_epoch:target.control_epoch,source_revision:hand.source_revision,payload};
+  const finish=await rpc('record_tracker_manual_hand_v1',{p_intent:intent});
+  expect(finish).toMatchObject({ok:true,hand_id:hand.id});
+  expect(await rpc('get_tracker_manual_finish_receipt_v1',{p_intent:intent})).toEqual(finish);
+  handFinished=true;
   await Promise.all(observers.map(async observer=>{
    await expect(observer.cards).toHaveCount(3,{timeout:15000});
    await expect(observer.sourceCard).toHaveCount(0);
