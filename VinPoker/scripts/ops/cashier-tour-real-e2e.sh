@@ -1398,6 +1398,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_LATENCY_REPORT=/latency/cashier-http.json \
   --env LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
   --env LOCAL_CHIP_HISTORY_PROBE="${LOCAL_CHIP_HISTORY_PROBE:-0}" \
+  --env LOCAL_CHIP_BAG_HISTORY_PROBE="${LOCAL_CHIP_BAG_HISTORY_PROBE:-0}" \
   --env LOCAL_OPERATIONS_AUDIENCE="$audience_count" \
   --env LOCAL_OPERATIONS_AUDIENCE_MODEL="$audience_model" \
   --env LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE="$diagnostic_scope" \
@@ -1792,6 +1793,9 @@ SELECT ('bd200000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
 FROM generate_series(1,203) n;
 CHIP_HISTORY
   run_browser_proof '' '' 'opens older Chip Ops inventory only for an exact eligible tournament'
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    < "$repo_root/supabase/pending-tests/chip_history_bagging_browser_fixture.sql"
+  LOCAL_CHIP_BAG_HISTORY_PROBE=1 run_browser_proof '' '' 'records and seals one bag through the historical Chip Ops link'
   exit 0
 fi
 if [[ "$diagnostic_scope" != none ]]; then
