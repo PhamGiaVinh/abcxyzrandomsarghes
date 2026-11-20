@@ -183,6 +183,7 @@ function ScopedFloorTableMapPanelV3({
   const selectedWriteScope = JSON.stringify([selectedSessionScope, selectedTable?.sessionRevision]);
   const selectedWriteScopeRef = useRef(selectedWriteScope);
   selectedWriteScopeRef.current = selectedWriteScope;
+  const closeRosterReady = !v3.fastBustEnabled || (!loadError && (!loading || rosterReady));
   const actionIsCurrent = pendingActionScope === selectedWriteScope && !loadError
     && (!loading || (v3.fastBustEnabled && rosterReady && pendingTableAction === "close"));
   const bustActionIsCurrent = pendingActionScope === (v3.fastBustEnabled ? selectedSessionScope : selectedWriteScope)
@@ -789,7 +790,7 @@ function ScopedFloorTableMapPanelV3({
                 />
 
                 <section className="grid gap-2 sm:grid-cols-2">
-                  <Button data-ops-action="floor.tables.open_close_table" variant="outline" className="min-h-12" disabled={busy || selectedTable.seats.length !== 0} onClick={() => { setPendingActionScope(selectedWriteScope); setPendingTableAction("close"); }}>Đóng bàn trống</Button>
+                  <Button data-ops-action="floor.tables.open_close_table" variant="outline" className="min-h-12" disabled={busy || !closeRosterReady || selectedTable.seats.length !== 0} onClick={() => { setPendingActionScope(selectedWriteScope); setPendingTableAction("close"); }}>Đóng bàn trống</Button>
                   <Button
                     data-ops-action="floor.tables.open_break_v3"
                     variant="outline"

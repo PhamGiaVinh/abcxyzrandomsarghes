@@ -394,9 +394,11 @@ test("Floor submits two consecutive exact busts and opens the empty-table confir
     if (pair) {
       expect(query(`SELECT count(*) FROM public.tournament_entries
         WHERE tournament_id=:'tour'::uuid AND status='busted' AND current_stack=0;`, { tour: activeTour })).toBe("2");
-      const closeReply = page.waitForResponse(reply => new URL(reply.url()).pathname.endsWith("/close_tournament_table_v3"));
-      await page.getByRole("button", { name: "Xác nhận đóng bàn", exact: true }).click();
-      expect(await (await closeReply).json()).toMatchObject({ ok: true });
+      const [closeReply] = await Promise.all([
+        page.waitForResponse(reply => new URL(reply.url()).pathname.endsWith("/close_tournament_table_v3"), { timeout: 5_000 }),
+        page.getByRole("button", { name: "Xác nhận đóng bàn", exact: true }).click({ timeout: 5_000 }),
+      ]);
+      expect(await closeReply.json()).toMatchObject({ ok: true });
       await expect(page.locator('[data-ops-action="floor.tables.open_roster"]')).toHaveCount(0);
       expect(query(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id=:'session'::uuid;`,
         { session: activeSession })).toBe("t");

@@ -98,13 +98,16 @@ it.each(["missing_entry", "valid"] as const)("releases consecutive %s seats and 
       integrityStatus, isActive: true };
   });
   const current = { ...table(1), seats };
-  state.roster.mockResolvedValue({ ok: true, data: [current] });
+  let resolveRoster!: (value: unknown) => void;
+  state.roster.mockImplementation(() => current.sessionRevision === 1
+    ? Promise.resolve({ ok: true, data: [{ ...current }] })
+    : new Promise(resolve => { resolveRoster = resolve; }));
   // These lists are unrelated to removing an exact occupant or closing an empty table.
   state.restorable.mockImplementation(() => new Promise(() => {}));
   state.bust.mockImplementation(async ({ seatId }: { seatId: string }) => {
     current.seats = current.seats.filter(s => s.seatId !== seatId);
     current.sessionRevision++;
-    return { ok: true, data: { outcome: orphan ? "orphan_seat_released" : "busted" } };
+    return { ok: true, data: { outcome: orphan ? "orphan_seat_released" : "busted", revision: current.sessionRevision } };
   });
   render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
   fireEvent.click(await screen.findByTestId("floor-table-roster-card"));
@@ -118,8 +121,15 @@ it.each(["missing_entry", "valid"] as const)("releases consecutive %s seats and 
   }
   expect(state.bust.mock.calls.map(([args]) => args.seatId)).toEqual(["seat-1", "seat-2"]);
   expect(state.bust.mock.calls.map(([args]) => args.seatEntryId)).toEqual(orphan ? [null, null] : ["entry-1", "entry-2"]);
-  fireEvent.click(screen.getByRole("button", { name: "Đóng bàn trống" }));
+  expect(screen.getByRole("button", { name: "Đóng bàn trống", exact: true })).toBeDisabled();
+  await act(async () => { resolveRoster({ ok: true, data: [{ ...current }] }); });
+  const close = screen.getByRole("button", { name: "Đóng bàn trống", exact: true });
+  expect(close).toBeEnabled();
+  fireEvent.click(close);
   expect(await screen.findByRole("heading", { name: "Đóng bàn trống?" })).toBeInTheDocument();
+  state.close.mockResolvedValue({ ok: false, error: "test_no_close_side_effect" });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xác nhận đóng bàn", exact: true })); });
+  expect(state.close).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 3 }));
 });
 
 it("keeps an exact bust confirmation during refresh and guards repeated clicks", async () => {
