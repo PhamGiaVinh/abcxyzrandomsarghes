@@ -2281,6 +2281,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const payoutUi={loaded:false,dialogVerified:false,cancelPreservedUnpaid:false,confirmed:false,paidVisible:false};
  const replayUi={desktop:false,mobile:false};
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
+ const dealerClose={checkedIn:false,assignmentVisible:false,assignmentReleased:false};
  const clockUi={started:false,paused:false,resumed:false};
  const fnb={guestOrder:false,guestPaidVisible:false,counterPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
  const fnbTour={desktop:false,mobile:false};
@@ -2288,7 +2289,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let guestContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,clockUi,fnb,fnbTour,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with an open clock, desktop/mobile replay, Cashier payment, Floor close and an open Dealer Swing screen. Targeted mode also checks the guest-sale attribution reader on the real Finance route; linked counter writers and refunds are outside this scope. No load or cash funding qualification.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,dealerClose,clockUi,fnb,fnbTour,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with an open clock, desktop/mobile replay, Cashier payment, Floor close and an open Dealer Swing screen. Targeted mode checks F&B attribution and the release of a checked-in dealer at Floor close. Excludes payroll, linked counter writers, refunds, load and cash funding.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -2543,6 +2544,27 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   const swingAlert=swing.getByText('Canonical paid prize TEST • Thiếu dealer',{exact:true});
   await expect(swingCard).toBeVisible();
   await expect(swingAlert).toBeVisible();
+  let assignmentId:string|undefined;
+  if(process.env.LOCAL_OPERATIONS_TOUR_FNB_ENABLED==='true'){
+   const name='HTTP latency TEST 1';
+   const dealers=await read('dealers?select=id&club_id=eq.'+club+'&full_name=eq.'+encodeURIComponent(name));
+   expect(dealers).toHaveLength(1);
+   const checkedIn=await rpc('operator_check_in_dealer_v1',{
+    p_dealer_id:dealers[0].id,p_club_id:club,p_shift_id:'ad300000-0000-4000-8000-000000000001',p_request_id:crypto.randomUUID(),
+   });
+   expect(checkedIn.outcome).toBe('checked_in');
+   dealerClose.checkedIn=true;
+   const assignment=await rpc('assign_dealer_to_table',{
+    p_attendance_id:checkedIn.attendance_id,p_table_id:opened.p_game_table_id,p_club_id:club,
+    p_idempotency_key:crypto.randomUUID(),p_swing_due_at:new Date(Date.now()+900000).toISOString(),
+   });
+   expect(assignment.outcome).toBe('ok');
+   expect(assignment.assignment_id).toMatch(/^[a-f0-9-]{36}$/);
+   assignmentId=assignment.assignment_id;
+   await expect(swingCard.getByText(name,{exact:true})).toBeVisible();
+   await expect(swingAlert).toHaveCount(0);
+   dealerClose.assignmentVisible=true;
+  }
   await page.goto(`/ops/floor/tournaments/${tour}/tables?club=${club}`);
   const floorCard=page.locator('[data-testid="floor-table-roster-card"][data-floor-table-number="94"]');
   await floorCard.click();
@@ -2553,10 +2575,17 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    page.locator('[data-ops-action="floor.tables.close_table"]').click(),
   ]);
   expect(closeResponse.ok()).toBe(true);
-  expect(await closeResponse.json()).toMatchObject({ok:true,closed:true,table_session_id:empty.table_session_id});
+  const closedTable=await closeResponse.json();
+  expect(closedTable).toMatchObject({ok:true,closed:true,table_session_id:empty.table_session_id});
   timings.push({operation:'floor-close-ack',ms:performance.now()-closing});
   const closedRoster=await roster();
   expect(closedRoster.some(table=>table.table_session_id===empty.table_session_id)).toBe(false);
+  if(assignmentId){
+   expect(closedTable.dealer_assignments_released).toBe(1);
+   const assignments=await read('dealer_assignments?select=table_session_id,status,released_at&id=eq.'+assignmentId);
+   expect(assignments).toEqual([{table_session_id:empty.table_session_id,status:'completed',released_at:expect.any(String)}]);
+   dealerClose.assignmentReleased=true;
+  }
   await Promise.all([
    expect(floorCard).toHaveCount(0,{timeout:10000}).then(()=>{tableCloseUi.floorCleared=true;}),
    expect(swingCard).toHaveCount(0,{timeout:10000}).then(()=>{tableCloseUi.swingCleared=true;}),

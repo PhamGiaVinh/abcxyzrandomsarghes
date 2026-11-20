@@ -239,7 +239,7 @@ test('targeted receipt preserves failed full delivery qualification and rejects 
  assert.equal(JSON.parse(readFileSync(join(dir,'operations-audience-http.json'),'utf8')).phase,'failed');
  for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.notEqual(run({[key]:false}).status,0,key);
  assert.notEqual(run({},'137').status,0,'Unexpected audience process exit must fail');
- const prize = { sha: 'a'.repeat(40), phase: 'passed', replayUi: { desktop: true, mobile: false }, fnbTour: { desktop: true, mobile: true } };
+ const prize = { sha: 'a'.repeat(40), phase: 'passed', replayUi: { desktop: true, mobile: false }, fnbTour: { desktop: true, mobile: true }, dealerClose: { checkedIn: true, assignmentVisible: true, assignmentReleased: true } };
  write('cashier-http-prize-close-http.json', prize);
  assert.notEqual(run({}, '1', 'prize-replay').status, 0);
  prize.replayUi.mobile = true;
