@@ -2676,13 +2676,21 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
     await dealerPage.addInitScript(({key,value})=>localStorage.setItem(key,JSON.stringify(value)),{
      key:process.env.LOCAL_SUPABASE_STORAGE_KEY!,value:staff[0].session,
     });
-    await dealerPage.goto('/dealer/salary');
+    const wageResponse=dealerPage.waitForResponse(response=>
+     response.url()===api+'/rest/v1/rpc/get_my_pt_wage'&&response.request().postDataJSON()?.p_dealer_id===paidDealerId,
+     {timeout:10000},
+    );
+    const [renderedWage]=await Promise.all([wageResponse,dealerPage.goto('/dealer/salary')]);
+    expect(renderedWage.ok()).toBe(true);
+    const wageData=await renderedWage.json();
+    expect(wageData.balance_vnd).toBe(0);
+    expect(wageData.recent_payments.some((row:{id:string;payment_method:string})=>row.id===payment.payment_id&&row.payment_method==='cash')).toBe(true);
     await expect(dealerPage.getByRole('heading',{name:'Lương của tôi',exact:true})).toBeVisible();
-    const history=dealerPage.getByText('Lịch sử thanh toán',{exact:true}).locator('../..');
-    await expect(history.getByText(/· Tiền mặt$/)).toHaveCount(1);
-    await expect(history.getByText(formatVND(accrued.balance_vnd),{exact:true})).toBeVisible();
-    const currentBalance=dealerPage.getByText('Số dư chưa thanh toán',{exact:true}).locator('..');
-    await expect(currentBalance.getByText(formatVND(0),{exact:true})).toBeVisible();
+    const history=dealerPage.getByText('Lịch sử thanh toán',{exact:true}).locator('xpath=../..');
+    const cashRow=history.getByText(/Tiền mặt/).locator('xpath=..');
+    await expect(cashRow).toHaveCount(1);
+    await expect(cashRow.getByText(formatVND(accrued.balance_vnd),{exact:true})).toBeVisible();
+    await expect(dealerPage.getByTestId('dealer-live-wage-balance')).toHaveText(formatVND(0));
     dealerPay.mobileReceiptVisible=true;
    }finally{await dealerContext.close();}
   }
