@@ -52,14 +52,14 @@ export async function verifyConcurrentSatelliteTables({ sql, json, post, partici
   }));
 }
 
-async function playFullRing({ sql, json, post, participants, prepareTable, observeTable }) {
+async function playFullRing({ sql, json, post, participants, prepareTable, observeTable, handsPerTable }) {
   assert.equal(new Set(participants.map(player => player.actor)).size, 9);
   const tableId = prepareTable(participants);
   const [observer] = await observeTable(tableId, participants.slice(0, 1));
   const actors = new Set();
   const ackMs = [];
   const settleMs = [];
-  for (let round = 0; round < 2; round++) {
+  for (let round = 0; round < handsPerTable; round++) {
     const start = await post({ op: 'start_hand', tableId, idempotencyKey: crypto.randomUUID() }, participants[0].token);
     assert.equal(start.status, 200);
     const hand = await start.json();
@@ -87,22 +87,27 @@ async function playFullRing({ sql, json, post, participants, prepareTable, obser
     }
   }
   assert.equal(actors.size, 9);
-  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${tableId}' AND status='complete'`), '2');
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${tableId}' AND status='complete'`), String(handsPerTable));
   assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${tableId}'`), '900');
   return { ackMs, settleMs };
 }
 
-export async function verifyConcurrentFullRingSatellites({ participants, ...fixture }) {
-  assert.equal(participants.length, 27);
-  assert.equal(new Set(participants.map(player => player.actor)).size, 27);
-  const groups = [participants.slice(0, 9), participants.slice(9, 18), participants.slice(18)];
-  const results = await Promise.all(groups.map(group => playFullRing({ ...fixture, participants: group })));
+export async function verifyConcurrentFullRingSatellites({ participants, handsPerTable, ...fixture }) {
+  assert.equal(participants.length % 9, 0);
+  assert.equal(new Set(participants.map(player => player.actor)).size, participants.length);
+  const groups = [];
+  for (let i = 0; i < participants.length; i += 9) groups.push(participants.slice(i, i + 9));
+  const started = performance.now();
+  const results = await Promise.all(groups.map(group => playFullRing({ ...fixture, participants: group, handsPerTable })));
   const ackMs = results.flatMap(result => result.ackMs);
   const settleMs = results.flatMap(result => result.settleMs);
+  assert.equal(settleMs.length, groups.length * handsPerTable);
+  assert.equal(ackMs.length, settleMs.length * 8);
   const p95 = samples => Math.round(samples.sort((a, b) => a - b)[Math.ceil(samples.length * .95) - 1]);
   console.log('SATELLITE_CONCURRENT_FULL_RING_DIAGNOSTIC', JSON.stringify({
     tables: groups.length, players: participants.length, completedHands: settleMs.length,
     acknowledgedActions: ackMs.length, ackP95Ms: p95(ackMs), settleP95Ms: p95(settleMs),
-    chips: 2700, capacityQualified: false,
+    durationMs: Math.round(performance.now() - started),
+    chips: groups.length * 900, capacityQualified: false,
   }));
 }
