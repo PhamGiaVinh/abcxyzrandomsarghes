@@ -13,6 +13,8 @@ ALTER TABLE public.club_dealer_controls ENABLE ROW LEVEL SECURITY;
 \ir ../../supabase/pending-migrations/20261119141550_ops_dealer_control_invites.sql
 
 BEGIN;
+-- The disposable auth schema lacks the normal authenticated access to auth.uid().
+GRANT USAGE ON SCHEMA auth TO authenticated;
 SELECT public.ops_test_assert(
   NOT has_function_privilege('authenticated',
     'public.apply_club_operator_invite(uuid,uuid,uuid,text,text,boolean,text)', 'EXECUTE')
