@@ -418,10 +418,12 @@ test('the shared server deal persists one native hand with consistent public and
       const { verifySatelliteIntakeClosesDuringHand } = await import('./satelliteIntake.fixture.mjs');
       await verifySatelliteIntakeClosesDuringHand({ sql, json, post, players, newcomer: participants[2], prepareTable });
       const fullRing = [...participants];
-      for (let remaining = 48; remaining > 0; remaining -= 3) {
-        fullRing.push(...await Promise.all(Array.from({ length: 3 }, loginPlayer)));
+      const fullRingPlayers = 30 * 9;
+      while (fullRing.length < fullRingPlayers) {
+        const batchSize = Math.min(3, fullRingPlayers - fullRing.length);
+        fullRing.push(...await Promise.all(Array.from({ length: batchSize }, loginPlayer)));
       }
-      await verifyConcurrentFullRingSatellites({ sql, json, post, participants: fullRing, prepareTable, observeTable, handsPerTable: 6 });
+      await verifyConcurrentFullRingSatellites({ sql, json, post, participants: fullRing, prepareTable, observeTable, handsPerTable: 4 });
     });
     return;
   }
