@@ -241,6 +241,47 @@ test("Floor V3 table sheet is compact, uses tournament-chip units and exposes fo
   expect(pageErrors).toEqual([]);
 });
 
+test("Floor submits two consecutive exact busts and opens the empty-table confirmation", async ({ page }) => {
+  test.skip(process.env.VITE_FLOOR_FAST_BUST_V1 !== "preview", "Requires the isolated fast-bust preview flags");
+  await installMockOpsSession(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  let seats = [1, 2].map(number => ({ seat_number: number, seat_id: `seat-${number}`,
+    seat_entry_id: `entry-${number}`, entry_id: `entry-${number}`, player_id: `player-${number}`,
+    display_name: `Floor fixture player ${number}`, entry_no: 1, chip_count: 0,
+    is_active: true, integrity_status: "valid" }));
+  const submissions: unknown[] = [];
+  await page.route("http://127.0.0.1:54321/rest/v1/rpc/get_floor_tournament_table_roster_v*", route => route.fulfill({ json: [{
+    tournament_id: tournamentId, tournament_table_id: tournamentTableId, game_table_id: gameTableId,
+    table_number: 5, table_name: "Bàn 5", table_session_id: tableSessionId, session_revision: 7 + submissions.length,
+    control_mode: "manual", control_epoch: 1, tournament_table_status: "active", session_closed_at: null,
+    active_dealer_assignment_id: null, seats,
+  }] }));
+  await page.route("http://127.0.0.1:54321/rest/v1/rpc/floor_operator_bust_seat_v1", route => {
+    const body = route.request().postDataJSON();
+    submissions.push(body);
+    seats = seats.filter(seat => seat.seat_id !== body.p_seat_id);
+    return route.fulfill({ json: { ok: true, outcome: "busted", request_id: body.p_request_id,
+      seat_id: body.p_seat_id, entry_id: body.p_expected_seat_entry_id, table_session_id: tableSessionId,
+      payout_applied: false, revision: 7 + submissions.length } });
+  });
+  await page.goto(`/ops/floor/tournaments/${tournamentId}/tables?club=${clubId}`);
+  await page.locator('[data-ops-action="floor.tables.open_roster"]').click();
+  for (const number of [1, 2]) {
+    const row = page.getByTestId(`floor-seat-row-${number}`);
+    await expect(row).toContainText(`Floor fixture player ${number}`);
+    await row.click();
+    await page.getByRole("button", { name: "Loại khỏi giải", exact: true }).click();
+    await page.getByRole("button", { name: "Xác nhận loại", exact: true }).click();
+    await expect(row).not.toContainText(`Floor fixture player ${number}`);
+  }
+  expect(submissions).toEqual([1, 2].map(number => expect.objectContaining({
+    p_table_session_id: tableSessionId, p_seat_id: `seat-${number}`,
+    p_expected_seat_entry_id: `entry-${number}`, p_expected_control_epoch: 1,
+  })));
+  await page.getByRole("button", { name: "Đóng bàn trống", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Đóng bàn trống?" })).toBeVisible();
+});
+
 test("Floor mode confirmation sends canonical session fences and displays pending without changing chips", async ({ page }) => {
   const modeWrites: { rpc: string; payload: Record<string, unknown> }[] = [];
   await installMockOpsSession(page, modeWrites);
