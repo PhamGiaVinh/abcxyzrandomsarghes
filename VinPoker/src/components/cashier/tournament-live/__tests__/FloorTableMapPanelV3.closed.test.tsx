@@ -121,14 +121,14 @@ it.each(["missing_entry", "valid"] as const)("releases consecutive %s seats and 
   }
   expect(state.bust.mock.calls.map(([args]) => args.seatId)).toEqual(["seat-1", "seat-2"]);
   expect(state.bust.mock.calls.map(([args]) => args.seatEntryId)).toEqual(orphan ? [null, null] : ["entry-1", "entry-2"]);
-  expect(screen.getByRole("button", { name: "Đóng bàn trống", exact: true })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Đóng bàn trống" })).toBeDisabled();
   await act(async () => { resolveRoster({ ok: true, data: [{ ...current }] }); });
-  const close = screen.getByRole("button", { name: "Đóng bàn trống", exact: true });
+  const close = screen.getByRole("button", { name: "Đóng bàn trống" });
   expect(close).toBeEnabled();
   fireEvent.click(close);
   expect(await screen.findByRole("heading", { name: "Đóng bàn trống?" })).toBeInTheDocument();
   state.close.mockResolvedValue({ ok: false, error: "test_no_close_side_effect" });
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xác nhận đóng bàn", exact: true })); });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xác nhận đóng bàn" })); });
   expect(state.close).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 3 }));
 });
 
