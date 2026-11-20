@@ -2272,6 +2272,32 @@ test('current owner rake closes once and exports the immutable event-day snapsho
 });
 
 
+test('opens an older payout through the exact scoped Data API', async ({page}) => {
+  test.skip(process.env.LOCAL_PAYOUT_HISTORY_PROBE !== '1', 'Disposable payout history fixtures required');
+  await loginOwner(page);
+  const base = '/cashier?tab=tournament_payouts';
+  const oldTour = 'bd100000-0000-4000-8000-000000000101';
+  const openTour = 'bd100000-0000-4000-8000-000000000102';
+  const otherClubTour = 'bd100000-0000-4000-8000-000000000103';
+  const picker = page.locator('#payout-tournament');
+  await page.goto(base);
+  await expect(picker.locator('option')).toHaveCount(100);
+  await expect(picker.locator(`option[value="${oldTour}"]`)).toHaveCount(0);
+  await page.goto(`${base}&tournament=${oldTour}`);
+  await expect(picker).toHaveValue(oldTour);
+  const results = page.getByRole('link', {name:'Mở bảng kết quả online'});
+  await expect(results).toHaveAttribute('href', `/live/${oldTour}?tab=prizes`);
+  for (const denied of [openTour, otherClubTour]) {
+    await page.goto(`${base}&tournament=${denied}`);
+    await expect(page.getByText('Giải trong liên kết không có trong danh sách hiện tại.', {exact:false})).toBeVisible();
+    await expect(results).toHaveCount(0);
+  }
+  writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/, '-payout-history-http.json'), JSON.stringify({
+    kind:'ISOLATED_PAYOUT_HISTORY_BROWSER', sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+    pickerLimit:100, olderClosedAccepted:true, openDenied:true, otherClubDenied:true, qualification:false,
+  }));
+});
+
 test('final current Floor Cashier prizes close over real Auth HTTP',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED!=='1','Explicit isolated full34 prize-close stage only');test.setTimeout(180_000);
  const owner=await loginOwner(page),staff=(await loginFixtureStaff()).slice(0,3),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000005',club='a2000000-0000-4000-8000-000000000001';

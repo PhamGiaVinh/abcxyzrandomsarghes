@@ -24,7 +24,12 @@ function ScopedTournamentPayoutTab({ clubIds }: { clubIds: string[] }) {
   const [revision, setRevision] = useState(0);
   const clubKey = [...clubIds].sort().join(":");
   const requested = params.get("tournament");
-  const selected = tours.find((tour) => tour.id === requested) ?? (!requested ? tours[0] : undefined);
+  const listed = tours.find((tour) => tour.id === requested);
+  const [direct, setDirect] = useState<{ id: string; tour: Tour | null; error: boolean } | null>(null);
+  const directResult = direct?.id === requested ? direct : null;
+  const selected = listed ?? directResult?.tour ?? (!requested ? tours[0] : undefined);
+  const options = directResult?.tour && !listed ? [directResult.tour, ...tours] : tours;
+  const directLoading = !!requested && !listed && !directResult && !!clubKey && !loading && !error;
 
   useEffect(() => {
     let active = true;
@@ -45,22 +50,44 @@ function ScopedTournamentPayoutTab({ clubIds }: { clubIds: string[] }) {
     return () => { active = false; controller.abort(); };
   }, [clubKey, revision]);
 
+  useEffect(() => {
+    if (!requested || listed || !clubKey || loading || error) return;
+    const controller = new AbortController();
+    setDirect(null);
+    void (async () => {
+      try {
+        const { data, error: readError } = await supabase.from("tournaments")
+          .select("id, name, start_time").in("club_id", clubKey.split(":"))
+          .not("registration_closed_at", "is", null).eq("id", requested)
+          .abortSignal(controller.signal).maybeSingle();
+        if (controller.signal.aborted) return;
+        if (readError || (data && data.id !== requested)) throw new Error("payout_tournament_unavailable");
+        setDirect({ id: requested, tour: data, error: false });
+      } catch {
+        if (!controller.signal.aborted) setDirect({ id: requested, tour: null, error: true });
+      }
+    })();
+    return () => controller.abort();
+  }, [requested, listed, clubKey, loading, error, revision]);
+
   return <Card className="space-y-4 p-4">
     <div>
       <h2 className="text-lg font-semibold">Trả thưởng giải</h2>
       <p className="mt-1 text-sm text-muted-foreground">Hạng và tiền thưởng lấy từ kết quả đã chốt. Chỉ ghi nhận đã trả sau khi thực tế trao tiền cho người nhận.</p>
     </div>
-    <Button variant="outline" disabled={loading} onClick={() => setRevision((n) => n + 1)}>Làm mới danh sách giải</Button>
+    <Button variant="outline" disabled={loading || directLoading} onClick={() => { setDirect(null); setRevision((n) => n + 1); }}>Làm mới danh sách giải</Button>
     {loading ? <p role="status">Đang tải giải đã đóng đăng ký…</p>
       : error ? <p role="alert" className="text-sm text-destructive">Không tải được danh sách giải. Hãy làm mới để thử lại.</p>
-      : tours.length === 0 ? <p className="text-sm text-muted-foreground">Chưa có giải đã đóng đăng ký trong CLB bạn phụ trách.</p>
+      : directLoading ? <p role="status">Đang xác minh giải trong liên kết…</p>
+      : directResult?.error ? <p role="alert">Chưa xác minh được giải trong liên kết. Hãy làm mới để thử lại.</p>
+      : options.length === 0 && !requested ? <p className="text-sm text-muted-foreground">Chưa có giải đã đóng đăng ký trong CLB bạn phụ trách.</p>
       : <>
         <div className="space-y-2">
           <Label htmlFor="payout-tournament">Giải đấu</Label>
           <select id="payout-tournament" value={selected?.id ?? ""} className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
             onChange={(event) => { const next = new URLSearchParams(params); next.set("tournament", event.target.value); setParams(next, { replace: true }); }}>
             {!selected && <option value="">Chọn giải trong CLB bạn phụ trách</option>}
-            {tours.map((tour) => <option key={tour.id} value={tour.id}>{tour.name} · {new Date(tour.start_time).toLocaleDateString("vi-VN")}</option>)}
+            {options.map((tour) => <option key={tour.id} value={tour.id}>{tour.name} · {new Date(tour.start_time).toLocaleDateString("vi-VN")}</option>)}
           </select>
         </div>
         {selected ? <>
