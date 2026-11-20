@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const f=vi.hoisted(()=>({monthRead:vi.fn(),markPaid:vi.fn(),month:{data:undefined as any,isError:true,isLoading:false,isFetching:false,isPaused:false,refetch:vi.fn()},clubsError:false,clubsPaused:false}));
@@ -52,4 +52,18 @@ it('does not fall back to a different club for an embedded staff salary view', (
   render(<MemoryRouter><StaffSalaryChot embedded scopedClubId="other-club" /></MemoryRouter>);
   expect(f.monthRead.mock.calls.at(-1)?.[1]).toBeNull();
   expect(screen.queryByRole('button', {name:/Chốt lương/})).toBeNull();
+});
+
+it('requires explicit method and a transfer reference before recording FT payment', () => {
+  const ft = {...pt, runId:'run-ft', fullName:'FT test', employmentType:'full_time'};
+  f.month = {...f.month, isError:false, data:{status:'approved',hasRuns:true,lockedRows:[ft],totalGrossVnd:15792,totalNetVnd:15792}};
+  mount();
+  fireEvent.click(screen.getByRole('button',{name:'Đánh dấu trả'}));
+  const confirm = screen.getByRole('button',{name:'Ghi nhận đã chi'});
+  expect(confirm).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Phương thức'),{target:{value:'bank_transfer'}});
+  expect(confirm).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Mã tham chiếu'),{target:{value:'TEST-REF'}});
+  fireEvent.click(confirm);
+  expect(f.markPaid).toHaveBeenCalledExactlyOnceWith({runId:'run-ft',method:'bank_transfer',reference:'TEST-REF'});
 });

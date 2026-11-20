@@ -264,7 +264,11 @@ export function useSalaryActions(
       assertContext();if(error)throw error;
       if(data&&typeof data==='object'&&!Array.isArray(data)&&typeof data.error==='string'&&data.error.trim())throw Error(data.detail??data.error);
       const verified=receipt(fn,args,data);
-      toast.success(fn==='submit_staff_salary_month'&&verified.status==='approved'?'Bảng lương đã được duyệt.':okMsg);
+      if (fn === "mark_staff_salary_paid" && verified.idempotent === true) {
+        toast.success("Phiếu lương đã được ghi chi trước đó. Hệ thống giữ thông tin chi hiện có.");
+      } else {
+        toast.success(fn === "submit_staff_salary_month" && verified.status === "approved" ? "Bảng lương đã được duyệt." : okMsg);
+      }
       return data;
     }catch(error){throw Object.assign(Error(error instanceof Error?error.message:unknown),{context});}
     finally{clearTimeout(timer);if(ownsFlight){inFlight.current=false;if(active.current===context)void invalidate();}}
@@ -317,11 +321,13 @@ export function useSalaryActions(
 
   const markPaid = useMutation({
     retry:false,
-    mutationFn: async (runId: string) => {
+    mutationFn: async ({ runId, method, reference }: { runId: string; method: "cash" | "bank_transfer"; reference?: string }) => {
       if (guardMock()) return null;
+      const paymentReference = reference?.trim();
+      if (method === "bank_transfer" && !paymentReference) throw Object.assign(Error("Nhập mã tham chiếu chuyển khoản."), { context });
       return run(
         "mark_staff_salary_paid",
-        { p_run_id: runId, p_payment_method: "cash", p_payment_reference: null },
+        { p_run_id: runId, p_payment_method: method, p_payment_reference: method === "bank_transfer" ? paymentReference : null },
         "Đã đánh dấu đã trả.",
       );
     },
