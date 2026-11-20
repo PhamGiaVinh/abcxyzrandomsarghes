@@ -13,6 +13,7 @@ import { normalizeCashierScan } from "./cashierScan";
 import { useOpsAuth } from '@/ops/auth/OpsAuthProvider';
 import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
 import { observeTrackerContextRead } from '@/lib/tournament/observeTrackerContextRead';
+import { startLiveReportRefresh } from '@/lib/liveReportRefresh';
 import { cashPaymentJournalKey,readCashPaymentJournal,persistCashPaymentIntent,settleCashPaymentIntent,
   resolveCashPaymentIntent,type CashPaymentIntent } from '@/lib/cashPaymentIntent';
 
@@ -137,6 +138,8 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+  const [scanRevision, setScanRevision] = useState(0);
+  const debounceWorklist = useRef(false);
   const requestVersion = useRef(0);
   const lookupSelectionVersion = useRef(0);
   const lookupSelectionRead = useRef<AbortController | null>(null);
@@ -239,6 +242,7 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
     let active = true;
     let pollTimer: number | undefined;
     let deadline: number | undefined;
+    let typingTimer: number | undefined;
     let controller: AbortController | undefined;
     let inFlight = false;
     let failed = false;
@@ -300,41 +304,75 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
       }
     };
     const resume = () => {
-      if (document.visibilityState === "hidden" || navigator.onLine === false || inFlight || failed) return;
+      if (typingTimer !== undefined || document.visibilityState === "hidden" || navigator.onLine === false || inFlight || failed) return;
       window.clearTimeout(pollTimer);
       void load();
     };
     document.addEventListener("visibilitychange", resume);
     window.addEventListener("online", resume);
-    void load();
+    if (debounceWorklist.current) {
+      setLoading(true);
+      typingTimer = window.setTimeout(() => {
+        typingTimer = undefined;
+        debounceWorklist.current = false;
+        void load();
+      }, 180);
+    } else void load();
     return () => {
       active = false;
       controller?.abort();
       window.clearTimeout(deadline);
       window.clearTimeout(pollTimer);
+      window.clearTimeout(typingTimer);
       document.removeEventListener("visibilitychange", resume);
       window.removeEventListener("online", resume);
     };
-  }, [client, clubId, tourId, query, bucket, page, revision,bookingFocus]);
+  }, [client, clubId, tourId, query, bucket, page, revision, scanRevision, bookingFocus]);
 
   useEffect(() => {
     if (!shiftId || !clubId) { setShiftSummary(null); setShiftSummaryError(null); return; }
     let active = true;
+    let controller: AbortController | undefined;
+    let deadline: number | undefined;
     setShiftSummary(null); setShiftSummaryError(null);
     const load = async () => {
-      const { data, error: rpcError } = await client.rpc("cashier_shift_summary_v1" as never, { p_shift_id: shiftId } as never);
-      if (!active) return;
-      if (rpcError || !isShiftSummary(data, shiftId, clubId)) {
-        setShiftSummary(null);
-        setShiftSummaryError(rpcError?.message ?? "Không đọc được báo cáo ca.");
-      } else {
+      if (document.visibilityState === "hidden") return;
+      const request = new AbortController();
+      controller = request;
+      try {
+        const { data, error: rpcError } = await Promise.race([
+          client.rpc("cashier_shift_summary_v1" as never, { p_shift_id: shiftId } as never).abortSignal(request.signal),
+          new Promise<never>((_, reject) => {
+            deadline = window.setTimeout(() => {
+              request.abort();
+              reject(new Error("SHIFT_SUMMARY_TIMEOUT"));
+            }, 25_000);
+          }),
+        ]);
+        if (!active) return;
+        if (rpcError || !isShiftSummary(data, shiftId, clubId)) {
+          setShiftSummary(null);
+          setShiftSummaryError(rpcError?.message ?? "Không đọc được báo cáo ca.");
+          return;
+        }
         setShiftSummary(data);
         setShiftSummaryError(null);
+      } catch {
+        if (!active) return;
+        setShiftSummary(null);
+        setShiftSummaryError("Không đọc được báo cáo ca.");
+      } finally {
+        window.clearTimeout(deadline);
+        controller = undefined;
       }
     };
-    void load();
-    const timer = window.setInterval(() => { void load(); }, 10_000);
-    return () => { active = false; window.clearInterval(timer); };
+    const stop = startLiveReportRefresh(load, 10_000);
+    return () => {
+      active = false;
+      stop();
+      controller?.abort();
+      window.clearTimeout(deadline);
+    };
   }, [client, clubId, shiftId, revision]);
 
   useEffect(() => {
@@ -742,13 +780,15 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
       <label className="relative block"><Search className="absolute left-4 top-3.5 h-5 w-5 text-[#9caf9f]" />
         <input ref={scanner} autoFocus disabled={busy||!!bookingFocus} value={query} onChange={(event) => {
           requestVersion.current++; lookupSelectionVersion.current++;
+          debounceWorklist.current = true;
           setQuery(event.target.value); setPage(0); setWorklist(null); setSelected(null);
           setCashAmount(""); scanPending.current = false;
         }}
           onKeyDown={(event) => { if (event.key === "Enter" && !mutationLock.current) {
             requestVersion.current++; lookupSelectionVersion.current++;
+            debounceWorklist.current = false;
             event.preventDefault(); scanPending.current = true; setBucket("all"); setPage(0); setWorklist(null); setSelected(null);
-            setQuery(normalizeCashierScan(query)); refresh();
+            setQuery(normalizeCashierScan(query)); setScanRevision((current) => current + 1);
           } }}
           placeholder="Quét QR, thẻ hội viên, mã CK; hoặc tìm tên, số điện thoại"
           className="min-h-12 w-full rounded-xl border border-emerald-300/30 bg-[#08120d] py-3 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-emerald-300" />

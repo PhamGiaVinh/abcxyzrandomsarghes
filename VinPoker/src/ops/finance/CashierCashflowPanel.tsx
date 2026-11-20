@@ -25,12 +25,16 @@ export default function CashierCashflowPanel({ clubId, range }: { clubId: string
   const [state, setState] = useState<{ data: Cashflow | null; error: string | null }>({ data: null, error: null });
   useEffect(() => {
     let active = true;
+    let controller: AbortController | undefined;
     setState({ data: null, error: null });
     const load = async () => {
+      if (document.visibilityState === "hidden") return;
+      const request = new AbortController();
+      controller = request;
       try {
         const { data, error } = await observeTrackerContextRead(client.rpc("cashier_cashflow_range_v1" as never, {
           p_club_id: clubId, p_from: range.from, p_to: range.to,
-        } as never));
+        } as never).abortSignal(request.signal));
         if (error) throw error;
         const result = cashflow.parse(data);
         if (result.club_id !== clubId || Date.parse(result.from) !== Date.parse(range.from)
@@ -38,10 +42,13 @@ export default function CashierCashflowPanel({ clubId, range }: { clubId: string
         if (active) setState({ data: result, error: null });
       } catch {
         if (active) setState({ data: null, error: "Không tải được sổ dòng tiền Cashier V1." });
+      } finally {
+        request.abort();
+        controller = undefined;
       }
     };
     const stop = startLiveReportRefresh(load, 30_000);
-    return () => { active = false; stop(); };
+    return () => { active = false; stop(); controller?.abort(); };
   }, [client, clubId, range.from, range.to]);
 
   return <section className="mt-5 rounded-2xl border border-emerald-300/20 bg-[#07100c] p-4 sm:p-5">
