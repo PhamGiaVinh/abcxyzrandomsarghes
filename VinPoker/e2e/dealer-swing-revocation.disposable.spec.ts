@@ -33,8 +33,10 @@ test("open Dealer Swing verifies revoked club scope on session refresh", async (
   });
   await page.addInitScript(value => localStorage.setItem("sb-127-auth-token", JSON.stringify(value)), session(1));
   const dealerResponses: string[][] = [];
+  const requestPaths = new Set<string>();
   await page.route("http://127.0.0.1:54321/**", async route => {
     const pathname = new URL(route.request().url()).pathname;
+    requestPaths.add(pathname);
     const json = (body: unknown) => route.fulfill({ status: 200, json: body });
     if (pathname === "/auth/v1/user") return json(user);
     if (pathname === "/auth/v1/token") return json(session(2));
@@ -55,7 +57,16 @@ test("open Dealer Swing verifies revoked club scope on session refresh", async (
 
   await page.goto("/dealer-swing");
   const swingTab = page.getByRole("tab", { name: "Dealer Swing", exact: true });
-  await expect(swingTab).toBeVisible();
+  try {
+    await expect(swingTab).toBeVisible();
+  } catch (error) {
+    console.error(JSON.stringify({ path: new URL(page.url()).pathname,
+      authForm: await page.getByText("Sign In", { exact: true }).count(),
+      dashboardHeading: await page.getByText("DEALER SWING", { exact: true }).count(),
+      scopeError: await page.getByText(/phạm vi CLB/).count(),
+      requestPaths: [...requestPaths], dealerScopeReads: dealerResponses.length }));
+    throw error;
+  }
   expect(dealerResponses).toContainEqual([clubA]);
 
   sql(`SET ROLE service_role; SELECT * FROM public.revoke_club_operator_invite('${owner}','${inviteId}');`);
