@@ -21,6 +21,11 @@ for(const branding of [false,true]){
  fixture=fixture.replaceAll('f7280000',prefix).replace(marker,' RETURN;\n'+marker)+'\nCOMMIT;\n';
  sql(fixture);
  const tour=`${prefix}-0000-4000-8000-000000000003`,club=`${prefix}-0000-4000-8000-000000000002`;
+ // Exact sum cannot be reconstructed from the rounded average (33333 * 3).
+ sql(`INSERT INTO public.tournament_entries(tournament_id,player_id,entry_no,current_stack,status,source)
+ VALUES('${tour}','${randomUUID()}',1,33333,'registered','manual'),
+ ('${tour}','${randomUUID()}',1,33333,'registered','manual'),
+ ('${tour}','${randomUUID()}',1,33334,'registered','manual');`);
  const token=`fixture-only-tv-concurrency-${randomUUID()}`;
  sql(`INSERT INTO public.tv_displays(id,club_id,display_token,assigned_tournament_id,status) VALUES('${randomUUID()}','${club}','${token}','${tour}','paired');`);
  // Two simultaneous flights share an event/branding, never their runtime.
@@ -72,7 +77,15 @@ for(const branding of [false,true]){
  const b=tx(`tv_b_${prefix}`,call,false);
  await barrier(`tv_b_${prefix}`,"wait_event_type='Lock'");a.finish();
  const results=await Promise.all([a.result,b.result]);
- for(const r of results){assert.equal(r.code,0,r.error);const payload=JSON.parse(r.out);assert.equal(payload.status,'paired');assert.equal(payload.tournament.id,tour);assert.ok(payload.participation_counts);}
+ for(const r of results){assert.equal(r.code,0,r.error);const payload=JSON.parse(r.out);assert.equal(payload.status,'paired');assert.equal(payload.tournament.id,tour);
+  assert.equal(payload.participation_counts.live_entry_stack,100000);
+  assert.equal(payload.participation_counts.remaining,3);
+  assert.equal(payload.tournament.average_stack,33333);
+ }
+ sql(`UPDATE public.tournament_entries SET current_stack=0 WHERE tournament_id='${tour}';`);
+ const zero=JSON.parse(sql(`BEGIN;${call}ROLLBACK;`));
+ assert.equal(zero.participation_counts.live_entry_stack,0);
+ assert.equal(zero.tournament.average_stack,0);
  const reader=tx(`tv_read_${prefix}`,call,true);
  await barrier(`tv_read_${prefix}`,"state='idle in transaction'");
  const revoke=tx(`tv_revoke_${prefix}`,`UPDATE public.tv_displays SET status='revoked' WHERE display_token='${token}';`,false,true);
