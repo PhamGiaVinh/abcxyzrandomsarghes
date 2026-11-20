@@ -2319,6 +2319,44 @@ test('opens older Chip Ops inventory only for an exact eligible tournament', asy
   }));
 });
 
+test('records and seals one bag through the historical Chip Ops link', async ({ page }) => {
+  test.skip(process.env.LOCAL_CHIP_BAG_HISTORY_PROBE !== '1', 'Requires disposable End Flight roster');
+  const owner = await loginOwner(page);
+  const club = 'a2000000-0000-4000-8000-000000000001';
+  const flight = 'bd200000-0000-4000-8000-000000000201';
+  const api = process.env.LOCAL_SUPABASE_URL!.replace(/\/$/, '');
+  const readBaggingState = async () => {
+    const response = await fetch(`${api}/rest/v1/rpc/multi_day_bagging_state_v1`, {
+      method: 'POST',
+      headers: { apikey: process.env.LOCAL_SUPABASE_ANON_KEY!, Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_flight_tournament_id: flight }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    expect(response.ok).toBe(true);
+    return response.json();
+  };
+  const before = await readBaggingState();
+  expect(before).toMatchObject({ status: 'bagging', manager: true });
+  expect(before.rows).toHaveLength(1);
+  const [seat] = before.rows;
+  expect(seat).toMatchObject({ bagRevision: 0, sealed: false });
+  await page.goto(`/ops/chip-ops?club=${club}&t=${flight}`);
+  await expect(page.locator('label').filter({ hasText: 'Giải đấu' }).locator('select')).toHaveValue(flight);
+  await page.getByLabel(`Bag code for ${seat.playerId}`).fill('HISTORY-FLIGHT-201');
+  await page.getByLabel(`Bag total for ${seat.playerId}`).fill(String(seat.trackedStack));
+  const recorded = page.waitForResponse(response => new URL(response.url()).pathname === '/rest/v1/rpc/multi_day_record_bag_v1');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const saved = await recorded;
+  expect(saved.ok()).toBe(true);
+  expect(saved.request().postDataJSON()).toMatchObject({ p_flight_tournament_id: flight, p_player_id: seat.playerId });
+  await page.getByRole('button', { name: 'Seal', exact: true }).click();
+  await expect(page.getByText('Sealed v2', { exact: true })).toBeVisible();
+  const after = await readBaggingState();
+  expect(after.rows).toHaveLength(1);
+  expect(after.rows[0]).toMatchObject({ playerId: seat.playerId, trackedStack: seat.trackedStack,
+    bagCode: 'HISTORY-FLIGHT-201', bagTotal: seat.trackedStack, sealed: true, sealedVersion: 2 });
+});
+
 test('final current Floor Cashier prizes close over real Auth HTTP',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED!=='1','Explicit isolated full34 prize-close stage only');test.setTimeout(180_000);
  const owner=await loginOwner(page),staff=(await loginFixtureStaff()).slice(0,3),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000005',club='a2000000-0000-4000-8000-000000000001';
