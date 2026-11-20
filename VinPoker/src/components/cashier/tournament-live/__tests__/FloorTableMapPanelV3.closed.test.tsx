@@ -88,33 +88,48 @@ const table = (number: number) => ({ tournamentTableId: `table-${number}`, gameT
   controlEpoch: 1, controlMode: "manual", tournamentTableStatus: "active", sessionClosedAt: null,
   activeDealerAssignmentId: null, seats: [], seatLocks: [], maxSeats: 9 });
 
-it("releases consecutive exact seats and opens empty-table close without waiting for secondary lists", async () => {
+it.each(["missing_entry", "valid"] as const)("releases consecutive %s seats and opens empty-table close without secondary lists", async (integrityStatus) => {
   v3.fastBustEnabled = true;
-  const seats = [1, 2].map(n => ({ seatId: `seat-${n}`, seatEntryId: null, seatNumber: n, entryId: null,
-    playerId: `player-${n}`, displayName: `Ghost ${n}`, entryNo: null, chipCount: 1000,
-    integrityStatus: "missing_entry", isActive: true }));
+  const orphan = integrityStatus === "missing_entry";
+  const seats = [1, 2].map(n => {
+    const entryId = orphan ? null : `entry-${n}`;
+    return { seatId: `seat-${n}`, seatEntryId: entryId, seatNumber: n, entryId,
+      playerId: `player-${n}`, displayName: `Player ${n}`, entryNo: orphan ? null : 1, chipCount: orphan ? 1000 : 0,
+      integrityStatus, isActive: true };
+  });
   const current = { ...table(1), seats };
-  state.roster.mockResolvedValue({ ok: true, data: [current] });
+  let resolveRoster!: (value: unknown) => void;
+  state.roster.mockImplementation(() => current.sessionRevision === 1
+    ? Promise.resolve({ ok: true, data: [{ ...current }] })
+    : new Promise(resolve => { resolveRoster = resolve; }));
   // These lists are unrelated to removing an exact occupant or closing an empty table.
   state.restorable.mockImplementation(() => new Promise(() => {}));
   state.bust.mockImplementation(async ({ seatId }: { seatId: string }) => {
     current.seats = current.seats.filter(s => s.seatId !== seatId);
     current.sessionRevision++;
-    return { ok: true, data: { outcome: "orphan_seat_released" } };
+    return { ok: true, data: { outcome: orphan ? "orphan_seat_released" : "busted", revision: current.sessionRevision } };
   });
   render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
   fireEvent.click(await screen.findByTestId("floor-table-roster-card"));
   for (const n of [1, 2]) {
     const row = await screen.findByTestId(`floor-seat-row-${n}`);
     expect(row).toBeEnabled(); fireEvent.click(row);
-    fireEvent.click(await screen.findByRole("button", { name: "Loại / giải phóng ghế" }));
+    fireEvent.click(await screen.findByRole("button", { name: orphan ? "Loại / giải phóng ghế" : "Loại khỏi giải" }));
     fireEvent.click(await screen.findByRole("button", { name: "Xác nhận loại" }));
     await waitFor(() => expect(state.bust).toHaveBeenCalledTimes(n));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Xác nhận loại" })).not.toBeInTheDocument());
   }
   expect(state.bust.mock.calls.map(([args]) => args.seatId)).toEqual(["seat-1", "seat-2"]);
-  fireEvent.click(screen.getByRole("button", { name: "Đóng bàn trống" }));
+  expect(state.bust.mock.calls.map(([args]) => args.seatEntryId)).toEqual(orphan ? [null, null] : ["entry-1", "entry-2"]);
+  expect(screen.getByRole("button", { name: "Đóng bàn trống" })).toBeDisabled();
+  await act(async () => { resolveRoster({ ok: true, data: [{ ...current }] }); });
+  const close = screen.getByRole("button", { name: "Đóng bàn trống" });
+  expect(close).toBeEnabled();
+  fireEvent.click(close);
   expect(await screen.findByRole("heading", { name: "Đóng bàn trống?" })).toBeInTheDocument();
+  state.close.mockResolvedValue({ ok: false, error: "test_no_close_side_effect" });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xác nhận đóng bàn" })); });
+  expect(state.close).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 3 }));
 });
 
 it("keeps an exact bust confirmation during refresh and guards repeated clicks", async () => {
@@ -202,6 +217,55 @@ it("reconciles missing source changes even when a partial channel reports health
   await act(async () => { await vi.advanceTimersByTimeAsync(1_799); });expect(state.roster).toHaveBeenCalledTimes(2);
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });expect(state.roster).toHaveBeenCalledTimes(3);
   expect(screen.getByText("TEST table 7", {exact:false})).toBeInTheDocument();
+});
+
+it("coalesces pending moves and reconnect hints behind a slow fallback read", async () => {
+  vi.useFakeTimers();
+  state.moves.mockResolvedValue({ ok: true, data: [{ status: "pending", pendingMoveId: "move-1" }] });
+  await act(async () => {
+    render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />);
+  });
+  let finish!: (value: unknown) => void;
+  state.roster.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  expect(state.roster).toHaveBeenCalledTimes(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  expect(state.roster).toHaveBeenCalledTimes(2);
+  expect(state.moves).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    window.dispatchEvent(new Event("online"));
+    live.channels[0].status?.("SUBSCRIBED");
+    live.channels[0].changes[0].read();
+    await vi.advanceTimersByTimeAsync(200);
+  });
+  expect(state.roster).toHaveBeenCalledTimes(2);
+  expect(state.entries).toHaveBeenCalledTimes(2);
+  expect(state.restorable).toHaveBeenCalledTimes(2);
+
+  state.roster.mockResolvedValue({ ok: true, data: [table(8)] });
+  await act(async () => {
+    finish({ ok: true, data: [table(7)] });
+  });
+  expect(screen.getByTestId("floor-table-map-v3")).toHaveAttribute("aria-busy", "true");
+  await act(async () => { await vi.advanceTimersByTimeAsync(200); });
+  expect(state.roster).toHaveBeenCalledTimes(3);
+  expect(state.entries).toHaveBeenCalledTimes(3);
+  expect(state.restorable).toHaveBeenCalledTimes(3);
+  expect(state.moves).toHaveBeenCalledTimes(3);
+  expect(screen.getByRole("button", { name: /Bàn 8, 0\/9 ghế/ })).toBeInTheDocument();
+});
+
+it("keeps the pending-move cadence when a fresh array reports the same pending state", async () => {
+  vi.useFakeTimers();
+  state.moves.mockImplementation(async () => ({ ok: true, data: [{ status: "pending", pendingMoveId: "move-1" }] }));
+  const view = render(<FloorTableMapPanelV3 tournament={tour("live")} actorId={null} refreshTrigger={0} />);
+  await act(async () => {});
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  view.rerender(<FloorTableMapPanelV3 tournament={tour("live")} actorId={null} refreshTrigger={1} />);
+  await act(async () => {});
+  expect(state.moves).toHaveBeenCalledTimes(2);
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  expect(state.moves).toHaveBeenCalledTimes(3);
 });
 
 it("uses component publication hints without waiting for the incomplete CDC fallback", async () => {
@@ -332,4 +396,19 @@ it("verifies again when PostgreSQL becomes ready after channel join", async () =
   await act(async () => { live.channels[0].ready?.({ extension: "postgres_changes", status: "ok" }); await vi.advanceTimersByTimeAsync(200); });
   expect(state.roster).toHaveBeenCalledTimes(3);
   expect(screen.getByText("TEST table 5", { exact: false })).toBeInTheDocument();
+});
+
+it("distinguishes a failed seatable list from a verified empty list and retries", async () => {
+  state.roster.mockResolvedValue({ ok: true, data: [table(1)] });
+  state.entries.mockResolvedValue({ ok: false, error: "TEST_SEATABLE_UNAVAILABLE" });
+  render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
+  fireEvent.click(await screen.findByTestId("floor-table-roster-card"));
+  fireEvent.click(await screen.findByTestId("floor-seat-row-1"));
+  expect(await screen.findByText("Chưa tải được danh sách người chơi.")).toBeInTheDocument();
+  expect(screen.queryByText("Mọi entry hợp lệ đã có ghế.")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Thêm vào ghế này" })).toBeDisabled();
+
+  state.entries.mockResolvedValue({ ok: true, data: [] });
+  fireEvent.click(screen.getByRole("button", { name: "Thử lại" }));
+  expect(await screen.findByText("Mọi entry hợp lệ đã có ghế.")).toBeInTheDocument();
 });
