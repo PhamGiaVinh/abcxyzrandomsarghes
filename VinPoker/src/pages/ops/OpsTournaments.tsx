@@ -260,8 +260,9 @@ export default function OpsTournaments() {
         </p>}
       </header>
 
-      {FEATURES.trackerVoiceInput && (
+      {FEATURES.trackerVoiceInput && user && !authLoading && (
         <FloorVoiceAlertInbox
+          key={JSON.stringify([user.id, sessionReadEpoch(session), activeClub])}
           tournaments={allVMs}
           onSelect={(id, alertId) => navigate(`/ops/floor/tournaments/${id}/tables?club=${encodeURIComponent(activeClub)}&alert=${encodeURIComponent(alertId)}`)}
         />

@@ -169,11 +169,30 @@ CLOCK_FAILURE_STATE
     mkdir -p "$repo_root/output/operations-latency"
     # Browser scope failures need the gateway's fixed error classifications,
     # not raw request logs, headers, JWTs, response bodies or customer records.
-    docker logs "$gateway_container" --tail 100000 2>&1 | node --input-type=module -e '
+    docker logs "$gateway_container" --timestamps --tail 100000 2>&1 | node --input-type=module -e '
       import {readFileSync} from "node:fs";
       const raw=readFileSync(0,"utf8");
       const markers=Object.fromEntries(["upstream timed out","connect() failed","no live upstreams","could not be resolved","failed to get a peer","upstream prematurely closed connection","Connection reset by peer","too many open files","Too many open files","worker process exited","worker_connections are not enough","accept4() failed","socket() failed","upstream sent too big header"].map(marker=>[marker,raw.split(marker).length-1]));
-      process.stdout.write(JSON.stringify({kind:"SANITIZED_ISOLATED_GATEWAY_FAILURE_CLASSIFICATIONS",qualification:false,markers,limitations:"Last100000gateway log lines include the bounded startup interval;fixed marker counts only;not a per-request causal attribution."}));
+      const scopePaths = ["/rest/v1/rpc/dealer_control_club_ids", "/rest/v1/rpc/get_my_floor_operator_scope"];
+      const scopeEvents = [];
+      for (const line of raw.split("\n")) {
+        const request = /\bPOST (\/rest\/v1\/rpc\/[a-z_]+)(?:\?[^"\s]*)? HTTP\/[\d.]+"/.exec(line);
+        if (!request || !scopePaths.includes(request[1])) continue;
+        const atMs = Date.parse(line.split(" ", 1)[0]);
+        if (!Number.isFinite(atMs)) continue;
+        const status = /^\s+(502|503|504)\b/.exec(line.slice(request.index + request[0].length));
+        const errors = Object.keys(markers).filter(marker => line.slice(0, request.index).includes(marker));
+        if (status || errors.length) {
+          scopeEvents.push({path:request[1], atMs, status:status ? Number(status[1]) : null, errors});
+        }
+      }
+      process.stdout.write(JSON.stringify({
+        kind:"SANITIZED_ISOLATED_GATEWAY_FAILURE_CLASSIFICATIONS",
+        qualification:false,
+        markers,
+        scopeEvents:scopeEvents.slice(-50),
+        limitations:"Fixed marker counts and last 50 allowlisted scope events. Timestamp proximity supports correlation without proving request identity."
+      }));
     ' >"$repo_root/output/operations-latency/gateway-failure-http.json" || true
   fi
   if [[ "$exit_code" != 0 && -n "${db_container:-}" ]]; then
@@ -1118,7 +1137,24 @@ fi
 # browser performs real Auth/Data API calls; no request route is intercepted.
 floor_redraw_build=off
 if [[ "$operations_candidate_probe" == 1 ]]; then floor_redraw_build=preview; fi
+floor_alert_voice_build=false
+if [[ "${LOCAL_FLOOR_ALERT_BROWSER_PROBE:-0}" == 1 ]]; then
+  [[ "$schema_mode" == current ]]
+  floor_alert_voice_build=true
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'FLOOR_ALERT_FIXTURE'
+INSERT INTO public.tournament_hands(id,tournament_id,table_id,hand_number,status,is_voided)
+VALUES ('ae610000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001',
+        'a8000000-0000-4000-8000-000000000001',982001,'completed',false);
+INSERT INTO public.tracker_floor_alerts(id,club_id,tournament_id,tournament_table_id,physical_table_id,
+  hand_id,reported_by,alert_kind,priority,title)
+VALUES ('ae610000-0000-4000-8000-000000000002','a2000000-0000-4000-8000-000000000001',
+        'a3000000-0000-4000-8000-000000000001','a8000000-0000-4000-8000-000000000001',
+        'a7000000-0000-4000-8000-000000000001','ae610000-0000-4000-8000-000000000001',
+        :'owner_id'::uuid,'wrong_action','urgent','Floor hand browser TEST');
+FLOOR_ALERT_FIXTURE
+fi
 (cd "$repo_root" && \
+  VITE_TRACKER_VOICE_INPUT="$floor_alert_voice_build" \
   VITE_SUPABASE_URL="http://$browser_gateway:8000" \
   VITE_SUPABASE_PUBLISHABLE_KEY="$anon_key" \
   VITE_OPS_TOUR_CASHIER=production \
@@ -1380,6 +1416,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_EXACT_MOVE_ENABLED="$move_enabled" \
   --env LOCAL_OPERATIONS_ACTIVE_CHECKOUT_ENABLED="$active_checkout_enabled" \
   --env LOCAL_OPERATIONS_REPLACEMENT_ENABLED="$replacement_enabled" \
+  --env LOCAL_FLOOR_ALERT_BROWSER_PROBE="${FLOOR_ALERT_PROOF_STAGE:-0}" \
   --env LOCAL_OPERATIONS_STAFF_SALARY_ENABLED="$staff_salary_enabled" \
   --env LOCAL_OPERATIONS_DEFERRED_MOVE_ENABLED="$deferred_move_enabled" \
   --env LOCAL_OPERATIONS_MANUAL_FINISH_ENABLED="$manual_finish_enabled" \
@@ -1411,6 +1448,15 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   mcr.microsoft.com/playwright:v1.60.0-noble \
   npx playwright test "${test_args[@]}"
 }
+if [[ "$floor_alert_voice_build" == true ]]; then
+  FLOOR_ALERT_PROOF_STAGE=1 run_browser_proof '' '' 'Floor TD opens the exact seeded Tracker hand from an alert'
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'FLOOR_ALERT_CLEANUP'
+BEGIN;
+DELETE FROM public.tracker_floor_alerts WHERE id='ae610000-0000-4000-8000-000000000002';
+DELETE FROM public.tournament_hands WHERE id='ae610000-0000-4000-8000-000000000001';
+COMMIT;
+FLOOR_ALERT_CLEANUP
+fi
 prepare_current_movement_schema() {
   node "$repo_root/scripts/ops/prepare-cashier-runtime-dependencies.mjs" "$test_root/clock-pre32-fixture.sql" --restore-clock-pre32
   docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
