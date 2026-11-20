@@ -5,6 +5,7 @@ import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import { supabase } from "@/integrations/supabase/client";
 import { staffDataSource } from "@/lib/staffApp/dataSource";
+import { FEATURES } from "@/lib/featureFlags";
 import { staffKeys } from "@/lib/staffApp/queryKeys";
 import { readMockSalary } from "@/lib/staffApp/mockStaffData";
 import type { StaffProfileView, StaffSalaryView } from "@/types/staffApp";
@@ -56,6 +57,20 @@ function mapSalary(raw: unknown, profile: StaffProfileView): StaffSalaryView {
   };
 }
 
+const ftPayslipPacket = z.object({
+  staff_id: z.string(),
+  club_id: z.string(),
+  payslips: z.array(z.object({
+    id: z.string().min(1),
+    period_year: z.number().int(),
+    period_month: z.number().int().min(1).max(12),
+    net_vnd: z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
+    status: z.enum(["approved", "recorded_paid"]),
+    paid_at: timestamp.nullable(),
+    payment_method: z.string().nullable(),
+  })).max(20),
+});
+
 /**
  * Read-only "Lương của tôi" data for the signed-in staff member. Live source calls the
  * SECURITY DEFINER RPC get_my_staff_salary (self-scoped, binds auth.uid() via staff.user_id);
@@ -81,5 +96,25 @@ export function useStaffSalary(profile: StaffProfileView | null) {
     },
   });
 
-  return { ...q, scopeError, isLoading: authLoading || q.isLoading, salary: canRead && !authLoading && !q.isError ? q.data ?? null : null };
+  const enableFtPayslips = FEATURES.staffFtPayslips && source === "live" && !!profile;
+  const ftPayslips = useQuery({
+    queryKey: [...staffKeys.salary(profile?.staffId ?? undefined), "ftPayslipsV1", user?.id, profile?.clubId, sessionReadEpoch(session)],
+    enabled: enableFtPayslips && canRead && !authLoading,
+    retry: false,
+    staleTime: 20_000,
+    queryFn: async () => {
+      if (!profile || !canRead) throw new Error("staff_salary_scope_unverified");
+      const { data, error } = await observeTrackerContextRead(rpcClient.rpc("get_my_staff_ft_payslips_v1", {
+        p_staff_id: profile.staffId,
+        p_club_id: profile.clubId,
+      }));
+      if (error) throw error;
+      const packet = ftPayslipPacket.parse(data);
+      if (packet.staff_id !== profile.staffId || packet.club_id !== profile.clubId) throw new Error("staff_salary_scope_unverified");
+      return packet.payslips;
+    },
+  });
+  return { ...q, scopeError, isLoading: authLoading || q.isLoading, salary: canRead && !authLoading && !q.isError ? q.data ?? null : null,
+    ftPayslips: enableFtPayslips && canRead && !authLoading ? ftPayslips : null,
+  };
 }

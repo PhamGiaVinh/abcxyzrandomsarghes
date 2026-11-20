@@ -4,6 +4,8 @@ import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {beforeEach,describe,expect,it,vi} from 'vitest';
 import type {StaffProfileView} from '@/types/staffApp';
 const f=vi.hoisted(()=>({rpc:vi.fn(),actor:'actor' as string|null,source:'live' as 'live'|'mock',session:{access_token:'staff-session-old'}}));
+const flags = vi.hoisted(() => ({ staffFtPayslips: false }));
+vi.mock('@/lib/featureFlags', () => ({ FEATURES: flags }));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:f.rpc}}));
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({user:f.actor?{id:f.actor}:null,loading:false,session:f.session})}));
 vi.mock('@/lib/staffApp/dataSource',()=>({staffDataSource:()=>f.source}));
@@ -14,8 +16,24 @@ const payload={staff_id:'staff',club_id:'club',employment_type:'part_time',hourl
   last_reset_at:'2026-10-19T00:00:00Z',current_shift_open:false,current_shift_start:null,monthly_salary_vnd:null,recent_payments:[]};
 function wrapper(){const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0}}});
  return({children}:{children:ReactNode})=>createElement(QueryClientProvider,{client},children);}
-beforeEach(()=>{f.rpc.mockReset();f.actor='actor';f.source='live';f.session={access_token:'staff-session-old'};f.rpc.mockResolvedValue({data:payload,error:null});});
+beforeEach(()=>{flags.staffFtPayslips=false;f.rpc.mockReset();f.actor='actor';f.source='live';f.session={access_token:'staff-session-old'};f.rpc.mockResolvedValue({data:payload,error:null});});
 describe('staff self salary read integrity',()=>{
+ it.each(['club', 'other'])('binds FT payslip evidence to the requested club (response %s)', async clubId => {
+  flags.staffFtPayslips = true;
+  const slip = { id:'saved-ft', period_year:2026, period_month:10, net_vnd:5000000,
+    status:'recorded_paid', paid_at:'2026-11-01T00:30:00Z', payment_method:'bank' };
+  f.rpc.mockImplementation(async (fn: string) => ({ data: fn === 'get_my_staff_salary' ? payload : {
+    staff_id:'staff', club_id:clubId, payslips:[slip],
+  }, error:null }));
+  const h = renderHook(() => useStaffSalary(profile), { wrapper:wrapper() });
+  await waitFor(() => expect(h.result.current.ftPayslips?.isPending).toBe(false));
+  expect(f.rpc).toHaveBeenCalledWith('get_my_staff_ft_payslips_v1', { p_staff_id:'staff',p_club_id:'club' });
+  expect(h.result.current.ftPayslips?.isError).toBe(clubId !== 'club');
+  expect(h.result.current.ftPayslips?.data).toEqual(clubId === 'club' ? [slip] : undefined);
+  f.actor = 'other';
+  h.rerender();
+  expect(h.result.current.ftPayslips).toBeNull();
+ });
  it('ignores the old session response arriving after the new session salary',async()=>{
   let resolveOld!: (value:unknown)=>void;
   f.rpc.mockImplementationOnce(()=>new Promise(done=>{resolveOld=done;}));
