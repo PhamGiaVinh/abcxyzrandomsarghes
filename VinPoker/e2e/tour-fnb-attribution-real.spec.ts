@@ -18,11 +18,7 @@ test("the finance panel switches between two tours through the real F&B reader",
       const context = await browser.newContext({ viewport, locale: "vi-VN" });
       try {
         const page = await context.newPage();
-        // Serve only the HTML host in Playwright. Vite serves the production
-        // component and reader, and every RPC goes to the real HTTP service.
-        await page.route(new URL("/tour-fnb-test-host", frontend).href, route =>
-          route.fulfill({ contentType: "text/html", body: '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1"><div id="root"></div>' }));
-        await page.goto(new URL("/tour-fnb-test-host", frontend).href);
+        await page.goto(new URL("/e2e/tour-fnb-attribution-host.html", frontend).href);
         await page.evaluate(async fixtureConfig => {
           const host = "/e2e/tour-fnb-attribution-host.tsx";
           const { mountTourReport } = await import(host);
