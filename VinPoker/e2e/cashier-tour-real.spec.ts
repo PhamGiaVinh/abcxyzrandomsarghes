@@ -2282,6 +2282,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const replayUi={desktop:false,mobile:false};
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
  const dealerClose={checkedIn:false,assignmentVisible:false,assignmentReleased:false,breakRecorded:false,breakVisible:false};
+ const dealerCheckout={committed:false,retryPreserved:false,breakEnded:false,swingUpdated:false};
  const clockUi={started:false,paused:false,resumed:false};
  const fnb={guestOrder:false,guestPaidVisible:false,counterPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
  const fnbTour={desktop:false,mobile:false};
@@ -2289,7 +2290,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let guestContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,dealerClose,clockUi,fnb,fnbTour,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with an open clock, desktop/mobile replay, Cashier payment, Floor close and an open Dealer Swing screen. Targeted mode checks F&B attribution and the release of a checked-in dealer at Floor close. Excludes payroll, linked counter writers, refunds, load and cash funding.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,dealerClose,dealerCheckout,clockUi,fnb,fnbTour,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with clock, replay, F&B, Cashier payment, Floor close, Dealer Swing and checkout from an open break. Excludes automatic return after rest, payroll, refunds, load and cash funding.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -2603,8 +2604,35 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   await expect(swing.getByText('BẢN ĐỒ CHIẾN TRƯỜNG',{exact:true})).toBeVisible();
   if(assignmentId){
    const breakPool=swing.getByText('BREAK POOL',{exact:true}).locator('../../..');
-   await expect(breakPool.getByText('HTTP latency TEST 1',{exact:true})).toBeVisible();
+   const dealerInBreak=breakPool.getByText('HTTP latency TEST 1',{exact:true});
+   await expect(dealerInBreak).toBeVisible();
    dealerClose.breakVisible=true;
+   phase='same-tour-dealer-checkout';report();
+   const checkoutHeaders={...headers,Authorization:'Bearer '+staff[0].token};
+   const checkout=()=>request('dealer-checkout','/functions/v1/checkout-dealer',{attendance_id:attendanceId},checkoutHeaders);
+   const receipt=await checkout();
+   expect(receipt.results).toHaveLength(1);
+   const saved=receipt.results[0];
+   expect(saved).toMatchObject({success:true,attendance_id:attendanceId,check_out_time:expect.any(String)});
+   const readAttendance=()=>read('dealer_attendance?select=status,current_state,check_in_time,check_out_time,total_worked_minutes_today&id=eq.'+attendanceId);
+   const ended=await readAttendance();
+   expect(ended).toHaveLength(1);
+   expect(ended[0]).toMatchObject({status:'checked_out',current_state:'checked_out',check_out_time:saved.check_out_time});
+   expect(Date.parse(ended[0].check_out_time)).toBeGreaterThanOrEqual(Date.parse(ended[0].check_in_time));
+   expect(ended[0].total_worked_minutes_today).toBeGreaterThanOrEqual(0);
+   dealerCheckout.committed=true;
+   const retry=await checkout();
+   expect(retry.results).toHaveLength(1);
+   expect(retry.results[0]).toMatchObject({success:true,idempotent:true,check_out_time:saved.check_out_time});
+   expect(await readAttendance()).toEqual(ended);
+   dealerCheckout.retryPreserved=true;
+   const completedBreaks=await read('dealer_breaks?select=break_start,break_end,attendance_id&assignment_id=eq.'+assignmentId);
+   expect(completedBreaks).toHaveLength(1);
+   expect(completedBreaks[0]).toMatchObject({attendance_id:attendanceId,break_end:expect.any(String)});
+   expect(Date.parse(completedBreaks[0].break_end)).toBeGreaterThanOrEqual(Date.parse(completedBreaks[0].break_start));
+   dealerCheckout.breakEnded=true;
+   await expect(dealerInBreak).toHaveCount(0,{timeout:10000});
+   dealerCheckout.swingUpdated=true;
   }
   const ready=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(ready.ready).toBe(true);expect(ready.prize_total).toBe(18000000);expect(ready.reconcile_delta).toBe(0);
   const closed=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated canonical paid prize HTTP'});expect(closed.outcome).toBe('closed');expect(closed.prize_total).toBe(18000000);expect(closed.club_revenue).toBe(1800000);expect(closed.reconcile_delta).toBe(0);expect(closed.reconciled).toBe(true);prizeTotal=closed.prize_total;reconcileDelta=closed.reconcile_delta;
