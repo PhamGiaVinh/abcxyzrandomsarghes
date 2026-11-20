@@ -128,10 +128,18 @@ const RESULT_DWELL_MS = 8000;
 export default function OnlinePokerTable() {
   const { tableId = '' } = useParams();
   const { user } = useAuth();
-  const { hand, seats, mySeatNo, myUserId, hostUserId, amIHost, legal, loading, dealSignal, dealSeats, refresh, applyServerView, actions } = useTableHand(tableId);
+  const { hand, seats, seatReadStatus, mySeatNo, myUserId, hostUserId, amIHost, legal, loading, dealSignal, dealSeats, refresh, applyServerView, actions } = useTableHand(tableId);
+  const seatsVerified = seatReadStatus === 'ready';
   const table = useTableMeta(tableId);
 
-  const [sitSeat, setSitSeat] = useState<number | null>(null);
+  const seatContextKey = JSON.stringify([user?.id ?? null, tableId]);
+  const seatContext = useRef({ key: seatContextKey });
+  if (seatContext.current.key !== seatContextKey) seatContext.current = { key: seatContextKey };
+  const [sitIntent, setSitIntent] = useState<{ seat: number; context: object } | null>(null);
+  useEffect(() => {
+    if (!seatsVerified) setSitIntent(null);
+  }, [seatsVerified]);
+  const sitSeat = sitIntent?.context === seatContext.current ? sitIntent.seat : null;
   const [submitting, setSubmitting] = useState(false);
   const [bustOpen, setBustOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -346,19 +354,21 @@ export default function OnlinePokerTable() {
   const openSit = (seatNo: number) => {
     // Don't offer to sit until the first load settles — a reload could otherwise briefly
     // open the dialog for a seat the player already occupies (server would then reject).
-    if (loading) return;
+    if (loading || !seatsVerified) return;
     if (seated) { toast.info('Bạn đã ngồi ở bàn này rồi.'); return; }
-    setSitSeat(seatNo);
+    setSitIntent({ seat: seatNo, context: seatContext.current });
   };
 
   const confirmSit = async (buyin: string) => {
-    if (sitSeat == null) return;
+    if (sitSeat == null || !seatsVerified || seated || seats.some(seat => seat.seatNo === sitSeat)) return;
+    const context = seatContext.current;
     markPokerSoundGesture(); // first deliberate table action → unlock audio
     try {
       const res = (await actions.sitOpen(sitSeat, buyin)) as RpcOutcome;
-      if (res?.outcome === 'ok') { toast.success(`Đã ngồi vào ghế ${sitSeat}`); setSitSeat(null); refresh(); }
+      if (context !== seatContext.current) return;
+      if (res?.outcome === 'ok') { toast.success(`Đã ngồi vào ghế ${sitSeat}`); setSitIntent(null); refresh(); }
       else toast.error(vn(res?.outcome));
-    } catch { toast.error('Không ngồi được, thử lại.'); }
+    } catch { if (context === seatContext.current) toast.error('Không ngồi được, thử lại.'); }
   };
 
   const leave = async () => {
@@ -368,7 +378,7 @@ export default function OnlinePokerTable() {
         // Clear local seat-bound UI at once so I can immediately re-join (don't wait for
         // the poll). mySeatNo is seats-authoritative, so refresh() drops `seated` too.
         toast.success('Đã rời bàn.');
-        setSitSeat(null);
+        setSitIntent(null);
         setBustOpen(false);
         bustHandledRef.current = false;
         refresh();
@@ -384,6 +394,7 @@ export default function OnlinePokerTable() {
   // starting stack); the client just sends that value and the server re-validates it.
   // On success the seat stack > 0, so the bustout effect closes the modal on next load.
   const rebuy = async () => {
+    if (!seatsVerified) return;
     try {
       const res = (await actions.rebuy(table.startingStack)) as RpcOutcome;
       if (res?.outcome === 'ok') { toast.success('Đã mua thêm chip.'); setBustOpen(false); }
@@ -396,6 +407,7 @@ export default function OnlinePokerTable() {
   // also auto-reassigns host to the next seated player on leave, so continuity never depends
   // on this — it is the discretionary, stay-seated hand-off.
   const transfer = async (toUserId: string, name: string) => {
+    if (!seatsVerified) return;
     try {
       const res = (await actions.transferHost(toUserId)) as RpcOutcome;
       if (res?.outcome === 'ok') { toast.success(`Đã trao quyền chủ bàn cho ${name}`); refresh(); }
@@ -524,7 +536,7 @@ export default function OnlinePokerTable() {
             fill
             // Sit is allowed on any OPEN table (incl. an empty one — that's how you start
             // it); only a closed table or an active result/cinematic blocks it.
-            onEmptySeatClick={!seated && !loading && !showing && table.status !== 'closed' ? openSit : undefined}
+            onEmptySeatClick={seatsVerified && !seated && !loading && !showing && table.status !== 'closed' ? openSit : undefined}
           />
         )}
 
@@ -573,7 +585,13 @@ export default function OnlinePokerTable() {
             pill (no heavy scrim); suppressed while a result/cinematic is shown. */}
         {!showing && !inActiveHand && (
           <div className="absolute inset-x-0 bottom-0 z-30 flex justify-center px-3 pb-2">
-            {!tableLive ? (
+            {seatReadStatus !== 'ready' ? (
+              <div role="status" className="rounded-xl bg-black/80 px-4 py-3 text-center text-sm">
+                {seatReadStatus === 'loading' ? 'Đang tải danh sách ghế…' : <>
+                  Chưa xác minh được danh sách ghế. <button type="button" className="underline" onClick={refresh}>Tải lại</button>
+                </>}
+              </div>
+            ) : !tableLive ? (
               <div className="rounded-xl border border-white/10 bg-black/55 px-4 py-3 text-center text-sm text-muted-foreground backdrop-blur-sm">
                 {emptyStateLabel(table.status, occupied)}
               </div>
@@ -679,8 +697,8 @@ export default function OnlinePokerTable() {
       </Sheet>
 
       <SitDownDialog
-        open={sitSeat != null}
-        onOpenChange={(v) => { if (!v) setSitSeat(null); }}
+        open={sitSeat != null && seatsVerified}
+        onOpenChange={(v) => { if (!v) setSitIntent(null); }}
         seatNo={sitSeat}
         tableName={table.name}
         sb={table.sb}
@@ -693,7 +711,7 @@ export default function OnlinePokerTable() {
         open={bustOpen}
         onOpenChange={setBustOpen}
         onLeave={async () => { await leave(); setBustOpen(false); }}
-        rebuyEnabled={FEATURES.onlinePokerRebuy}
+        rebuyEnabled={FEATURES.onlinePokerRebuy && seatsVerified}
         rebuyAmount={table.startingStack}
         onRebuy={rebuy}
       />

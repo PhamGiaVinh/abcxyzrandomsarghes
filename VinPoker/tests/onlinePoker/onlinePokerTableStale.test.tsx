@@ -53,7 +53,7 @@ const betting = (toAct: number) => ({
   mySeat: 1,
 });
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const thState = (over: any = {}) => ({ hand: null, seats: [], mySeatNo: null, myUserId: 'u1', hostUserId: null, amIHost: false, legal: null, loading: false, refresh: vi.fn(), actions: { sitOpen: vi.fn().mockResolvedValue({ outcome: 'ok' }), leaveTable: vi.fn().mockResolvedValue({ outcome: 'ok' }), transferHost: vi.fn().mockResolvedValue({ outcome: 'ok' }), submitAction: vi.fn().mockResolvedValue({ ok: true }) }, ...over });
+const thState = (over: any = {}) => ({ hand: null, seats: [], seatReadStatus: 'ready', mySeatNo: null, myUserId: 'u1', hostUserId: null, amIHost: false, legal: null, loading: false, refresh: vi.fn(), actions: { sitOpen: vi.fn().mockResolvedValue({ outcome: 'ok' }), leaveTable: vi.fn().mockResolvedValue({ outcome: 'ok' }), transferHost: vi.fn().mockResolvedValue({ outcome: 'ok' }), submitAction: vi.fn().mockResolvedValue({ ok: true }) }, ...over });
 
 const renderTable = () => render(<MemoryRouter><OnlinePokerTable /></MemoryRouter>);
 
@@ -61,6 +61,38 @@ beforeEach(() => { h.actor = 'u1'; h.useParams.mockReturnValue({ tableId: 't1' }
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 describe('OnlinePokerTable — PR C stale-table cleanup', () => {
+  it('removes seat selection on read failure and clears the old dialog on table switch', () => {
+    h.useTableMeta.mockImplementation((id: string) => ({ ...meta(), id }));
+    h.useTableHand.mockReturnValue(thState());
+    const { rerender } = renderTable();
+    fireEvent.click(screen.getByRole('button', { name: /Ghế 1.*Ngồi/i }));
+    expect(screen.getByRole('dialog', { name: 'Ngồi vào ghế 1' })).toBeVisible();
+    h.useTableHand.mockReturnValue(thState({ seatReadStatus: 'unavailable' }));
+    rerender(<MemoryRouter><OnlinePokerTable /></MemoryRouter>);
+    expect(screen.getByText(/Chưa xác minh được danh sách ghế/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: /Ghế 1.*Ngồi/i })).not.toBeInTheDocument();
+    h.useParams.mockReturnValue({ tableId: 't2' });
+    h.useTableHand.mockReturnValue(thState());
+    rerender(<MemoryRouter><OnlinePokerTable /></MemoryRouter>);
+    expect(screen.queryByRole('dialog', { name: 'Ngồi vào ghế 1' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ghế 1.*Ngồi/i })).toBeVisible();
+  });
+  it('requires a fresh seat choice after a same-table read failure recovers', () => {
+    h.useTableMeta.mockReturnValue(meta());
+    h.useTableHand.mockReturnValue(thState());
+    const { rerender } = renderTable();
+    fireEvent.click(screen.getByRole('button', { name: /Ghế 1.*Ngồi/i }));
+    expect(screen.getByRole('dialog', { name: 'Ngồi vào ghế 1' })).toBeVisible();
+
+    h.useTableHand.mockReturnValue(thState({ seatReadStatus: 'unavailable' }));
+    rerender(<MemoryRouter><OnlinePokerTable /></MemoryRouter>);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    h.useTableHand.mockReturnValue(thState());
+    rerender(<MemoryRouter><OnlinePokerTable /></MemoryRouter>);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Ghế 1.*Ngồi/i })).toBeVisible();
+  });
   it.each(['table', 'actor'])('ignores an old ledger response after %s changes', async (kind) => {
     h.useTableMeta.mockReturnValue(meta()); h.useTableHand.mockReturnValue(thState());
     let resolveOld!: (rows: unknown[]) => void;

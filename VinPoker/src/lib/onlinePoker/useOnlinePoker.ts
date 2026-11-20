@@ -120,6 +120,7 @@ export interface TableHandState {
   hand: PublicHandView | null;
   /** Live table seats (occupied), independent of any active hand. */
   seats: LiveSeat[];
+  seatReadStatus: 'loading' | 'ready' | 'unavailable';
   /** The caller's seat number at this table, or null if not seated. */
   mySeatNo: number | null;
   /** The caller's auth user id (live only). */
@@ -154,6 +155,10 @@ export function useTableHand(tableId: string): TableHandState {
   const [seats, setSeats] = useState<LiveSeat[]>([]);
   const [seatsOrigin,setSeatsOrigin]=useState<object|null>(null);
   const scopedSeats=seatsOrigin===tableScope.current?seats:[];
+  const [seatFailure, setSeatFailure] = useState<object | null>(null);
+  const seatReadStatus = !RUNTIME_LIVE || seatsOrigin === tableScope.current
+    ? seatFailure === tableScope.current ? 'unavailable' : 'ready'
+    : seatFailure === tableScope.current ? 'unavailable' : 'loading';
   const [uid, setUid] = useState<string | null>(null);
   const uidRef=useRef<string|null>(null);
   const identityScope=useRef<object>({});
@@ -365,12 +370,36 @@ export function useTableHand(tableId: string): TableHandState {
     return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
   }, [tableId]);
 
-  // Load table seats + current host (live). Seats exist even with no active hand.
+  // Polling must not repeatedly cancel a slow authoritative seat read.
+  const seatRead = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    seatRead.current?.abort();
+    seatRead.current = null;
+  }, [tableId]);
   useEffect(() => {
-    if (!RUNTIME_LIVE) { setSeats([]); setHostUserId(null); return; }
+    if (!RUNTIME_LIVE || seatRead.current) return;
+    const issuedTable = tableScope.current;
+    const controller = new AbortController();
+    seatRead.current = controller;
+    const current = () => !controller.signal.aborted && issuedTable === tableScope.current;
+    void loadSeatsLive(tableId, controller.signal).then(loadedSeats => {
+      if (!current()) return;
+      setSeats(loadedSeats);
+      setSeatsOrigin(issuedTable);
+      setSeatFailure(null);
+    }).catch(() => {
+      if (current()) setSeatFailure(issuedTable);
+    }).finally(() => {
+      if (seatRead.current === controller) seatRead.current = null;
+      controller.abort();
+    });
+  }, [tableId, tick]);
+
+  // Load the current host independently of seat availability.
+  useEffect(() => {
+    if (!RUNTIME_LIVE) { setHostUserId(null); return; }
     let cancelled = false;
     const issuedTable=tableScope.current;
-    loadSeatsLive(tableId).then((s) => { if (!cancelled) {setSeats(s);setSeatsOrigin(issuedTable);} }).catch(() => {});
     loadTableHostLive(tableId).then((h) => { if (!cancelled) {setHostUserId(h);setHostOrigin(issuedTable);} }).catch(() => {});
     return () => { cancelled = true; };
   }, [tableId, tick]);
@@ -379,16 +408,29 @@ export function useTableHand(tableId: string): TableHandState {
   // (the table row carries host_user_id changes). Dark: no-op.
   useEffect(() => {
     if (!RUNTIME_LIVE) return;
+    const issuedTable = tableScope.current;
+    let active = true;
+    let hasJoinedOrFailed = false;
+    const refreshCurrentTable = () => {
+      if (active && issuedTable === tableScope.current) setTick(n => n + 1);
+    };
     const channel = supabase
       .channel(`op-table-${tableId}`)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_hands', filter: `table_id=eq.${tableId}` }, () => setTick((n) => n + 1))
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_hands', filter: `table_id=eq.${tableId}` }, refreshCurrentTable)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_seats', filter: `table_id=eq.${tableId}` }, () => setTick((n) => n + 1))
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_seats', filter: `table_id=eq.${tableId}` }, refreshCurrentTable)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_tables', filter: `id=eq.${tableId}` }, () => setTick((n) => n + 1))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_tables', filter: `id=eq.${tableId}` }, refreshCurrentTable)
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          if (hasJoinedOrFailed) refreshCurrentTable();
+          hasJoinedOrFailed = true;
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          hasJoinedOrFailed = true;
+        }
+      });
+    return () => { active = false; supabase.removeChannel(channel); };
   }, [tableId]);
 
   // Polling fallback (live only): realtime postgres_changes can drop or lag, which would
@@ -449,7 +491,7 @@ export function useTableHand(tableId: string): TableHandState {
     rebuy: (amount) => onlinePokerClient.rebuyOpen(tableId, amount),
   };
 
-  return { hand:scopedHand, seats:scopedSeats, mySeatNo, myUserId: uid, hostUserId:scopedHost, amIHost,
+  return { hand:scopedHand, seats:scopedSeats, seatReadStatus, mySeatNo, myUserId: uid, hostUserId:scopedHost, amIHost,
     legal:handOrigin===tableScope.current?legal:null, loading, error:handOrigin===tableScope.current?error:null,
     dealSignal, dealSeats:handOrigin===tableScope.current?dealSeats:[], refresh, applyServerView, actions };
 }

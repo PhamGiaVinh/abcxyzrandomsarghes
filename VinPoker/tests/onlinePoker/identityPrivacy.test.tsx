@@ -1,21 +1,64 @@
 import {act,cleanup,renderHook,waitFor} from '@testing-library/react';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 type Listener=(event:string,session:{user:{id:string}}|null)=>void;
-const h=vi.hoisted(()=>({listeners:[] as Listener[],holes:vi.fn(),load:vi.fn(),getUser:vi.fn(),meta:vi.fn()}));
+type ChannelStatus=(status:string)=>void;
+const h=vi.hoisted(()=>({listeners:[] as Listener[],channelStatuses:new Map<string,ChannelStatus>(),seatChanges:new Map<string,()=>void>(),seats:vi.fn(),holes:vi.fn(),load:vi.fn(),getUser:vi.fn(),meta:vi.fn()}));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{auth:{getUser:()=>h.getUser(),onAuthStateChange:(fn:Listener)=>{
  h.listeners.push(fn);return {data:{subscription:{unsubscribe:()=>{h.listeners=h.listeners.filter(v=>v!==fn);}}}};
-}},channel:()=>{const q={on:()=>q,subscribe:()=>q};return q;},removeChannel:vi.fn(),rpc:vi.fn(async()=>({data:null,error:null}))}}));
+}},channel:(name:string)=>{
+ const q={
+  on:(_type:string,filter:{table?:string},fn:()=>void)=>{if(filter.table==='online_poker_seats')h.seatChanges.set(name,fn);return q;},
+  subscribe:(fn?:ChannelStatus)=>{if(fn)h.channelStatuses.set(name,fn);return q;},
+ };
+ return q;
+},removeChannel:vi.fn(),rpc:vi.fn(async()=>({data:null,error:null}))}}));
 vi.mock('@/lib/onlinePoker/types',async original=>({...await original<typeof import('@/lib/onlinePoker/types')>(),RUNTIME_LIVE:true}));
 vi.mock('@/lib/pokerLiveSound',()=>({playPokerLiveSound:vi.fn()}));
 vi.mock('@/lib/onlinePoker/client',()=>({listTablesLive:vi.fn(),loadHandStateLive:(...args:unknown[])=>h.load(...args),loadTableMetaLive:(...args:unknown[])=>h.meta(...args),loadTableHostLive:async()=>null,
- loadSeatsLive:async()=>[],loadLegalActionsLive:async()=>null,
+ loadSeatsLive:(...args:unknown[])=>h.seats(...args),loadLegalActionsLive:async()=>null,
  onlinePokerClient:{getMyHoleCards:()=>h.holes(),ping:async()=>({outcome:'ok'})},
  wirePublicToView:(wire:{config:{handId:string;handNo:number;tableId?:string}},priv?:{mySeat:number;myHoleCards:string[]})=>({handId:wire.config.handId,tableId:wire.config.tableId??'table-a',handNo:wire.config.handNo,status:'betting',street:'preflop',board:[],pot:'0',seats:[],toActSeat:null,buttonSeat:1,mySeat:priv?.mySeat,myHoleCards:priv?.myHoleCards}),
 }));
 import {useTableHand,useTableMeta} from '@/lib/onlinePoker/useOnlinePoker';
-beforeEach(()=>{h.listeners=[];vi.clearAllMocks();h.getUser.mockResolvedValue({data:{user:{id:'actor-a'}},error:null});
+beforeEach(()=>{h.listeners=[];h.channelStatuses.clear();h.seatChanges.clear();vi.clearAllMocks();h.seats.mockReset().mockResolvedValue([]);h.getUser.mockResolvedValue({data:{user:{id:'actor-a'}},error:null});
  h.load.mockResolvedValue({wire:{config:{handId:'hand-a',handNo:1}},stateVersion:1});h.holes.mockResolvedValue({outcome:'ok',seat:1,cards:['As','Ah']});h.meta.mockResolvedValue({id:'table-a',name:'TABLE A',status:'open'});});
 afterEach(()=>{cleanup();vi.useRealTimers();});
+it('lets a slow seat read complete across polling ticks', async () => {
+ vi.useFakeTimers();
+ h.seats.mockImplementation(()=>new Promise(resolve=>setTimeout(()=>resolve([]),5000)));
+ const {result}=renderHook(()=>useTableHand('table-a'));
+ await act(async()=>{await vi.advanceTimersByTimeAsync(4000);});
+ expect(result.current.seatReadStatus).toBe('loading');
+ expect(h.seats).toHaveBeenCalledTimes(1);
+ expect((h.seats.mock.calls[0][1] as AbortSignal).aborted).toBe(false);
+ await act(async()=>{await vi.advanceTimersByTimeAsync(1000);});
+ expect(result.current.seatReadStatus).toBe('ready');
+});
+it.each(['SUBSCRIBED','TIMED_OUT'])('rechecks seats on recovery after %s and ignores the old channel', async initialStatus => {
+ h.seats.mockRejectedValue(new Error('temporary seat read failure'));
+ const {result,rerender}=renderHook(({id})=>useTableHand(id),{initialProps:{id:'table-a'}});
+ await waitFor(()=>expect(result.current.seatReadStatus).toBe('unavailable'));
+ const initialReads=h.seats.mock.calls.length;
+ const status=h.channelStatuses.get('op-table-table-a')!;
+ act(()=>status(initialStatus));
+ expect(h.seats).toHaveBeenCalledTimes(initialReads);
+ h.seats.mockResolvedValue([]);
+ act(()=>{
+  if(initialStatus==='SUBSCRIBED')status('CHANNEL_ERROR');
+  status('SUBSCRIBED');
+ });
+ await waitFor(()=>expect(result.current.seatReadStatus).toBe('ready'));
+ expect(h.seats).toHaveBeenCalledTimes(initialReads+1);
+ rerender({id:'table-b'});
+ await waitFor(()=>expect(result.current.seatReadStatus).toBe('ready'));
+ const currentReads=h.seats.mock.calls.length;
+ act(()=>status('SUBSCRIBED'));
+ expect(h.seats).toHaveBeenCalledTimes(currentReads);
+ act(()=>h.seatChanges.get('op-table-table-a')!());
+ expect(h.seats).toHaveBeenCalledTimes(currentReads);
+ await act(async()=>h.seatChanges.get('op-table-table-b')!());
+ expect(h.seats).toHaveBeenCalledTimes(currentReads+1);
+});
 it.each(['switch','roundtrip'])('does not expose old table metadata during a new generation read (%s)',async change=>{
  const {result,rerender}=renderHook(({id})=>useTableMeta(id),{initialProps:{id:'table-a'}});
  await waitFor(()=>expect(result.current?.name).toBe('TABLE A'));h.meta.mockImplementation(()=>new Promise(()=>{}));

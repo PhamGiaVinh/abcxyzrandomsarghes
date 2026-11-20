@@ -15,6 +15,7 @@
 // schema. The wire view shapes live in ./wire.ts (a hand-maintained server mirror).
 
 import { supabase } from '@/integrations/supabase/client';
+import { observeTrackerContextRead } from '@/lib/tournament/observeTrackerContextRead';
 import { RUNTIME_LIVE } from './types';
 import {parseOnlineCreateReceipt,parseOnlineCreateResolution,type OnlineCreatePayload} from './createReceipt';
 import type { ActionType, LobbyTableSummary, PublicHandView, PublicSeatView, WalletView } from './types';
@@ -312,24 +313,38 @@ export interface LiveSeat {
  * Live table seats from online_poker_seats (NOT the hand state) so a player can see
  * who is seated and pick an empty seat even when no hand is in progress. Gated.
  */
-export async function loadSeatsLive(tableId: string): Promise<LiveSeat[]> {
+export async function loadSeatsLive(tableId: string, signal?: AbortSignal): Promise<LiveSeat[]> {
   if (!RUNTIME_LIVE) throw new RuntimeNotLiveError();
-  const { data, error } = await rails()
+  const query = rails()
     .from('online_poker_seats')
     .select('seat_no, user_id, stack, status')
     .eq('table_id', tableId)
     .in('status', ['sitting', 'sitting_out', 'active', 'folded', 'allin']);
-  if (error || !data) return [];
+  const { data, error } = await observeTrackerContextRead<{ data: unknown; error: unknown }>(signal ? query.abortSignal(signal) : query);
+  if (error || !Array.isArray(data)) throw new Error('ONLINE_POKER_SEATS_UNAVAILABLE');
   const rows = data as Array<{ seat_no: number; user_id: string | null; stack: number | string; status: string }>;
+  if (rows.some(row => !row || !Number.isSafeInteger(row.seat_no) || row.seat_no < 1
+    || (row.user_id !== null && typeof row.user_id !== 'string')
+    || !/^\d+$/.test(String(row.stack)))) throw new Error('ONLINE_POKER_SEATS_UNAVAILABLE');
   const occupied = rows.filter((r) => r.user_id);
 
   // Best-effort display names; falls back to the seat number when unavailable.
   const ids = [...new Set(occupied.map((r) => r.user_id as string))];
   const names: Record<string, string> = {};
-  if (ids.length) {
-    const { data: profs } = await rails().from('profiles').select('id, display_name').in('id', ids);
-    for (const p of (profs ?? []) as Array<{ id: string; display_name: string | null }>) {
-      if (p.display_name) names[p.id] = p.display_name;
+  if (ids.length && !signal?.aborted) {
+    const controller = new AbortController();
+    const abortProfiles = () => controller.abort();
+    signal?.addEventListener('abort', abortProfiles, { once: true });
+    const deadline = setTimeout(abortProfiles, 750);
+    try {
+      const { data: profs } = await rails().from('profiles').select('id, display_name').in('id', ids).abortSignal(controller.signal);
+      for (const p of (profs ?? []) as Array<{ id: string; display_name: string | null }>) {
+        if (p.display_name) names[p.id] = p.display_name;
+      }
+    } catch { /* A missing display name does not invalidate authoritative seat data. */ }
+    finally {
+      clearTimeout(deadline);
+      signal?.removeEventListener('abort', abortProfiles);
     }
   }
   return occupied.map((r) => ({
