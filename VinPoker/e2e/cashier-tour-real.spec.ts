@@ -2282,9 +2282,10 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const replayUi={desktop:false,mobile:false};
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
  const clockUi={started:false,paused:false,resumed:false};
- const fnb={guestOrder:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
+ const fnb={guestOrder:false,guestPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
  let swingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
+ let guestContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
  const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,clockUi,fnb,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with an open clock, desktop/mobile replay, Cashier payment, Floor close and an open Dealer Swing screen. F&B uses guest and staff HTTP with a club-level finance read. Layouts are emulated. No load or cash funding qualification.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
@@ -2331,16 +2332,38 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   const qr=await rpc('fnb_issue_table_qr_token',{p_club_id:club,p_table_ref:opened.p_game_table_id,p_label:'Canonical paid prize TEST'});
   expect(qr.status).toBe('ok');
   expect(typeof qr.token).toBe('string');
-  const orderIntent={p_token:qr.token,p_seat:1,p_customer_name:'Game table guest TEST',p_payment_method:'cash',p_client_request_id:crypto.randomUUID(),p_lines:[{menu_item_id:'afb20000-0000-4000-8000-000000000001',qty:1}]};
+  guestContext=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:'vi-VN',viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  const guestPage=await guestContext.newPage();
+  await guestPage.goto('/fnb/order?'+new URLSearchParams({t:qr.token})).catch(()=>{
+   throw new Error('TEST guest menu navigation failed');
+  });
+  await guestPage.getByRole('button',{name:'1',exact:true}).click();
+  await guestPage.getByRole('button',{name:'Xem thực đơn',exact:true}).click();
+  await guestPage.getByRole('button',{name:'Thêm Operations TEST water',exact:true}).click();
+  await guestPage.getByRole('button',{name:/^Xem đơn \(1 món\)/}).click();
+  await guestPage.getByRole('button',{name:/^Tiền mặt/}).click();
+  const [orderResponse]=await Promise.all([
+   guestPage.waitForResponse(response=>response.url()===api+'/rest/v1/rpc/fnb_guest_create_order',{timeout:10000}),
+   guestPage.getByRole('button',{name:'Gửi đơn — trả tiền mặt',exact:true}).click(),
+  ]);
+  expect(orderResponse.ok()).toBe(true);
+  const orderIntent=orderResponse.request().postDataJSON();
+  expect(orderIntent.p_token===qr.token).toBe(true);
+  expect(orderIntent.p_seat).toBe(1);
+  expect(orderIntent.p_payment_method).toBe('cash');
+  expect(orderIntent.p_lines).toEqual([{menu_item_id:'afb20000-0000-4000-8000-000000000001',qty:1}]);
   const guestHeaders={...headers,Authorization:'Bearer '+anon};
-  const order=await rpc('fnb_guest_create_order',orderIntent,guestHeaders);
+  const order=await orderResponse.json();
   expect(typeof order.order_id).toBe('string');
+  await expect(guestPage.getByText('Đã gửi đơn!',{exact:true})).toBeVisible();
   expect((await rpc('fnb_guest_create_order',orderIntent,guestHeaders)).order_id).toBe(order.order_id);
   fnb.guestOrder=true;
   const paymentIntent={p_order_id:order.order_id,p_client_request_id:crypto.randomUUID()};
   expect(await rpc('fnb_mark_paid',paymentIntent)).toMatchObject({status:'ok',idempotent:false,subtotal_vnd:20000,cogs_vnd:5000});
   expect(await rpc('fnb_mark_paid',paymentIntent)).toMatchObject({status:'ok',idempotent:true,order_id:order.order_id});
   fnb.paidOnce=true;
+  await expect(guestPage.getByText('Đã nhận đơn!',{exact:true})).toBeVisible({timeout:20000});
+  fnb.guestPaidVisible=true;
   const financeAfter=await readFinance();
   fnb.stockDelta=(await readStock())-stockBefore;
   fnb.revenueDelta=financeAfter.revenue.fnb-financeBefore.revenue.fnb;
@@ -2486,5 +2509,5 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   const ready=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(ready.ready).toBe(true);expect(ready.prize_total).toBe(18000000);expect(ready.reconcile_delta).toBe(0);
   const closed=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated canonical paid prize HTTP'});expect(closed.outcome).toBe('closed');expect(closed.prize_total).toBe(18000000);expect(closed.club_revenue).toBe(1800000);expect(closed.reconcile_delta).toBe(0);expect(closed.reconciled).toBe(true);prizeTotal=closed.prize_total;reconcileDelta=closed.reconcile_delta;
   const retry=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated close recovery'});expect(retry.outcome).toBe('already_closed');expect(retry.report_id).toBe(closed.report_id);expect(failure).toBeNull();phase='passed';report();
- }catch(error){phase+='-failed';report();throw error;}finally{await Promise.all([swingContext?.close(),clockContext?.close()]);}
+ }catch(error){phase+='-failed';report();throw error;}finally{await Promise.all([swingContext?.close(),clockContext?.close(),guestContext?.close()]);}
 });
