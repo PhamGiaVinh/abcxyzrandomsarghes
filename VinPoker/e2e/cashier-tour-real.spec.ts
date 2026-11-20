@@ -613,6 +613,73 @@ test('canonical Floor open and close propagate into one continuously open screen
  }catch(error){phase+='-failed';report();throw error;}
 });
 
+test('Floor close reaches an already-open Dealer Swing screen', async ({ page: floor, context }) => {
+  test.skip(process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE !== 'floor-swing-close', 'Isolated Floor and Swing close proof only');
+  test.setTimeout(90_000);
+  const token = await loginOwner(floor);
+  const swing = await context.newPage();
+  await loginOwner(swing);
+  const clubId = 'a2000000-0000-4000-8000-000000000001';
+  const tourId = 'a3000000-0000-4000-8000-000000000001';
+  const { floorTable } = JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!, 'utf8'));
+  const api = process.env.LOCAL_SUPABASE_URL!.replace(/\/$/, '');
+  const headers = { apikey: process.env.LOCAL_SUPABASE_ANON_KEY!, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const rpc = async (name: string, args: Record<string, unknown>) => {
+    const response = await fetch(`${api}/rest/v1/rpc/${name}`, { method: 'POST', headers, body: JSON.stringify(args), signal: AbortSignal.timeout(5000) });
+    expect(response.ok, name).toBe(true);
+    return response.json();
+  };
+  const proof = {
+    sha: process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+    phase: 'setup',
+    ackMs: null as number | null,
+    floorVisibleMs: null as number | null,
+    swingVisibleMs: null as number | null,
+    independentRosterClosed: false,
+    qualification: false,
+  };
+  try {
+    const opened = await rpc('floor_open_tournament_table_v3', {
+      p_tournament_id: tourId, p_game_table_id: floorTable.id, p_control_mode: 'manual', p_request_id: crypto.randomUUID(),
+    });
+    expect(opened.ok).toBe(true);
+    await swing.goto('/dealer-swing');
+    await selectDealerSwingClub(swing, 'Cashier Edge TEST');
+    const swingCard = swing.locator(`#table-card-${floorTable.id}`);
+    await expect(swingCard).toBeVisible();
+    await floor.goto(`/ops/floor/tournaments/${tourId}/tables?club=${clubId}`);
+    const floorCard = floor.locator(`[data-testid="floor-table-roster-card"][data-floor-table-number="${floorTable.tableNumber}"]`);
+    await floorCard.click();
+    await floor.locator('[data-ops-action="floor.tables.open_close_table"]').click();
+    const confirmation = floor.locator('[data-ops-action="floor.tables.close_table"]');
+    await expect(confirmation).toBeEnabled();
+    proof.phase = 'closing';
+    const started = performance.now();
+    const receipt = floor.waitForResponse(response => /\/rpc\/close_tournament_table_v[34]$/.test(new URL(response.url()).pathname), { timeout: 5000 });
+    const observed = Promise.allSettled([
+      receipt.then(async response => {
+        const body = await response.json();
+        proof.ackMs = performance.now() - started;
+        expect(response.ok()).toBe(true);
+        expect(body).toMatchObject({ ok: true, closed: true, table_session_id: opened.table_session_id });
+        const roster = await rpc(floorRosterRpc, { p_tournament_id: tourId });
+        expect(Array.isArray(roster)).toBe(true);
+        expect(roster.some((row: { table_session_id: string }) => row.table_session_id === opened.table_session_id)).toBe(false);
+        proof.independentRosterClosed = true;
+      }),
+      expect(floorCard).toHaveCount(0, { timeout: 3000 }).then(() => { proof.floorVisibleMs = performance.now() - started; }),
+      expect(swingCard).toHaveCount(0, { timeout: 3000 }).then(() => { proof.swingVisibleMs = performance.now() - started; }),
+    ]);
+    await confirmation.click();
+    for (const result of await observed) {
+      if (result.status === 'rejected') throw result.reason;
+    }
+    proof.phase = 'passed';
+  } finally {
+    writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/, '-floor-swing-close-http.json'), JSON.stringify(proof, null, 2));
+  }
+});
+
 test('Cashier browser navigation and populated tour render latency',async({page})=>{
  test.skip(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT,'Isolated stack measurement only');
  test.setTimeout(180_000);

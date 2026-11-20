@@ -31,8 +31,12 @@ if [[ "$source_generation_probe" != 0 && "$source_generation_probe" != 1 ]] ||
    [[ "$source_generation_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$prize_close_probe" != 1 || "$reentry_fault_mode" != healthy ) ]]; then
   echo 'Source generation candidate requires isolated current full-source healthy audience mode' >&2;exit 1
 fi
-case "$diagnostic_scope" in none|cashier-payment|dealer-checkin) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
-if [[ "$diagnostic_scope" != none && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$reentry_fault_mode" != healthy || "$redraw_probe" != 0 || "$prize_close_probe" != 1 ) ]]; then
+case "$diagnostic_scope" in none|cashier-payment|dealer-checkin|floor-swing-close) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
+if [[ "$diagnostic_scope" == floor-swing-close && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" != 0 || "$reentry_transport_probe" != 0 || "$correction_undo_probe" != 0 || "$redraw_probe" != 0 || "$prize_close_probe" != 0 ) ]]; then
+  echo 'Floor and Swing close proof requires the isolated current operations schema and Realtime only' >&2
+  exit 1
+fi
+if [[ "$diagnostic_scope" != none && "$diagnostic_scope" != floor-swing-close && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$reentry_fault_mode" != healthy || "$redraw_probe" != 0 || "$prize_close_probe" != 1 ) ]]; then
   echo 'Targeted diagnostics require isolated current full34 healthy source preparation and audience; only unrelated scenario execution is skipped' >&2;exit 1
 fi
 if [[ "$operations_rest_pool" != 10 && "$operations_rest_pool" != 20 ]] ||
@@ -1548,6 +1552,11 @@ CLOCK_BROADCAST_BOOTSTRAP
     run_browser_proof '' '' 'canonical clock start reaches an already-open anonymous clock screen'
     finish_candidate_broadcast
     echo 'CLOCK_CANDIDATE_PROOF:exact31 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
+    exit 0
+  fi
+  if [[ "$diagnostic_scope" == floor-swing-close ]]; then
+    run_browser_proof '' '' 'Floor close reaches an already-open Dealer Swing screen$'
+    finish_candidate_broadcast
     exit 0
   fi
   if [[ "$correction_undo_probe" == 1 ]]; then
