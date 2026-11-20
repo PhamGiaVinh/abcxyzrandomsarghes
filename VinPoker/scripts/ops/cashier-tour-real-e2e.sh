@@ -31,7 +31,7 @@ if [[ "$source_generation_probe" != 0 && "$source_generation_probe" != 1 ]] ||
    [[ "$source_generation_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$prize_close_probe" != 1 || "$reentry_fault_mode" != healthy ) ]]; then
   echo 'Source generation candidate requires isolated current full-source healthy audience mode' >&2;exit 1
 fi
-case "$diagnostic_scope" in none|cashier-payment|dealer-checkin) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
+case "$diagnostic_scope" in none|cashier-payment|dealer-checkin|prize-replay) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
 if [[ "$diagnostic_scope" != none && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$reentry_fault_mode" != healthy || "$redraw_probe" != 0 || "$prize_close_probe" != 1 ) ]]; then
   echo 'Targeted diagnostics require isolated current full34 healthy source preparation and audience; only unrelated scenario execution is skipped' >&2;exit 1
 fi
@@ -1774,6 +1774,47 @@ fi
 # Validate the fresh46-attendance fixture before the first browser handover.
 # Later checkout stages intentionally make those attendances ineligible.
 if [[ "$schema_mode" == current && "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
+run_prize_close_proof() {
+  prize_history_before="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT coalesce((SELECT player_history_enabled::text FROM public.club_settings WHERE club_id='a2000000-0000-4000-8000-000000000001'),'missing');")"
+  [[ "$prize_history_before" == true || "$prize_history_before" == false || "$prize_history_before" == missing ]]
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PRIZE_CLOSE_FRESH_FIXTURE'
+BEGIN;
+DO $ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE frozen)
+ OR EXISTS(SELECT 1 FROM public.tournaments WHERE id='a3000000-0000-4000-8000-000000000005')
+ OR EXISTS(SELECT 1 FROM public.game_tables WHERE club_id='a2000000-0000-4000-8000-000000000001' AND table_number=94)
+ THEN RAISE EXCEPTION 'prize_close_fresh_fixture_scope_required';END IF;
+END $;
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
+VALUES('a3000000-0000-4000-8000-000000000005','a2000000-0000-4000-8000-000000000001','Canonical paid prize TEST','registering','registering',now(),6000000,600000,0,false,0,0);
+INSERT INTO public.tournament_levels(id,tournament_id,level_number,small_blind,big_blind,ante,duration_minutes,is_break)
+VALUES('ac720001-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000005',1,100,200,0,20,false);
+UPDATE public.tournaments SET current_level=1,current_level_id='ac720001-0000-4000-8000-000000000001'
+WHERE id='a3000000-0000-4000-8000-000000000005';
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+VALUES('ac720000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Canonical paid prize TEST',94,'tournament','inactive','available');
+INSERT INTO public.club_settings(club_id,player_history_enabled) VALUES('a2000000-0000-4000-8000-000000000001',true)
+ON CONFLICT(club_id) DO UPDATE SET player_history_enabled=true;
+COMMIT;
+PRIZE_CLOSE_FRESH_FIXTURE
+  prize_close_status=0
+  LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED=1 run_browser_proof '' '' 'final current Floor Cashier prizes close over real Auth HTTP' || prize_close_status=$?
+  if [[ "$prize_history_before" == missing ]]; then
+    docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "DELETE FROM public.club_settings WHERE club_id='a2000000-0000-4000-8000-000000000001';"
+  else
+    docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "UPDATE public.club_settings SET player_history_enabled=$prize_history_before WHERE club_id='a2000000-0000-4000-8000-000000000001';"
+  fi
+  [[ "$prize_close_status" == 0 ]]
+  node --input-type=module - "$repo_root/output/operations-latency/cashier-http-prize-close-http.json" "$source_sha" <<'FINAL_PRIZE_CLOSE_RECEIPT'
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
+const r=JSON.parse(readFileSync(process.argv[2],'utf8'));assert.equal(r.sha,process.argv[3]);assert.equal(r.phase,'passed');assert.equal(r.failure,null);assert.equal(r.paidRows,1);assert.equal(r.prizeTotal,18000000);assert.equal(r.reconcileDelta,0);assert.equal(r.qualification,false);
+assert.deepEqual(r.showdownHands,[{number:880001,pots:[200],endings:[19900,20000,20100]},{number:880002,pots:[59700,200],endings:[100,200,59700]},{number:880003,pots:[300,200],endings:[0,0,60000]}]);
+assert.deepEqual(r.payoutUi,{loaded:true,dialogVerified:true,cancelPreservedUnpaid:true,confirmed:true,paidVisible:true});
+assert.deepEqual(r.replayUi,{desktop:true,mobile:true});
+FINAL_PRIZE_CLOSE_RECEIPT
+}
+
 if [[ "$diagnostic_scope" != none ]]; then
   loaded_phase_checkpoint "targeted-$diagnostic_scope-start"
   if [[ "$diagnostic_scope" == cashier-payment ]]; then
@@ -1845,6 +1886,8 @@ import assert from 'node:assert/strict';import{readFileSync}from'node:fs';
 const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
 for(const [k,v]of Object.entries({tours:10,registrations:200,confirmedPaid:200,movements:200,cash:1320000000,entries:200,activeSeats:200,seatedChips:4000000}))assert.equal(r[k],v,k);
 TARGETED_PAYMENT_ASSERT
+  elif [[ "$diagnostic_scope" == prize-replay ]]; then
+    run_prize_close_proof
   else
     run_browser_proof '' '' 'real check-in HTTP commit, independent observation, exact retry and tenant boundary$'
     targeted_checkin_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
@@ -1880,7 +1923,8 @@ assert.equal(runtime.pendingReentryTransportApplied,true);assert.equal(runtime.c
 // These selected cases create no completed hands. Preserve the audience's full
 // qualification result unchanged; only its healthy concurrent reads are a
 // prerequisite here. The default full suite still requires every delivery gate.
-assert.ok(['cashier-payment','dealer-checkin'].includes(scope));
+assert.ok(['cashier-payment','dealer-checkin','prize-replay'].includes(scope));
+if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});}
 assert.equal(audience.viewers,Number(count));
 for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.equal(audience.checks[key],true,key);
 assert.equal(audience.phase,Object.values(audience.checks).every(v=>v===true)?'passed':'failed');
@@ -2663,47 +2707,9 @@ fi
 if [[ "$redraw_probe" == 1 ]]; then loaded_phase_checkpoint redraw-end; fi
 if [[ "$prize_close_probe" == 1 ]]; then
   loaded_phase_checkpoint prize-start
-  prize_history_before="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT coalesce((SELECT player_history_enabled::text FROM public.club_settings WHERE club_id='a2000000-0000-4000-8000-000000000001'),'missing');")"
-  [[ "$prize_history_before" == true || "$prize_history_before" == false || "$prize_history_before" == missing ]]
-  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'PRIZE_CLOSE_FRESH_FIXTURE'
-BEGIN;
-DO $$ BEGIN
- IF NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
- OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE frozen)
- OR EXISTS(SELECT 1 FROM public.tournaments WHERE id='a3000000-0000-4000-8000-000000000005')
- OR EXISTS(SELECT 1 FROM public.game_tables WHERE club_id='a2000000-0000-4000-8000-000000000001' AND table_number=94)
- THEN RAISE EXCEPTION 'prize_close_fresh_fixture_scope_required';END IF;
-END $$;
-INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
-VALUES('a3000000-0000-4000-8000-000000000005','a2000000-0000-4000-8000-000000000001','Canonical paid prize TEST','registering','registering',now(),6000000,600000,0,false,0,0);
-INSERT INTO public.tournament_levels(id,tournament_id,level_number,small_blind,big_blind,ante,duration_minutes,is_break)
-VALUES('ac720001-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000005',1,100,200,0,20,false);
-UPDATE public.tournaments SET current_level=1,current_level_id='ac720001-0000-4000-8000-000000000001'
-WHERE id='a3000000-0000-4000-8000-000000000005';
-INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
-VALUES('ac720000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Canonical paid prize TEST',94,'tournament','inactive','available');
-INSERT INTO public.club_settings(club_id,player_history_enabled) VALUES('a2000000-0000-4000-8000-000000000001',true)
-ON CONFLICT(club_id) DO UPDATE SET player_history_enabled=true;
-COMMIT;
-PRIZE_CLOSE_FRESH_FIXTURE
-  prize_close_status=0
-  LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED=1 run_browser_proof '' '' 'final current Floor Cashier prizes close over real Auth HTTP' || prize_close_status=$?
-  if [[ "$prize_history_before" == missing ]]; then
-    docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "DELETE FROM public.club_settings WHERE club_id='a2000000-0000-4000-8000-000000000001';"
-  else
-    docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "UPDATE public.club_settings SET player_history_enabled=$prize_history_before WHERE club_id='a2000000-0000-4000-8000-000000000001';"
-  fi
-  [[ "$prize_close_status" == 0 ]]
-  node --input-type=module - "$repo_root/output/operations-latency/cashier-http-prize-close-http.json" "$source_sha" <<'FINAL_PRIZE_CLOSE_RECEIPT'
-import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';
-const r=JSON.parse(readFileSync(process.argv[2],'utf8'));assert.equal(r.sha,process.argv[3]);assert.equal(r.phase,'passed');assert.equal(r.failure,null);assert.equal(r.paidRows,1);assert.equal(r.prizeTotal,18000000);assert.equal(r.reconcileDelta,0);assert.equal(r.qualification,false);
-assert.deepEqual(r.showdownHands,[{number:880001,pots:[200],endings:[19900,20000,20100]},{number:880002,pots:[59700,200],endings:[100,200,59700]},{number:880003,pots:[300,200],endings:[0,0,60000]}]);
-assert.deepEqual(r.payoutUi,{loaded:true,dialogVerified:true,cancelPreservedUnpaid:true,confirmed:true,paidVisible:true});
-FINAL_PRIZE_CLOSE_RECEIPT
+  run_prize_close_proof
+  loaded_phase_checkpoint prize-end
 fi
-
-
-if [[ "$prize_close_probe" == 1 ]]; then loaded_phase_checkpoint prize-end; fi
 if [[ "$operations_candidate_probe" == 1 ]]; then
   loaded_phase_checkpoint before-drain
   if [[ "$audience_count" != 0 ]]; then

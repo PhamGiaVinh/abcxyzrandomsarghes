@@ -2272,15 +2272,16 @@ test('current owner rake closes once and exports the immutable event-day snapsho
 });
 
 
-test('final current Floor Cashier prizes close over real Auth HTTP',async({page})=>{
+test('final current Floor Cashier prizes close over real Auth HTTP',async({page,browser})=>{
  test.skip(process.env.LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED!=='1','Explicit isolated full34 prize-close stage only');test.setTimeout(180_000);
  const owner=await loginOwner(page),staff=(await loginFixtureStaff()).slice(0,3),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000005',club='a2000000-0000-4000-8000-000000000001';
  const headers={apikey:anon,Authorization:'Bearer '+owner,'Content-Type':'application/json'};
  let phase='setup',failure:{operation:string;httpStatus:number;code:string|null;messageSha256:string|null;denialSha256:string|null}|null=null,paidRows=0,prizeTotal=0,reconcileDelta:number|null=null;
  const showdownHands:{number:number;pots:number[];endings:number[]}[]=[];
  const payoutUi={loaded:false,dialogVerified:false,cancelPreservedUnpaid:false,confirmed:false,paidVisible:false};
+ const replayUi={desktop:false,mobile:false};
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,timings,qualification:false,productionChanged:false,limits:'Fresh3-entry TEST tour while the configured audience watches the main tour;loaded phase receipts prove connection boundaries. Actual GoTrue owner/staff and PostgREST/unchanged compute-payouts Edge. Three actual Tracker hands:fold,unequal-stack showdown and final elimination;record_action/cards/Finish/retries and independent source/roster reads. Actual Cashier payout UI dialog/cancel/confirm/paid display,then four same-key payment HTTP retries;no full ranking matrix.not load qualification or complete full34 ledger/activation proof.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour. Authenticated Floor, Tracker and Cashier share the fixture with anonymous desktop and mobile replay. Layouts are emulated in Chromium. This does not measure load, prove a cash funding source or verify the full operations journey.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -2334,6 +2335,34 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page}
    const seats=(await roster())[0].seats;expect(seats.reduce((n,p)=>n+p.chip_count,0)).toBe(60000);expect(seats).toHaveLength(scenario===3?1:3);for(const p of seats)expect(p.chip_count).toBe(endings.get(p.player_id));showdownHands.push({number,pots:pots.map(p=>p.amount),endings:[...endings.values()].sort((a,b)=>a-b)});
   }
   expect(showdownHands).toHaveLength(3);
+  phase='same-tour-public-replay';report();
+  const finalHands=await read('tournament_hands?select=id,tournament_table_id,table_session_id&tournament_id=eq.'+tour+'&hand_number=eq.880003');
+  expect(finalHands).toHaveLength(1);
+  const finalHand=finalHands[0];
+  for(const layout of ['desktop','mobile'] as const){
+   const context=await browser.newContext({
+    baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:'vi-VN',
+    viewport:layout==='desktop'?{width:1366,height:900}:{width:390,height:844},
+    isMobile:layout==='mobile',hasTouch:layout==='mobile',
+   });
+   try{
+    const viewer=await context.newPage();
+    const replayResponse=viewer.waitForResponse(response=>{
+     if(response.url()!==api+'/rest/v1/rpc/get_public_tournament_table_hand_v2')return false;
+     const args=response.request().postDataJSON();
+     return args?.p_tournament_id===tour&&args?.p_tournament_table_id===finalHand.tournament_table_id&&args?.p_hand_id===finalHand.id;
+    },{timeout:20000});
+    const query=new URLSearchParams({handId:finalHand.id,tableId:finalHand.tournament_table_id,tab:'hands'});
+    const [response]=await Promise.all([replayResponse,viewer.goto('/live/'+tour+'?'+query)]);
+    expect(response.ok()).toBe(true);
+    expect(await response.json()).toMatchObject({
+     id:finalHand.id,tableId:finalHand.tournament_table_id,tableSessionId:finalHand.table_session_id,
+     handNumber:880003,status:'completed',
+    });
+    await expect(viewer.getByTestId('replay-action-rail')).toBeVisible();
+    replayUi[layout]=true;
+   }finally{await context.close();}
+  }
   const unpaid=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(unpaid.prize_total).toBe(0);
   const recipients=await rpc('get_tournament_payout_recipients',{p_tournament_id:tour});expect(recipients.places).toHaveLength(1);const place=recipients.places[0];expect(place.finishedPlace).toBe(1);expect(place.prizeAmount).toBe(18000000);expect(place.isPaid).toBe(false);
   phase='prize-payment-browser';report();await page.goto('/cashier?tab=tournament_payouts&tournament='+tour);

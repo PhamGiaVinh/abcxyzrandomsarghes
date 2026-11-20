@@ -12,8 +12,8 @@ import { selectCashierSchemaMode, qualifiedHud35 } from './select-cashier-schema
 import { loadPackage } from './tracker-hud-20261104-release.mjs';
 import {configureIsolatedPostgrestPool} from './isolated-postgrest-pool.mjs';
 
-const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8');
-const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8');
+const script = readFileSync(new URL('./cashier-tour-real-e2e.sh', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+const workflow = readFileSync(new URL('../../../.github/workflows/cashier-tour-real-e2e.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
 
 test('targeted diagnostics refuse invalid scope before any service operation',()=>{
  const bash=process.platform==='win32'?'D:/Git/bin/bash.exe':'bash';
@@ -228,9 +228,9 @@ test('targeted receipt preserves failed full delivery qualification and rejects 
  write('clock-candidate-broadcast-http.json',{phase:'stopped',failures:0});
  write('operations-candidate-package-http.json',{pendingReentryTransportApplied:true,correctionMigrationApplied:true});
  const checks={zeroErrors:true,atLeast30Seconds:true,allViewers:true,tableP95Within3Seconds:true,allSawLaterTableRevision:false,tableSpecificSourceDeliveryVerified:false};
- const run=(patch={},exit='1')=>{
+ const run=(patch={},exit='1',scope='dealer-checkin')=>{
   write('operations-audience-http.json',{phase:'failed',viewers:1000,checks:{...checks,...patch}});
-  return spawnSync(process.execPath,['--input-type=module','-',dir,'dealer-checkin','1000','a'.repeat(40),'catalog',exit],{input:body,encoding:'utf8',timeout:5000});
+  return spawnSync(process.execPath,['--input-type=module','-',dir,scope,'1000','a'.repeat(40),'catalog',exit],{input:body,encoding:'utf8',timeout:5000});
  };
  assert.equal(run().status,0);
  const result=JSON.parse(readFileSync(join(dir,'targeted-operations-result-http.json'),'utf8'));
@@ -239,6 +239,12 @@ test('targeted receipt preserves failed full delivery qualification and rejects 
  assert.equal(JSON.parse(readFileSync(join(dir,'operations-audience-http.json'),'utf8')).phase,'failed');
  for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.notEqual(run({[key]:false}).status,0,key);
  assert.notEqual(run({},'137').status,0,'Unexpected audience process exit must fail');
+ const prize = { sha: 'a'.repeat(40), phase: 'passed', replayUi: { desktop: true, mobile: false } };
+ write('cashier-http-prize-close-http.json', prize);
+ assert.notEqual(run({}, '1', 'prize-replay').status, 0);
+ prize.replayUi.mobile = true;
+ write('cashier-http-prize-close-http.json', prize);
+ assert.equal(run({}, '1', 'prize-replay').status, 0);
 });
 
 test('handover fixture cannot consume the independent salary actor',()=>{
@@ -928,6 +934,48 @@ test('bank ambiguity executes only after its dedicated fixture stage,not the ini
 });
 
 
+test('prize-close receipt requires replay on both layouts', (t) => {
+ const marker = "<<'FINAL_PRIZE_CLOSE_RECEIPT'\n";
+ const offset = script.indexOf(marker);
+ assert.ok(offset >= 0);
+ const start = offset + marker.length;
+ const end = script.indexOf('\nFINAL_PRIZE_CLOSE_RECEIPT', start);
+ assert.ok(end > start);
+ const validator = script.slice(start, end);
+ const directory = mkdtempSync(join(tmpdir(), 'prize-close-receipt-'));
+ t.after(() => rmSync(directory, { recursive: true, force: true }));
+ const receiptPath = join(directory, 'receipt.json');
+ const sha = 'a'.repeat(40);
+ const receipt = {
+  sha, phase: 'passed', failure: null, paidRows: 1, prizeTotal: 18000000,
+  reconcileDelta: 0, qualification: false,
+  showdownHands: [
+   { number: 880001, pots: [200], endings: [19900, 20000, 20100] },
+   { number: 880002, pots: [59700, 200], endings: [100, 200, 59700] },
+   { number: 880003, pots: [300, 200], endings: [0, 0, 60000] },
+  ],
+  payoutUi: {
+   loaded: true, dialogVerified: true, cancelPreservedUnpaid: true,
+   confirmed: true, paidVisible: true,
+  },
+ };
+ const grade = (replayUi) => {
+  writeFileSync(receiptPath, JSON.stringify({ ...receipt, replayUi }));
+  const result = spawnSync(process.execPath, ['--input-type=module', '-', receiptPath, sha], {
+   input: validator, encoding: 'utf8',
+  });
+  assert.ifError(result.error);
+  return result;
+ };
+ for (const replayUi of [undefined, { desktop: true, mobile: false }, { desktop: false, mobile: true }]) {
+  const result = grade(replayUi);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /ERR_ASSERTION/);
+ }
+ const result = grade({ desktop: true, mobile: true });
+ assert.equal(result.status, 0, result.stderr);
+});
+
 test('prize-close HTTP probe requires full current33 and retains its bounded final receipt',()=>{
  const env={CASHIER_SCHEMA_MODE:'current',LOCAL_OPERATIONS_REALTIME:'1',LOCAL_OPERATIONS_CANDIDATE_PROBE:'1',LOCAL_CLOCK_CANDIDATE_PROBE:'0',LOCAL_REENTRY_TRANSPORT_PROBE:'1',LOCAL_REENTRY_FAULT_MODE:'healthy',LOCAL_CORRECTION_UNDO_PROBE:'1',LOCAL_OPERATIONS_PRIZE_CLOSE_PROBE:'1',LOCAL_OPERATIONS_REDRAW_PROBE:'0',LOCAL_OPERATIONS_AUDIENCE:'0',LOCAL_OPERATIONS_AUDIENCE_MODEL:'selected-table',LOCAL_OPERATIONS_REST_POOL:'10',SCHEMA_ARTIFACT_DIRECTORY:'/missing-prize-close-fixture'};
  const run=patch=>{const args=Object.entries({...env,...patch}).map(([k,v])=>k+'='+v);return spawnSync(process.platform==='win32'?'wsl':'env',process.platform==='win32'?['-d','PokerVision-P16-4C-Eval','--','env',...args,'bash','-s']:[...args,'bash','-s'],{input:script,encoding:'utf8',timeout:10000});};
@@ -935,13 +983,14 @@ test('prize-close HTTP probe requires full current33 and retains its bounded fin
  const valid=run({});assert.equal(valid.status,1);assert.match(valid.stderr,/Verified schema-only baseline artifact is required/);
  assert.ok(script.indexOf("[functions.compute-payouts]")<script.indexOf('supabase start --exclude'));
  assert.ok(script.indexOf("CLOSE_PRIZE_CANDIDATE_PATH")>script.indexOf('CORRECTION_OWNED_PREFLIGHT'));
- assert.ok(script.indexOf('hud_projector_pid=$!')<script.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE'));
+ assert.ok(script.indexOf('hud_projector_pid=$!')<script.lastIndexOf('run_prize_close_proof'));
  // The manual targeted mode exits before the default full stages. Its own
  // drain is not the full-suite prize/HUD drain checked here.
  const fullStart=script.indexOf('\nrun_browser_proof\n');
  assert.ok(fullStart>script.lastIndexOf('TARGETED_FINAL_RECEIPT'));
  const fullStages=script.slice(fullStart);
- assert.ok(fullStages.lastIndexOf('PRIZE_CLOSE_FRESH_FIXTURE')<fullStages.indexOf('kill -TERM "$audience_pid"'));
+ assert.ok(fullStages.includes('  run_prize_close_proof'));
+ assert.ok(fullStages.lastIndexOf('run_prize_close_proof')<fullStages.indexOf('kill -TERM "$audience_pid"'));
  assert.ok(fullStages.indexOf('kill -TERM "$audience_pid"')<fullStages.indexOf('HUD_DRAIN_BARRIER'));
  assert.ok(script.indexOf('HUD_DRAIN_BARRIER')<script.indexOf('PREPARED_HUD_FINAL_RECEIPT'));
  assert.ok(posix.matchesGlob('VinPoker/output/operations-latency/cashier-http-prize-close-http.json','VinPoker/output/operations-latency/*-http.json'));

@@ -78,9 +78,9 @@ on:
         type: boolean
         default: false
       diagnostic_scope:
-        description: Target only unresolved payment or check-in failure; never full acceptance
+        description: Run only the selected isolated scenario; never full acceptance
         type: choice
-        options: [none, cashier-payment, dealer-checkin]
+        options: [none, cashier-payment, dealer-checkin, prize-replay]
         default: none
       schema_mode:
         description: Historical pre03 migration proof or contemporary runtime proof
