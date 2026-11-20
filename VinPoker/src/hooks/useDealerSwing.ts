@@ -163,12 +163,13 @@ interface UseRealtimeQueryOptions<T> {
   realtimeTables: string[];
   clubIds: string[];
   pollFallbackMs?: number;
+  backoffPolling?: boolean;
 }
 
 function useRealtimeQuery<T>(
   options: UseRealtimeQueryOptions<T>
 ): { data: T[]; loading: boolean; error: string | null; refetch: () => void } {
-  const { queryFn, realtimeTables, clubIds, pollFallbackMs = 60_000 } = options;
+  const { queryFn, realtimeTables, clubIds, pollFallbackMs = 60_000, backoffPolling = false } = options;
   const { user } = useAuth();
   const actorId = user?.id ?? null;
 
@@ -187,6 +188,7 @@ function useRealtimeQuery<T>(
   const subscriptionGeneration = useRef(0);
   const generationRef = useRef(0);
   const pendingRead = useRef<number | null>(null);
+  const pollingState = useRef({ failures: 0, retryAt: 0 });
   const queryFnRef = useRef<() => Promise<any>>(queryFn);
   /** Unique per-hook-instance id to prevent channel name collision when
    *  multiple hooks subscribe to the same table (e.g. useCheckedInDealers
@@ -207,6 +209,7 @@ function useRealtimeQuery<T>(
     const capturedLifetime = lifetime.current.generation;
     const gen = ++generationRef.current;
     pendingRead.current = gen;
+    let failed = false;
     const isCurrent = () => lifetime.current.active
       && lifetime.current.generation === capturedLifetime
       && capturedScope === scopeRef.current && gen === generationRef.current;
@@ -217,6 +220,7 @@ function useRealtimeQuery<T>(
       const rows = Array.isArray(result) ? result : result?.data;
       const error = Array.isArray(result) ? null : result?.error;
       if (error) {
+        failed = true;
         const msg = (error as any)?.message || JSON.stringify(error);
         console.error("[useRealtimeQuery] error:", msg);
         setError(msg);
@@ -228,6 +232,7 @@ function useRealtimeQuery<T>(
       snapshotScopeRef.current = capturedScope;
     } catch (e) {
       if (!isCurrent()) return;
+      failed = true;
       const msg = (e as Error)?.message || "Unknown error";
       console.error("[useRealtimeQuery] threw:", msg);
       setError(msg);
@@ -235,9 +240,18 @@ function useRealtimeQuery<T>(
       snapshotScopeRef.current = capturedScope;
     } finally {
       if (pendingRead.current === gen) pendingRead.current = null;
-      if (isCurrent()) setLoading(false);
+      if (isCurrent()) {
+        if (backoffPolling) {
+          const failures = failed ? pollingState.current.failures + 1 : 0;
+          pollingState.current = {
+            failures,
+            retryAt: failed ? Date.now() + Math.min(30_000, pollFallbackMs * 2 ** failures) : 0,
+          };
+        }
+        setLoading(false);
+      }
     }
-  }, [actorId]);
+  }, [actorId, backoffPolling, pollFallbackMs]);
 
   useEffect(() => {
     let active = true;
@@ -253,6 +267,7 @@ function useRealtimeQuery<T>(
     const selectedClubs: string[] = JSON.parse(clubsKey);
     const selectedTables: string[] = JSON.parse(tablesKey);
     generationRef.current += 1;
+    pollingState.current = { failures: 0, retryAt: 0 };
     setData([]);
     setError(null);
     setSnapshotScope(null);
@@ -304,7 +319,8 @@ function useRealtimeQuery<T>(
     document.addEventListener("visibilitychange", onResume);
     window.addEventListener("online", onResume);
     const timer = window.setInterval(() => {
-      if (active && canRefresh() && pendingRead.current === null) void refetch();
+      if (active && canRefresh() && (!backoffPolling ||
+        (pendingRead.current === null && Date.now() >= pollingState.current.retryAt))) void refetch();
     }, pollFallbackMs);
 
     return () => {
@@ -316,7 +332,7 @@ function useRealtimeQuery<T>(
       window.removeEventListener("online", onResume);
       if (invalidationTimer !== undefined) window.clearTimeout(invalidationTimer);
     };
-  }, [actorId, clubsKey, tablesKey, instanceId, pollFallbackMs, refetch]);
+  }, [actorId, clubsKey, tablesKey, instanceId, pollFallbackMs, backoffPolling, refetch]);
 
   const currentSnapshot = snapshotScope === scope;
   return {
@@ -704,6 +720,7 @@ export function useActiveTables(clubIds: string[]) {
  * still need raw game_tables metadata.
  */
 export function useDealerOperationalTables(clubIds: string[], reconcileFloorSessions = false) {
+  const fastReconciliation = FEATURES.floorTableControlV3 && reconcileFloorSessions;
   return useRealtimeQuery<GameTableRow>({
     queryFn: async () => {
       if (!FEATURES.floorTableControlV3) {
@@ -715,7 +732,18 @@ export function useDealerOperationalTables(clubIds: string[], reconcileFloorSess
       }
 
       const client = createFloorTableControlV3Client(
-        ((name, args) => (supabase.rpc as unknown as FloorTableControlV3Rpc)(name, args)),
+        async (name, args) => {
+          if (!fastReconciliation || name !== "get_club_table_inventory") {
+            return (supabase.rpc as unknown as FloorTableControlV3Rpc)(name, args);
+          }
+          const controller = new AbortController();
+          const timeout = window.setTimeout(() => controller.abort(), 4500);
+          try {
+            return await supabase.rpc(name, { p_club_id: String(args.p_club_id) }).abortSignal(controller.signal);
+          } finally {
+            window.clearTimeout(timeout);
+          }
+        },
         { enabled: true },
       );
       const responses = await Promise.all(
@@ -738,7 +766,8 @@ export function useDealerOperationalTables(clubIds: string[], reconcileFloorSess
       : ["game_tables"],
     // An unstaffed close changes only Floor rows, which are not all published.
     // Reconcile the authorized inventory while the operational Swing view is visible.
-    pollFallbackMs: FEATURES.floorTableControlV3 && reconcileFloorSessions ? 2000 : undefined,
+    pollFallbackMs: fastReconciliation ? 2000 : undefined,
+    backoffPolling: fastReconciliation,
     clubIds,
   });
 }
