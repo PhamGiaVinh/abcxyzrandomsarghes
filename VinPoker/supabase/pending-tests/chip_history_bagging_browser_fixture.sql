@@ -7,8 +7,8 @@ DECLARE
   final uuid := gen_random_uuid();
   event uuid := gen_random_uuid();
   physical uuid := gen_random_uuid();
-  session_id uuid := gen_random_uuid();
-  tournament_table uuid := gen_random_uuid();
+  session_id uuid;
+  opened jsonb;
   actor uuid;
   player uuid;
   dealer uuid := gen_random_uuid();
@@ -42,12 +42,13 @@ BEGIN
   UPDATE public.tournaments SET event_id=event WHERE id=final;
   UPDATE public.tournaments SET phase='flight',event_id=event,flight_label='A',starting_stack=20000 WHERE id=flight;
   INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
-    SELECT physical,club,'Chip history physical TEST',COALESCE(max(table_number),0)+1,'tournament','active','available'
+    SELECT physical,club,'Chip history physical TEST',COALESCE(max(table_number),0)+1,'tournament','inactive','available'
     FROM public.game_tables WHERE club_id=club;
-  INSERT INTO public.table_sessions(id,club_id,game_table_id,tournament_id,session_type,control_mode,control_epoch,revision)
-    VALUES(session_id,club,physical,flight,'tournament','tracker',1,1);
-  INSERT INTO public.tournament_tables(id,tournament_id,game_table_id,table_session_id,status)
-    VALUES(tournament_table,flight,physical,session_id,'active');
+  PERFORM set_config('role','authenticated',true);
+  opened := public.floor_open_tournament_table_v3(flight,physical,'manual',gen_random_uuid());
+  ASSERT opened->>'ok'='true', 'Fixture open table rejected: '||COALESCE(opened->>'error','unknown');
+  PERFORM set_config('role','none',true);
+  SELECT table_session_id INTO STRICT session_id FROM public.tournament_tables WHERE tournament_id=flight;
   INSERT INTO public.dealer_assignments(attendance_id,dealer_id,club_id,table_id,table_session_id,status,assigned_at,swing_due_at,version)
     VALUES(attendance_id,dealer,club,physical,session_id,'assigned',now(),now()+interval '30 min',0);
   SELECT start_time INTO STRICT original_start FROM public.tournaments WHERE id=flight;
@@ -66,7 +67,9 @@ BEGIN
   payment := public.resolve_cashier_cash_buyin_intent_v1(jsonb_build_object(
     'actor_id',actor,'club_id',club,'tournament_id',flight,'registration_id',registration->>'registration_id',
     'amount',100000,'request_id',gen_random_uuid()),'record');
-  ASSERT payment->>'status'='recorded' AND payment->'result'->>'seating_state'='seated', 'Fixture payment did not seat player';
+  ASSERT payment->>'status'='recorded' AND payment->'result'->>'seating_state'='seated',
+    format('Fixture payment not seated: status=%s seating=%s code=%s',payment->>'status',
+      payment->'result'->>'seating_state',COALESCE(payment->>'error',payment->'result'->>'error'));
   PERFORM set_config('role','none',true);
   UPDATE public.tournaments SET start_time=original_start WHERE id=flight;
   INSERT INTO public.tournament_chip_counts(tournament_id,player_id,entry_number,chip_count,updated_at)
