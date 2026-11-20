@@ -2280,8 +2280,10 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const showdownHands:{number:number;pots:number[];endings:number[]}[]=[];
  const payoutUi={loaded:false,dialogVerified:false,cancelPreservedUnpaid:false,confirmed:false,paidVisible:false};
  const replayUi={desktop:false,mobile:false};
+ const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
+ let swingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour. Authenticated Floor, Tracker and Cashier share the fixture with anonymous desktop and mobile replay. Layouts are emulated in Chromium. This does not measure load, prove a cash funding source or verify the full operations journey.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with Chromium desktop and mobile replay, Cashier payment, Floor close and an open Dealer Swing screen. Layouts are emulated. This does not measure load or prove cash funding.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -2378,9 +2380,40 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   const paid=await Promise.all(Array.from({length:4},()=>rpc('record_tournament_prize_payment_v2',payment)));for(const value of paid)expect(value).toEqual(uiResult);expect(paid[0].ok).toBe(true);expect(paid[0].prize_amount).toBe(18000000);const receipt=await rpc('get_tournament_prize_payment_receipt_v2',{p_request_id:payment.p_request_id});expect(receipt.found).toBe(true);expect(receipt.result).toEqual(paid[0]);
   const afterPayment=await rpc('get_tournament_payout_recipients',{p_tournament_id:tour});expect(afterPayment.paidCount).toBe(1);expect(afterPayment.paidTotal).toBe(18000000);paidRows=afterPayment.paidCount;
   phase='release-and-close';report();const t=(await roster())[0];expect(t.seats).toHaveLength(1);const winner=t.seats[0],free={p_entry_id:winner.entry_id,p_expected_revision:t.session_revision,p_expected_control_epoch:t.control_epoch,p_expected_chip_count:winner.chip_count,p_request_id:crypto.randomUUID(),p_reason:'isolated final winner Free Sit'};const freed=await rpc('floor_free_sit_player_v1',free);expect(freed.ok).toBe(true);expect(freed.stack_preserved).toBe(60000);expect(await rpc('floor_free_sit_player_v1',free)).toEqual(freed);
-  const empty=(await roster())[0],closeTable={p_tournament_table_id:empty.tournament_table_id,p_expected_revision:empty.session_revision,p_request_id:crypto.randomUUID()};expect((await rpc('close_tournament_table_v4',closeTable)).closed).toBe(true);
+  phase='floor-close-swing-observation';report();
+  const empty=(await roster())[0];
+  expect(empty.seats).toHaveLength(0);
+  swingContext=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:'vi-VN'});
+  const swing=await swingContext.newPage();
+  await loginOwner(swing);
+  await swing.goto('/dealer-swing');
+  await selectDealerSwingClub(swing,'Cashier Edge TEST');
+  const swingCard=swing.locator('#table-card-'+opened.p_game_table_id);
+  const swingAlert=swing.getByText('Canonical paid prize TEST • Thiếu dealer',{exact:true});
+  await expect(swingCard).toBeVisible();
+  await expect(swingAlert).toBeVisible();
+  await page.goto(`/ops/floor/tournaments/${tour}/tables?club=${club}`);
+  const floorCard=page.locator('[data-testid="floor-table-roster-card"][data-floor-table-number="94"]');
+  await floorCard.click();
+  await page.locator('[data-ops-action="floor.tables.open_close_table"]').click();
+  const closing=performance.now();
+  const [closeResponse]=await Promise.all([
+   page.waitForResponse(response=>/\/rpc\/close_tournament_table_v[34]$/.test(new URL(response.url()).pathname),{timeout:10000}),
+   page.locator('[data-ops-action="floor.tables.close_table"]').click(),
+  ]);
+  expect(closeResponse.ok()).toBe(true);
+  expect(await closeResponse.json()).toMatchObject({ok:true,closed:true,table_session_id:empty.table_session_id});
+  timings.push({operation:'floor-close-ack',ms:performance.now()-closing});
+  const closedRoster=await roster();
+  expect(closedRoster.some(table=>table.table_session_id===empty.table_session_id)).toBe(false);
+  await Promise.all([
+   expect(floorCard).toHaveCount(0,{timeout:10000}).then(()=>{tableCloseUi.floorCleared=true;}),
+   expect(swingCard).toHaveCount(0,{timeout:10000}).then(()=>{tableCloseUi.swingCleared=true;}),
+   expect(swingAlert).toHaveCount(0,{timeout:10000}).then(()=>{tableCloseUi.swingAlertCleared=true;}),
+  ]);
+  await expect(swing.getByText('BẢN ĐỒ CHIẾN TRƯỜNG',{exact:true})).toBeVisible();
   const ready=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(ready.ready).toBe(true);expect(ready.prize_total).toBe(18000000);expect(ready.reconcile_delta).toBe(0);
   const closed=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated canonical paid prize HTTP'});expect(closed.outcome).toBe('closed');expect(closed.prize_total).toBe(18000000);expect(closed.club_revenue).toBe(1800000);expect(closed.reconcile_delta).toBe(0);expect(closed.reconciled).toBe(true);prizeTotal=closed.prize_total;reconcileDelta=closed.reconcile_delta;
   const retry=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated close recovery'});expect(retry.outcome).toBe('already_closed');expect(retry.report_id).toBe(closed.report_id);expect(failure).toBeNull();phase='passed';report();
- }catch(error){phase+='-failed';report();throw error;}
+ }catch(error){phase+='-failed';report();throw error;}finally{await swingContext?.close();}
 });

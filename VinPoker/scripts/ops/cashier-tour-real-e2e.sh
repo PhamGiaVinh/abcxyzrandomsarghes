@@ -1812,6 +1812,7 @@ const r=JSON.parse(readFileSync(process.argv[2],'utf8'));assert.equal(r.sha,proc
 assert.deepEqual(r.showdownHands,[{number:880001,pots:[200],endings:[19900,20000,20100]},{number:880002,pots:[59700,200],endings:[100,200,59700]},{number:880003,pots:[300,200],endings:[0,0,60000]}]);
 assert.deepEqual(r.payoutUi,{loaded:true,dialogVerified:true,cancelPreservedUnpaid:true,confirmed:true,paidVisible:true});
 assert.deepEqual(r.replayUi,{desktop:true,mobile:true});
+assert.deepEqual(r.tableCloseUi,{floorCleared:true,swingCleared:true,swingAlertCleared:true});
 FINAL_PRIZE_CLOSE_RECEIPT
 }
 
