@@ -1439,10 +1439,19 @@ test('the shared server deal persists one native hand with consistent public and
     WHERE t.pilot_id='${sharedPilot}'`);
   assert.deepEqual(sharedTickets.map(({ actor }) => actor).sort(), [second, spectator].sort());
   for (const { actor, ticketId } of sharedTickets) {
-    const redeemed = json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+    const redeem = () => json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
       SELECT public.redeem_online_satellite_test_ticket_v1('${ticketId}','${sharedDestination}')`);
+    const redeemed = redeem();
     assert.equal(redeemed.outcome, 'ok');
     assert.equal(redeemed.idempotent, false);
+    assert.deepEqual(redeem(), { ...redeemed, idempotent: true });
+    assert.equal(sql(`SELECT id FROM online_satellite_private.test_target_entries
+      WHERE destination_id='${sharedDestination}' AND player_user_id='${actor}' AND ticket_id='${ticketId}'`), redeemed.testEntryId);
+    const readBack = json(`SET ROLE authenticated; SET request.jwt.claim.sub='${actor}';
+      SELECT public.get_my_online_satellite_test_ticket_v1('${sharedPilot}')`);
+    assert.equal(readBack.ticketId, ticketId);
+    assert.equal(readBack.destinationId, sharedDestination);
+    assert.equal(readBack.testEntryId, redeemed.testEntryId);
   }
   assert.equal(sql(`SELECT count(*) FROM online_satellite_private.test_target_entries
     WHERE destination_id='${sharedDestination}'`), '2');
