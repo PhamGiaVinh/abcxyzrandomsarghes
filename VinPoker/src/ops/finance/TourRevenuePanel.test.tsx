@@ -1,8 +1,8 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const mock = vi.hoisted(() => ({ live: vi.fn(), final: vi.fn(), notify: [] as Array<() => void>, remove: vi.fn(), client: {} }));
+const mock = vi.hoisted(() => ({ live: vi.fn(), final: vi.fn(), fnb: vi.fn(), notify: [] as Array<() => void>, remove: vi.fn(), client: {} }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => mock.client }));
-vi.mock("./tourRevenueRead", async original => ({ ...await original<typeof import("./tourRevenueRead")>(), loadLiveTourRevenue: mock.live, loadFinalTourRevenue: mock.final }));
+vi.mock("./tourRevenueRead", async original => ({ ...await original<typeof import("./tourRevenueRead")>(), loadLiveTourRevenue: mock.live, loadFinalTourRevenue: mock.final, loadTourFnbAttribution: mock.fnb }));
 import TourRevenuePanel from "./TourRevenuePanel";
 const tour = { tournamentId: "tour-a", name: "Flight A", eventDay: "2026-11-04", registrationClosedAt: null as string | null,
   buyState: "open" as const,
@@ -10,18 +10,35 @@ const tour = { tournamentId: "tour-a", name: "Flight A", eventDay: "2026-11-04",
   rake: 90000, serviceFee: 45000, platformFee: 0, collected: 1035000 };
 const payload = (clubId = "club-a", rake = 90000) => ({ clubId, asOf: "2026-10-29T09:28:00Z", tours: [{ ...tour, rake }] });
 beforeEach(() => {
-  mock.notify = []; mock.remove.mockReset(); mock.live.mockReset(); mock.final.mockReset();
+  mock.notify = []; mock.remove.mockReset(); mock.live.mockReset(); mock.final.mockReset(); mock.fnb.mockReset();
   const channel = { on: vi.fn((_event: unknown, _filter: unknown, fn: () => void) => { mock.notify.push(fn); return channel; }), subscribe: vi.fn(() => channel) };
   mock.client = { channel: vi.fn(() => channel), removeChannel: mock.remove };
   mock.live.mockResolvedValue(payload()); mock.final.mockResolvedValue({ status: "buy_open", canExport: false, snapshot: null, capturedAt: null });
 });
-afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 it("shows provisional paid rake and blocks official export while buy is open", async () => {
   render(<TourRevenuePanel clubId="club-a" />);
   expect(await screen.findByText("90.000 đ")).toBeTruthy();
   expect((screen.getByRole("button", { name: "Xuất báo cáo rake đã chốt" }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByText("Đang mở buy · số tạm thu có thể thay đổi.")).toBeTruthy();
+});
+it("keeps each flight's rake distinct when reviewing the whole-tour acceptance figures", async () => {
+  mock.live.mockResolvedValue({
+    ...payload(),
+    tours: [
+      { ...tour, paidBuys: 31, uniquePlayers: 30, rake: 310000, serviceFee: 155000, collected: 3565000 },
+      { ...tour, tournamentId: "tour-b", name: "Flight B", paidBuys: 4, uniquePlayers: 4, rake: 40000, serviceFee: 20000, collected: 460000 },
+    ],
+  });
+  render(<TourRevenuePanel clubId="club-a" />);
+  expect(await screen.findByText("310.000 đ")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Giải cần xem"), { target: { value: "tour-b" } });
+  expect(await screen.findByText("40.000 đ")).toBeInTheDocument();
+  expect(screen.queryByText("310.000 đ")).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Giải cần xem"), { target: { value: "tour-a" } });
+  expect(await screen.findByText("310.000 đ")).toBeInTheDocument();
+  expect(screen.queryByText("40.000 đ")).not.toBeInTheDocument();
 });
 it("does not describe legacy completed tours with no close marker as open buy", async () => {
   mock.live.mockResolvedValue({ ...payload(), tours: [{ ...tour, buyState: "terminal" }] });
@@ -46,6 +63,33 @@ it("polls when realtime is unavailable without overlapping requests", async () =
   await act(async () => { resolve(payload()); });
   await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
   expect(mock.live).toHaveBeenCalledTimes(2);
+});
+it("refreshes after reconnecting without waiting for the next poll", async () => {
+  vi.useFakeTimers();
+  render(<TourRevenuePanel clubId="club-a" />);
+  await act(async () => {});
+  expect(screen.getByText("90.000 đ")).toBeTruthy();
+
+  mock.live.mockResolvedValue(payload("club-a", 120000));
+  await act(async () => { window.dispatchEvent(new Event("online")); });
+  expect(mock.live).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("120.000 đ")).toBeTruthy();
+});
+it("coalesces reconnect signals received during a pending read into one follow-up", async () => {
+  vi.useFakeTimers();
+  let settle!: (value: ReturnType<typeof payload>) => void;
+  mock.live.mockReturnValueOnce(new Promise(resolve => { settle = resolve; }));
+  mock.live.mockResolvedValue(payload("club-a", 120000));
+  render(<TourRevenuePanel clubId="club-a" />);
+  await act(async () => {
+    window.dispatchEvent(new Event("online"));
+    window.dispatchEvent(new Event("online"));
+  });
+  expect(mock.live).toHaveBeenCalledTimes(1);
+
+  await act(async () => { settle(payload()); });
+  expect(mock.live).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("120.000 đ")).toBeTruthy();
 });
 it("clears failed reads instead of displaying old money as current", async () => {
   render(<TourRevenuePanel clubId="club-a" />); await screen.findByText("90.000 đ");
@@ -86,4 +130,141 @@ it("rechecks the snapshot at export click and never exports the live figure", as
   expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   view.unmount();
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:report");
+});
+
+it("rechecks once when buy-in and re-entry changes arrive during a rake read", async () => {
+  let finishOld!: (value: ReturnType<typeof payload>) => void;
+  mock.live.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve; }));
+  mock.live.mockResolvedValueOnce(payload("club-a", 200000));
+  render(<TourRevenuePanel clubId="club-a" />);
+
+  await act(async () => { mock.notify[0](); mock.notify[1](); });
+  expect(mock.live).toHaveBeenCalledTimes(1);
+  await act(async () => { finishOld(payload()); });
+  expect(await screen.findByText("200.000 đ")).toBeInTheDocument();
+  expect(screen.queryByText("90.000 đ")).not.toBeInTheDocument();
+  expect(mock.live).toHaveBeenCalledTimes(2);
+});
+
+it("shows completed snapshots while further buys keep invalidating the next read", async () => {
+  let finishFirst!: (value: ReturnType<typeof payload>) => void;
+  let finishSecond!: (value: ReturnType<typeof payload>) => void;
+  mock.live
+    .mockReturnValueOnce(new Promise(resolve => { finishFirst = resolve; }))
+    .mockReturnValueOnce(new Promise(resolve => { finishSecond = resolve; }))
+    .mockResolvedValueOnce(payload("club-a", 300000));
+  render(<TourRevenuePanel clubId="club-a" />);
+
+  await act(async () => { mock.notify[0](); finishFirst(payload()); });
+  expect(await screen.findByText("90.000 đ")).toBeInTheDocument();
+  expect(mock.live).toHaveBeenCalledTimes(2);
+  await act(async () => { mock.notify[0](); finishSecond(payload("club-a", 200000)); });
+  expect(await screen.findByText("300.000 đ")).toBeInTheDocument();
+  expect(mock.live).toHaveBeenCalledTimes(3);
+});
+
+it("reconciles immediately when returning to an open Finance tab", async () => {
+  let visibility: DocumentVisibilityState = "visible";
+  vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
+  render(<TourRevenuePanel clubId="club-a" />);
+  await screen.findByText("90.000 đ");
+  visibility = "hidden";
+  mock.live.mockResolvedValue(payload("club-a", 200000));
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); mock.notify[0](); });
+  expect(mock.live).toHaveBeenCalledTimes(1);
+
+  visibility = "visible";
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+  expect(await screen.findByText("200.000 đ")).toBeInTheDocument();
+  expect(mock.live).toHaveBeenCalledTimes(2);
+});
+
+it("does not read tour F&B by default", async () => {
+  render(<TourRevenuePanel clubId="club-a" />);
+  await screen.findByText("90.000 đ");
+  expect(mock.fnb).not.toHaveBeenCalled();
+});
+
+it("shows linked F&B for the selected tour and ignores the previous tour response", async () => {
+  vi.stubEnv("VITE_TOUR_FNB_ATTRIBUTION", "true");
+  let finishOld!: (value: { revenue: number; cogs: number; sales: number; reversals: number }) => void;
+  mock.live.mockResolvedValue({ ...payload(), tours: [tour, { ...tour, tournamentId: "tour-b", name: "Flight B" }] });
+  mock.fnb.mockReturnValueOnce(new Promise(resolve => { finishOld = resolve; }))
+    .mockResolvedValueOnce({ revenue: 5000, cogs: 2000, sales: 1, reversals: 0 });
+  render(<TourRevenuePanel clubId="club-a" />);
+  await screen.findByText("Đang tải F&B…");
+  fireEvent.change(screen.getByLabelText("Giải cần xem"), { target: { value: "tour-b" } });
+  expect(await screen.findByText("5.000 đ")).toBeInTheDocument();
+  expect(screen.getByText("2.000 đ")).toBeInTheDocument();
+  await act(async () => { finishOld({ revenue: 15000, cogs: 1000, sales: 1, reversals: 0 }); });
+  expect(screen.queryByText("15.000 đ")).not.toBeInTheDocument();
+  expect(mock.fnb).toHaveBeenLastCalledWith(mock.client, "club-a", "tour-b");
+});
+
+it("distinguishes an empty linked-tour report from an unavailable report", async () => {
+  vi.stubEnv("VITE_TOUR_FNB_ATTRIBUTION", "true");
+  mock.live.mockResolvedValue({ ...payload(), tours: [
+    tour,
+    { ...tour, tournamentId: "tour-b", name: "Flight B" },
+    { ...tour, tournamentId: "tour-c", name: "Flight C" },
+  ] });
+  mock.fnb.mockImplementation(async (_client, _clubId, selectedTour) => {
+    if (selectedTour === "tour-a") return { revenue: 20_000, cogs: 5_000, sales: 1, reversals: 0 };
+    if (selectedTour === "tour-b") return { revenue: 0, cogs: 0, sales: 0, reversals: 0 };
+    throw new Error("TOUR_REVENUE_UNAVAILABLE");
+  });
+  render(<TourRevenuePanel clubId="club-a" />);
+  const fnb = within(await screen.findByRole("region", { name: "F&B theo giải" }));
+  expect(await fnb.findByText("20.000 đ")).toBeInTheDocument();
+  expect(fnb.getByText("5.000 đ")).toBeInTheDocument();
+  const selector = screen.getByLabelText("Giải cần xem");
+  fireEvent.change(selector, { target: { value: "tour-b" } });
+  expect(await fnb.findByText("Chưa có giao dịch F&B đã ghi nhận cho giải này.")).toBeInTheDocument();
+  expect(fnb.queryByText("20.000 đ")).not.toBeInTheDocument();
+  fireEvent.change(selector, { target: { value: "tour-c" } });
+  expect(await fnb.findByRole("alert")).toHaveTextContent("Chưa tải được F&B theo giải.");
+  expect(fnb.queryByText("Chưa có giao dịch F&B đã ghi nhận cho giải này.")).not.toBeInTheDocument();
+});
+
+it("reloads the same tour F&B after reconnect, even if the original read is still pending", async () => {
+  vi.stubEnv("VITE_TOUR_FNB_ATTRIBUTION", "true");
+  const after = { revenue: 10000, cogs: 4000, sales: 2, reversals: 0 };
+  let resolveFirst!: (report: typeof after) => void;
+  mock.fnb.mockReturnValueOnce(new Promise(resolve => { resolveFirst = resolve; })).mockResolvedValue(after);
+  render(<TourRevenuePanel clubId="club-a" />);
+  await screen.findByText("Đang tải F&B…");
+  await act(async () => {
+    window.dispatchEvent(new Event("online"));
+    window.dispatchEvent(new Event("online"));
+  });
+  expect(mock.fnb).toHaveBeenCalledTimes(1);
+  await act(async () => { resolveFirst({ revenue: 5000, cogs: 2000, sales: 1, reversals: 0 }); });
+  expect(mock.fnb.mock.calls).toEqual([[mock.client, "club-a", "tour-a"], [mock.client, "club-a", "tour-a"]]);
+  expect(screen.getByText("10.000 đ")).toBeInTheDocument();
+  expect(screen.queryByText("5.000 đ")).not.toBeInTheDocument();
+});
+
+it("refreshes live tour food sales while visible and skips background polling", async () => {
+  vi.stubEnv("VITE_TOUR_FNB_ATTRIBUTION", "true");
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  mock.fnb.mockResolvedValue({ revenue: 5000, cogs: 2000, sales: 1, reversals: 0 });
+  const view = render(<TourRevenuePanel clubId="club-a" />);
+  await act(async () => {});
+  expect(screen.getByText("5.000 đ")).toBeInTheDocument();
+
+  mock.fnb.mockResolvedValue({ revenue: 10000, cogs: 4000, sales: 2, reversals: 0 });
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+  expect(screen.getByText("10.000 đ")).toBeInTheDocument();
+  expect(mock.fnb).toHaveBeenCalledTimes(2);
+
+  visibility.mockReturnValue("hidden");
+  await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+  expect(mock.fnb).toHaveBeenCalledTimes(2);
+  visibility.mockReturnValue("visible");
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+  expect(mock.fnb).toHaveBeenCalledTimes(3);
+  view.unmount();
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+  expect(mock.fnb).toHaveBeenCalledTimes(3);
 });

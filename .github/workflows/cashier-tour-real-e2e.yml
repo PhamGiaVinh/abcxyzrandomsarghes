@@ -80,7 +80,7 @@ on:
       diagnostic_scope:
         description: Run only the selected isolated scenario; never full acceptance
         type: choice
-        options: [none, cashier-payment, dealer-checkin, prize-replay]
+        options: [none, cashier-payment, dealer-checkin, prize-replay, tour-fnb-browser]
         default: none
       schema_mode:
         description: Historical pre03 migration proof or contemporary runtime proof
@@ -152,6 +152,7 @@ permissions:
 
 jobs:
   isolated-e2e:
+    if: github.event_name != 'workflow_dispatch' || inputs.diagnostic_scope != 'tour-fnb-browser'
     # A manual diagnostic PASS must never satisfy the full-suite required check.
     name: ${{ github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope && inputs.diagnostic_scope != 'none' && format('targeted-{0}', inputs.diagnostic_scope) || 'isolated-e2e' }}
     # Playwright1.60 is pinned in package-lock; Ubuntu24.04 is supported.
@@ -334,3 +335,59 @@ jobs:
             VinPoker/output/operations-latency/reentry-bank-ambiguity-native-conservation.json
           if-no-files-found: ignore
           retention-days: 7
+
+  tour-fnb-browser:
+    if: github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope == 'tour-fnb-browser'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: vinpoker_ops_fnb_browser
+        ports: ['127.0.0.1:5432:5432']
+        options: >-
+          --health-cmd "pg_isready -d vinpoker_ops_fnb_browser"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_fnb_browser
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Restore the verified schema and run the TEST finance panel
+        working-directory: VinPoker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          capture=44484017071
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$capture" |
+            jq -e --arg owner "$GITHUB_REPOSITORY_OWNER" '
+              .conclusion == "success" and .event == "workflow_dispatch" and .head_branch == "main"
+              and .head_sha == "02c4d6cba8678c9d52feea055fc1f0714082bc77"
+              and .path == ".github/workflows/capture-live-public-schema.yml" and .actor.login == $owner
+            ' >/dev/null
+          export SCHEMA_ARTIFACT_DIR="$RUNNER_TEMP/tour-fnb-schema"
+          export SCHEMA_ARTIFACT_SHA256=e07962ab82bc545c3a552c345796b70f48ec95baf544aeaf190f0eb46c3eed1a
+          gh run download "$capture" -n live-public-schema -D "$SCHEMA_ARTIFACT_DIR"
+          node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          node scripts/ops/restore-schema-test-baseline.mjs
+          unset GH_TOKEN
+          curl --fail --silent --show-error --location \
+            https://github.com/PostgREST/postgrest/releases/download/v14.10/postgrest-v14.10-linux-static-x86-64.tar.xz \
+            --output "$RUNNER_TEMP/postgrest.tar.xz"
+          printf '%s  %s\n' 7b8ae9d2beebcc96625dd139ea9a400ff8900f489203bd20f1696a39e5da29a5 "$RUNNER_TEMP/postgrest.tar.xz" | sha256sum --check
+          tar -xJf "$RUNNER_TEMP/postgrest.tar.xz" -C "$RUNNER_TEMP" postgrest
+          export POSTGREST_TEST_BIN="$RUNNER_TEMP/postgrest"
+          npm ci --no-audit --no-fund
+          ./node_modules/.bin/playwright install --with-deps chromium
+          node e2e/run-tour-fnb-attribution.mjs

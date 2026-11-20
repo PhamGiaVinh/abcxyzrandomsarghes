@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { Button } from "@/components/ui/button";
-import { finalTourRevenueCsv, loadFinalTourRevenue, loadLiveTourRevenue, type FinalTourRevenue, type LiveTourRevenue } from "./tourRevenueRead";
+import { finalTourRevenueCsv, loadFinalTourRevenue, loadLiveTourRevenue, loadTourFnbAttribution, type TourFnbAttribution, type FinalTourRevenue, type LiveTourRevenue } from "./tourRevenueRead";
 
 const money = (n: number | null) => n === null ? "Chưa đủ dữ liệu" : `${new Intl.NumberFormat("vi-VN").format(n)} đ`;
 
@@ -16,6 +16,8 @@ export default function TourRevenuePanel({ clubId }: { clubId: string }) {
   const [exportError, setExportError] = useState(false);
   const [revision, setRevision] = useState(0);
   const [download, setDownload] = useState<{ tourId: string; url: string } | null>(null);
+  const [fnb, setFnb] = useState<{ clubId: string; tourId: string; report: TourFnbAttribution | null } | null>(null);
+  const fnbEnabled = import.meta.env.VITE_TOUR_FNB_ATTRIBUTION === "true";
   const exportRequest = useRef(0);
   const current = live?.clubId === clubId ? live : null;
   const tour = current?.tours.find(t => t.tournamentId === selectedId)
@@ -25,26 +27,41 @@ export default function TourRevenuePanel({ clubId }: { clubId: string }) {
   useEffect(() => () => { if (download) URL.revokeObjectURL(download.url); }, [download]);
 
   useEffect(() => {
-    let active = true, busy = false;
+    let active = true, busy = false, invalidated = false;
     setLive(null); setError(false);
     const load = async () => {
       if (busy || !active) return;
       busy = true;
       try {
-        const result = await loadLiveTourRevenue(client, clubId);
-        if (active) { setLive(result); setError(false); }
-      } catch { if (active) { setLive(null); setError(true); } }
-      finally { busy = false; }
+        do {
+          invalidated = false;
+          try {
+            const result = await loadLiveTourRevenue(client, clubId);
+            // Reads are serialized, so a completed snapshot can advance the screen
+            // even if another change has already queued the next read.
+            if (active) { setLive(result); setError(false); }
+          } catch {
+            if (active && !invalidated) { setLive(null); setError(true); }
+          }
+        } while (active && invalidated && document.visibilityState !== "hidden");
+      } finally { busy = false; }
+    };
+    const invalidate = () => {
+      if (!active || document.visibilityState === "hidden") return;
+      invalidated = true;
+      void load();
     };
     void load();
     const channel = client.channel(`owner-tour-revenue:${clubId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "tournament_registrations", filter: `club_id=eq.${clubId}` }, () => { void load(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "tournaments", filter: `club_id=eq.${clubId}` }, () => { void load(); })
-      .subscribe();
+      .on("postgres_changes", { event: "*", schema: "public", table: "tournament_registrations", filter: `club_id=eq.${clubId}` }, invalidate)
+      .on("postgres_changes", { event: "*", schema: "public", table: "tournaments", filter: `club_id=eq.${clubId}` }, invalidate)
+      .subscribe(status => { if (status === "SUBSCRIBED") invalidate(); });
     const refresh = () => { if (document.visibilityState !== "hidden") void load(); };
     const timer = window.setInterval(refresh, 5_000);
     window.addEventListener("focus", refresh);
-    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); void client.removeChannel(channel); };
+    window.addEventListener("online", invalidate);
+    document.addEventListener("visibilitychange", invalidate);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); window.removeEventListener("online", invalidate); document.removeEventListener("visibilitychange", invalidate); void client.removeChannel(channel); };
   }, [client, clubId, revision]);
 
   useEffect(() => {
@@ -56,7 +73,44 @@ export default function TourRevenuePanel({ clubId }: { clubId: string }) {
     return () => { active = false; };
   }, [client, clubId, tourId, tour?.registrationClosedAt, revision]);
 
-  const official = final?.id === tourId ? final : null;
+  useEffect(() => {
+    if (!fnbEnabled || !tourId) return;
+    let active = true, busy = false, queued = false;
+    const tabIsVisible = () => document.visibilityState !== "hidden";
+    const load = async () => {
+      if (!active || busy || !tabIsVisible()) return;
+      busy = true;
+      try {
+        do {
+          queued = false;
+          try {
+            const report = await loadTourFnbAttribution(client, clubId, tourId);
+            if (active) setFnb({ clubId, tourId, report });
+          } catch {
+            if (active && !queued) setFnb({ clubId, tourId, report: null });
+          }
+        } while (active && queued && tabIsVisible());
+      } finally { busy = false; }
+    };
+    const refresh = () => {
+      if (!tabIsVisible()) return;
+      queued = true;
+      void load();
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 5_000);
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [client, clubId, fnbEnabled, revision, tourId]);
+
+  const shownFnb = fnb && fnb.clubId === clubId && fnb.tourId === tourId ? fnb : null;
+  const official =final?.id === tourId ? final : null;
   const exportReport = async () => {
     if (!tourId || exporting) return;
     const request = ++exportRequest.current;
@@ -96,6 +150,18 @@ export default function TourRevenuePanel({ clubId }: { clubId: string }) {
               ["Buy đã thu", String(tour.paidBuys)], ["Người chơi duy nhất", String(tour.uniquePlayers)] ].map(([label, value]) =>
               <div key={label} className="min-w-0 rounded-xl border border-white/10 p-3"><dt className="text-xs text-[#9fb1a6]">{label}</dt><dd className="mt-1 break-words font-semibold tabular-nums text-white">{value}</dd></div>)}
           </dl>
+          {fnbEnabled && <section aria-label="F&B theo giải" className="mt-4 border-t border-white/10 pt-4">
+            <h3 className="font-medium text-white">F&B theo giải</h3>
+            <p className="mt-1 text-xs text-[#9fb1a6]">Lũy kế các đơn đã lưu liên kết với giải này.</p>
+            {!shownFnb ? <p role="status" className="mt-2 text-sm">Đang tải F&B…</p>
+              : !shownFnb.report ? <p role="alert" className="mt-2 text-sm text-amber-200">Chưa tải được F&B theo giải.</p>
+                : !shownFnb.report.sales && !shownFnb.report.reversals
+                  ? <p className="mt-2 text-sm">Chưa có giao dịch F&B đã ghi nhận cho giải này.</p>
+                  : <dl className="mt-2 grid grid-cols-2 gap-3 text-sm">
+                    <div><dt>Doanh thu thuần</dt><dd className="font-semibold tabular-nums">{money(shownFnb.report.revenue)}</dd></div>
+                    <div><dt>Giá vốn</dt><dd className="font-semibold tabular-nums">{money(shownFnb.report.cogs)}</dd></div>
+                  </dl>}
+          </section>}
           {tour.waitingSeatBuys > 0 && <p className="mt-3 text-sm text-amber-200">{tour.waitingSeatBuys} buy đã thu đang chờ xếp chỗ.</p>}
           {tour.unavailableBuys > 0 && <p role="alert" className="mt-3 text-sm text-amber-200">{tour.unavailableBuys} buy chưa đủ dữ liệu để phân bổ phí. Chưa thể chốt số rake.</p>}
           <div className="mt-4 border-t border-white/10 pt-4">

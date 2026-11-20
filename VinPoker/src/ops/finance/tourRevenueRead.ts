@@ -85,3 +85,17 @@ export function finalTourRevenueCsv(report: FinalTourRevenue): string {
     [t.tournamentId, t.name, t.eventDay, t.registrationClosedAt, report.capturedAt, t.paidBuys, t.uniquePlayers, t.rake, t.serviceFee, t.platformFee, t.collected],
   ].map(row => row.map(cell).join(",")).join("\r\n");
 }
+
+export type TourFnbAttribution = { revenue: number; cogs: number; sales: number; reversals: number };
+
+export async function loadTourFnbAttribution(client: Client, clubId: string, tournamentId: string): Promise<TourFnbAttribution> {
+  const { data, error } = await observeRevenueRead(client.rpc("get_tour_fnb_attribution_v1" as never, {
+    p_club_id: clubId, p_tournament_id: tournamentId, p_from: "-infinity", p_to: "infinity",
+  } as never));
+  const value: unknown = data;
+  if (error || !record(value) || value.clubId !== clubId || value.tournamentId !== tournamentId
+    || value.coverage !== "captured_orders_only" || !count(value.sales) || !count(value.reversals)
+    || typeof value.revenue !== "number" || !Number.isSafeInteger(value.revenue)
+    || typeof value.cogs !== "number" || !Number.isSafeInteger(value.cogs)) throw malformed();
+  return { revenue: value.revenue, cogs: value.cogs, sales: value.sales, reversals: value.reversals };
+}
