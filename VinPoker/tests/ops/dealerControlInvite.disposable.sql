@@ -9,6 +9,7 @@ CREATE TABLE public.club_dealer_controls (
   PRIMARY KEY (club_id, user_id)
 );
 ALTER TABLE public.club_dealer_controls ENABLE ROW LEVEL SECURITY;
+\i :dealer_scope_fixture
 \ir ../../supabase/pending-migrations/20261119141550_ops_dealer_control_invites.sql
 
 BEGIN;
@@ -68,6 +69,13 @@ SELECT public.ops_test_assert(
    '00000000-0000-0000-0000-000000000031','00000000-0000-0000-0000-000000000032')),
  'only the confirmed existing user has membership before acceptance');
 
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',true);
+SELECT public.ops_test_assert(
+  ARRAY(SELECT public.dealer_control_club_ids(auth.uid()))=ARRAY['00000000-0000-0000-0000-000000000010'::uuid],
+  'Dealer Swing reader includes only the newly granted Dealer Control club');
+RESET ROLE;
+
 UPDATE public.club_operator_invites SET invitation_sent_at=now()-interval '61 minutes'
  WHERE email_normalized='expired.dealer@example.com';
 UPDATE auth.users SET email_confirmed_at=now()
@@ -108,4 +116,10 @@ SELECT public.ops_test_assert(
    WHERE club_id='00000000-0000-0000-0000-000000000020'
      AND user_id='00000000-0000-0000-0000-000000000003'),
  'revocation is scoped to Dealer Control in A and preserves Cashier in B');
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000003',true);
+SELECT public.ops_test_assert(
+  NOT EXISTS(SELECT public.dealer_control_club_ids(auth.uid())),
+  'Dealer Swing reader no longer includes the revoked club for the same signed-in actor');
+RESET ROLE;
 ROLLBACK;
