@@ -14,6 +14,7 @@ import {
 import { formatVND, formatDateTime } from "@/lib/format";
 import { Loader2, RefreshCw, CheckCircle2, XCircle, Banknote } from "lucide-react";
 import {useSePaySettlementIntent} from './useSePaySettlementIntent';
+import { FEATURES } from "@/lib/featureFlags";
 
 // Shape returned by public.sepay_cashier_settlement_worklist (20261116000000) — RAW FACTS only.
 type Row = {
@@ -45,10 +46,18 @@ type Row = {
  * The RPC returns raw facts; the cashier eyeballs the comparison and the
  * RPC re-validates authoritatively on click. clubIds is accepted for parity (the RPC self-scopes).
  */
-export const SePaySettlementTab = ({ clubIds }: { clubIds?: string[] } = {}) => {
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const SePaySettlementTab = ({ clubIds, clubId, bankId }: { clubIds?: string[]; clubId?: string | null; bankId?: string | null } = {}) => {
   const { user, session } = useAuth();
   if (!user) return <Card className="p-4" role="alert">Đăng nhập để đọc danh sách đối soát SePay.</Card>;
-  return <SettlementSession actorId={user.id} key={JSON.stringify([user.id, sessionReadEpoch(session), [...(clubIds ?? [])].sort()])}/>;
+  if (clubId != null || bankId != null) {
+    if (!clubId || !uuid.test(clubId) || !clubIds?.includes(clubId) || (bankId != null && !uuid.test(bankId))) {
+      return <Card className="p-4" role="alert">Không xác minh được CLB hoặc giao dịch trong liên kết đối soát.</Card>;
+    }
+    if (!FEATURES.sepayScopedHandoff) return <Card className="p-4" role="alert">Chưa mở đối soát theo liên kết giao dịch.</Card>;
+  }
+  return <SettlementSession actorId={user.id} clubId={clubId} bankId={bankId} key={JSON.stringify([user.id, sessionReadEpoch(session), [...(clubIds ?? [])].sort(), clubId, bankId])}/>;
 };
 
 function validSettlementRow(value: unknown): value is Row {
@@ -67,7 +76,7 @@ function validSettlementRow(value: unknown): value is Row {
     && [r.amount, r.reg_total_pay, r.amount_delta].every(value => value === null || typeof value === 'number' && Number.isSafeInteger(value));
 }
 
-function SettlementSession({actorId}:{actorId:string}) {
+function SettlementSession({ actorId, clubId, bankId }: { actorId: string; clubId?: string | null; bankId?: string | null }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [scope, setScope] = useState<"actionable" | "resolved">("actionable");
@@ -86,13 +95,15 @@ function SettlementSession({actorId}:{actorId:string}) {
     setLoadError(null);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- existing RPC is not in generated types.ts
-      const { data, error } = await observeTrackerContextRead((supabase.rpc as any)("sepay_cashier_settlement_worklist", {
-        p_scope: scope, p_limit: 200,
-      }).abortSignal(controller.signal)) as { data: unknown; error: { code?: string } | null };
+      const rpc = clubId ? "sepay_cashier_settlement_scope_v1" : "sepay_cashier_settlement_worklist";
+      const args = clubId ? { p_scope: scope, p_limit: bankId ? 1 : 200, p_club_id: clubId, p_bank_transaction_id: bankId ?? null }
+        : { p_scope: scope, p_limit: 200 };
+      const { data, error } = await observeTrackerContextRead((supabase.rpc as any)(rpc, args).abortSignal(controller.signal)) as { data: unknown; error: { code?: string } | null };
       if (seq !== loadSeq.current) return;
       if (error?.code === '42501') { setLoadError('Không có quyền đọc danh sách đối soát SePay.'); return; }
       if (error || !Array.isArray(data) || !data.every(validSettlementRow)
-        || new Set(data.map(row => row.bank_transaction_id)).size !== data.length) throw new Error('unverified_worklist');
+        || new Set(data.map(row => row.bank_transaction_id)).size !== data.length
+        || (clubId && data.some(row => row.club_id !== clubId || (bankId && row.bank_transaction_id !== bankId)))) throw new Error('unverified_worklist');
       setRows(data);
     } catch {
       if (seq === loadSeq.current) setLoadError('Không tải được danh sách đối soát SePay. Hãy thử lại.');
@@ -100,7 +111,7 @@ function SettlementSession({actorId}:{actorId:string}) {
       controller.abort();
       if (seq === loadSeq.current) readFlight.current = null;
     }
-  }, [scope]);
+  }, [scope, clubId, bankId]);
 
   const cancelRead = useCallback(() => { loadSeq.current++; readFlight.current?.abort(); }, []);
   const mutation=useSePaySettlementIntent(actorId,()=>{
@@ -149,8 +160,10 @@ function SettlementSession({actorId}:{actorId:string}) {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant={scope === "actionable" ? "default" : "outline"} size="sm" className="h-9" onClick={() => setScope("actionable")}>Cần xử lý</Button>
-          <Button variant={scope === "resolved" ? "default" : "outline"} size="sm" className="h-9" onClick={() => setScope("resolved")}>Đã xử lý</Button>
+          {!bankId && <>
+            <Button variant={scope === "actionable" ? "default" : "outline"} size="sm" className="h-9" onClick={() => setScope("actionable")}>Cần xử lý</Button>
+            <Button variant={scope === "resolved" ? "default" : "outline"} size="sm" className="h-9" onClick={() => setScope("resolved")}>Đã xử lý</Button>
+          </>}
           <Button variant="ghost" size="icon" aria-label="Tải lại đối soát SePay" className="h-9 w-9" onClick={load} disabled={rows === null && !loadError}>
             {rows === null && !loadError ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
           </Button>
@@ -170,7 +183,8 @@ function SettlementSession({actorId}:{actorId:string}) {
         <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>
       ) : rows.length === 0 ? (
         <div className="text-center text-sm text-muted-foreground py-10">
-          {scope === "actionable" ? "Không có khoản nào cần xử lý." : "Chưa có khoản nào đã xử lý."}
+          {bankId ? "Không tìm thấy giao dịch trong phạm vi đối soát của CLB này."
+            : scope === "actionable" ? "Không có khoản nào cần xử lý." : "Chưa có khoản nào đã xử lý."}
         </div>
       ) : (
         <div className="space-y-2">
