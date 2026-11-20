@@ -54,11 +54,13 @@ export default function TourRevenuePanel({ clubId }: { clubId: string }) {
     };
     const timer = window.setInterval(refresh, 5_000);
     window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
     window.addEventListener("online", onReconnect);
     return () => {
       active = false;
       window.clearInterval(timer);
       window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("online", onReconnect);
       void client.removeChannel(channel);
     };
