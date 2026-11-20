@@ -5,7 +5,7 @@ import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext
 import { useTrackerFloorAlertLocations } from "@/lib/tracker-floor-alerts/useTrackerFloorAlertLocations";
 
 type TournamentRef = { id: string; name: string };
-type AlertRow = {
+export type FloorVoiceAlertRow = {
   id: string;
   tournament_id: string;
   physical_table_id: string;
@@ -20,7 +20,7 @@ export function FloorVoiceAlertInbox({ tournaments, onSelect }: {
   onSelect: (tournamentId: string, alertId: string) => void;
 }) {
   const client = useSupabaseClient() as SupabaseClient;
-  const [alerts, setAlerts] = useState<AlertRow[]>([]);
+  const [alerts, setAlerts] = useState<FloorVoiceAlertRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const tournamentIds = tournaments.map((tournament) => tournament.id).sort().join(",");
 
@@ -44,7 +44,7 @@ export function FloorVoiceAlertInbox({ tournaments, onSelect }: {
         return;
       }
       setError(null);
-      setAlerts((data ?? []) as AlertRow[]);
+      setAlerts((data ?? []) as FloorVoiceAlertRow[]);
     };
     void load();
     const timer = window.setInterval(() => {
@@ -61,10 +61,19 @@ export function FloorVoiceAlertInbox({ tournaments, onSelect }: {
     };
   }, [client, tournamentIds]);
 
-  const locationFor = useTrackerFloorAlertLocations(client, alerts);
-
-  if (!alerts.length && !error) return null;
   const names = new Map(tournaments.map((tournament) => [tournament.id, tournament.name]));
+  return <FloorVoiceAlertList alerts={alerts} error={error} names={names} onSelect={onSelect} />;
+}
+
+export function FloorVoiceAlertList({ alerts, error, names, onSelect }: {
+  alerts: readonly FloorVoiceAlertRow[];
+  error: string | null;
+  names: ReadonlyMap<string, string>;
+  onSelect: (tournamentId: string, alertId: string) => void;
+}) {
+  const client = useSupabaseClient() as SupabaseClient;
+  const locationFor = useTrackerFloorAlertLocations(client, alerts);
+  if (!alerts.length && !error) return null;
 
   return (
     <section className="rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4" aria-label="Cảnh báo Voice Tracker">

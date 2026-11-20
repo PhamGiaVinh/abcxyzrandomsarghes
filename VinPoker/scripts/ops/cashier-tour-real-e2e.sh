@@ -893,7 +893,9 @@ done
 printf '%s' "$staff_fixture" >"$test_root/staff-private.json"
 checkin_fixture_enabled=''
 if [[ "$schema_mode" == current ]]; then
-  other_owner_id="$(create_auth_user 'other-owner-latency@test.invalid' 'OtherOwnerLatencyFixture-2026!')"
+  other_owner_email='other-owner-latency@test.invalid'
+  other_owner_password='OtherOwnerLatencyFixture-2026!'
+  other_owner_id="$(create_auth_user "$other_owner_email" "$other_owner_password")"
   [[ "$other_owner_id" =~ ^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[a-f0-9]{12}$ ]]
   checkin_dealer_count=$((360 + 22 * realtime_mode))
   docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres -v other_owner_id="$other_owner_id" -v dealer_count="$checkin_dealer_count" >"$test_root/dealer-fixture.json" <<'DEALER_FIXTURE'
@@ -1397,6 +1399,9 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
   --env LOCAL_OPERATIONS_LATENCY_REPORT=/latency/cashier-http.json \
   --env LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
+  --env LOCAL_FLOOR_ALERT_READ_PROBE="${LOCAL_FLOOR_ALERT_READ_PROBE:-0}" \
+  --env LOCAL_FLOOR_ALERT_OTHER_EMAIL="${other_owner_email:-}" \
+  --env LOCAL_FLOOR_ALERT_OTHER_PASSWORD="${other_owner_password:-}" \
   --env LOCAL_OPERATIONS_AUDIENCE="$audience_count" \
   --env LOCAL_OPERATIONS_AUDIENCE_MODEL="$audience_model" \
   --env LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE="$diagnostic_scope" \
@@ -1774,6 +1779,33 @@ fi
 # Validate the fresh46-attendance fixture before the first browser handover.
 # Later checkout stages intentionally make those attendances ineligible.
 if [[ "$schema_mode" == current && "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
+if [[ "${LOCAL_FLOOR_ALERT_READ_PROBE:-0}" == 1 ]]; then
+  [[ "$schema_mode" == current && "$audience_count" == 0 && "$diagnostic_scope" == none ]]
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -v owner_id="$owner_id" <<'FLOOR_ALERT_READ'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST') THEN
+    RAISE EXCEPTION 'Missing disposable Floor alert club';
+  END IF;
+END $$;
+UPDATE public.tournaments SET start_time=now()-interval '10 years'
+WHERE id='a3000000-0000-4000-8000-000000000001' AND club_id='a2000000-0000-4000-8000-000000000001';
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount)
+SELECT ('bd300000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+       'a2000000-0000-4000-8000-000000000001','Floor alert history TEST '||n,
+       'registering','registering',now()-n*interval '1 day',100000,0,0
+FROM generate_series(1,999) n;
+INSERT INTO public.tracker_floor_alerts(id,club_id,tournament_id,tournament_table_id,physical_table_id,
+  reported_by,alert_kind,priority,title,status,created_at)
+SELECT ('bd310000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+       'a2000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001',
+       'a8000000-0000-4000-8000-000000000001','a7000000-0000-4000-8000-000000000001',
+       :'owner_id'::uuid,'wrong_action','urgent','Floor alert history TEST '||n,
+       CASE WHEN n=53 THEN 'dismissed' ELSE 'open' END,'2026-01-01T12:00:00Z'
+FROM generate_series(1,53) n;
+FLOOR_ALERT_READ
+  run_browser_proof '' '' 'measures bounded Floor alerts on isolated PostgREST'
+  exit 0
+fi
 if [[ "$diagnostic_scope" != none ]]; then
   loaded_phase_checkpoint "targeted-$diagnostic_scope-start"
   if [[ "$diagnostic_scope" == cashier-payment ]]; then
