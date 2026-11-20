@@ -1117,13 +1117,16 @@ fi
 # Build the real UI against this local gateway and render it in Chromium. The
 # browser performs real Auth/Data API calls; no request route is intercepted.
 floor_redraw_build=off
+tour_fnb_build=false
 if [[ "$operations_candidate_probe" == 1 ]]; then floor_redraw_build=preview; fi
+if [[ "$diagnostic_scope" == prize-replay ]]; then tour_fnb_build=true; fi
 (cd "$repo_root" && \
   VITE_SUPABASE_URL="http://$browser_gateway:8000" \
   VITE_SUPABASE_PUBLISHABLE_KEY="$anon_key" \
   VITE_OPS_TOUR_CASHIER=production \
   VITE_FLOOR_TABLE_CONTROL_V3=preview VITE_FLOOR_UAT_ENV=preview VITE_FLOOR_REDRAW_SEAT_LOCK_V1="$floor_redraw_build" \
   VITE_PUBLIC_SPECTATOR_LAST_HAND_HISTORY=preview \
+  VITE_TOUR_FNB_ATTRIBUTION="$tour_fnb_build" \
   npm run build >/dev/null)
 app_container="$(docker run -d --rm --network "$browser_network" --network-alias cashier-app \
   --volume "$repo_root:/app:ro" --workdir /app \
@@ -1373,6 +1376,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_REENTRY_TRANSPORT_PROBE="$reentry_transport_probe" \
   --env LOCAL_CORRECTION_UNDO_PROBE="$correction_undo_probe" \
   --env LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED="${LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED:-0}" \
+  --env LOCAL_OPERATIONS_TOUR_FNB_ENABLED="$tour_fnb_build" \
   --env LOCAL_OPERATIONS_REDRAW_ENABLED="${LOCAL_OPERATIONS_REDRAW_ENABLED:-0}" \
   --env LOCAL_REENTRY_FAULT_MODE="$reentry_fault_mode" \
   --env LOCAL_REENTRY_BANK_PROBE_STAGE="${LOCAL_REENTRY_BANK_PROBE_STAGE:-0}" \
@@ -1581,6 +1585,25 @@ CLOSE_PRIZE_CANDIDATE_PATH
     { printf '%s\n' "SET vinpoker.isolated_manual_cards='current-http-showdown-only';"; cat "$test_root/manual-cards-dependencies.sql"; } |
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$(cat "$test_root/close-prize-candidate-path")"
+  fi
+  if [[ "$diagnostic_scope" == prize-replay ]]; then
+    # This baseline predates the finance helper and the F&B intent writers.
+    # Exercise only the exact capture/reader slice on the joined guest-sale journey.
+    node --input-type=module - "$repo_root" <<'TOUR_FNB_CAPTURE_READER' |
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+const source=process.argv[2];
+const read=path=>readFileSync(join(source,path),'utf8').replaceAll('\r\n','\n');
+const candidate=read('supabase/pending-migrations/20261120184849_fnb_order_tour_attribution_candidate_v1.sql');
+const slice=candidate.slice(0,candidate.indexOf('-- A linked comp must name the exact session'));
+assert.match(slice,/GRANT EXECUTE ON FUNCTION public\.get_tour_fnb_attribution_v1/);
+const costs=read('supabase/migrations/20270128000304_fnb_cancel_snapshot_cost_v1.sql');
+const helper=costs.match(/^CREATE FUNCTION floor_private\.fnb_cancel_cogs_reversal_v1\([\s\S]+?^REVOKE ALL ON FUNCTION floor_private\.fnb_cancel_cogs_reversal_v1[^\n]+;/m);
+assert.ok(helper);
+process.stdout.write(slice.replace('BEGIN;','BEGIN;\n'+helper[0])+'\nCOMMIT;\n');
+TOUR_FNB_CAPTURE_READER
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
   fi
   node --input-type=module - "$repo_root/output/operations-latency/operations-candidate-package-http.json" "$source_sha" "$reentry_transport_probe" "$reentry_fault_mode" "$correction_undo_probe" <<'OPERATIONS_PACKAGE_APPLIED'
 import {writeFileSync} from 'node:fs';
@@ -1927,7 +1950,7 @@ assert.equal(runtime.pendingReentryTransportApplied,true);assert.equal(runtime.c
 // qualification result unchanged; only its healthy concurrent reads are a
 // prerequisite here. The default full suite still requires every delivery gate.
 assert.ok(['cashier-payment','dealer-checkin','prize-replay'].includes(scope));
-if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});}
+if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});}
 assert.equal(audience.viewers,Number(count));
 for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.equal(audience.checks[key],true,key);
 assert.equal(audience.phase,Object.values(audience.checks).every(v=>v===true)?'passed':'failed');

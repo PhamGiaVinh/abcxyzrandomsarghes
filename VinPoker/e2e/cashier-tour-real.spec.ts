@@ -2283,11 +2283,12 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
  const clockUi={started:false,paused:false,resumed:false};
  const fnb={guestOrder:false,guestPaidVisible:false,counterPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
+ const fnbTour={desktop:false,mobile:false};
  let swingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let guestContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,clockUi,fnb,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with an open clock, desktop/mobile replay, Cashier payment, Floor close and an open Dealer Swing screen. F&B uses guest and staff HTTP with a club-level finance read. Layouts are emulated. No load or cash funding qualification.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,clockUi,fnb,fnbTour,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with an open clock, desktop/mobile replay, Cashier payment, Floor close and an open Dealer Swing screen. Targeted mode also checks the guest-sale attribution reader on the real Finance route; linked counter writers and refunds are outside this scope. No load or cash funding qualification.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -2392,6 +2393,29 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   fnb.revenueDelta=financeAfter.revenue.fnb-financeBefore.revenue.fnb;
   fnb.cogsDelta=financeAfter.cost.fnbCogs-financeBefore.cost.fnbCogs;
   expect(fnb).toMatchObject({stockDelta:-1,revenueDelta:20000,cogsDelta:5000});
+  if(process.env.LOCAL_OPERATIONS_TOUR_FNB_ENABLED==='true'){
+   phase='same-tour-fnb-finance-screen';report();
+   const otherTour='a3000000-0000-4000-8000-000000000001';
+   const window={p_club_id:club,p_from:'-infinity',p_to:'infinity'};
+   const readTour=(id:string)=>rpc('get_tour_fnb_attribution_v1',{...window,p_tournament_id:id});
+   expect(await readTour(tour)).toMatchObject({tournamentId:tour,coverage:'captured_orders_only',revenue:20000,cogs:5000,sales:1});
+   expect(await readTour(otherTour)).toMatchObject({tournamentId:otherTour,revenue:0,cogs:0,sales:0});
+   await page.setViewportSize({width:1366,height:900});
+   await page.goto('/ops/finance?club='+club);
+   const selector=page.getByLabel('Giải cần xem',{exact:true});
+   const fnbSection=page.getByRole('region',{name:'F&B theo giải'});
+   for(const layout of ['desktop','mobile'] as const){
+    if(layout==='mobile')await page.setViewportSize({width:390,height:844});
+    await selector.selectOption(tour);
+    await expect(fnbSection.getByText('20.000 đ',{exact:true})).toBeVisible();
+    await expect(fnbSection.getByText('5.000 đ',{exact:true})).toBeVisible();
+    await selector.selectOption(otherTour);
+    await expect(fnbSection.getByText('Chưa có giao dịch F&B đã ghi nhận cho giải này.',{exact:true})).toBeVisible();
+    await expect(fnbSection.getByText('20.000 đ',{exact:true})).toHaveCount(0);
+    fnbTour[layout]=true;
+   }
+   await page.setViewportSize({width:1366,height:900});
+  }
   phase='prepare-and-apply-payout';report();const prepare={p_tournament_id:tour,p_itm_percent:0.2,p_archetype:'DAILY',p_min_cash_x:1,p_rounding_unit:1000,p_prize_pool_override:null,p_override_reason:null,p_regenerate:false,p_reason:'isolated canonical paid prize HTTP',p_custom_percents:null};
   const run=await rpc('prepare_payout_snapshot',prepare);expect(run.status).toBe('prepared');expect(run.entries_snapshot).toBe(3);expect(run.prize_pool_snapshot).toBe(18000000);
   const computed=await request('compute-payouts','/functions/v1/compute-payouts',{mode:'official',run_id:run.run_id});expect(computed.applied.status).toBe('applied');expect(computed.result.rows).toHaveLength(1);expect(computed.result.rows[0].amount).toBe(18000000);expect((await rpc('prepare_payout_snapshot',prepare)).run_id).toBe(run.run_id);
