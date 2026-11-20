@@ -186,6 +186,9 @@ function ScopedFloorTableMapPanelV3({
   const closeRosterReady = !v3.fastBustEnabled || (!loadError && (!loading || rosterReady));
   const actionIsCurrent = pendingActionScope === selectedWriteScope && !loadError
     && (!loading || (v3.fastBustEnabled && rosterReady && pendingTableAction === "close"));
+  const tableActionIsCurrent = v3.fastBustEnabled && pendingTableAction === "close"
+    ? pendingActionScope === selectedSessionScope && selectedTable?.seats.length === 0
+    : actionIsCurrent;
   const bustActionIsCurrent = pendingActionScope === (v3.fastBustEnabled ? selectedSessionScope : selectedWriteScope)
     && !loadError && (v3.fastBustEnabled || !loading);
   const currentReadScope = useRef(readScope);
@@ -372,12 +375,18 @@ function ScopedFloorTableMapPanelV3({
   useEffect(() => {
     setEntrySelection(null);
     setPendingFreeSitSeat(null);
-    setPendingTableAction(null);
+    setPendingTableAction((action) => v3.fastBustEnabled && action === "close" ? action : null);
     setBreakPlan(null);
     setBreakPlanLoading(false);
     setBreakPlanError(null);
     setLockReason("Giữ ghế cho vận hành");
-  }, [selectedSeatNumber, selectedTableId, selectedWriteScope]);
+  }, [selectedSeatNumber, selectedTableId, selectedWriteScope, v3.fastBustEnabled]);
+
+  useEffect(() => {
+    if (v3.fastBustEnabled && pendingTableAction === "close" && !tableActionIsCurrent) {
+      setPendingTableAction(null);
+    }
+  }, [pendingTableAction, tableActionIsCurrent, v3.fastBustEnabled]);
 
   // Other people's operations may change the table revision while Floor confirms
   // this exact seat. Only a different seat/session/actor retires that intent.
@@ -790,7 +799,7 @@ function ScopedFloorTableMapPanelV3({
                 />
 
                 <section className="grid gap-2 sm:grid-cols-2">
-                  <Button data-ops-action="floor.tables.open_close_table" variant="outline" className="min-h-12" disabled={busy || !closeRosterReady || selectedTable.seats.length !== 0} onClick={() => { setPendingActionScope(selectedWriteScope); setPendingTableAction("close"); }}>Đóng bàn trống</Button>
+                  <Button data-ops-action="floor.tables.open_close_table" variant="outline" className="min-h-12" disabled={busy || !closeRosterReady || selectedTable.seats.length !== 0} onClick={() => { setPendingActionScope(v3.fastBustEnabled ? selectedSessionScope : selectedWriteScope); setPendingTableAction("close"); }}>Đóng bàn trống</Button>
                   <Button
                     data-ops-action="floor.tables.open_break_v3"
                     variant="outline"
@@ -942,7 +951,7 @@ function ScopedFloorTableMapPanelV3({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={pendingTableAction !== null && actionIsCurrent} onOpenChange={(open) => { if (!open) setPendingTableAction(null); }}>
+      <AlertDialog open={pendingTableAction !== null && tableActionIsCurrent} onOpenChange={(open) => { if (!open) setPendingTableAction(null); }}>
         <AlertDialogContent className="operations-typography box-border max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-md overflow-y-auto rounded-xl p-4 sm:p-6">
           <AlertDialogHeader>
             <AlertDialogTitle>{pendingTableAction === "break" ? "Đóng và chuyển toàn bộ người chơi?" : "Đóng bàn trống?"}</AlertDialogTitle>
@@ -1013,10 +1022,10 @@ function ScopedFloorTableMapPanelV3({
               <AlertDialogAction
                 data-ops-action="floor.tables.close_table"
                 className="min-h-12"
-                disabled={busy || !selectedTable}
+                disabled={busy || !selectedTable || !closeRosterReady}
                  onClick={async (event) => {
                    event.preventDefault();
-                   if (!actionIsCurrent || !selectedTable) return;
+                   if (!tableActionIsCurrent || !closeRosterReady || !selectedTable) return;
                    const ok = await run("Đã đóng bàn và giải phóng bàn vật lý.", async () => {
                      const result = await v3.closeTournamentTable({
                      tournamentTableId: selectedTable.tournamentTableId,

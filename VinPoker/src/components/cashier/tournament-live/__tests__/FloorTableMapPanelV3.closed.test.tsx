@@ -109,7 +109,7 @@ it.each(["missing_entry", "valid"] as const)("releases consecutive %s seats and 
     current.sessionRevision++;
     return { ok: true, data: { outcome: orphan ? "orphan_seat_released" : "busted", revision: current.sessionRevision } };
   });
-  render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
+  const view = render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
   fireEvent.click(await screen.findByTestId("floor-table-roster-card"));
   for (const n of [1, 2]) {
     const row = await screen.findByTestId(`floor-seat-row-${n}`);
@@ -127,9 +127,13 @@ it.each(["missing_entry", "valid"] as const)("releases consecutive %s seats and 
   expect(close).toBeEnabled();
   fireEvent.click(close);
   expect(await screen.findByRole("heading", { name: "Đóng bàn trống?" })).toBeInTheDocument();
+  view.rerender(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={1} />);
+  expect(screen.getByRole("button", { name: "Xác nhận đóng bàn" })).toBeDisabled();
+  expect(state.close).not.toHaveBeenCalled();
+  await act(async () => { resolveRoster({ ok: true, data: [{ ...current, sessionRevision: 4 }] }); });
   state.close.mockResolvedValue({ ok: false, error: "test_no_close_side_effect" });
   await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Xác nhận đóng bàn" })); });
-  expect(state.close).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 3 }));
+  expect(state.close).toHaveBeenCalledWith(expect.objectContaining({ expectedRevision: 4 }));
 });
 
 it("keeps an exact bust confirmation during refresh and guards repeated clicks", async () => {
