@@ -2283,6 +2283,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
  const dealerClose={checkedIn:false,assignmentVisible:false,assignmentReleased:false,breakRecorded:false,breakVisible:false};
  const dealerCheckout={committed:false,retryPreserved:false,breakEnded:false,swingUpdated:false};
+ const dealerPay={accrualMatches:false,fixedStatement:false,paidOnce:false,selfBalanceCleared:false};
  const clockUi={started:false,paused:false,resumed:false};
  const fnb={guestOrder:false,guestPaidVisible:false,counterPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
  const fnbTour={desktop:false,mobile:false};
@@ -2290,7 +2291,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let guestContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,dealerClose,dealerCheckout,clockUi,fnb,fnbTour,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with clock, replay, F&B, Cashier payment, Floor close, Dealer Swing and checkout from an open break. Excludes automatic return after rest, payroll, refunds, load and cash funding.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,dealerClose,dealerCheckout,dealerPay,clockUi,fnb,fnbTour,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with clock, replay, F&B, Cashier payment, Floor close, Dealer Swing, checkout and one TEST part-time statement. Excludes automatic return after rest, refunds, load and prize cash funding.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -2547,10 +2548,13 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   await expect(swingAlert).toBeVisible();
   let assignmentId:string|undefined;
   let attendanceId:string|undefined;
+  let paidDealerId:string|undefined;
   if(process.env.LOCAL_OPERATIONS_TOUR_FNB_ENABLED==='true'){
    const name='HTTP latency TEST 1';
-   const dealers=await read('dealers?select=id&club_id=eq.'+club+'&full_name=eq.'+encodeURIComponent(name));
+   const dealers=await read('dealers?select=id,user_id&club_id=eq.'+club+'&full_name=eq.'+encodeURIComponent(name));
    expect(dealers).toHaveLength(1);
+   expect(dealers[0].user_id===staff[0].userId).toBe(true);
+   paidDealerId=dealers[0].id;
    const checkedIn=await rpc('operator_check_in_dealer_v1',{
     p_dealer_id:dealers[0].id,p_club_id:club,p_shift_id:'ad300000-0000-4000-8000-000000000001',p_request_id:crypto.randomUUID(),
    });
@@ -2608,7 +2612,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    await expect(dealerInBreak).toBeVisible();
    dealerClose.breakVisible=true;
    phase='same-tour-dealer-checkout';report();
-   const checkoutHeaders={...headers,Authorization:'Bearer '+staff[0].token};
+   const checkoutHeaders={...headers,Authorization:'Bearer '+staff[1].token};
    const checkout=()=>request('dealer-checkout','/functions/v1/checkout-dealer',{attendance_id:attendanceId},checkoutHeaders);
    const receipt=await checkout();
    expect(receipt.results).toHaveLength(1);
@@ -2633,6 +2637,32 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    dealerCheckout.breakEnded=true;
    await expect(dealerInBreak).toHaveCount(0,{timeout:10000});
    dealerCheckout.swingUpdated=true;
+   phase='same-tour-dealer-payroll';report();
+   const dealerHeaders={...headers,Authorization:'Bearer '+staff[0].token};
+   const balance=()=>rpc('get_my_pt_wage',{p_dealer_id:paidDealerId},dealerHeaders);
+   const accrued=await balance();
+   expect(accrued).toMatchObject({dealer_id:paidDealerId,hourly_rate_vnd:60000,current_shift_open:false,live_accrual_active:false});
+   const seconds=(Date.parse(ended[0].check_out_time)-Date.parse(ended[0].check_in_time))/1000;
+   expect(accrued.balance_vnd).toBeGreaterThan(0);
+   expect(Math.abs(accrued.balance_vnd-Math.floor(seconds*60000/3600))).toBeLessThanOrEqual(1);
+   dealerPay.accrualMatches=true;
+   const finalizeIntent={p_request_id:crypto.randomUUID(),p_club_id:club,p_dealer_id:paidDealerId,p_reason:'Isolated TEST tour'});
+   const statement=await rpc('finalize_part_time_payroll_statement',finalizeIntent);
+   expect(statement).toMatchObject({state:'finalized',net_amount_vnd:accrued.balance_vnd});
+   expect((await rpc('finalize_part_time_payroll_statement',finalizeIntent)).statement_id).toBe(statement.statement_id);
+   dealerPay.fixedStatement=true;
+   const payrollIntent={p_statement_id:statement.statement_id,p_payment_method:'cash',p_idempotency_key:crypto.randomUUID(),p_note:'Isolated TEST cash'};
+   const payment=await rpc('pay_finalized_part_time_payroll_statement',payrollIntent,checkoutHeaders);
+   expect(payment.amount_vnd).toBe(accrued.balance_vnd);
+   const payrollRetry=await rpc('pay_finalized_part_time_payroll_statement',payrollIntent,checkoutHeaders);
+   expect(payrollRetry).toMatchObject({idempotent:true,payment_id:payment.payment_id});
+   dealerPay.paidOnce=true;
+   const remaining=await balance();
+   expect(remaining).toMatchObject({balance_vnd:0,live_accrual_active:false});
+   expect(remaining.recent_payments.filter((row:{id:string})=>row.id===payment.payment_id)).toEqual([
+    expect.objectContaining({amount_vnd:accrued.balance_vnd,payment_method:'cash'}),
+   ]);
+   dealerPay.selfBalanceCleared=true;
   }
   const ready=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(ready.ready).toBe(true);expect(ready.prize_total).toBe(18000000);expect(ready.reconcile_delta).toBe(0);
   const closed=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated canonical paid prize HTTP'});expect(closed.outcome).toBe('closed');expect(closed.prize_total).toBe(18000000);expect(closed.club_revenue).toBe(1800000);expect(closed.reconcile_delta).toBe(0);expect(closed.reconciled).toBe(true);prizeTotal=closed.prize_total;reconcileDelta=closed.reconcile_delta;
