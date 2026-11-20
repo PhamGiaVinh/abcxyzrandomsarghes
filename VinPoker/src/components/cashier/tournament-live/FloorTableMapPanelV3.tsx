@@ -546,6 +546,30 @@ function ScopedFloorTableMapPanelV3({
       {secondaryLoadError && <p role="status" className="rounded-xl border border-amber-400/35 bg-amber-400/10 p-3 text-sm text-amber-100">{secondaryLoadError}</p>}
       {operationError && <p role="alert" className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{operationError}</p>}
 
+      {!tournamentEnded && !loading && !loadError && !secondaryLoadError && tables.length > 1 && (() => {
+        const players = tables.reduce((total, table) => total + table.seats.length, 0);
+        const emptyTable = tables.find((table) => table.seats.length === 0 &&
+          !pendingMoves.some((move) => move.status === "pending" &&
+            move.destinationTournamentTableId === table.tournamentTableId));
+        if (players > 0 && emptyTable) {
+          return <p role="status" className="rounded-xl border border-amber-400/35 bg-amber-400/10 p-3 text-sm text-amber-100">
+            Còn {players} người trên {tables.length} bàn. Bàn {emptyTable.tableNumber} đang trống. Mở bàn đó để kiểm tra và đóng bàn.
+          </p>;
+        }
+        const freeSeats = tables.map((table) => table.maxSeats - new Set([
+          ...table.seats.map((seat) => seat.seatNumber),
+          ...table.seatLocks.map((lock) => lock.seatNumber),
+          ...pendingMoves.filter((move) => move.status === "pending" &&
+            move.destinationTournamentTableId === table.tournamentTableId).map((move) => move.destinationSeatNumber),
+        ]).size);
+        const totalFree = freeSeats.reduce((total, free) => total + free, 0);
+        const canConsolidate = players > 0 && tables.some((table, index) =>
+          table.seats.length > 0 && table.seats.length <= totalFree - freeSeats[index]);
+        return canConsolidate && <p role="status" className="rounded-xl border border-amber-400/35 bg-amber-400/10 p-3 text-sm text-amber-100">
+          Còn {players} người trên {tables.length} bàn. Có đủ ghế để cân nhắc gom một bàn. Mở bàn cần gom để kiểm tra phương án chuyển trước khi xác nhận.
+        </p>;
+      })()}
+
       {loading && tables.length === 0 ? (
         <div role="status" aria-live="polite" aria-busy="true" className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> Đang tải danh sách bàn…</div>
       ) : tables.length === 0 ? (
