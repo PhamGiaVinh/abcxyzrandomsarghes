@@ -2673,14 +2673,27 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    });
    try{
     const dealerPage=await dealerContext.newPage();
-    await dealerPage.addInitScript(({key,value})=>localStorage.setItem(key,JSON.stringify(value)),{
-     key:process.env.LOCAL_SUPABASE_STORAGE_KEY!,value:staff[0].session,
+    await dealerPage.addInitScript(({key,value,dealerId})=>{
+     localStorage.setItem(key,JSON.stringify(value));
+     localStorage.setItem('vinpoker.dealer.selectedDealerId',dealerId);
+    },{
+     key:process.env.LOCAL_SUPABASE_STORAGE_KEY!,value:staff[0].session,dealerId:accrued.dealer_id as string,
     });
+    const membershipResponse=dealerPage.waitForResponse(response=>{
+     const url=new URL(response.url());
+     return url.pathname==='/rest/v1/dealers'&&url.searchParams.get('user_id')==='eq.'+staff[0].userId;
+    },{timeout:10000});
     const wageResponse=dealerPage.waitForResponse(response=>
-     response.url()===api+'/rest/v1/rpc/get_my_pt_wage'&&response.request().postDataJSON()?.p_dealer_id===paidDealerId,
+     new URL(response.url()).pathname==='/rest/v1/rpc/get_my_pt_wage'&&response.request().method()==='POST',
      {timeout:10000},
     );
-    const [renderedWage]=await Promise.all([wageResponse,dealerPage.goto('/dealer/salary')]);
+    const wageResult=wageResponse.catch(()=>null);
+    const [membership]=await Promise.all([membershipResponse,dealerPage.goto('/dealer/salary')]);
+    expect(membership.ok(),`Dealer membership HTTP ${membership.status()}`).toBe(true);
+    expect((await membership.json()).some((row:{id:string})=>row.id===paidDealerId),'Dealer can read its own paid membership').toBe(true);
+    const renderedWage=await wageResult;
+    if(!renderedWage)throw new Error('Mobile salary did not request wage after loading the paid dealer membership');
+    expect(renderedWage.request().postDataJSON().p_dealer_id).toBe(paidDealerId);
     expect(renderedWage.ok()).toBe(true);
     const wageData=await renderedWage.json();
     expect(wageData.balance_vnd).toBe(0);
