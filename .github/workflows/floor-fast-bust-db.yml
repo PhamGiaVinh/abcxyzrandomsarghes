@@ -80,6 +80,11 @@ jobs:
         run: |
           createdb "$FLOOR_BUST_BROWSER_DATABASE"
           psql -X -d "$FLOOR_BUST_BROWSER_DATABASE" -v ON_ERROR_STOP=1 -f tests/floorTableControlV3/fastBust.disposable.sql
+          # The older base fixture uses the final-contract ACL before the enable migration.
+          close_acl=$(grep -E '^(REVOKE ALL|GRANT EXECUTE) ON FUNCTION public\.close_tournament_table_v3\(' \
+            supabase/migrations/20270113000012_floor_table_control_v3_production_enable.sql)
+          test "$(printf '%s\n' "$close_acl" | wc -l)" -eq 2
+          printf '%s\n' "$close_acl" | psql -X -d "$FLOOR_BUST_BROWSER_DATABASE" -v ON_ERROR_STOP=1
           npm ci --ignore-scripts
           npx playwright install chromium
           npx playwright test e2e/ops-v3-floor-cashier.mock.spec.ts --grep 'two consecutive exact busts' --workers=1
