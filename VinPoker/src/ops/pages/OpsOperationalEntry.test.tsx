@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { Link, MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OpsModuleGate } from "./OpsEntryResolver";
 import { getOpsModule, type OpsModuleId } from "@/ops/registry/opsModuleRegistry";
@@ -57,6 +57,21 @@ describe("operational module document entry", () => {
     mount("cashier", "/ops/cashier/tour"); expect(replace).not.toHaveBeenCalled();
     expect(screen.getByText("child workspace")).toBeInTheDocument();
   });
+  it("keeps the historical chip link through single-club resolution", async () => {
+    function LocationSearch() { return <div>{useLocation().search}</div>; }
+    render(<MemoryRouter initialEntries={["/ops/chip-ops?t=historical-tour"]}>
+      <OpsModuleGate capability="chip-ops"><LocationSearch /></OpsModuleGate>
+    </MemoryRouter>);
+    expect(await screen.findByText("?club=club-a&t=historical-tour")).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+  });
+  it("does not load historical chip data in an unauthorized club", () => {
+    render(<MemoryRouter initialEntries={["/ops/chip-ops?club=club-b&t=historical-tour"]}>
+      <OpsModuleGate capability="chip-ops"><div>chip history</div></OpsModuleGate>
+    </MemoryRouter>);
+    expect(screen.queryByText("chip history")).not.toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+  });
   it.each(["loading", "error", "no-module", "wrong-club"])("never opens an unverified scope: %s", kind => {
     if (kind === "loading") h.loading = true;
     if (kind === "error") h.scopeError = "scope unavailable";
@@ -76,5 +91,24 @@ describe("operational module document entry", () => {
     h.superAdmin = true; h.clubs = []; h.verify.mockResolvedValue(null);
     mount("fnb"); await screen.findByText(/Không xác minh được CLB/);
     expect(replace).not.toHaveBeenCalled();
+  });
+  it("clears a verified Chip Ops surface while a different club is being verified", async () => {
+    h.superAdmin = true;
+    h.clubs = [];
+    let finish!: (value: unknown) => void;
+    const verification = new Promise(resolve => { finish = resolve; });
+    h.verify.mockImplementation((clubId: string) => clubId === "club-a"
+      ? Promise.resolve({ club_id: "club-a", club_name: "A" })
+      : verification);
+    render(<MemoryRouter initialEntries={["/ops/chip-ops?club=club-a&t=tour-a"]}>
+      <Link to="/ops/chip-ops?club=club-b&t=tour-b">Switch club</Link>
+      <OpsModuleGate capability="chip-ops"><div>chip history</div></OpsModuleGate>
+    </MemoryRouter>);
+    expect(await screen.findByText("chip history")).toBeInTheDocument();
+    await act(async () => screen.getByRole("link", { name: "Switch club" }).click());
+    expect(h.verify).toHaveBeenLastCalledWith("club-b");
+    expect(screen.queryByText("chip history")).not.toBeInTheDocument();
+    await act(async () => finish(null));
+    expect(await screen.findByText(/Không xác minh được CLB/)).toBeInTheDocument();
   });
 });

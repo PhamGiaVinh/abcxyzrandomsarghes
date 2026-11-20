@@ -63,6 +63,7 @@ export function OpsModuleGate({
   const location = useLocation();
   const module = getOpsModule(capability);
   const allowedClubIds = capabilities.moduleClubIds(capability);
+  const chipTournament = module.id === "chip-ops" ? params.get("t") : null;
 
   if (capabilities.loading) return <OpsLoading label="Đang tải quyền vận hành…" />;
   if (capabilities.scopeError) return <OpsAccessDenied message={capabilities.scopeError} />;
@@ -86,15 +87,17 @@ export function OpsModuleGate({
     : location.pathname === module.route ? module.operationalRoute : undefined;
   const content = module.id === "cashier" && OPS_TOUR_CASHIER_ENABLED && location.pathname === module.route && clubId
     ? <Navigate to={`/ops/cashier/tour?club=${encodeURIComponent(clubId)}`} replace />
-    : operationalRoute
+    : operationalRoute && !chipTournament
     ? <DocumentRedirect to={operationalRoute} preserveCurrentLocation={false} />
     : children ?? <OpsModuleStatus module={module} />;
 
   if (!clubId) {
     if (!capabilities.isSuperAdmin && allowedClubIds.length === 1) {
-      return <Navigate to={`${module.route}?club=${encodeURIComponent(allowedClubIds[0])}`} replace />;
+      const scope = new URLSearchParams({ club: allowedClubIds[0] });
+      if (chipTournament) scope.set("t", chipTournament);
+      return <Navigate to={`${module.route}?${scope}`} replace />;
     }
-    return <OpsClubPicker module={module} clubIds={allowedClubIds} />;
+    return <OpsClubPicker module={module} clubIds={allowedClubIds} chipTournament={chipTournament} />;
   }
 
   if (allowedClubIds.includes(clubId)) return <>{content}</>;
@@ -103,7 +106,7 @@ export function OpsModuleGate({
   }
 
   return (
-    <SuperAdminClubGate clubId={clubId}>
+    <SuperAdminClubGate key={clubId} clubId={clubId}>
       {content}
     </SuperAdminClubGate>
   );
@@ -144,7 +147,11 @@ function SuperAdminClubGate({ clubId, children }: { clubId: string; children: Re
   return <>{children}</>;
 }
 
-export function OpsClubPicker({ module, clubIds }: { module: OpsModuleDefinition; clubIds: string[] }) {
+export function OpsClubPicker({ module, clubIds, chipTournament }: {
+  module: OpsModuleDefinition;
+  clubIds: string[];
+  chipTournament?: string | null;
+}) {
   const capabilities = useOpsCapabilities();
   const workspace = useOpsWorkspace();
   const [query, setQuery] = useState("");
@@ -197,7 +204,8 @@ export function OpsClubPicker({ module, clubIds }: { module: OpsModuleDefinition
             className="min-h-14 rounded-2xl border border-white/10 bg-white/[0.035] px-4 text-left text-sm text-white transition hover:border-emerald-300/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
             onClick={() => {
               if (capabilities.isSuperAdmin) workspace.rememberVerifiedSuperAdminClub(club);
-              void workspace.selectWorkspace(module, club.club_id);
+              if (chipTournament) void workspace.selectWorkspace(module, club.club_id, chipTournament);
+              else void workspace.selectWorkspace(module, club.club_id);
             }}
           >
             <span className="font-medium">{club.club_name}</span>

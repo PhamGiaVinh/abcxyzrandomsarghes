@@ -70,11 +70,16 @@ function ScopedChipOpsWorkspace({ allowed }: { allowed: boolean }) {
     const load = async () => {
       setState((current) => ({ ...current, loading: true, errorCode: null }));
       try {
-        const tournaments = await loadChipOpsTournamentOptions(client, clubId, controller.signal);
+        let tournaments = await loadChipOpsTournamentOptions(client, clubId, controller.signal);
         if (!active) return;
         if (selectedTournamentId && !tournaments.some((row) => row.id === selectedTournamentId)) {
-          setState({ loading: false, tournaments, inventory: null, stacks: null, errorCode: "CHIP_TOURNAMENT_SCOPE_INVALID" });
-          return;
+          const exact = await loadChipOpsTournamentOptions(client, clubId, controller.signal, selectedTournamentId);
+          if (!active) return;
+          if (exact.length !== 1 || exact[0].id !== selectedTournamentId) {
+            setState({ loading: false, tournaments, inventory: null, stacks: null, errorCode: "CHIP_TOURNAMENT_SCOPE_INVALID" });
+            return;
+          }
+          tournaments = [exact[0], ...tournaments];
         }
         const [inventory, stacks] = selectedTournamentId
           ? await Promise.all([

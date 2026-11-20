@@ -2272,6 +2272,91 @@ test('current owner rake closes once and exports the immutable event-day snapsho
 });
 
 
+test('opens older Chip Ops inventory only for an exact eligible tournament', async ({ page }) => {
+  test.skip(process.env.LOCAL_CHIP_HISTORY_PROBE !== '1', 'Disposable Chip Ops history fixtures required');
+  await loginOwner(page);
+  const base = '/ops/chip-ops?club=a2000000-0000-4000-8000-000000000001';
+  const older = 'bd200000-0000-4000-8000-000000000201';
+  const deleted = 'bd200000-0000-4000-8000-000000000202';
+  const foreign = 'bd200000-0000-4000-8000-000000000203';
+  const picker = page.locator('label').filter({ hasText: 'Giải đấu' }).locator('select');
+  const inventory = page.getByText('Chip vật lý đã phát', { exact: true });
+  const inventoryRequests: string[] = [];
+  const inventoryPath = '/rest/v1/rpc/get_issued_chip_inventory';
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === inventoryPath) {
+      inventoryRequests.push(request.postDataJSON().p_tournament_id);
+    }
+  });
+
+  const normalList = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === '/rest/v1/tournaments' && url.searchParams.get('limit') === '200';
+  });
+  const read = page.waitForResponse(response => new URL(response.url()).pathname === inventoryPath);
+  await page.goto(`${base}&t=${older}`);
+  const normalOptions = await (await normalList).json();
+  expect(normalOptions).toHaveLength(200);
+  expect(normalOptions.some((row: { id: string }) => row.id === older)).toBe(false);
+  expect((await read).ok()).toBe(true);
+  await expect(picker).toHaveValue(older);
+  await expect(picker.locator('option')).toHaveCount(202);
+  await expect(inventory).toBeVisible();
+  for (const denied of [deleted, foreign]) {
+    await page.goto(`${base}&t=${denied}`);
+    await expect(page.getByText('CHIP_TOURNAMENT_SCOPE_INVALID', { exact: true })).toBeVisible();
+    await expect(inventory).toHaveCount(0);
+  }
+  expect(inventoryRequests).toEqual([older]);
+  writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/, '-chip-history-http.json'), JSON.stringify({
+    kind: 'ISOLATED_CHIP_HISTORY_BROWSER',
+    sha: process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+    pickerLimit: 200,
+    olderAccepted: true,
+    deletedDenied: true,
+    foreignDenied: true,
+    qualification: false,
+  }));
+});
+
+test('records and seals one bag through the historical Chip Ops link', async ({ page }) => {
+  test.skip(process.env.LOCAL_CHIP_BAG_HISTORY_PROBE !== '1', 'Requires disposable End Flight roster');
+  const owner = await loginOwner(page);
+  const club = 'a2000000-0000-4000-8000-000000000001';
+  const flight = 'bd200000-0000-4000-8000-000000000201';
+  const api = process.env.LOCAL_SUPABASE_URL!.replace(/\/$/, '');
+  const readBaggingState = async () => {
+    const response = await fetch(`${api}/rest/v1/rpc/multi_day_bagging_state_v1`, {
+      method: 'POST',
+      headers: { apikey: process.env.LOCAL_SUPABASE_ANON_KEY!, Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_flight_tournament_id: flight }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    expect(response.ok).toBe(true);
+    return response.json();
+  };
+  const before = await readBaggingState();
+  expect(before).toMatchObject({ status: 'bagging', manager: true });
+  expect(before.rows).toHaveLength(1);
+  const [seat] = before.rows;
+  expect(seat).toMatchObject({ bagRevision: 0, sealed: false });
+  await page.goto(`/ops/chip-ops?club=${club}&t=${flight}`);
+  await expect(page.locator('label').filter({ hasText: 'Giải đấu' }).locator('select')).toHaveValue(flight);
+  await page.getByLabel(`Bag code for ${seat.playerId}`).fill('HISTORY-FLIGHT-201');
+  await page.getByLabel(`Bag total for ${seat.playerId}`).fill(String(seat.trackedStack));
+  const recorded = page.waitForResponse(response => new URL(response.url()).pathname === '/rest/v1/rpc/multi_day_record_bag_v1');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const saved = await recorded;
+  expect(saved.ok()).toBe(true);
+  expect(saved.request().postDataJSON()).toMatchObject({ p_flight_tournament_id: flight, p_player_id: seat.playerId });
+  await page.getByRole('button', { name: 'Seal', exact: true }).click();
+  await expect(page.getByText('Sealed v2', { exact: true })).toBeVisible();
+  const after = await readBaggingState();
+  expect(after.rows).toHaveLength(1);
+  expect(after.rows[0]).toMatchObject({ playerId: seat.playerId, trackedStack: seat.trackedStack,
+    bagCode: 'HISTORY-FLIGHT-201', bagTotal: seat.trackedStack, sealed: true, sealedVersion: 2 });
+});
+
 test('final current Floor Cashier prizes close over real Auth HTTP',async({page})=>{
  test.skip(process.env.LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED!=='1','Explicit isolated full34 prize-close stage only');test.setTimeout(180_000);
  const owner=await loginOwner(page),staff=(await loginFixtureStaff()).slice(0,3),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000005',club='a2000000-0000-4000-8000-000000000001';

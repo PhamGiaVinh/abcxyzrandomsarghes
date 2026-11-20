@@ -1397,6 +1397,8 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_CHECKIN_REPORT=/latency/dealer-checkin-http.json \
   --env LOCAL_OPERATIONS_LATENCY_REPORT=/latency/cashier-http.json \
   --env LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" \
+  --env LOCAL_CHIP_HISTORY_PROBE="${LOCAL_CHIP_HISTORY_PROBE:-0}" \
+  --env LOCAL_CHIP_BAG_HISTORY_PROBE="${LOCAL_CHIP_BAG_HISTORY_PROBE:-0}" \
   --env LOCAL_OPERATIONS_AUDIENCE="$audience_count" \
   --env LOCAL_OPERATIONS_AUDIENCE_MODEL="$audience_model" \
   --env LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE="$diagnostic_scope" \
@@ -1774,6 +1776,29 @@ fi
 # Validate the fresh46-attendance fixture before the first browser handover.
 # Later checkout stages intentionally make those attendances ineligible.
 if [[ "$schema_mode" == current && "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
+if [[ "${LOCAL_CHIP_HISTORY_PROBE:-0}" == 1 ]]; then
+  [[ "$schema_mode" == current && "$audience_count" == 0 && "$diagnostic_scope" == none ]]
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CHIP_HISTORY'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+     OR NOT EXISTS (SELECT FROM public.clubs WHERE id='ad200000-0000-4000-8000-000000000002' AND name='Other tenant check-in TEST') THEN
+    RAISE EXCEPTION 'Missing disposable Chip Ops clubs';
+  END IF;
+END $$;
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,deleted_at)
+SELECT ('bd200000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,
+       CASE WHEN n=203 THEN 'ad200000-0000-4000-8000-000000000002' ELSE 'a2000000-0000-4000-8000-000000000001' END::uuid,
+       'Chip history TEST '||n,'registering','registering',now()-n*interval '1 day',100000,0,0,
+       CASE WHEN n=202 THEN now() END
+FROM generate_series(1,203) n;
+CHIP_HISTORY
+  run_browser_proof '' '' 'opens older Chip Ops inventory only for an exact eligible tournament'
+  if [[ "$current_schema_prepared" != 1 ]]; then install_current_paid_schema; fi
+  docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    < "$repo_root/supabase/pending-tests/chip_history_bagging_browser_fixture.sql"
+  LOCAL_CHIP_BAG_HISTORY_PROBE=1 run_browser_proof '' '' 'records and seals one bag through the historical Chip Ops link'
+  exit 0
+fi
 if [[ "$diagnostic_scope" != none ]]; then
   loaded_phase_checkpoint "targeted-$diagnostic_scope-start"
   if [[ "$diagnostic_scope" == cashier-payment ]]; then
