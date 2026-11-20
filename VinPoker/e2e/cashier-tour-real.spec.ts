@@ -2282,10 +2282,11 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const replayUi={desktop:false,mobile:false};
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
  const clockUi={started:false,paused:false,resumed:false};
+ const fnb={guestOrder:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
  let swingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,clockUi,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with an open anonymous clock, Chromium desktop and mobile replay, Cashier payment, Floor close and an open Dealer Swing screen. Layouts are emulated. This does not measure load or prove cash funding.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,clockUi,fnb,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with an open clock, desktop/mobile replay, Cashier payment, Floor close and an open Dealer Swing screen. F&B uses guest and staff HTTP with a club-level finance read. Layouts are emulated. No load or cash funding qualification.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -2311,6 +2312,40 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    const paid=await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders);expect(paid).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});expect(await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders)).toEqual(paid);
   }
   const before=await roster();expect(before).toHaveLength(1);expect(before[0].seats).toHaveLength(3);expect(before[0].seats.reduce((n,s)=>n+s.chip_count,0)).toBe(60000);
+  phase='same-table-guest-order-finance';report();
+  const day=financeBusinessToday();
+  const readFinance=async()=>{
+   const summary=parseFinanceCore(await rpc('get_club_finance_summary_v2',{p_from_date:day,p_to_date:day,p_club_id:club}));
+   assertFinanceCalendarScope(summary.data,{from:day,to:day,clubId:club});
+   return summary;
+  };
+  const financeBefore=await readFinance();
+  const ingredient='afb10000-0000-4000-8000-000000000001';
+  const readStock=async()=>{
+   const rows=await read('fnb_ingredients?select=on_hand&id=eq.'+ingredient);
+   expect(rows).toHaveLength(1);return Number(rows[0].on_hand);
+  };
+  const stockBefore=await readStock();
+  const settings=await rpc('fnb_update_settings',{p_club_id:club,p_guest_order_enabled:true});
+  expect(settings.error).toBeUndefined();
+  const qr=await rpc('fnb_issue_table_qr_token',{p_club_id:club,p_table_ref:opened.p_game_table_id,p_label:'Canonical paid prize TEST'});
+  expect(qr.status).toBe('ok');
+  expect(typeof qr.token).toBe('string');
+  const orderIntent={p_token:qr.token,p_seat:1,p_customer_name:'Game table guest TEST',p_payment_method:'cash',p_client_request_id:crypto.randomUUID(),p_lines:[{menu_item_id:'afb20000-0000-4000-8000-000000000001',qty:1}]};
+  const guestHeaders={...headers,Authorization:'Bearer '+anon};
+  const order=await rpc('fnb_guest_create_order',orderIntent,guestHeaders);
+  expect(typeof order.order_id).toBe('string');
+  expect((await rpc('fnb_guest_create_order',orderIntent,guestHeaders)).order_id).toBe(order.order_id);
+  fnb.guestOrder=true;
+  const paymentIntent={p_order_id:order.order_id,p_client_request_id:crypto.randomUUID()};
+  expect(await rpc('fnb_mark_paid',paymentIntent)).toMatchObject({status:'ok',idempotent:false,subtotal_vnd:20000,cogs_vnd:5000});
+  expect(await rpc('fnb_mark_paid',paymentIntent)).toMatchObject({status:'ok',idempotent:true,order_id:order.order_id});
+  fnb.paidOnce=true;
+  const financeAfter=await readFinance();
+  fnb.stockDelta=(await readStock())-stockBefore;
+  fnb.revenueDelta=financeAfter.revenue.fnb-financeBefore.revenue.fnb;
+  fnb.cogsDelta=financeAfter.cost.fnbCogs-financeBefore.cost.fnbCogs;
+  expect(fnb).toMatchObject({stockDelta:-1,revenueDelta:20000,cogsDelta:5000});
   phase='prepare-and-apply-payout';report();const prepare={p_tournament_id:tour,p_itm_percent:0.2,p_archetype:'DAILY',p_min_cash_x:1,p_rounding_unit:1000,p_prize_pool_override:null,p_override_reason:null,p_regenerate:false,p_reason:'isolated canonical paid prize HTTP',p_custom_percents:null};
   const run=await rpc('prepare_payout_snapshot',prepare);expect(run.status).toBe('prepared');expect(run.entries_snapshot).toBe(3);expect(run.prize_pool_snapshot).toBe(18000000);
   const computed=await request('compute-payouts','/functions/v1/compute-payouts',{mode:'official',run_id:run.run_id});expect(computed.applied.status).toBe('applied');expect(computed.result.rows).toHaveLength(1);expect(computed.result.rows[0].amount).toBe(18000000);expect((await rpc('prepare_payout_snapshot',prepare)).run_id).toBe(run.run_id);

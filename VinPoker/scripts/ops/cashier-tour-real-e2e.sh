@@ -1814,6 +1814,7 @@ assert.deepEqual(r.payoutUi,{loaded:true,dialogVerified:true,cancelPreservedUnpa
 assert.deepEqual(r.replayUi,{desktop:true,mobile:true});
 assert.deepEqual(r.tableCloseUi,{floorCleared:true,swingCleared:true,swingAlertCleared:true});
 assert.deepEqual(r.clockUi,{started:true,paused:true,resumed:true});
+assert.deepEqual(r.fnb,{guestOrder:true,paidOnce:true,stockDelta:-1,revenueDelta:20000,cogsDelta:5000});
 FINAL_PRIZE_CLOSE_RECEIPT
 }
 
