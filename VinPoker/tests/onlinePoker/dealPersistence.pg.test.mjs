@@ -412,13 +412,16 @@ test('the shared server deal persists one native hand with consistent public and
       });
       assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${actionTable}' AND status='complete'`), '12');
       assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${actionTable}'`), '200');
-      const { verifyConcurrentSatelliteTables, verifyFullRingSatellite } = await import('./satelliteConcurrent.fixture.mjs');
+      const { verifyConcurrentSatelliteTables, verifyConcurrentFullRingSatellites } = await import('./satelliteConcurrent.fixture.mjs');
       const participants = [...players, ...await Promise.all(Array.from({ length: 4 }, loginPlayer))];
       await verifyConcurrentSatelliteTables({ sql, json, post, participants, prepareTable, observeTable });
       const { verifySatelliteIntakeClosesDuringHand } = await import('./satelliteIntake.fixture.mjs');
       await verifySatelliteIntakeClosesDuringHand({ sql, json, post, players, newcomer: participants[2], prepareTable });
-      const fullRing = [...participants, ...await Promise.all(Array.from({ length: 3 }, loginPlayer))];
-      await verifyFullRingSatellite({ sql, json, post, participants: fullRing, prepareTable });
+      const fullRing = [...participants];
+      for (let remaining = 21; remaining > 0; remaining -= 3) {
+        fullRing.push(...await Promise.all(Array.from({ length: 3 }, loginPlayer)));
+      }
+      await verifyConcurrentFullRingSatellites({ sql, json, post, participants: fullRing, prepareTable, observeTable });
     });
     return;
   }
