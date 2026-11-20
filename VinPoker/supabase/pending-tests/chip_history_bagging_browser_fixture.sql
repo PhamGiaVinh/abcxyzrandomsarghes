@@ -9,13 +9,14 @@ DECLARE
   physical uuid := gen_random_uuid();
   session_id uuid := gen_random_uuid();
   tournament_table uuid := gen_random_uuid();
-  registration uuid := gen_random_uuid();
-  entry uuid := gen_random_uuid();
   actor uuid;
   player uuid;
   dealer uuid := gen_random_uuid();
   shift_id uuid := gen_random_uuid();
   attendance_id uuid := gen_random_uuid();
+  original_start timestamptz;
+  registration jsonb;
+  payment jsonb;
   receipt jsonb;
 BEGIN
   ASSERT EXISTS (SELECT 1 FROM public.clubs c WHERE c.id=club AND c.name='Cashier Edge TEST');
@@ -49,14 +50,27 @@ BEGIN
     VALUES(tournament_table,flight,physical,session_id,'active');
   INSERT INTO public.dealer_assignments(attendance_id,dealer_id,club_id,table_id,table_session_id,status,assigned_at,swing_due_at,version)
     VALUES(attendance_id,dealer,club,physical,session_id,'assigned',now(),now()+interval '30 min',0);
-  INSERT INTO public.tournament_registrations(id,tournament_id,club_id,player_id,buy_in,status)
-    VALUES(registration,flight,club,player,100000,'confirmed');
-  INSERT INTO public.tournament_entries(id,tournament_id,registration_id,player_id,entry_no,source,status,starting_stack,current_stack)
-    VALUES(entry,flight,registration,player,1,'buy_in','seated',20000,20000);
-  INSERT INTO public.tournament_seats(tournament_id,player_id,entry_id,entry_number,table_id,tournament_table_id,table_session_id,seat_number,is_active,chip_count)
-    VALUES(flight,player,entry,1,physical,tournament_table,session_id,1,true,20000);
+  SELECT start_time INTO STRICT original_start FROM public.tournaments WHERE id=flight;
+  UPDATE public.tournaments SET start_time=now() WHERE id=flight;
+  PERFORM set_config('request.jwt.claim.sub','',true);
+  PERFORM set_config('request.jwt.claim.role','service_role',true);
+  PERFORM set_config('request.jwt.claims','{"role":"service_role"}',true);
+  PERFORM set_config('role','service_role',true);
+  registration := public.cashier_create_app_registration_v1(flight,player);
+  ASSERT registration->>'ok'='true', 'Fixture registration rejected';
+  PERFORM set_config('role','none',true);
+  PERFORM set_config('request.jwt.claim.sub',actor::text,true);
+  PERFORM set_config('request.jwt.claim.role','authenticated',true);
+  PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true);
+  PERFORM set_config('role','authenticated',true);
+  payment := public.resolve_cashier_cash_buyin_intent_v1(jsonb_build_object(
+    'actor_id',actor,'club_id',club,'tournament_id',flight,'registration_id',registration->>'registration_id',
+    'amount',100000,'request_id',gen_random_uuid()),'record');
+  ASSERT payment->>'status'='recorded' AND payment->'result'->>'seating_state'='seated', 'Fixture payment did not seat player';
+  PERFORM set_config('role','none',true);
+  UPDATE public.tournaments SET start_time=original_start WHERE id=flight;
   INSERT INTO public.tournament_chip_counts(tournament_id,player_id,entry_number,chip_count,updated_at)
-    VALUES(flight,player,1,20000,now());
+    VALUES(flight,player,1,20000,now()) ON CONFLICT DO NOTHING;
   UPDATE public.multi_day_package_release_v1 SET enabled=true,allowed_club_ids=ARRAY[club] WHERE id;
   PERFORM set_config('role','authenticated',true);
   receipt := public.multi_day_end_flight_v1(flight,1,gen_random_uuid());
