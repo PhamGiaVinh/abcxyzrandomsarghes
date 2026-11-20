@@ -319,7 +319,8 @@ test('the shared server deal persists one native hand with consistent public and
     await verifySatelliteAudience({ sql, statusPath: realtimeFixture,
       practiceHand: practice.handId, secondaryHand: secondaryDeal.handId });
     const { withSatelliteEdgeHttp } = await import('./satelliteEdgeHttp.fixture.mjs');
-    const prepareTable = ([td, guest]) => {
+    const prepareTable = (participants) => {
+      const [td] = participants;
       const hostClub = crypto.randomUUID();
       const targetTour = crypto.randomUUID();
       const actionPilot = crypto.randomUUID();
@@ -327,10 +328,9 @@ test('the shared server deal persists one native hand with consistent public and
         INSERT INTO public.tournaments VALUES ('${targetTour}','${hostClub}','Disposable Edge action target');
         INSERT INTO online_satellite_private.registration_gate(club_id,enabled) VALUES ('${hostClub}',true);
         INSERT INTO online_satellite_private.pilots VALUES
-          ('${actionPilot}','${hostClub}','${targetTour}','${td.actor}','${actionPilot}',now(),100,2);
+          ('${actionPilot}','${hostClub}','${targetTour}','${td.actor}','${actionPilot}',now(),100,${participants.length});
         INSERT INTO online_satellite_private.entries(pilot_id,player_user_id,registered_at) VALUES
-          ('${actionPilot}','${td.actor}',now()-interval '2 seconds'),
-          ('${actionPilot}','${guest.actor}',now()-interval '1 second');`);
+          ${participants.map(({ actor }, index) => `('${actionPilot}','${actor}',now()+interval '${index} seconds')`).join(',')};`);
       const actionTable = json(`SET ROLE authenticated; SET request.jwt.claim.sub='${td.actor}';
         SELECT public.provision_online_satellite_table_v1('${actionPilot}',
           '[{"starts_at_second":0,"small_blind":5,"big_blind":10,"big_blind_ante":0}]',1)`).tableId;
@@ -412,11 +412,13 @@ test('the shared server deal persists one native hand with consistent public and
       });
       assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${actionTable}' AND status='complete'`), '12');
       assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${actionTable}'`), '200');
-      const { verifyConcurrentSatelliteTables } = await import('./satelliteConcurrent.fixture.mjs');
+      const { verifyConcurrentSatelliteTables, verifyFullRingSatellite } = await import('./satelliteConcurrent.fixture.mjs');
       const participants = [...players, ...await Promise.all(Array.from({ length: 4 }, loginPlayer))];
       await verifyConcurrentSatelliteTables({ sql, json, post, participants, prepareTable, observeTable });
       const { verifySatelliteIntakeClosesDuringHand } = await import('./satelliteIntake.fixture.mjs');
       await verifySatelliteIntakeClosesDuringHand({ sql, json, post, players, newcomer: participants[2], prepareTable });
+      const fullRing = [...participants, ...await Promise.all(Array.from({ length: 3 }, loginPlayer))];
+      await verifyFullRingSatellite({ sql, json, post, participants: fullRing, prepareTable });
     });
     return;
   }

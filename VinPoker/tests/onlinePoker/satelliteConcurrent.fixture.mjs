@@ -51,3 +51,33 @@ export async function verifyConcurrentSatelliteTables({ sql, json, post, partici
     chips: 600, capacityQualified: false,
   }));
 }
+
+export async function verifyFullRingSatellite({ sql, json, post, participants, prepareTable }) {
+  assert.equal(new Set(participants.map(player => player.actor)).size, 9);
+  const tableId = prepareTable(participants);
+  const actors = new Set();
+  for (let round = 0; round < 2; round++) {
+    const start = await post({ op: 'start_hand', tableId, idempotencyKey: crypto.randomUUID() });
+    assert.equal(start.status, 200);
+    const hand = await start.json();
+    assert.equal(hand.outcome, 'ok');
+    for (let revision = 1; revision <= 8; revision++) {
+      const turn = json(`SELECT json_build_object('actor',s.user_id,'seat',s.seat_no)
+        FROM public.online_poker_hands h JOIN public.online_poker_seats s
+        ON s.table_id=h.table_id AND s.seat_no=h.to_act_seat WHERE h.id='${hand.hand_id}'`);
+      const actor = participants.find(player => player.actor === turn.actor);
+      assert.ok(actor);
+      const response = await post({ op: 'submit_action', handId: hand.hand_id, seat: turn.seat,
+        type: 'fold', idempotencyKey: crypto.randomUUID() }, actor.token);
+      assert.equal(response.status, 200);
+      const receipt = await response.json();
+      assert.equal(receipt.ok, true);
+      assert.equal(receipt.stateVersion, revision);
+      actors.add(actor.actor);
+    }
+  }
+  assert.equal(actors.size, 9);
+  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${tableId}' AND status='complete'`), '2');
+  assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${tableId}'`), '900');
+  console.log('SATELLITE_FULL_RING_HTTP_ACTIONS_PASS', JSON.stringify({ seats: 9, hands: 2, acks: 16, chips: 900 }));
+}
