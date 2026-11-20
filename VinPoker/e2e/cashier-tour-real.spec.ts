@@ -2504,6 +2504,16 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   const swing=await swingContext.newPage();
   await loginOwner(swing);
   await swing.goto('/dealer-swing');
+  const swingScope=swing.getByRole('heading',{name:'Chọn CLB để vận hành Dealer Swing',exact:true});
+  const swingScopeError=swing.getByRole('alert').filter({hasText:/Không tải được phạm vi CLB/});
+  await expect(swingScope.or(swingScopeError)).toBeVisible();
+  if(await swingScopeError.isVisible()){
+   expect(scopeReadFailures.get(swing)?.map(({status})=>status)).toEqual([502]);
+   const retryStarted=performance.now();
+   await swing.getByRole('button',{name:'Thử lại',exact:true}).click();
+   await expect(swingScope).toBeVisible();
+   timings.push({operation:'swing-scope-recovery-after-502',ms:performance.now()-retryStarted});
+  }
   await selectDealerSwingClub(swing,'Cashier Edge TEST');
   const swingCard=swing.locator('#table-card-'+opened.p_game_table_id);
   const swingAlert=swing.getByText('Canonical paid prize TEST • Thiếu dealer',{exact:true});
