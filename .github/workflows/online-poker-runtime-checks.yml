@@ -1,0 +1,174 @@
+name: Online poker engine and Edge contracts
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/online-poker-runtime-checks.yml"
+      - "VinPoker/supabase/functions/online-poker-*/**"
+      - "VinPoker/supabase/functions/_shared/poker*/**"
+      - "VinPoker/tests/onlinePoker/**"
+      - "VinPoker/src/pages/OnlineSatelliteTable*"
+      - "VinPoker/src/pages/SatelliteBlindSchedule.tsx"
+      - "VinPoker/src/pages/SatelliteBubbleEvidence.tsx"
+      - "VinPoker/src/pages/SatelliteTestTicket.tsx"
+      - "VinPoker/src/pages/SatelliteTestTicketIssuance.tsx"
+      - "VinPoker/src/lib/onlinePoker/client.ts"
+      - "VinPoker/tests/pokerEngine/**"
+      - "VinPoker/tests/pokerAdapter/**"
+      - "VinPoker/tsconfig.engine.json"
+      - "VinPoker/supabase/migrations/20260817000000_online_poker_core.sql"
+      - "VinPoker/supabase/migrations/20260817000001_online_poker_realtime.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_pilot_registration.sql"
+      - "VinPoker/supabase/migrations/20260820000000_online_poker_runtime_rpcs.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_poker_complete_deal_stack_writeback.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_poker_bba_state_fence.sql"
+      - "VinPoker/supabase/pending-migrations/ROLLBACK_*_online_poker_bba_state_fence.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_deal_levels.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_deal_commit_fence.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_private_table_reads.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_seat_ownership_fence.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_provision_table.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_exclude_practice_reaper.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_set_clock.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_bubble_evidence.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_lock_result.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_issue_test_tickets.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_redeem_test_ticket.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_round_deal_fence.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_shared_round_clock.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_round_table_reads.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_round_reconnect.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_open_round.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_td_round_state.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_round_seat_move.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_move_placement_revision.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_require_round_results.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_lock_round_result.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_provision_two_tables.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_round_operations_state.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_final_table.sql"
+      - "VinPoker/supabase/pending-migrations/*_online_satellite_round_bubble_evidence.sql"
+      - "VinPoker/supabase/migration-archive/historical-never-replay/20260923000000_online_poker_seat_heartbeat.sql"
+      - "VinPoker/supabase/pending-migrations/ROLLBACK_*_online_poker_complete_deal_stack_writeback.sql"
+      - "VinPoker/supabase/migration-archive/legacy-unapplied/20260907000000_op_submit_action_settlement_seat_writeback.sql"
+      - "VinPoker/supabase/migration-archive/legacy-unapplied/20260908000000_op_stand_up_block_folded_midhand.sql"
+      - "VinPoker/supabase/migration-archive/historical-never-replay/20261002000000_op_auto_close_empty_table.sql"
+      - "VinPoker/package-lock.json"
+
+permissions:
+  contents: read
+
+jobs:
+  online-poker-native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: VinPoker
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: online_poker_runtime_ci
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -d online_poker_runtime_ci -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGDATABASE: online_poker_runtime_ci
+      PGUSER: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Verify native start-hand persistence using the server engine
+        env:
+          VERIFY_POKER_BROWSER_RETRY: '1'
+        run: node --experimental-transform-types --test tests/onlinePoker/dealPersistence.pg.test.mjs
+
+  online-poker-realtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.101.0
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Verify real Realtime delivery for the disposable satellite
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 54322
+          PGDATABASE: postgres
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -euo pipefail
+          fixture="$(mktemp -d "${RUNNER_TEMP}/poker-realtime.XXXXXX")"
+          trap 'supabase stop --no-backup --workdir "$fixture" >/dev/null 2>&1 || true' EXIT
+          umask 077
+          supabase init --workdir "$fixture"
+          if ! supabase start --workdir "$fixture" --exclude imgproxy,logflare,mailpit,postgres-meta,storage-api,studio,supavisor,vector,edge-runtime >"$fixture/start.log" 2>&1; then
+            docker ps -a --format '{{.Names}} {{.Status}}'
+            exit 1
+          fi
+          supabase status --workdir "$fixture" --output json >"$fixture/status.json"
+          export POKER_ISOLATED_REALTIME_STATUS="$fixture/status.json"
+          if ! node --experimental-transform-types --test tests/onlinePoker/dealPersistence.pg.test.mjs; then
+            db_container="$(docker ps -a --filter 'name=supabase_db_' --format '{{.Names}}')"
+            if [[ "$db_container" =~ ^supabase_db_[a-zA-Z0-9_.-]+$ ]]; then
+              docker logs --tail 1000 "$db_container" 2>&1 | grep -E 'PANIC:|ERROR:|server process|signal|terminated|reinitializing' | tail -n 50 || true
+            fi
+            exit 1
+          fi
+
+  online-poker-runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck:engine
+      - name: Verify engine, adapter and runner state
+        run: npx vitest run tests/pokerEngine tests/pokerAdapter tests/onlinePoker/tableRunner.test.ts tests/onlinePoker/submitTransportRetry.test.ts src/pages/OnlineSatelliteTable.test.tsx
+      - name: Verify the manual deal handler with fixture transport
+        run: node --experimental-transform-types --test tests/onlinePoker/manualDeal.handler.test.mjs
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.8.0
+      - name: Check Edge import graphs
+        run: |
+          deno check supabase/functions/online-poker-action/index.ts \
+            supabase/functions/online-poker-table-runner/index.ts \
+            supabase/functions/online-poker-timeout-sweep/index.ts

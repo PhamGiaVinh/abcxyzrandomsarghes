@@ -15,6 +15,7 @@
 // schema. The wire view shapes live in ./wire.ts (a hand-maintained server mirror).
 
 import { supabase } from '@/integrations/supabase/client';
+import { FunctionsFetchError, FunctionsHttpError } from '@supabase/supabase-js';
 import { RUNTIME_LIVE } from './types';
 import {parseOnlineCreateReceipt,parseOnlineCreateResolution,type OnlineCreatePayload} from './createReceipt';
 import type { ActionType, LobbyTableSummary, PublicHandView, PublicSeatView, WalletView } from './types';
@@ -130,6 +131,29 @@ async function invokeEdge<T>(body: Record<string, unknown>): Promise<T> {
   return data as T;
 }
 
+async function submitWithTransportRetry(body: ReturnType<typeof bodySubmitAction>): Promise<SubmitActionResult> {
+  if (!RUNTIME_LIVE) throw new RuntimeNotLiveError();
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError || !session) throw new OnlinePokerError('auth_required');
+  const send = (accessToken: string) => supabase.functions.invoke<SubmitActionResult>('online-poker-action', {
+    body, headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  let result = await send(session.access_token);
+  const response = result.error instanceof FunctionsHttpError ? result.error.context as Response : null;
+  if (result.error instanceof FunctionsFetchError || response?.status === 503) {
+    const current = await supabase.auth.getSession();
+    if (current.error || current.data.session?.user.id !== session.user.id) {
+      throw new OnlinePokerError('auth_scope_changed');
+    }
+    result = await send(current.data.session.access_token);
+  }
+  if (result.error) throw new OnlinePokerError('edge_error', result.error.message);
+  if (!result.data || typeof result.data !== 'object' || 'error' in result.data) {
+    throw new OnlinePokerError('invalid_action_response');
+  }
+  return result.data;
+}
+
 // ── public client surface ────────────────────────────────────────────────────
 
 export const onlinePokerClient = {
@@ -182,7 +206,7 @@ export const onlinePokerClient = {
 
   /** Submit an action intent; the server re-validates with the engine. */
   submitAction: (req: Omit<ActionRequest, 'idempotencyKey'> & { idempotencyKey?: string }) =>
-    invokeEdge<SubmitActionResult>(
+    submitWithTransportRetry(
       bodySubmitAction({ ...req, idempotencyKey: req.idempotencyKey ?? newIdemKey() }),
     ),
 };
@@ -246,6 +270,7 @@ export interface LiveTableMeta {
   startingStack: string;
   /** current host (transferable; null if table has no seated players) */
   hostUserId: string | null;
+  isSatellite?: boolean;
 }
 
 /** Single table row by id — for the table page header when RUNTIME_LIVE. */
@@ -253,7 +278,8 @@ export async function loadTableMetaLive(tableId: string,signal?:AbortSignal): Pr
   if (!RUNTIME_LIVE) throw new RuntimeNotLiveError();
   let read = rails()
     .from('online_poker_tables')
-    .select('id, name, sb, bb, max_seats, status, min_buyin, max_buyin, starting_stack_default, host_user_id')
+    .select('id, name, sb, bb, max_seats, status, min_buyin, max_buyin, starting_stack_default, host_user_id'
+      + (import.meta.env.VITE_ONLINE_SATELLITE_RUNTIME === 'true' ? ', is_satellite' : ''))
     .eq('id', tableId);
   if(signal)read=read.abortSignal(signal);
   const { data, error } = await read.maybeSingle();
@@ -269,6 +295,7 @@ export async function loadTableMetaLive(tableId: string,signal?:AbortSignal): Pr
     maxBuyin: String(data.max_buyin ?? '0'),
     startingStack: String(data.starting_stack_default ?? data.min_buyin ?? '0'),
     hostUserId: data.host_user_id ? String(data.host_user_id) : null,
+    ...(data.is_satellite === true ? { isSatellite: true } : {}),
   };
 }
 
@@ -469,6 +496,7 @@ export function wirePublicToView(
     handId: wire.config.handId,
     tableId: wire.config.tableId,
     handNo: wire.config.handNo,
+    blinds: { sb: wire.config.sb, bb: wire.config.bb, bigBlindAnte: wire.config.bigBlindAnte },
     street: wire.street,
     board: [...wire.board],
     pot: wire.pot,

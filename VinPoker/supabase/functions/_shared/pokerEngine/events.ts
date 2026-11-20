@@ -18,8 +18,8 @@ export const handStarted = (handId: string, buttonSeat: number, seats: number[])
 
 // `sbSeat` is null + `sb` is "0" for a DEAD small blind (tournament dead-button
 // hand where the SB position is an empty seat — only the BB is posted).
-export const blindsPosted = (sbSeat: number | null, bbSeat: number, sb: string, bb: string): HandEvent =>
-  ev('blinds_posted', { sbSeat, bbSeat, sb, bb });
+export const blindsPosted = (sbSeat: number | null, bbSeat: number, sb: string, bb: string, ante?: string): HandEvent =>
+  ev('blinds_posted', { sbSeat, bbSeat, sb, bb, ...(ante === undefined ? {} : { ante }) });
 
 /** Announces dealing only — carries NO cards (cards are private). */
 export const holeCardsDealt = (seats: number[]): HandEvent =>

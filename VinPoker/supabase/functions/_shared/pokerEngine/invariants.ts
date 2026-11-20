@@ -25,6 +25,10 @@ export function checkInvariants(state: HandState, initialTotal?: bigint): string
 
   // ── per-seat chip sanity ──
   for (const s of seats) {
+    const ante = s.deadAnte ?? 0n;
+    if (ante < 0n || ante > (state.config.bigBlindAnte ?? 0n) || ante > s.totalCommitted - s.committed) {
+      v.push(`seat ${s.seat}: invalid dead ante`);
+    }
     if (s.stack < 0n) v.push(`seat ${s.seat}: negative stack ${s.stack}`);
     if (s.committed < 0n) v.push(`seat ${s.seat}: negative committed ${s.committed}`);
     if (s.totalCommitted < 0n) v.push(`seat ${s.seat}: negative totalCommitted ${s.totalCommitted}`);
@@ -48,6 +52,16 @@ export function checkInvariants(state: HandState, initialTotal?: bigint): string
       s.holeCards.length !== 2
     ) {
       v.push(`seat ${s.seat}: in the hand with ${s.holeCards.length} hole cards (must be 2)`);
+    }
+  }
+  const ante = state.config.bigBlindAnte ?? 0n;
+  if (ante > 0n) {
+    const payer = seats.find(seat => seat.seat === state.config.bigBlindAnteSeat);
+    const available = payer ? payer.startingStack - state.config.bb : 0n;
+    const expected = available <= 0n ? 0n : available < ante ? available : ante;
+    if (!payer || (payer.deadAnte ?? 0n) !== expected
+      || seats.some(seat => seat !== payer && (seat.deadAnte ?? 0n) !== 0n)) {
+      v.push('invalid big blind ante payer or amount');
     }
   }
 

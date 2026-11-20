@@ -161,6 +161,8 @@ export interface WireHandConfig {
   buttonSeat: number;
   sb: ChipString;
   bb: ChipString;
+  bigBlindAnte?: ChipString;
+  bigBlindAnteSeat?: number;
   schemaVersion: number;
 }
 
@@ -200,6 +202,7 @@ export interface WirePublicSeat {
   stack: ChipString;
   committed: ChipString;
   totalCommitted: ChipString;
+  deadAnte?: ChipString;
   status: SeatStatus;
   hasActedThisRound: boolean;
   canRaise: boolean;
@@ -249,6 +252,7 @@ function wireSeat(s: PublicSeat): WirePublicSeat {
     stack: chipToString(s.stack),
     committed: chipToString(s.committed),
     totalCommitted: chipToString(s.totalCommitted),
+    ...(s.deadAnte !== undefined ? { deadAnte: chipToString(s.deadAnte) } : {}),
     status: s.status,
     hasActedThisRound: s.hasActedThisRound,
     canRaise: s.canRaise,
@@ -265,6 +269,8 @@ function wirePublicFromView(view: PublicHandState): WirePublicHandState {
       buttonSeat: view.config.buttonSeat,
       sb: chipToString(view.config.sb),
       bb: chipToString(view.config.bb),
+      ...(view.config.bigBlindAnte !== undefined ? { bigBlindAnte: chipToString(view.config.bigBlindAnte) } : {}),
+      ...(view.config.bigBlindAnteSeat !== undefined ? { bigBlindAnteSeat: view.config.bigBlindAnteSeat } : {}),
       schemaVersion: view.config.schemaVersion,
     },
     street: view.street,
