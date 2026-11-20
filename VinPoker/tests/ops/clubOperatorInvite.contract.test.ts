@@ -28,9 +28,10 @@ const disposableWorkflow = readFileSync(
 );
 
 describe("Ops club operator invitation boundary", () => {
-  it("permits only club-scoped Floor and Cashier invitations", () => {
+  it("keeps Floor and Cashier available and gates the new Dealer Control invitation", () => {
     expect(migration).toContain("operator_role IN ('floor', 'cashier')");
     expect(edge).toContain('value === "floor" || value === "cashier"');
+    expect(edge).toContain('value === "dealer_control" && dealerControlFlag === "true"');
     expect(edge).not.toContain('"owner"');
     expect(edge).not.toContain('.from("user_roles")');
   });

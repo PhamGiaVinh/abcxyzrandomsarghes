@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Link, Navigate } from "react-router-dom";
@@ -29,8 +30,11 @@ import { useOpsCapabilities } from "@/ops/auth/OpsCapabilityProvider";
 import {
   inviteStatusLabel,
   isOperatorInviteRole,
+  operatorInviteRoleLabel,
   type OperatorInviteRole,
 } from "@/ops/clubAdmin/clubOperatorInviteModel";
+
+const dealerControlInvitesEnabled = import.meta.env.VITE_OPS_DEALER_CONTROL_INVITES_ENABLED === "true";
 
 type InviteRow = {
   id: string;
@@ -53,8 +57,16 @@ export default function OpsClubAccounts() {
   const [rows, setRows] = useState<InviteRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const canManageClub = ownerClubs.some(row => row.club_id === clubId);
+  const scopedClubId = canManageClub ? clubId : "";
+  const visibleRows = rows.filter(row => row.club_id === scopedClubId);
+  const currentClub = useRef(scopedClubId);
+  currentClub.current = scopedClubId;
+  const readVersion = useRef(0);
 
   const load = useCallback(async (selectedClubId: string) => {
+    if (selectedClubId !== currentClub.current) return;
+    const version = ++readVersion.current;
     if (!selectedClubId) return setRows([]);
     // Generated Database types cannot include an unapplied migration. The API
     // boundary is covered by a contract test until types regenerate after apply.
@@ -62,6 +74,7 @@ export default function OpsClubAccounts() {
     const { data, error } = await (client.from as any)("club_operator_invites")
       .select("id,club_id,email_normalized,operator_role,status")
       .eq("club_id", selectedClubId).order("created_at", { ascending: false });
+    if (version !== readVersion.current || selectedClubId !== currentClub.current) return;
     if (error) return setMessage("Chưa tải được danh sách lời mời.");
     setRows(
       (data ?? []).filter((row: InviteRow) =>
@@ -71,23 +84,23 @@ export default function OpsClubAccounts() {
   }, [client]);
 
   useEffect(() => {
-    if (!clubId && ownerClubs.length === 1) setClubId(ownerClubs[0].club_id);
-  }, [clubId, ownerClubs]);
+    if (!canManageClub && ownerClubs.length === 1) setClubId(ownerClubs[0].club_id);
+  }, [canManageClub, ownerClubs]);
   useEffect(() => {
-    void load(clubId);
-  }, [clubId, load]);
+    void load(scopedClubId);
+  }, [scopedClubId, load]);
   if (capabilities.loading) return null;
   if (!capabilities.hasOwnerAccess) return <Navigate to="/ops" replace />;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!clubId || !email.trim()) {
+    if (!scopedClubId || !email.trim()) {
       return setMessage("Chọn CLB và nhập email nhân viên.");
     }
     setLoading(true);
     setMessage(null);
     const { data, error } = await client.functions.invoke("ops-club-accounts", {
-      body: { action: "invite", club_id: clubId, email, operator_role: role },
+      body: { action: "invite", club_id: scopedClubId, email, operator_role: role },
     });
     setLoading(false);
     if (error || !data?.status) {
@@ -107,6 +120,7 @@ export default function OpsClubAccounts() {
   };
 
   const revoke = async (inviteId: string) => {
+    if (!visibleRows.some(row => row.id === inviteId)) return;
     setLoading(true);
     setMessage(null);
     const { error } = await client.functions.invoke("ops-club-accounts", {
@@ -115,7 +129,7 @@ export default function OpsClubAccounts() {
     setLoading(false);
     if (error) return setMessage("Không thu hồi được quyền. Vui lòng thử lại.");
     setMessage(
-      "Đã thu hồi quyền Floor/Cashier của CLB này. Tài khoản Auth không bị xóa.",
+      "Đã thu hồi quyền đã chọn tại CLB này.",
     );
     await load(clubId);
   };
@@ -136,7 +150,7 @@ export default function OpsClubAccounts() {
           Tài khoản vận hành
         </h1>
         <p className="mt-2 text-sm leading-6 text-zinc-400">
-          Chủ CLB chỉ mời Floor hoặc Cashier cho CLB của mình. Nhân viên tự đặt
+          Chủ CLB mời nhân viên vào các vai trò được hỗ trợ tại CLB của mình. Nhân viên tự đặt
           mật khẩu qua email; không có nút cấp Owner ở đây.
         </p>
       </header>
@@ -153,7 +167,7 @@ export default function OpsClubAccounts() {
           <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="ops-invite-club">CLB</Label>
-              <Select value={clubId} onValueChange={setClubId}>
+              <Select value={clubId} onValueChange={setClubId} disabled={loading}>
                 <SelectTrigger
                   id="ops-invite-club"
                   className="min-h-11 bg-black/20"
@@ -198,12 +212,13 @@ export default function OpsClubAccounts() {
                 <SelectContent>
                   <SelectItem value="floor">Floor</SelectItem>
                   <SelectItem value="cashier">Cashier</SelectItem>
+                  {dealerControlInvitesEnabled && <SelectItem value="dealer_control">Dealer Control</SelectItem>}
                 </SelectContent>
               </Select>
             </div>
             <Button
               type="submit"
-              disabled={loading || !ownerClubs.length}
+              disabled={loading || !scopedClubId}
               className="min-h-11 sm:col-span-2"
             >
               Gửi lời mời bảo mật
@@ -223,12 +238,12 @@ export default function OpsClubAccounts() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {!rows.length && (
+          {!visibleRows.length && (
             <p className="text-sm text-zinc-400">
               Chưa có lời mời nào cho CLB này.
             </p>
           )}
-          {rows.map((row) => (
+          {visibleRows.map((row) => (
             <div
               key={row.id}
               className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-3 sm:flex-row sm:items-center sm:justify-between"
@@ -236,7 +251,7 @@ export default function OpsClubAccounts() {
               <div className="min-w-0">
                 <p className="truncate font-medium">{row.email_normalized}</p>
                 <p className="mt-1 text-xs text-zinc-400">
-                  {row.operator_role === "floor" ? "Floor" : "Cashier"} ·{" "}
+                  {operatorInviteRoleLabel[row.operator_role]} ·{" "}
                   {inviteStatusLabel(row.status)}
                 </p>
               </div>

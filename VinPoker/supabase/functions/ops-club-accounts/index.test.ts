@@ -8,8 +8,18 @@ import {
   applyInvite,
   findUserByEmail,
   inviteRedirectTo,
+  isEnabledOperatorRole,
   resolveInviteDelivery,
 } from "./index.ts";
+
+Deno.test("Dealer Control invitations require the exact server flag", () => {
+  assertEquals(isEnabledOperatorRole("dealer_control"), false);
+  assertEquals(isEnabledOperatorRole("dealer_control", "TRUE"), false);
+  assertEquals(isEnabledOperatorRole("dealer_control", "true"), true);
+  assertEquals(isEnabledOperatorRole("cashier"), true);
+  assertEquals(isEnabledOperatorRole("floor"), true);
+  assertEquals(isEnabledOperatorRole("owner", "true"), false);
+});
 
 function fakeAdmin(options: {
   users?: Array<
