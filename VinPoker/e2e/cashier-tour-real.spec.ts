@@ -652,6 +652,91 @@ test('Cashier browser navigation and populated tour render latency',async({page}
  },null,2));
 });
 
+test("Cashier scans open the same verified registration over real HTTP", async ({ page }) => {
+  const reportPath = process.env.LOCAL_OPERATIONS_LATENCY_REPORT;
+  test.skip(!reportPath, "Isolated stack measurement only");
+  test.setTimeout(120_000);
+  await loginOwner(page);
+  await page.setViewportSize({ width: 375, height: 844 });
+  await page.goto("/ops/cashier/tour?club=a2000000-0000-4000-8000-000000000001");
+  await page.getByRole("button", { name: /^Cashier Edge TEST Tour ·/ }).first().click();
+
+  const fixtureRead = page.waitForResponse(response => response.url().endsWith("/rpc/cashier_tour_worklist_v1")
+    && response.request().postDataJSON()?.p_bucket === "completed");
+  await page.getByRole("button", { name: /Đã tự hoàn tất/ }).click();
+  const fixture = (await (await fixtureRead).json()).rows.find((row: { player_name: string }) => row.player_name.startsWith("Người chơi Edge TEST"));
+  expect(fixture?.reference_code).toMatch(/^[\w-]{4,}$/);
+  const code: string = fixture.reference_code;
+  const scanPayload = JSON.stringify({ receipt_code: code });
+  const scanner = page.getByPlaceholder("Quét QR, thẻ hội viên, mã CK; hoặc tìm tên, số điện thoại");
+  const dialog = page.getByRole("dialog", { name: `Chi tiết buy-in ${fixture.player_name}` });
+  const counts = { worklist: 0, lookup: 0, shifts: 0, tours: 0, summary: 0 };
+  page.on("request", request => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.endsWith("/rpc/cashier_tour_worklist_v1")) counts.worklist++;
+    if (pathname.endsWith("/rpc/cashier_lookup_tour_v1")) counts.lookup++;
+    if (pathname.endsWith("/rest/v1/cashier_till_shifts")) counts.shifts++;
+    if (pathname.endsWith("/rest/v1/tournaments")) counts.tours++;
+    if (pathname.endsWith("/rpc/cashier_shift_summary_v1")) counts.summary++;
+  });
+  const samples = [];
+  for (let index = 0; index < 20; index++) {
+    const before = { ...counts };
+    await scanner.fill("");
+    await scanner.pressSequentially(scanPayload, { delay: 10 });
+    const afterTyping = { ...counts };
+    const start = performance.now();
+    const read = page.waitForResponse(response => {
+      if (!response.url().endsWith("/rpc/cashier_tour_worklist_v1")) return false;
+      const args = response.request().postDataJSON();
+      return args?.p_query === code && args?.p_bucket === "all";
+    });
+    await scanner.press("Enter");
+    const result = await read;
+    expect(result.ok()).toBe(true);
+    const payload = await result.json();
+    expect(payload.ok).toBe(true);
+    expect(payload.rows.map((row: { id: string }) => row.id)).toEqual([fixture.id]);
+    const httpBodyReadyMs = performance.now() - start;
+    await expect(dialog.getByText(code, { exact: true })).toBeVisible();
+    const afterReady = { ...counts };
+    samples.push({
+      enterToReadyMs: performance.now() - start,
+      httpBodyReadyMs,
+      worklistWhileTyping: afterTyping.worklist - before.worklist,
+      worklistAfterEnter: afterReady.worklist - afterTyping.worklist,
+      lookupReads: afterReady.lookup - before.lookup,
+      shiftReads: afterReady.shifts - before.shifts,
+      tourReads: afterReady.tours - before.tours,
+      summaryReads: afterReady.summary - before.summary,
+    });
+    await dialog.getByRole("button", { name: "Đóng · khách tiếp theo" }).click();
+    await expect(dialog).toBeHidden();
+  }
+  const slowSearchStart = counts.worklist;
+  await scanner.fill("");
+  for (const length of [3, code.length]) {
+    const prefix = code.slice(0, length);
+    const worklist = page.waitForResponse(response => response.url().endsWith("/rpc/cashier_tour_worklist_v1")
+      && response.request().postDataJSON()?.p_query === prefix);
+    await scanner.fill(prefix);
+    const result = await worklist;
+    expect(result.ok()).toBe(true);
+    expect((await result.json()).ok).toBe(true);
+  }
+  await expect(dialog).toBeHidden();
+  const ordered = samples.map(sample => sample.enterToReadyMs).sort((a, b) => a - b);
+  writeFileSync(reportPath!.replace(/\.json$/, "-scan-ui-http.json"), JSON.stringify({
+    kind: "ISOLATED_AUTHENTICATED_CASHIER_SCAN_UI",
+    sha: process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+    samples,
+    p95Ms: ordered[18],
+    slowSearchWorklistReads: counts.worklist - slowSearchStart,
+    scope: "Serial JSON-wrapped reference-code scans of one completed fixture on Chromium, 375×844",
+    qualification: false,
+  }, null, 2));
+});
+
 test("real Auth and Cashier backend render the completed seated buy-in", async ({ page }) => {
   await loginOwner(page);
   const cashierReads: string[] = [];
