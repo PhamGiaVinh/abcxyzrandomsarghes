@@ -74,7 +74,9 @@ BEGIN
   UPDATE public.tournaments SET start_time=original_start WHERE id=flight;
   INSERT INTO public.tournament_chip_counts(tournament_id,player_id,entry_number,chip_count,updated_at)
     VALUES(flight,player,1,20000,now()) ON CONFLICT DO NOTHING;
-  UPDATE public.multi_day_package_release_v1 SET enabled=true,allowed_club_ids=ARRAY[club] WHERE id;
+  INSERT INTO public.multi_day_package_release_v1(id,enabled,allowed_club_ids)
+    VALUES(true,true,ARRAY[club])
+    ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded.allowed_club_ids;
   PERFORM set_config('role','authenticated',true);
   receipt := public.multi_day_end_flight_v1(flight,1,gen_random_uuid());
   ASSERT receipt->>'status'='bagging' AND receipt->>'rosterCount'='1', 'End Flight did not freeze one player';
