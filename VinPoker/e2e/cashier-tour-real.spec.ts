@@ -646,6 +646,7 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
     unstaffedAlertCleared: false,
     independentAssignmentReleased: false,
     swingViewAtEnd: 'unobserved',
+    swingScopeRecoveredFromGatewayError: false,
     swingInventoryHttpStatuses: [] as number[],
     qualification: false,
   };
@@ -674,6 +675,17 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
       assignmentId = assigned.assignment_id;
     }
     await swing.goto('/dealer-swing');
+    if (staffed) {
+      const scopeGate = swing.getByRole('heading', { name: 'Chọn CLB để vận hành Dealer Swing', exact: true });
+      const scopeError = swing.getByRole('alert').filter({ hasText: /Không tải được phạm vi CLB/ });
+      await expect(scopeGate.or(scopeError)).toBeVisible();
+      if (await scopeError.isVisible()) {
+        expect(scopeReadFailures.get(swing)?.map(failure => failure.status)).toEqual([502]);
+        await swing.getByRole('button', { name: 'Thử lại', exact: true }).click();
+        await expect(scopeGate).toBeVisible();
+        proof.swingScopeRecoveredFromGatewayError = true;
+      }
+    }
     await selectDealerSwingClub(swing, 'Cashier Edge TEST');
     const swingCard = swing.locator(`#table-card-${floorTable.id}`);
     const unstaffedAlert = swing.getByText('Floor session latency TEST • Thiếu dealer', { exact: true });
