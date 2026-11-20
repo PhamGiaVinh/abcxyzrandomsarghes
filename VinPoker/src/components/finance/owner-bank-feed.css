@@ -1,0 +1,8 @@
+@keyframes owner-bank-change {
+  0%, 100% { background-color: transparent; }
+  35% { background-color: hsl(var(--primary) / .16); }
+}
+.owner-bank-row-changed { animation: owner-bank-change 1.2s ease-out 1; }
+@media (prefers-reduced-motion: reduce) {
+  .owner-bank-row-changed { animation: none; background-color: hsl(var(--primary) / .1); }
+}
