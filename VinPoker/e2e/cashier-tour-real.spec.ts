@@ -2281,7 +2281,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const payoutUi={loaded:false,dialogVerified:false,cancelPreservedUnpaid:false,confirmed:false,paidVisible:false};
  const replayUi={desktop:false,mobile:false};
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
- const dealerClose={checkedIn:false,assignmentVisible:false,assignmentReleased:false};
+ const dealerClose={checkedIn:false,assignmentVisible:false,assignmentReleased:false,breakRecorded:false,breakVisible:false};
  const clockUi={started:false,paused:false,resumed:false};
  const fnb={guestOrder:false,guestPaidVisible:false,counterPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
  const fnbTour={desktop:false,mobile:false};
@@ -2545,6 +2545,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   await expect(swingCard).toBeVisible();
   await expect(swingAlert).toBeVisible();
   let assignmentId:string|undefined;
+  let attendanceId:string|undefined;
   if(process.env.LOCAL_OPERATIONS_TOUR_FNB_ENABLED==='true'){
    const name='HTTP latency TEST 1';
    const dealers=await read('dealers?select=id&club_id=eq.'+club+'&full_name=eq.'+encodeURIComponent(name));
@@ -2553,6 +2554,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
     p_dealer_id:dealers[0].id,p_club_id:club,p_shift_id:'ad300000-0000-4000-8000-000000000001',p_request_id:crypto.randomUUID(),
    });
    expect(checkedIn.outcome).toBe('checked_in');
+   attendanceId=checkedIn.attendance_id;
    dealerClose.checkedIn=true;
    const assignment=await rpc('assign_dealer_to_table',{
     p_attendance_id:checkedIn.attendance_id,p_table_id:opened.p_game_table_id,p_club_id:club,
@@ -2585,6 +2587,13 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    const assignments=await read('dealer_assignments?select=table_session_id,status,released_at&id=eq.'+assignmentId);
    expect(assignments).toEqual([{table_session_id:empty.table_session_id,status:'completed',released_at:expect.any(String)}]);
    dealerClose.assignmentReleased=true;
+   const breaks=await read('dealer_breaks?select=attendance_id,break_start,break_end,reason,expected_duration_minutes&assignment_id=eq.'+assignmentId);
+   expect(breaks).toHaveLength(1);
+   expect(breaks[0]).toMatchObject({attendance_id:attendanceId,break_start:expect.any(String),break_end:null,reason:'floor_tournament_table_closed'});
+   expect(breaks[0].expected_duration_minutes).toBeGreaterThanOrEqual(15);
+   const attendance=await read('dealer_attendance?select=current_state,check_out_time&id=eq.'+attendanceId);
+   expect(attendance).toEqual([{current_state:'on_break',check_out_time:null}]);
+   dealerClose.breakRecorded=true;
   }
   await Promise.all([
    expect(floorCard).toHaveCount(0,{timeout:10000}).then(()=>{tableCloseUi.floorCleared=true;}),
@@ -2592,6 +2601,11 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    expect(swingAlert).toHaveCount(0,{timeout:10000}).then(()=>{tableCloseUi.swingAlertCleared=true;}),
   ]);
   await expect(swing.getByText('BẢN ĐỒ CHIẾN TRƯỜNG',{exact:true})).toBeVisible();
+  if(assignmentId){
+   const breakPool=swing.getByText('BREAK POOL',{exact:true}).locator('../../..');
+   await expect(breakPool.getByText('HTTP latency TEST 1',{exact:true})).toBeVisible();
+   dealerClose.breakVisible=true;
+  }
   const ready=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(ready.ready).toBe(true);expect(ready.prize_total).toBe(18000000);expect(ready.reconcile_delta).toBe(0);
   const closed=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated canonical paid prize HTTP'});expect(closed.outcome).toBe('closed');expect(closed.prize_total).toBe(18000000);expect(closed.club_revenue).toBe(1800000);expect(closed.reconcile_delta).toBe(0);expect(closed.reconciled).toBe(true);prizeTotal=closed.prize_total;reconcileDelta=closed.reconcile_delta;
   const retry=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated close recovery'});expect(retry.outcome).toBe('already_closed');expect(retry.report_id).toBe(closed.report_id);expect(failure).toBeNull();phase='passed';report();

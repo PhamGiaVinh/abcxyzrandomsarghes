@@ -1601,7 +1601,13 @@ assert.match(slice,/GRANT EXECUTE ON FUNCTION public\.get_tour_fnb_attribution_v
 const costs=read('supabase/migrations/20270128000304_fnb_cancel_snapshot_cost_v1.sql');
 const helper=costs.match(/^CREATE FUNCTION floor_private\.fnb_cancel_cogs_reversal_v1\([\s\S]+?^REVOKE ALL ON FUNCTION floor_private\.fnb_cancel_cogs_reversal_v1[^\n]+;/m);
 assert.ok(helper);
-process.stdout.write(slice.replace('BEGIN;','BEGIN;\n'+helper[0])+'\nCOMMIT;\n');
+const rest=read('supabase/migrations/20261101021500_floor_closed_session_dealer_rest_current_v2.sql');
+const restBody=rest.match(/^CREATE OR REPLACE FUNCTION floor_private\.reconcile_closed_session_attendance_v1\(\)[\s\S]+?^\$function\$;/m);
+const prior=read('supabase/migrations/20270128000047_floor_closed_session_attendance_v1.sql');
+const restTrigger=prior.match(/^ALTER FUNCTION floor_private\.reconcile_closed_session_attendance_v1\(\)[\s\S]+?^EXECUTE FUNCTION floor_private\.reconcile_closed_session_attendance_v1\(\);/m);
+assert.ok(restBody&&restTrigger);
+const restPreflight="DO $$ BEGIN ASSERT to_regprocedure('floor_private.reconcile_closed_session_attendance_v1()') IS NULL; ASSERT NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='public.table_sessions'::regclass AND tgname='trg_reconcile_closed_session_attendance_v1'); END $$;";
+process.stdout.write(slice.replace('BEGIN;','BEGIN;\n'+helper[0])+'\n'+restPreflight+'\n'+restBody[0]+'\n'+restTrigger[0]+'\nCOMMIT;\n');
 TOUR_FNB_CAPTURE_READER
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
   fi
@@ -1950,7 +1956,7 @@ assert.equal(runtime.pendingReentryTransportApplied,true);assert.equal(runtime.c
 // qualification result unchanged; only its healthy concurrent reads are a
 // prerequisite here. The default full suite still requires every delivery gate.
 assert.ok(['cashier-payment','dealer-checkin','prize-replay'].includes(scope));
-if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true});}
+if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});}
 assert.equal(audience.viewers,Number(count));
 for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.equal(audience.checks[key],true,key);
 assert.equal(audience.phase,Object.values(audience.checks).every(v=>v===true)?'passed':'failed');
