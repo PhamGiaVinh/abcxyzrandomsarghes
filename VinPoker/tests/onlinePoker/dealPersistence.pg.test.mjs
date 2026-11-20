@@ -313,9 +313,11 @@ test('the shared server deal persists one native hand with consistent public and
       SELECT online_satellite_private.open_next_round('${realtimePilot}');`);
     const secondaryDeal = await dealNextHand(admin, secondary, first);
     assert.equal(secondaryDeal.ok, true, JSON.stringify(secondaryDeal));
-    const { verifySatelliteRealtime } = await import('./satelliteRealtime.fixture.mjs');
+    const { verifySatelliteRealtime, verifySatelliteAudience } = await import('./satelliteRealtime.fixture.mjs');
     await verifySatelliteRealtime({ sql, statusPath: realtimeFixture, first, spectator,
       practiceHand: practice.handId, satelliteHand: satellite.handId, secondaryHand: secondaryDeal.handId });
+    await verifySatelliteAudience({ sql, statusPath: realtimeFixture,
+      practiceHand: practice.handId, secondaryHand: secondaryDeal.handId });
     const { withSatelliteEdgeHttp } = await import('./satelliteEdgeHttp.fixture.mjs');
     const prepareTable = ([td, guest]) => {
       const hostClub = crypto.randomUUID();

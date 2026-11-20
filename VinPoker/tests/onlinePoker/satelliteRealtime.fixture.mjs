@@ -116,3 +116,60 @@ export async function verifySatelliteRealtime({ sql, statusPath, first, spectato
     }));
   }
 }
+
+export async function verifySatelliteAudience({ sql, statusPath, practiceHand, secondaryHand }) {
+  const status = JSON.parse(readFileSync(statusPath, 'utf8'));
+  assert.equal(status.API_URL, 'http://127.0.0.1:54321');
+  const audienceSize = 30;
+  const audience = Array.from({ length: audienceSize }, () => ({
+    client: createClient(status.API_URL, status.ANON_KEY, { auth: { persistSession: false } }),
+    arrivals: new Map(),
+    privateEvents: 0,
+  }));
+  const measurements = [];
+  const waves = 6;
+  try {
+    await Promise.all(audience.map(async ({ client }, index) => {
+      const read = await client.from('online_poker_hands').select('id').in('id', [practiceHand, secondaryHand]);
+      assert.equal(read.error, null);
+      assert.deepEqual(read.data.map(row => row.id), [practiceHand]);
+      const watcher = audience[index];
+      await new Promise((resolve, reject) => {
+        client.channel(`disposable-audience-${index}`).on('postgres_changes', {
+          event: 'UPDATE', schema: 'public', table: 'online_poker_hands',
+        }, ({ new: row }) => {
+          if (row.id === practiceHand) watcher.arrivals.set(Number(row.state_version), performance.now());
+          if (row.id === secondaryHand) watcher.privateEvents++;
+        }).subscribe(state => {
+          if (state === 'SUBSCRIBED') resolve();
+          if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(state)) reject(new Error(`Audience join: ${state}`));
+        });
+      });
+    }));
+    const updatePractice = () => Number(sql(`UPDATE public.online_poker_hands SET state_version=state_version+1
+      WHERE id='${practiceHand}' RETURNING state_version`));
+    const warm = updatePractice();
+    await observe(() => audience.every(watcher => watcher.arrivals.has(warm)), 'Audience warm-up missed');
+    for (let wave = 0; wave < waves; wave++) {
+      sql(`UPDATE public.online_poker_hands SET state_version=state_version+1 WHERE id='${secondaryHand}'`);
+      const started = performance.now();
+      const revision = updatePractice();
+      await observe(() => audience.every(watcher => watcher.arrivals.has(revision)), `Audience wave ${wave + 1} missed`);
+      measurements.push(...audience.map(watcher => watcher.arrivals.get(revision) - started));
+    }
+    const privateEvents = audience.reduce((total, watcher) => total + watcher.privateEvents, 0);
+    assert.equal(privateEvents, 0);
+    measurements.sort((a, b) => a - b);
+    console.log('SATELLITE_AUDIENCE_ISOLATED_DIAGNOSTIC', JSON.stringify({
+      scope: 'public_practice_fanout_private_satellite_isolation', audienceSize, waves,
+      deliveries: measurements.length, privateEvents,
+      p95Ms: Math.round(measurements[Math.ceil(measurements.length * .95) - 1]),
+      capacityQualified: false,
+    }));
+  } finally {
+    await Promise.all(audience.map(async ({ client }) => {
+      await client.removeAllChannels();
+      client.realtime.disconnect();
+    }));
+  }
+}
