@@ -148,6 +148,32 @@ END $$;
 
 SELECT 'FLOOR_FAST_BUST_NATIVE_CASES_PASS' AS result;
 
+-- Use two distinct exact-seat receipts in one table session, then close the
+-- empty table with the revision returned by the second receipt.
+DO $$
+DECLARE first_seat jsonb; second_seat jsonb; receipt jsonb;
+ p uuid:=gen_random_uuid(); e uuid:=gen_random_uuid(); s uuid:=gen_random_uuid();
+BEGIN
+ first_seat:=fast_bust_test.seed();
+ INSERT INTO public.tournament_entries(id,tournament_id,player_id,entry_no,status,current_stack)
+ VALUES(e,(first_seat->>'tour')::uuid,p,1,'seated',1000);
+ INSERT INTO public.tournament_seats(id,tournament_id,player_id,entry_number,table_id,tournament_table_id,
+ table_session_id,seat_number,chip_count,entry_id,is_active,status)
+ VALUES(s,(first_seat->>'tour')::uuid,p,1,(first_seat->>'table')::uuid,(first_seat->>'table')::uuid,
+ (first_seat->>'session')::uuid,2,1000,e,true,'active');
+ second_seat:=first_seat||jsonb_build_object('seat',s,'entry',e,'player',p,'number',2);
+
+ receipt:=fast_bust_test.invoke(first_seat);
+ PERFORM public.floor_table_v3_assert(receipt->>'outcome'='busted' AND receipt->>'payout_applied'='false','first exact seat bust');
+ PERFORM public.floor_table_v3_assert((SELECT is_active FROM public.tournament_seats WHERE id=s),'first bust leaves second seat active');
+ receipt:=fast_bust_test.invoke(second_seat);
+ PERFORM public.floor_table_v3_assert(receipt->>'outcome'='busted' AND receipt->>'payout_applied'='false','second exact seat bust');
+ PERFORM public.floor_table_v3_assert((SELECT count(*)=2 FROM public.tournament_entries
+   WHERE tournament_id=(first_seat->>'tour')::uuid AND status='busted' AND current_stack=0),'both entries have canonical bust state');
+ receipt:=public.close_tournament_table_v3((first_seat->>'table')::uuid,(receipt->>'revision')::bigint,gen_random_uuid());
+ PERFORM public.floor_table_v3_assert(receipt->>'ok'='true','close succeeds immediately after second bust');
+END $$;
+
 CREATE TABLE fast_bust_test.cases(name text PRIMARY KEY, context jsonb NOT NULL);
 DO $$
 DECLARE c jsonb; p uuid:=gen_random_uuid(); e uuid:=gen_random_uuid(); s uuid:=gen_random_uuid();
