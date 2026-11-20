@@ -634,7 +634,7 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
     phase: 'setup',
     ackMs: null as number | null,
     floorVisibleMs: null as number | null,
-    swingVisibleMs: null as number | null,
+    swingVerifiedAfterReceiptMs: null as number | null,
     independentRosterClosed: false,
     qualification: false,
   };
@@ -653,6 +653,7 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
     await floor.locator('[data-ops-action="floor.tables.open_close_table"]').click();
     const confirmation = floor.locator('[data-ops-action="floor.tables.close_table"]');
     await expect(confirmation).toBeEnabled();
+    await expect(swingCard).toBeVisible();
     proof.phase = 'closing';
     const started = performance.now();
     const receipt = floor.waitForResponse(response => /\/rpc\/close_tournament_table_v[34]$/.test(new URL(response.url()).pathname), { timeout: 5000 });
@@ -662,13 +663,14 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
         proof.ackMs = performance.now() - started;
         expect(response.ok()).toBe(true);
         expect(body).toMatchObject({ ok: true, closed: true, table_session_id: opened.table_session_id });
+        await expect(swingCard).toHaveCount(0, { timeout: Math.max(1, 3000 - (performance.now() - started)) });
+        proof.swingVerifiedAfterReceiptMs = performance.now() - started;
         const roster = await rpc(floorRosterRpc, { p_tournament_id: tourId });
         expect(Array.isArray(roster)).toBe(true);
         expect(roster.some((row: { table_session_id: string }) => row.table_session_id === opened.table_session_id)).toBe(false);
         proof.independentRosterClosed = true;
       }),
       expect(floorCard).toHaveCount(0, { timeout: 3000 }).then(() => { proof.floorVisibleMs = performance.now() - started; }),
-      expect(swingCard).toHaveCount(0, { timeout: 3000 }).then(() => { proof.swingVisibleMs = performance.now() - started; }),
     ]);
     await confirmation.click();
     for (const result of await observed) {
