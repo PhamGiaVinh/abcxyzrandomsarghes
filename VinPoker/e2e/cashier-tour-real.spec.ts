@@ -614,7 +614,9 @@ test('canonical Floor open and close propagate into one continuously open screen
 });
 
 test('Floor close reaches an already-open Dealer Swing screen', async ({ page: floor, context }) => {
-  test.skip(process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE !== 'floor-swing-close', 'Isolated Floor and Swing close proof only');
+  const scope = process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE;
+  const staffed = scope === 'floor-swing-close-staffed';
+  test.skip(scope !== 'floor-swing-close' && !staffed, 'Isolated Floor and Swing close proof only');
   test.setTimeout(90_000);
   const token = await loginOwner(floor);
   const swing = await context.newPage();
@@ -631,11 +633,13 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
   };
   const proof = {
     sha: process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+    staffed,
     phase: 'setup',
     ackMs: null as number | null,
     floorVisibleMs: null as number | null,
     swingVerifiedAfterReceiptMs: null as number | null,
     independentRosterClosed: false,
+    independentAssignmentReleased: false,
     qualification: false,
   };
   try {
@@ -643,10 +647,24 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
       p_tournament_id: tourId, p_game_table_id: floorTable.id, p_control_mode: 'manual', p_request_id: crypto.randomUUID(),
     });
     expect(opened.ok).toBe(true);
+    let assignmentId: string | undefined;
+    if (staffed) {
+      const assigned = await rpc('assign_dealer_to_table', {
+        p_attendance_id: 'af710000-0000-4000-8000-000000000002',
+        p_table_id: floorTable.id,
+        p_club_id: clubId,
+        p_idempotency_key: crypto.randomUUID(),
+        p_swing_due_at: new Date(Date.now() + 60_000).toISOString(),
+      });
+      expect(assigned.outcome).toBe('ok');
+      expect(assigned.assignment_id).toMatch(/^[a-f0-9-]{36}$/);
+      assignmentId = assigned.assignment_id;
+    }
     await swing.goto('/dealer-swing');
     await selectDealerSwingClub(swing, 'Cashier Edge TEST');
     const swingCard = swing.locator(`#table-card-${floorTable.id}`);
     await expect(swingCard).toBeVisible();
+    if (staffed) await expect(swingCard.getByText('Floor close TEST dealer', { exact: true })).toBeVisible();
     await floor.goto(`/ops/floor/tournaments/${tourId}/tables?club=${clubId}`);
     const floorCard = floor.locator(`[data-testid="floor-table-roster-card"][data-floor-table-number="${floorTable.tableNumber}"]`);
     await floorCard.click();
@@ -669,6 +687,15 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
         expect(Array.isArray(roster)).toBe(true);
         expect(roster.some((row: { table_session_id: string }) => row.table_session_id === opened.table_session_id)).toBe(false);
         proof.independentRosterClosed = true;
+        if (assignmentId) {
+          expect(body.dealer_assignments_released).toBe(1);
+          const response = await fetch(`${api}/rest/v1/dealer_assignments?select=table_session_id,status,released_at&id=eq.${assignmentId}`, { headers, signal: AbortSignal.timeout(5000) });
+          expect(response.ok).toBe(true);
+          const assignments = await response.json();
+          expect(assignments).toHaveLength(1);
+          expect(assignments[0]).toMatchObject({ table_session_id: opened.table_session_id, status: 'completed', released_at: expect.any(String) });
+          proof.independentAssignmentReleased = true;
+        }
       }),
       expect(floorCard).toHaveCount(0, { timeout: 3000 }).then(() => { proof.floorVisibleMs = performance.now() - started; }),
     ]);
