@@ -615,11 +615,14 @@ test('canonical Floor open and close propagate into one continuously open screen
 
 test('Floor close reaches an already-open Dealer Swing screen', async ({ page: floor, browser }) => {
   const scope = process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE;
-  const staffed = scope === 'floor-swing-close-staffed';
+  const mobile = scope === 'floor-swing-close-staffed-mobile';
+  const staffed = mobile || scope === 'floor-swing-close-staffed';
   test.skip(scope !== 'floor-swing-close' && !staffed, 'Isolated Floor and Swing close proof only');
   test.setTimeout(90_000);
   const token = await loginOwner(floor);
-  const swingContext = await browser.newContext({ baseURL: process.env.PLAYWRIGHT_BASE_URL });
+  const mobileViewport = mobile ? { width: 390, height: 844 } : undefined;
+  if (mobileViewport) await floor.setViewportSize(mobileViewport);
+  const swingContext = await browser.newContext({ baseURL: process.env.PLAYWRIGHT_BASE_URL, viewport: mobileViewport });
   const swing = await swingContext.newPage();
   await loginOwner(swing);
   const clubId = 'a2000000-0000-4000-8000-000000000001';
@@ -635,6 +638,7 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
   const proof = {
     sha: process.env.LOCAL_OPERATIONS_SOURCE_SHA,
     staffed,
+    mobileViewport,
     phase: 'setup',
     swingVisibleBeforeClose: false,
     independentRosterOpenBeforeClose: false,
@@ -693,6 +697,10 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
     if (staffed) await expect(swingCard.getByText('Floor close TEST dealer', { exact: true })).toBeVisible();
     else await expect(unstaffedAlert).toBeVisible();
     await floor.goto(`/ops/floor/tournaments/${tourId}/tables?club=${clubId}`);
+    if (mobileViewport) {
+      expect(await floor.evaluate(() => window.innerWidth)).toBe(mobileViewport.width);
+      expect(await swing.evaluate(() => window.innerWidth)).toBe(mobileViewport.width);
+    }
     const floorCard = floor.locator(`[data-testid="floor-table-roster-card"][data-floor-table-number="${floorTable.tableNumber}"]`);
     await floorCard.click();
     await floor.locator('[data-ops-action="floor.tables.open_close_table"]').click();

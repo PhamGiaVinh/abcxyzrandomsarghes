@@ -31,7 +31,7 @@ if [[ "$source_generation_probe" != 0 && "$source_generation_probe" != 1 ]] ||
    [[ "$source_generation_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$prize_close_probe" != 1 || "$reentry_fault_mode" != healthy ) ]]; then
   echo 'Source generation candidate requires isolated current full-source healthy audience mode' >&2;exit 1
 fi
-case "$diagnostic_scope" in none|cashier-payment|dealer-checkin|floor-swing-close|floor-swing-close-staffed) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
+case "$diagnostic_scope" in none|cashier-payment|dealer-checkin|floor-swing-close|floor-swing-close-staffed|floor-swing-close-staffed-mobile) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
 if [[ "$diagnostic_scope" == floor-swing-close* && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" != 0 || "$reentry_transport_probe" != 0 || "$correction_undo_probe" != 0 || "$redraw_probe" != 0 || "$prize_close_probe" != 0 ) ]]; then
   echo 'Floor and Swing close proof requires the isolated current operations schema and Realtime only' >&2
   exit 1
@@ -1554,7 +1554,7 @@ CLOCK_BROADCAST_BOOTSTRAP
     echo 'CLOCK_CANDIDATE_PROOF:exact31 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
     exit 0
   fi
-  if [[ "$diagnostic_scope" == floor-swing-close-staffed ]]; then
+  if [[ "$diagnostic_scope" == floor-swing-close-staffed* ]]; then
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'FLOOR_SWING_STAFFED'
 BEGIN;
 DO $$ BEGIN

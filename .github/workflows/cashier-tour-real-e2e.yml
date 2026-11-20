@@ -80,7 +80,7 @@ on:
       diagnostic_scope:
         description: Target one unresolved workflow; never full acceptance
         type: choice
-        options: [none, cashier-payment, dealer-checkin, floor-swing-close, floor-swing-close-staffed]
+        options: [none, cashier-payment, dealer-checkin, floor-swing-close, floor-swing-close-staffed, floor-swing-close-staffed-mobile]
         default: none
       schema_mode:
         description: Historical pre03 migration proof or contemporary runtime proof
