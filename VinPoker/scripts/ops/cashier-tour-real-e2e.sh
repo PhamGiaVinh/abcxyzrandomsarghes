@@ -1813,6 +1813,7 @@ assert.deepEqual(r.showdownHands,[{number:880001,pots:[200],endings:[19900,20000
 assert.deepEqual(r.payoutUi,{loaded:true,dialogVerified:true,cancelPreservedUnpaid:true,confirmed:true,paidVisible:true});
 assert.deepEqual(r.replayUi,{desktop:true,mobile:true});
 assert.deepEqual(r.tableCloseUi,{floorCleared:true,swingCleared:true,swingAlertCleared:true});
+assert.deepEqual(r.clockUi,{started:true,paused:true,resumed:true});
 FINAL_PRIZE_CLOSE_RECEIPT
 }
 

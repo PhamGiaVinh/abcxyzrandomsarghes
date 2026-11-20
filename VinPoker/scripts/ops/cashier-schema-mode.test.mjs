@@ -959,6 +959,7 @@ test('prize-close receipt requires replay on both layouts', (t) => {
    confirmed: true, paidVisible: true,
   },
   tableCloseUi: { floorCleared: true, swingCleared: true, swingAlertCleared: true },
+  clockUi: { started: true, paused: true, resumed: true },
  };
  const grade = (replayUi) => {
   writeFileSync(receiptPath, JSON.stringify({ ...receipt, replayUi }));

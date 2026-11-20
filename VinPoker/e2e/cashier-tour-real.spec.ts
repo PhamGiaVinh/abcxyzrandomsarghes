@@ -2281,9 +2281,11 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const payoutUi={loaded:false,dialogVerified:false,cancelPreservedUnpaid:false,confirmed:false,paidVisible:false};
  const replayUi={desktop:false,mobile:false};
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
+ const clockUi={started:false,paused:false,resumed:false};
  let swingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
+ let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with Chromium desktop and mobile replay, Cashier payment, Floor close and an open Dealer Swing screen. Layouts are emulated. This does not measure load or prove cash funding.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,clockUi,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with an open anonymous clock, Chromium desktop and mobile replay, Cashier payment, Floor close and an open Dealer Swing screen. Layouts are emulated. This does not measure load or prove cash funding.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -2312,6 +2314,40 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   phase='prepare-and-apply-payout';report();const prepare={p_tournament_id:tour,p_itm_percent:0.2,p_archetype:'DAILY',p_min_cash_x:1,p_rounding_unit:1000,p_prize_pool_override:null,p_override_reason:null,p_regenerate:false,p_reason:'isolated canonical paid prize HTTP',p_custom_percents:null};
   const run=await rpc('prepare_payout_snapshot',prepare);expect(run.status).toBe('prepared');expect(run.entries_snapshot).toBe(3);expect(run.prize_pool_snapshot).toBe(18000000);
   const computed=await request('compute-payouts','/functions/v1/compute-payouts',{mode:'official',run_id:run.run_id});expect(computed.applied.status).toBe('applied');expect(computed.result.rows).toHaveLength(1);expect(computed.result.rows[0].amount).toBe(18000000);expect((await rpc('prepare_payout_snapshot',prepare)).run_id).toBe(run.run_id);
+  phase='same-tour-public-clock';report();
+  clockContext=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:'vi-VN'});
+  const clockPage=await clockContext.newPage();
+  await clockPage.goto('/clock/'+tour);
+  const clockHeading=clockPage.getByRole('heading',{name:'Canonical paid prize TEST',exact:true});
+  const stopped=clockPage.getByText('Đồng hồ đang dừng',{exact:true});
+  await expect(clockHeading).toBeVisible();
+  await expect(stopped).toBeVisible();
+  const readClock=()=>rpc('get_tournament_clock',{p_tournament_id:tour});
+  const observeClock=async(running:boolean,operation:string,began:number)=>{
+   const clock=await readClock();
+   expect(clock.tournament_id).toBe(tour);
+   expect(clock.is_running).toBe(running);
+   if(running)await expect(stopped).toHaveCount(0,{timeout:20000});
+   else await expect(stopped).toBeVisible({timeout:20000});
+   await expect(clockHeading).toBeVisible();
+   await expect(clockPage.getByText(/^\d{2}:\d{2}$/)).toBeVisible();
+   timings.push({operation,ms:performance.now()-began});
+   return clock;
+  };
+  const clockStarted=performance.now();
+  expect((await rpc('floor_start_tournament_clock',{p_tournament_id:tour})).ok).toBe(true);
+  let clock=await observeClock(true,'clock-start-to-visible',clockStarted);
+  clockUi.started=true;
+  for(const action of ['pause','resume'] as const){
+   const revision=clock.control_revision;
+   expect(revision).toMatch(/^[a-f0-9]{32}$/);
+   const began=performance.now();
+   const changed=await rpc('floor_control_tournament_clock',{p_tournament_id:tour,p_action:action,p_delta_seconds:null,p_expected_control_revision:revision});
+   expect(changed.ok).toBe(true);
+   clock=await observeClock(action==='resume','clock-'+action+'-to-visible',began);
+   expect(clock.control_revision).not.toBe(revision);
+   clockUi[action==='pause'?'paused':'resumed']=true;
+  }
   for(let scenario=1;scenario<=3;scenario++){
    phase='tracker-hand-'+scenario;report();const table=(await roster())[0],number=880000+scenario;
    const started=await rpc('start_tracker_hand_v3',{p_tournament_id:tour,p_tournament_table_id:table.tournament_table_id,p_table_session_id:table.table_session_id,p_control_epoch:table.control_epoch,p_hand_number:number,p_hand_time:new Date().toISOString(),p_created_by:ownerId,p_button_seat:1});expect(started.status).toBe('success');
@@ -2415,5 +2451,5 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   const ready=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(ready.ready).toBe(true);expect(ready.prize_total).toBe(18000000);expect(ready.reconcile_delta).toBe(0);
   const closed=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated canonical paid prize HTTP'});expect(closed.outcome).toBe('closed');expect(closed.prize_total).toBe(18000000);expect(closed.club_revenue).toBe(1800000);expect(closed.reconcile_delta).toBe(0);expect(closed.reconciled).toBe(true);prizeTotal=closed.prize_total;reconcileDelta=closed.reconcile_delta;
   const retry=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated close recovery'});expect(retry.outcome).toBe('already_closed');expect(retry.report_id).toBe(closed.report_id);expect(failure).toBeNull();phase='passed';report();
- }catch(error){phase+='-failed';report();throw error;}finally{await swingContext?.close();}
+ }catch(error){phase+='-failed';report();throw error;}finally{await Promise.all([swingContext?.close(),clockContext?.close()]);}
 });
