@@ -13,7 +13,9 @@ DECLARE
   entry uuid := gen_random_uuid();
   actor uuid;
   player uuid;
-  attendance record;
+  dealer uuid := gen_random_uuid();
+  shift_id uuid := gen_random_uuid();
+  attendance_id uuid := gen_random_uuid();
   receipt jsonb;
 BEGIN
   ASSERT EXISTS (SELECT 1 FROM public.clubs c WHERE c.id=club AND c.name='Cashier Edge TEST');
@@ -21,11 +23,12 @@ BEGIN
     AND t.club_id=club AND t.name='Chip history TEST 201' AND t.event_id IS NULL);
   SELECT owner_id INTO STRICT actor FROM public.clubs WHERE id=club;
   SELECT id INTO STRICT player FROM auth.users WHERE email='cashier-latency-19@test.invalid';
-  SELECT a.id,a.dealer_id INTO STRICT attendance FROM public.dealer_attendance a
-    JOIN public.dealers d ON d.id=a.dealer_id
-    WHERE d.club_id=club AND a.status='checked_in'
-      AND NOT EXISTS (SELECT 1 FROM public.dealer_assignments da WHERE da.attendance_id=a.id AND da.released_at IS NULL)
-    ORDER BY a.id LIMIT 1;
+  INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time)
+    VALUES(shift_id,club,'Chip history bagging TEST','00:00','23:59');
+  INSERT INTO public.dealers(id,club_id,full_name,status)
+    VALUES(dealer,club,'Chip history dealer TEST','active');
+  INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state)
+    VALUES(attendance_id,dealer,shift_id,(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,'checked_in',now(),'assigned');
 
   INSERT INTO public.tournaments(id,club_id,name,status,live_status,phase,buy_in,starting_stack)
     VALUES(final,club,'Chip history final TEST','active','registering','final',100000,20000);
@@ -41,7 +44,7 @@ BEGIN
   INSERT INTO public.tournament_tables(id,tournament_id,game_table_id,table_session_id,status)
     VALUES(tournament_table,flight,physical,session_id,'active');
   INSERT INTO public.dealer_assignments(attendance_id,dealer_id,club_id,table_id,table_session_id,status,assigned_at,swing_due_at,version)
-    VALUES(attendance.id,attendance.dealer_id,club,physical,session_id,'assigned',now(),now()+interval '30 min',0);
+    VALUES(attendance_id,dealer,club,physical,session_id,'assigned',now(),now()+interval '30 min',0);
   INSERT INTO public.tournament_registrations(id,tournament_id,club_id,player_id,buy_in,status)
     VALUES(registration,flight,club,player,100000,'confirmed');
   INSERT INTO public.tournament_entries(id,tournament_id,registration_id,player_id,entry_no,source,status,starting_stack,current_stack)
