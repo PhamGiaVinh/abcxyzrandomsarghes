@@ -1,4 +1,5 @@
 import type React from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import {
@@ -65,6 +66,9 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
   const allowed = FEATURES.staffSalaryChot ? !!user : previewAllowed || mockPreview;
 
   const [clubId, setClubId] = useState("");
+  const [payment, setPayment] = useState<{ runId: string; scope: string } | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<"" | "cash" | "bank_transfer">("");
+  const [paymentReference, setPaymentReference] = useState("");
   const [ym, setYM] = useState(currentYM);
   const { year, month } = ym;
 
@@ -95,6 +99,10 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
   const status: SalaryPeriodStatus = view?.status ?? "prepared";
   const hasRuns = view?.hasRuns ?? false;
   const rows = hasRuns ? view?.lockedRows ?? [] : view?.previewRows ?? [];
+  const paymentScope = JSON.stringify([user?.id, activeClubId, year, month]);
+  const paymentRow = payment?.scope === paymentScope && hasRuns && status === "approved"
+    ? rows.find((row) => row.runId === payment.runId && row.employmentType === "full_time" && row.status === "locked")
+    : undefined;
   const canApprove = activeClub?.role === "owner" || activeClub?.role === "admin";
   const busy =
     !view || monthQuery.isFetching ||
@@ -208,7 +216,12 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
                     key={row.runId ?? row.staffId}
                     row={row}
                     showMarkPaid={hasRuns && status === "approved"}
-                    onMarkPaid={() => row.runId && actions.markPaid.mutate(row.runId)}
+                    onMarkPaid={() => {
+                      if (!row.runId) return;
+                      setPaymentMethod("");
+                      setPaymentReference("");
+                      setPayment({ runId: row.runId, scope: paymentScope });
+                    }}
                     markPaidPending={busy || actions.markPaid.isPending}
                   />
                 ))}
@@ -216,6 +229,43 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
             )}
           </Card>
 
+          <Dialog open={!!paymentRow} onOpenChange={(open) => { if (!open) setPayment(null); }}>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Xác nhận ghi chi lương</DialogTitle></DialogHeader>
+              {paymentRow && (
+                <form className="space-y-3" onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!payment || !paymentMethod || busy || (paymentMethod === "bank_transfer" && !paymentReference.trim())) return;
+                  setPayment(null);
+                  actions.markPaid.mutate({
+                    runId: payment.runId,
+                    method: paymentMethod,
+                    reference: paymentMethod === "bank_transfer" ? paymentReference : undefined,
+                  });
+                }}>
+                  <p>{paymentRow.fullName} · {activeClub?.name} · {month}/{year} · {formatVND(paymentRow.netVnd)}</p>
+                  <label className="block">Phương thức
+                    <select className="block w-full rounded border bg-background p-2" required value={paymentMethod}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (value === "" || value === "cash" || value === "bank_transfer") setPaymentMethod(value);
+                      }}>
+                      <option value="">Chọn phương thức</option>
+                      <option value="cash">Tiền mặt</option>
+                      <option value="bank_transfer">Chuyển khoản</option>
+                    </select>
+                  </label>
+                  {paymentMethod === "bank_transfer" && (
+                    <label className="block">Mã tham chiếu
+                      <input className="block w-full rounded border bg-background p-2" required value={paymentReference}
+                        onChange={(event) => setPaymentReference(event.target.value)} />
+                    </label>
+                  )}
+                  <Button type="submit" disabled={busy || !paymentMethod || (paymentMethod === "bank_transfer" && !paymentReference.trim())}>Ghi nhận đã chi</Button>
+                </form>
+              )}
+            </DialogContent>
+          </Dialog>
           <ActionBar
             hasRuns={hasRuns}
             status={status}
