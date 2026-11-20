@@ -613,13 +613,14 @@ test('canonical Floor open and close propagate into one continuously open screen
  }catch(error){phase+='-failed';report();throw error;}
 });
 
-test('Floor close reaches an already-open Dealer Swing screen', async ({ page: floor, context }) => {
+test('Floor close reaches an already-open Dealer Swing screen', async ({ page: floor, browser }) => {
   const scope = process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE;
   const staffed = scope === 'floor-swing-close-staffed';
   test.skip(scope !== 'floor-swing-close' && !staffed, 'Isolated Floor and Swing close proof only');
   test.setTimeout(90_000);
   const token = await loginOwner(floor);
-  const swing = await context.newPage();
+  const swingContext = await browser.newContext({ baseURL: process.env.PLAYWRIGHT_BASE_URL });
+  const swing = await swingContext.newPage();
   await loginOwner(swing);
   const clubId = 'a2000000-0000-4000-8000-000000000001';
   const tourId = 'a3000000-0000-4000-8000-000000000001';
@@ -635,6 +636,8 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
     sha: process.env.LOCAL_OPERATIONS_SOURCE_SHA,
     staffed,
     phase: 'setup',
+    swingVisibleBeforeClose: false,
+    independentRosterOpenBeforeClose: false,
     ackMs: null as number | null,
     floorVisibleMs: null as number | null,
     swingVerifiedAfterReceiptMs: null as number | null,
@@ -671,7 +674,12 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
     await floor.locator('[data-ops-action="floor.tables.open_close_table"]').click();
     const confirmation = floor.locator('[data-ops-action="floor.tables.close_table"]');
     await expect(confirmation).toBeEnabled();
+    proof.phase = 'before-close';
+    const rosterBeforeClose = await rpc(floorRosterRpc, { p_tournament_id: tourId });
+    expect(rosterBeforeClose.some((row: { table_session_id: string }) => row.table_session_id === opened.table_session_id)).toBe(true);
+    proof.independentRosterOpenBeforeClose = true;
     await expect(swingCard).toBeVisible();
+    proof.swingVisibleBeforeClose = true;
     proof.phase = 'closing';
     const started = performance.now();
     const receipt = floor.waitForResponse(response => /\/rpc\/close_tournament_table_v[34]$/.test(new URL(response.url()).pathname), { timeout: 5000 });
@@ -706,6 +714,7 @@ test('Floor close reaches an already-open Dealer Swing screen', async ({ page: f
     proof.phase = 'passed';
   } finally {
     writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/, '-floor-swing-close-http.json'), JSON.stringify(proof, null, 2));
+    await swingContext.close();
   }
 });
 
