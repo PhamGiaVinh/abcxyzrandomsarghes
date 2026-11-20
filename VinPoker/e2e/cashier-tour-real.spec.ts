@@ -2681,7 +2681,8 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
     });
     const membershipResponse=dealerPage.waitForResponse(response=>{
      const url=new URL(response.url());
-     return url.pathname==='/rest/v1/dealers'&&url.searchParams.get('user_id')==='eq.'+staff[0].userId;
+     return url.pathname==='/rest/v1/dealers'&&url.searchParams.get('user_id')==='eq.'+staff[0].userId
+      &&url.searchParams.get('select')?.includes('clubs(name)');
     },{timeout:10000});
     const wageResponse=dealerPage.waitForResponse(response=>
      new URL(response.url()).pathname==='/rest/v1/rpc/get_my_pt_wage'&&response.request().method()==='POST',
@@ -2690,7 +2691,13 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
     const wageResult=wageResponse.catch(()=>null);
     const [membership]=await Promise.all([membershipResponse,dealerPage.goto('/dealer/salary')]);
     expect(membership.ok(),`Dealer membership HTTP ${membership.status()}`).toBe(true);
-    expect((await membership.json()).some((row:{id:string})=>row.id===paidDealerId),'Dealer can read its own paid membership').toBe(true);
+    const includesPaidDealer=(rows:{id:string}[])=>rows.some(row=>row.id===paidDealerId);
+    if(!includesPaidDealer(await membership.json())){
+     const direct=await fetch(membership.url(),{headers:dealerHeaders,signal:AbortSignal.timeout(5000)});
+     const sameBearer=(await membership.request().headerValue('authorization'))===dealerHeaders.Authorization;
+     const directIncludesMembership=direct.ok()&&includesPaidDealer(await direct.json());
+     throw new Error(`Paid dealer missing from browser membership (same bearer: ${sameBearer}, direct HTTP: ${direct.status()}, direct membership: ${directIncludesMembership})`);
+    }
     const renderedWage=await wageResult;
     if(!renderedWage)throw new Error('Mobile salary did not request wage after loading the paid dealer membership');
     expect(renderedWage.request().postDataJSON().p_dealer_id).toBe(paidDealerId);
