@@ -76,6 +76,22 @@ it("refreshes after reconnecting without waiting for the next poll", async () =>
   expect(mock.live).toHaveBeenCalledTimes(2);
   expect(screen.getByText("120.000 đ")).toBeTruthy();
 });
+it("coalesces reconnect signals received during a pending read into one follow-up", async () => {
+  vi.useFakeTimers();
+  let settle!: (value: ReturnType<typeof payload>) => void;
+  mock.live.mockReturnValueOnce(new Promise(resolve => { settle = resolve; }));
+  mock.live.mockResolvedValue(payload("club-a", 120000));
+  render(<TourRevenuePanel clubId="club-a" />);
+  await act(async () => {
+    window.dispatchEvent(new Event("online"));
+    window.dispatchEvent(new Event("online"));
+  });
+  expect(mock.live).toHaveBeenCalledTimes(1);
+
+  await act(async () => { settle(payload()); });
+  expect(mock.live).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("120.000 đ")).toBeTruthy();
+});
 it("clears failed reads instead of displaying old money as current", async () => {
   render(<TourRevenuePanel clubId="club-a" />); await screen.findByText("90.000 đ");
   mock.live.mockRejectedValue(new Error("unavailable"));
