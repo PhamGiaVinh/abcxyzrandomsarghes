@@ -57,9 +57,29 @@ jobs:
       PGDATABASE: postgres
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: VinPoker/package-lock.json
       - name: Exact-seat writer native PostgreSQL cases
         working-directory: VinPoker
         run: psql -X -v ON_ERROR_STOP=1 -f tests/floorTableControlV3/fastBust.disposable.sql
       - name: Concurrent exact-seat and duplicate intents
         working-directory: VinPoker
         run: bash tests/floorTableControlV3/fastBust.concurrent.sh
+      - name: Verify browser exact-seat busts against disposable PostgreSQL
+        working-directory: VinPoker
+        env:
+          FLOOR_BUST_BROWSER_DATABASE: vinpoker_floor_bust_browser
+          VITE_SUPABASE_URL: http://127.0.0.1:54321
+          VITE_SUPABASE_PUBLISHABLE_KEY: local-publishable-key
+          VITE_FLOOR_FAST_BUST_V1: preview
+          VITE_FLOOR_TABLE_CONTROL_V3: preview
+          VITE_FLOOR_UAT_ENV: preview
+        run: |
+          createdb "$FLOOR_BUST_BROWSER_DATABASE"
+          psql -X -d "$FLOOR_BUST_BROWSER_DATABASE" -v ON_ERROR_STOP=1 -f tests/floorTableControlV3/fastBust.disposable.sql
+          npm ci --ignore-scripts
+          npx playwright install chromium
+          npx playwright test e2e/ops-v3-floor-cashier.mock.spec.ts --grep 'two consecutive exact busts' --workers=1

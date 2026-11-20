@@ -148,10 +148,8 @@ END $$;
 
 SELECT 'FLOOR_FAST_BUST_NATIVE_CASES_PASS' AS result;
 
--- Use two distinct exact-seat receipts in one table session, then close the
--- empty table with the revision returned by the second receipt.
-DO $$
-DECLARE first_seat jsonb; second_seat jsonb; receipt jsonb;
+CREATE FUNCTION fast_bust_test.seed_pair() RETURNS jsonb LANGUAGE plpgsql AS $$
+DECLARE first_seat jsonb; second_seat jsonb;
  p uuid:=gen_random_uuid(); e uuid:=gen_random_uuid(); s uuid:=gen_random_uuid();
 BEGIN
  first_seat:=fast_bust_test.seed();
@@ -162,10 +160,16 @@ BEGIN
  VALUES(s,(first_seat->>'tour')::uuid,p,1,(first_seat->>'table')::uuid,(first_seat->>'table')::uuid,
  (first_seat->>'session')::uuid,2,1000,e,true,'active');
  second_seat:=first_seat||jsonb_build_object('seat',s,'entry',e,'player',p,'number',2);
+ RETURN jsonb_build_array(first_seat,second_seat);
+END $$;
 
+-- Close using the revision returned by the second exact-seat receipt.
+DO $$
+DECLARE pair jsonb:=fast_bust_test.seed_pair(); first_seat jsonb:=pair->0; second_seat jsonb:=pair->1; receipt jsonb;
+BEGIN
  receipt:=fast_bust_test.invoke(first_seat);
  PERFORM public.floor_table_v3_assert(receipt->>'outcome'='busted' AND receipt->>'payout_applied'='false','first exact seat bust');
- PERFORM public.floor_table_v3_assert((SELECT is_active FROM public.tournament_seats WHERE id=s),'first bust leaves second seat active');
+ PERFORM public.floor_table_v3_assert((SELECT is_active FROM public.tournament_seats WHERE id=(second_seat->>'seat')::uuid),'first bust leaves second seat active');
  receipt:=fast_bust_test.invoke(second_seat);
  PERFORM public.floor_table_v3_assert(receipt->>'outcome'='busted' AND receipt->>'payout_applied'='false','second exact seat bust');
  PERFORM public.floor_table_v3_assert((SELECT count(*)=2 FROM public.tournament_entries
