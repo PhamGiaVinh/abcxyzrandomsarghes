@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -21,6 +21,14 @@ function sql(source) {
 }
 
 function json(source) { return JSON.parse(sql(source)); }
+function readTurn(source) {
+  return new Promise((resolve, reject) => {
+    execFile('psql', ['-X', '-Atq', '-v', 'ON_ERROR_STOP=1', '-c', source], { timeout: 10_000 }, (error, stdout) => {
+      if (error) reject(new Error('Disposable turn query failed', { cause: error }));
+      else resolve(stdout);
+    });
+  }).then(JSON.parse);
+}
 function file(path) { return readFileSync(new URL(path, import.meta.url), 'utf8'); }
 
 function session(name) {
@@ -423,7 +431,7 @@ test('the shared server deal persists one native hand with consistent public and
         const batchSize = Math.min(3, fullRingPlayers - fullRing.length);
         fullRing.push(...await Promise.all(Array.from({ length: batchSize }, loginPlayer)));
       }
-      await verifyConcurrentFullRingSatellites({ sql, json, post, participants: fullRing, prepareTable, observeTable, handsPerTable: 4 });
+      await verifyConcurrentFullRingSatellites({ sql, readTurn, post, participants: fullRing, prepareTable, observeTable, handsPerTable: 4 });
     });
     return;
   }

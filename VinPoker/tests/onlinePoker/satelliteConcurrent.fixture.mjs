@@ -52,22 +52,23 @@ export async function verifyConcurrentSatelliteTables({ sql, json, post, partici
   }));
 }
 
-async function playFullRing({ sql, json, post, participants, prepareTable, observeTable, handsPerTable }) {
+async function playFullRing({ readTurn, post, participants, tableId, observer, handsPerTable }) {
   assert.equal(new Set(participants.map(player => player.actor)).size, 9);
-  const tableId = prepareTable(participants);
-  const [observer] = await observeTable(tableId, participants.slice(0, 1));
   const actors = new Set();
   const ackMs = [];
   const settleMs = [];
+  const turnReadMs = [];
   for (let round = 0; round < handsPerTable; round++) {
     const start = await post({ op: 'start_hand', tableId, idempotencyKey: crypto.randomUUID() }, participants[0].token);
     assert.equal(start.status, 200);
     const hand = await start.json();
     assert.equal(hand.outcome, 'ok');
     for (let revision = 1; revision <= 8; revision++) {
-      const turn = json(`SELECT json_build_object('actor',s.user_id,'seat',s.seat_no)
+      const readStarted = performance.now();
+      const turn = await readTurn(`SELECT json_build_object('actor',s.user_id,'seat',s.seat_no)
         FROM public.online_poker_hands h JOIN public.online_poker_seats s
         ON s.table_id=h.table_id AND s.seat_no=h.to_act_seat WHERE h.id='${hand.hand_id}'`);
+      turnReadMs.push(performance.now() - readStarted);
       const actor = participants.find(player => player.actor === turn.actor);
       assert.ok(actor);
       const before = performance.now();
@@ -87,18 +88,26 @@ async function playFullRing({ sql, json, post, participants, prepareTable, obser
     }
   }
   assert.equal(actors.size, 9);
-  assert.equal(sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${tableId}' AND status='complete'`), String(handsPerTable));
-  assert.equal(sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${tableId}'`), '900');
-  return { ackMs, settleMs };
+  return { ackMs, settleMs, turnReadMs };
 }
 
-export async function verifyConcurrentFullRingSatellites({ participants, handsPerTable, ...fixture }) {
+export async function verifyConcurrentFullRingSatellites({ participants, handsPerTable, prepareTable, observeTable, ...fixture }) {
   assert.equal(participants.length % 9, 0);
   assert.equal(new Set(participants.map(player => player.actor)).size, participants.length);
   const groups = [];
   for (let i = 0; i < participants.length; i += 9) groups.push(participants.slice(i, i + 9));
+  const tables = groups.map(group => ({ participants: group, tableId: prepareTable(group) }));
+  const ready = await Promise.all(tables.map(async table => {
+    const [observer] = await observeTable(table.tableId, table.participants.slice(0, 1));
+    return { ...table, observer };
+  }));
   const started = performance.now();
-  const results = await Promise.all(groups.map(group => playFullRing({ ...fixture, participants: group, handsPerTable })));
+  const results = await Promise.all(ready.map(table => playFullRing({ ...fixture, ...table, handsPerTable })));
+  const durationMs = Math.round(performance.now() - started);
+  for (const { tableId } of tables) {
+    assert.equal(fixture.sql(`SELECT count(*) FROM public.online_poker_hands WHERE table_id='${tableId}' AND status='complete'`), String(handsPerTable));
+    assert.equal(fixture.sql(`SELECT sum(stack) FROM public.online_poker_seats WHERE table_id='${tableId}'`), '900');
+  }
   const ackMs = results.flatMap(result => result.ackMs);
   const settleMs = results.flatMap(result => result.settleMs);
   assert.equal(settleMs.length, groups.length * handsPerTable);
@@ -107,7 +116,7 @@ export async function verifyConcurrentFullRingSatellites({ participants, handsPe
   console.log('SATELLITE_CONCURRENT_FULL_RING_DIAGNOSTIC', JSON.stringify({
     tables: groups.length, players: participants.length, completedHands: settleMs.length,
     acknowledgedActions: ackMs.length, ackP95Ms: p95(ackMs), settleP95Ms: p95(settleMs),
-    durationMs: Math.round(performance.now() - started),
+    durationMs, turnReadP95Ms: p95(results.flatMap(result => result.turnReadMs)),
     chips: groups.length * 900, capacityQualified: false,
   }));
 }
