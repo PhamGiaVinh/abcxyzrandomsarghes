@@ -23,6 +23,10 @@ BEGIN
     AND t.club_id=club AND t.name='Chip history TEST 201' AND t.event_id IS NULL);
   SELECT owner_id INTO STRICT actor FROM public.clubs WHERE id=club;
   SELECT id INTO STRICT player FROM auth.users WHERE email='cashier-latency-19@test.invalid';
+  ASSERT public.is_club_dealer_control(actor,club) IS TRUE, 'Fixture owner cannot assign dealers manually';
+  PERFORM set_config('request.jwt.claim.sub',actor::text,true);
+  PERFORM set_config('request.jwt.claim.role','authenticated',true);
+  PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true);
   INSERT INTO public.dealer_shifts(id,club_id,tour_name,start_time,end_time)
     VALUES(shift_id,club,'Chip history bagging TEST','00:00','23:59');
   INSERT INTO public.dealers(id,club_id,full_name,status)
@@ -54,8 +58,6 @@ BEGIN
   INSERT INTO public.tournament_chip_counts(tournament_id,player_id,entry_number,chip_count,updated_at)
     VALUES(flight,player,1,20000,now());
   UPDATE public.multi_day_package_release_v1 SET enabled=true,allowed_club_ids=ARRAY[club] WHERE id;
-  PERFORM set_config('request.jwt.claim.sub',actor::text,true);
-  PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true);
   PERFORM set_config('role','authenticated',true);
   receipt := public.multi_day_end_flight_v1(flight,1,gen_random_uuid());
   ASSERT receipt->>'status'='bagging' AND receipt->>'rosterCount'='1', 'End Flight did not freeze one player';
