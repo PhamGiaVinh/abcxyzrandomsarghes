@@ -31,7 +31,7 @@ if [[ "$source_generation_probe" != 0 && "$source_generation_probe" != 1 ]] ||
    [[ "$source_generation_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$prize_close_probe" != 1 || "$reentry_fault_mode" != healthy ) ]]; then
   echo 'Source generation candidate requires isolated current full-source healthy audience mode' >&2;exit 1
 fi
-case "$diagnostic_scope" in none|cashier-payment|dealer-checkin|prize-replay) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
+case "$diagnostic_scope" in none|cashier-payment|dealer-checkin|prize-replay|floor-consolidation) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
 if [[ "$diagnostic_scope" != none && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$reentry_fault_mode" != healthy || "$redraw_probe" != 0 || "$prize_close_probe" != 1 ) ]]; then
   echo 'Targeted diagnostics require isolated current full34 healthy source preparation and audience; only unrelated scenario execution is skipped' >&2;exit 1
 fi
@@ -874,7 +874,9 @@ fi
 # Independent users in the same isolated club, using real local Auth. Keep
 # credentials in the private temporary directory, never in published artifacts.
 staff_fixture='[]'
-for staff_index in {1..20}; do
+staff_count=20
+if [[ "$diagnostic_scope" == floor-consolidation ]]; then staff_count=27; fi
+for ((staff_index=1;staff_index<=staff_count;staff_index++)); do
   staff_email="cashier-latency-$staff_index@test.invalid"
   staff_password='CashierLatencyFixture-2026!'
   staff_id="$(create_auth_user "$staff_email" "$staff_password")"
@@ -1930,6 +1932,31 @@ for(const [k,v]of Object.entries({tours:10,registrations:200,confirmedPaid:200,m
 TARGETED_PAYMENT_ASSERT
   elif [[ "$diagnostic_scope" == prize-replay ]]; then
     run_prize_close_proof
+  elif [[ "$diagnostic_scope" == floor-consolidation ]]; then
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CONSOLIDATION_FIXTURE'
+BEGIN;
+DO $$ BEGIN
+ IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
+ THEN RAISE EXCEPTION 'consolidation_requires_disposable_fixture'; END IF;
+END $$;
+INSERT INTO public.centerpoint_tournament_ops_release(id,enabled,allowed_club_ids)
+VALUES(true,true,ARRAY['a2000000-0000-4000-8000-000000000001'::uuid])
+ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded.allowed_club_ids;
+INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
+VALUES('a3000000-0000-4000-8000-000000000014','a2000000-0000-4000-8000-000000000001','Floor consolidation TEST',
+ 'registering','registering',now(),6000000,600000,0,false,0,0);
+WITH slots AS (
+ SELECT n table_number FROM generate_series(1,100)n
+ WHERE NOT EXISTS(SELECT 1 FROM public.game_tables g WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.table_number=n)
+ ORDER BY n LIMIT 4
+), numbered AS (SELECT row_number() OVER(ORDER BY table_number) n,table_number FROM slots)
+INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
+SELECT ('ac730000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'a2000000-0000-4000-8000-000000000001',
+ 'Consolidation TEST '||n,table_number,'tournament','inactive','available' FROM numbered;
+COMMIT;
+CONSOLIDATION_FIXTURE
+    run_browser_proof '' '' 'Floor consolidation renders the 27 paid seats over real Auth HTTP'
   else
     run_browser_proof '' '' 'real check-in HTTP commit, independent observation, exact retry and tenant boundary$'
     targeted_checkin_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
@@ -1965,7 +1992,8 @@ assert.equal(runtime.pendingReentryTransportApplied,true);assert.equal(runtime.c
 // These selected cases create no completed hands. Preserve the audience's full
 // qualification result unchanged; only its healthy concurrent reads are a
 // prerequisite here. The default full suite still requires every delivery gate.
-assert.ok(['cashier-payment','dealer-checkin','prize-replay'].includes(scope));
+assert.ok(['cashier-payment','dealer-checkin','prize-replay','floor-consolidation'].includes(scope));
+if(scope==='floor-consolidation'){const floor=read('cashier-http-consolidation-browser-http.json');assert.equal(floor.sha,sha);assert.equal(floor.phase,'passed');assert.equal(floor.qualification,false);}
 if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});assert.deepEqual(prize.dealerCheckout,{committed:true,retryPreserved:true,breakEnded:true,swingUpdated:true});assert.deepEqual(prize.dealerPay,{accrualMatches:true,fixedStatement:true,paidOnce:true,selfBalanceCleared:true,financeMatched:true,mobileReceiptVisible:true});}
 assert.equal(audience.viewers,Number(count));
 for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.equal(audience.checks[key],true,key);

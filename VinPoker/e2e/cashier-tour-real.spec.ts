@@ -196,7 +196,8 @@ async function loginOwner(page: Page) {
 
 async function loginFixtureStaff(){
  const staff=JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_STAFF_FILE!,'utf8')) as {email:string;password:string}[];
- expect(staff).toHaveLength(20);expect(new Set(staff.map(row=>row.email)).size).toBe(20);
+ const count=process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE==='floor-consolidation'?27:20;
+ expect(staff).toHaveLength(count);expect(new Set(staff.map(row=>row.email)).size).toBe(count);
  const identities=await Promise.all(staff.map(async row=>{
   const response=await fetch(process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,'')+'/auth/v1/token?grant_type=password',{
    method:'POST',headers:{apikey:process.env.LOCAL_SUPABASE_ANON_KEY!,'Content-Type':'application/json'},body:JSON.stringify(row),signal:AbortSignal.timeout(10000),
@@ -204,7 +205,7 @@ async function loginFixtureStaff(){
   const session=await response.json();expect(response.ok).toBe(true);expect(typeof session.access_token).toBe('string');expect(typeof session.user?.id).toBe('string');
   return {token:session.access_token as string,userId:session.user.id as string,session};
  }));
- expect(new Set(identities.map(row=>row.userId)).size).toBe(20);
+ expect(new Set(identities.map(row=>row.userId)).size).toBe(count);
  return identities;
 }
 
@@ -2272,6 +2273,92 @@ test('current owner rake closes once and exports the immutable event-day snapsho
  }catch(error){phase+='-failed';report();throw error;}
 });
 
+
+test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({page,browser})=>{
+ test.skip(process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE!=='floor-consolidation','Dedicated isolated consolidation fixture');
+ test.setTimeout(150_000);
+ const api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,'');
+ const anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
+ const tour='a3000000-0000-4000-8000-000000000014';
+ const club='a2000000-0000-4000-8000-000000000001';
+ const owner=await loginOwner(page);
+ const staff=await loginFixtureStaff();
+ const mobileContext=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL,viewport:{width:390,height:844},isMobile:true,hasTouch:true,locale:'vi-VN'});
+ const reportPath=process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-consolidation-browser-http.json');
+ let phase='setup';
+ let beforeCounts:number[]=[];
+ let afterCounts:number[]=[];
+ const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+  beforeCounts,afterCounts,qualification:false,productionChanged:false,
+  limits:'One dedicated TEST tour with 27 actual paid registrations. This check covers immediate transfers, browser refresh and conservation, without an active Tracker hand or a full tour close.'},null,2));
+ const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
+  const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
+   body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
+  expect(response.ok,path).toBe(true);
+  return response.json();
+ };
+ const rpc=(name:string,args:Record<string,unknown>,token=owner)=>post('/rest/v1/rpc/'+name,args,token);
+ type Table={tournament_table_id:string;table_number:number;max_seats:number;seats:{entry_id:string;chip_count:number}[]};
+ const roster=async()=>(await rpc(floorRosterRpc,{p_tournament_id:tour})) as Table[];
+ const identity=(tables:Table[])=>tables.flatMap(table=>table.seats.map(seat=>[seat.entry_id,seat.chip_count] as const))
+  .sort((a,b)=>a[0].localeCompare(b[0]));
+ try{
+  report();
+  for(let index=1;index<=4;index++){
+   const result=await rpc('floor_open_tournament_table_v3',{p_tournament_id:tour,
+    p_game_table_id:'ac730000-0000-4000-8000-'+String(index).padStart(12,'0'),p_control_mode:'manual',p_request_id:crypto.randomUUID()});
+   expect(result.ok).toBe(true);
+  }
+  phase='canonical-cash-registration';report();
+  for(const actor of staff){
+   const registration=await post('/functions/v1/tournament-register',{tournament_id:tour},actor.token);
+   expect(registration.success).toBe(true);
+   const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registration.registration_id,
+    amount:Number(registration.total_pay),request_id:crypto.randomUUID()};
+   expect(intent.amount).toBe(6600000);
+   expect(await rpc('resolve_cashier_cash_buyin_intent_v1',{p_intent:intent,p_action:'record'},actor.token))
+    .toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});
+  }
+  const before=await roster();
+  beforeCounts=before.map(table=>table.seats.length);
+  expect(before).toHaveLength(4);
+  expect(before.every(table=>table.max_seats===9)).toBe(true);
+  const frozen=identity(before);
+  expect(new Set(frozen.map(([entry])=>entry)).size).toBe(27);
+  expect(frozen.reduce((total,[,chips])=>total+chips,0)).toBe(540000);
+  const source=before.filter(table=>table.seats.length>0).sort((a,b)=>a.seats.length-b.seats.length)[0];
+  await page.setViewportSize({width:1366,height:900});
+  const phone=await mobileContext.newPage();
+  await loginOwner(phone);
+  const route=`/ops/floor/tournaments/${tour}/tables?club=${club}`;
+  phase='desktop-and-mobile-observation';report();
+  const observers=await Promise.all([page,phone].map(async observer=>{
+   await observer.goto(route);
+   const map=observer.getByTestId('floor-table-map-v3');
+   const cards=map.getByTestId('floor-table-roster-card');
+   const advice=map.getByText(/Còn 27 người trên 4 bàn/);
+   await expect(cards).toHaveCount(4);
+   await expect(advice).toBeVisible();
+   return {cards,advice,sourceCard:cards.and(map.locator(`[data-floor-table-number="${source.table_number}"]`))};
+  }));
+  phase='confirmed-floor-write';report();
+  await observers[0].sourceCard.click();
+  await page.getByRole('button',{name:'Đóng & chuyển người',exact:true}).click();
+  const dialog=page.getByRole('alertdialog',{name:'Đóng và chuyển toàn bộ người chơi?'});
+  await expect(dialog.getByText('Chuyển ngay',{exact:true})).toHaveCount(source.seats.length);
+  await dialog.getByRole('button',{name:'Xác nhận đóng & chuyển',exact:true}).click();
+  await Promise.all(observers.map(async observer=>{
+   await expect(observer.cards).toHaveCount(3,{timeout:15000});
+   await expect(observer.sourceCard).toHaveCount(0);
+   await expect(observer.advice).toHaveCount(0);
+  }));
+  const after=await roster();
+  afterCounts=after.map(table=>table.seats.length);
+  expect(afterCounts).toEqual([9,9,9]);
+  expect(identity(after)).toEqual(frozen);
+  phase='passed';
+ }finally{report();await mobileContext.close();}
+});
 
 test('final current Floor Cashier prizes close over real Auth HTTP',async({page,browser})=>{
  test.skip(process.env.LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED!=='1','Explicit isolated full34 prize-close stage only');test.setTimeout(180_000);

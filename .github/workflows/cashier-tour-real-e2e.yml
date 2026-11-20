@@ -80,7 +80,7 @@ on:
       diagnostic_scope:
         description: Run only the selected isolated scenario; never full acceptance
         type: choice
-        options: [none, cashier-payment, dealer-checkin, prize-replay, tour-fnb-browser]
+        options: [none, cashier-payment, dealer-checkin, prize-replay, tour-fnb-browser, floor-consolidation]
         default: none
       schema_mode:
         description: Historical pre03 migration proof or contemporary runtime proof
