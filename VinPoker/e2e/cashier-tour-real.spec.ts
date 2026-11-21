@@ -2573,7 +2573,9 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   type BagRow={playerId:string;tableSessionId:string;trackedStack:number;sealed:boolean};
   const bags=bagging.rows as BagRow[];
   expect(bags).toHaveLength(27);
-  const dealerSessionId=bags[0].tableSessionId;
+  const dealerTable=after.find(table=>table.control_mode==='tracker'&&bags.some(row=>row.tableSessionId===table.table_session_id));
+  expect(dealerTable).toBeDefined();
+  const dealerSessionId=dealerTable!.table_session_id;
   const dealer=staff.find(actor=>actor.userId===assignedDealers.get(dealerSessionId));
   expect(dealer).toBeDefined();
   const dealerBagging=()=>rpc('multi_day_bagging_state_v1',{p_flight_tournament_id:tour},dealer!.token);
@@ -2626,7 +2628,9 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   await dealerPhone.addInitScript(({key,session})=>localStorage.setItem(key,JSON.stringify(session)),{
    key:process.env.LOCAL_SUPABASE_STORAGE_KEY!,session:dealer!.session,
   });
-  await dealerPhone.goto('/tracker/hand-input?tournament='+tour);
+  phase='dealer-opens-assigned-tracker-table';report();
+  const dealerRoute=new URLSearchParams({tournament:tour,table:dealerTable!.game_table_id});
+  await dealerPhone.goto('/tracker/hand-input?'+dealerRoute);
   const dealerPanel=dealerPhone.getByRole('region',{name:'Flight bagging'});
   await expect(dealerPanel.getByText(/Day 1 · Bagging open/)).toBeVisible();
   await expect(dealerPanel.getByRole('textbox',{name:/^Bag code for /})).toHaveCount(assignedRows.length);
