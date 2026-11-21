@@ -1579,6 +1579,9 @@ CORRECTION_OWNED_PREFLIGHT
 import {pathToFileURL} from 'node:url';import {resolve} from 'node:path';
 const root=process.argv[2],{loadClosePackage}=await import(pathToFileURL(resolve(root,'scripts/ops/tracker-hud-close-paid-prize-20261107-release.mjs')));console.log(resolve(root,loadClosePackage(root).entry.path));
 CLOSE_PRIZE_CANDIDATE_PATH
+    node "$repo_root/scripts/ops/prepare-prize-tv-runtime-dependencies.mjs" "$test_root/prize-tv-dependencies.sql"
+    { printf '%s\n' "SET vinpoker.isolated_tv_dependency='cashier-current-prize-tv';"; cat "$test_root/prize-tv-dependencies.sql"; } |
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
     node "$repo_root/scripts/ops/prepare-prize-close-runtime-dependencies.mjs" "$test_root/prize-close-dependencies.sql"
     { printf '%s\n' "SET vinpoker.isolated_prize_close='current-full34-only';"; cat "$test_root/prize-close-dependencies.sql"; } |
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
@@ -2084,6 +2087,7 @@ assert.deepEqual(r.payoutUi,{loaded:true,dialogVerified:true,cancelPreservedUnpa
 assert.deepEqual(r.replayUi,{desktop:true,mobile:true});
 assert.deepEqual(r.tableCloseUi,{floorCleared:true,swingCleared:true,swingAlertCleared:true});
 assert.deepEqual(r.clockUi,{started:true,paused:true,resumed:true});
+assert.deepEqual(r.tvUi,{liveVisible:true,finishedVisible:true});
 assert.deepEqual(r.fnb,{guestOrder:true,guestPaidVisible:true,counterPaidVisible:true,paidOnce:true,stockDelta:-1,revenueDelta:20000,cogsDelta:5000});
 FINAL_PRIZE_CLOSE_RECEIPT
 }

@@ -3264,6 +3264,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const showdownHands:{number:number;pots:number[];endings:number[]}[]=[];
  const payoutUi={loaded:false,dialogVerified:false,cancelPreservedUnpaid:false,confirmed:false,paidVisible:false};
  const replayUi={desktop:false,mobile:false};
+ const tvUi={liveVisible:false,finishedVisible:false};
  const tourCloseStatus:{before:string|null;after:string|null}={before:null,after:null};
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
  const dealerClose={checkedIn:false,assignmentVisible:false,assignmentReleased:false,breakRecorded:false,breakVisible:false};
@@ -3280,7 +3281,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let guestContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,tourCloseStatus,dealerClose,dealerCheckout,dealerPay,clockUi,fnb,fnbTour,prizeDrawerVerified,prizeDrawerCloseVariance,prizeDrawerDenials,bankPrizeKeptDrawer,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with clock, replay, F&B, Cashier payment, Floor close, Dealer Swing, checkout and one TEST part-time statement. Excludes automatic return after rest, refunds and load. Drawer linkage is tested only in the prize-replay scope.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,tourCloseStatus,dealerClose,dealerCheckout,dealerPay,clockUi,tvUi,fnb,fnbTour,prizeDrawerVerified,prizeDrawerCloseVariance,prizeDrawerDenials,bankPrizeKeptDrawer,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with clock, replay, F&B, Cashier payment, Floor close, Dealer Swing, checkout and one TEST part-time statement. Excludes automatic return after rest, refunds and load. Drawer linkage is tested only in the prize-replay scope.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -3451,6 +3452,18 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   expect((await rpc('floor_start_tournament_clock',{p_tournament_id:tour})).ok).toBe(true);
   let clock=await observeClock(true,'clock-start-to-visible',clockStarted);
   clockUi.started=true;
+  const tvPage=await page.context().newPage();
+  try {
+   await tvPage.goto('/tv/'+tour);
+   const board=tvPage.getByRole('region',{name:'Bảng thông số giải đấu'});
+   await expect(board.getByRole('heading',{name:'Canonical paid prize TEST',exact:true})).toBeVisible();
+   await expect(board.getByRole('timer')).toBeVisible();
+   await expect(board.getByText('Đang diễn ra',{exact:true})).toBeVisible();
+   tvUi.liveVisible=true;
+  } catch(error) {
+   await tvPage.close();
+   throw error;
+  }
   for(const action of ['pause','resume'] as const){
    const revision=clock.control_revision;
    expect(revision).toMatch(/^[a-f0-9]{32}$/);
@@ -3775,6 +3788,9 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   tourCloseStatus.before=await readTourStatus();
   const closed=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated canonical paid prize HTTP'});expect(closed.outcome).toBe('closed');expect(closed.prize_total).toBe(18000000);expect(closed.club_revenue).toBe(1800000);expect(closed.reconcile_delta).toBe(0);expect(closed.reconciled).toBe(true);prizeTotal=closed.prize_total;reconcileDelta=closed.reconcile_delta;
   tourCloseStatus.after=await readTourStatus();
+  await expect(tvPage.getByRole('main').getByRole('heading',{name:'Finished',exact:true})).toBeVisible({timeout:15000});
+  tvUi.finishedVisible=true;
+  await tvPage.close();
   if(drawerBefore){
    phase='single-day-cashier-shift-close';report();
    const countedCash=1800000;
