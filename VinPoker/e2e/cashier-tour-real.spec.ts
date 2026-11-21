@@ -2309,6 +2309,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalOfficialRanks=0;
  let finalCloseReconcileDelta:number|null=null;
  let finalPayoutObligationsLocked=false;
+ let finalPayoutPaidRows=0,finalPayoutPaidVnd=0;
  let finalPayoutFunding:{registrations:number;poolVnd:number;feesVnd:number;unpaidVnd:number;shortfallVnd:number}|null=null;
  let firstFlightSeatingReview:string|null=null;
  let recoveredPaidSeatings=0;
@@ -2318,8 +2319,8 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
-  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout execution and load qualification are outside this run.'},null,2));
+  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Physical funding-source reconciliation and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -2996,6 +2997,40 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(payoutState).toMatchObject({unpaidObligationVnd:183400000,paidPlayerVnd:0});
   expect(await read('/rest/v1/tournament_prize_payments?select=id&tournament_id=eq.'+finalTour)).toEqual([]);
   finalPayoutObligationsLocked=true;
+  phase='final-day-test-prize-payments';report();
+  const recipients=()=>rpc('get_multi_day_payout_recipients_v1',{p_event_id:event.event_id});
+  const due=await recipients();
+  expect(due).toMatchObject({eventId:event.event_id,tournamentId:finalTour,owedTotal:183400000,paidTotal:0});
+  const payable=due.places.filter((place:{prizeAmount:number})=>place.prizeAmount>0) as {
+   multiDayParticipationId:string;finishedPlace:number;recipientRef:string;prizeAmount:number;
+  }[];
+  expect(payable.reduce((sum,place)=>sum+place.prizeAmount,0)).toBe(183400000);
+  const recordedPayments=new Map<string,{finishedPlace:number;recipientRef:string;amount:number;participationId:string}>();
+  for(const original of payable){
+   const quote=(await recipients()).places.find((place:{multiDayParticipationId:string})=>place.multiDayParticipationId===original.multiDayParticipationId);
+   expect(quote).toMatchObject({...original,isPaid:false});
+   const payIntent={p_event_id:event.event_id,p_participation_id:original.multiDayParticipationId,p_method:'cash',
+    p_expected_token:quote.confirmationToken,p_request_id:crypto.randomUUID()};
+   const paid=await rpc('record_multi_day_prize_payment_v1',payIntent);
+   expect(paid).toMatchObject({ok:true,outcome:'recorded',tournament_id:finalTour,finished_place:original.finishedPlace,
+    recipient_ref:original.recipientRef,prize_amount:original.prizeAmount});
+   expect(await rpc('record_multi_day_prize_payment_v1',payIntent)).toEqual(paid);
+   expect(recordedPayments.has(paid.payment_id)).toBe(false);
+   recordedPayments.set(paid.payment_id,{finishedPlace:original.finishedPlace,recipientRef:original.recipientRef,
+    amount:original.prizeAmount,participationId:original.multiDayParticipationId});
+  }
+  const proof=await read('/rest/v1/tournament_prize_payments?select=id,finished_place,recipient_ref,prize_amount,method,status,multi_day_participation_id&tournament_id=eq.'+finalTour);
+  expect(proof).toHaveLength(recordedPayments.size);
+  for(const row of proof){
+   const expected=recordedPayments.get(row.id);
+   if(!expected)throw new Error('Unexpected prize payment on the Final Day');
+   expect(row).toMatchObject({finished_place:expected.finishedPlace,recipient_ref:expected.recipientRef,prize_amount:expected.amount,
+    method:'cash',status:'paid',multi_day_participation_id:expected.participationId});
+  }
+  expect(await rpc('multi_day_payout_postfinal_state_v1',{p_event_id:event.event_id})).toMatchObject({unpaidObligationVnd:0,paidPlayerVnd:183400000});
+  expect(await rpc('close_tournament',closeIntent)).toMatchObject({outcome:'already_closed',report_id:official.report_id});
+  finalPayoutPaidRows=proof.length;
+  finalPayoutPaidVnd=183400000;
   phase='passed';
  }finally{report();await mobileContext.close();}
 });

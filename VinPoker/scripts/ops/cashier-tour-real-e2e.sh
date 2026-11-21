@@ -1718,6 +1718,8 @@ CHIP_ISSUANCE_CAPTURED_ACL
         20270128000134_multiday_initial_draw_tv_hold_v1.sql \
         20270128000143_multiday_floor_roundtrip_v1.sql \
         20270128000145_multiday_verified_payment_boundary_v1.sql \
+        20270128000146_multiday_live_paid_accounting_v1.sql \
+        20270128000147_multiday_frozen_obligation_payment_v1.sql \
         20270128000171_chip_setup_create_bind_receipts_v1.sql \
         20270128000176_chip_template_save_receipts_v1.sql \
         20270128000177_chip_setup_metadata_receipts_v1.sql \
