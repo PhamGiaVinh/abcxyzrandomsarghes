@@ -2110,10 +2110,10 @@ DO $$ BEGIN
  WHERE club_id='a2000000-0000-4000-8000-000000000001' AND closed_at IS NULL FOR UPDATE;
  IF NOT FOUND THEN RAISE EXCEPTION 'consolidation_drawer_lock_shift_missing';END IF;
 END $$;
-echo READY
+SELECT 'READY';
 SELECT pg_sleep(8);
 ROLLBACK;
-echo RELEASED
+SELECT 'RELEASED';
 CONSOLIDATION_DRAWER_LOCK
           exit
         fi
