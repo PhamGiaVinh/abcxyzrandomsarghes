@@ -1723,6 +1723,8 @@ CHIP_ISSUANCE_CAPTURED_ACL
         20270128000180_tournament_finalizer_one_survivor_v1.sql \
         20270128000181_tournament_finalizer_serialization_v1.sql \
         20270128000182_tournament_finalizer_server_only_v1.sql \
+        20270128000216_multiday_payout_configuration_preview_v1.sql \
+        20270128000217_multiday_prize_configuration_atomic_v1.sql \
         20270128000223_chip_bank_adjust_receipt_v2.sql \
         20270128000296_manual_ranking_review_v1.sql; do
         migration_path="$repo_root/supabase/migrations/$migration"

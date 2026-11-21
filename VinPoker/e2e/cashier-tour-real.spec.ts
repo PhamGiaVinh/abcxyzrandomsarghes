@@ -2954,6 +2954,19 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(ranked.map(entry=>entry.finishedPlace).sort((a,b)=>a-b)).toEqual(Array.from({length:23},(_,i)=>i+1));
   finalOfficialRanks=ranked.length;
   finalCloseReconcileDelta=official.reconcile_delta;
+  phase='final-day-payout-configuration';report();
+  // A synthetic award schedule for this disposable tour, with five ITM places
+  // from Flight A and one from Flight B. The server validates funding and math.
+  const awardRows=[10000000,8000000,7000000,6000000,6000000,6000000].map((amount,index)=>({position:index+1,amount}));
+  const proposal=await rpc('multi_day_payout_configuration_preview_v1',{p_event_id:event.event_id,p_proposed_rows:awardRows});
+  expect(proposal).toMatchObject({ok:true,itmPlaces:6,requiredShortfallVnd:0,paidPlayerVnd:0});
+  const awardIntent={p_event_id:event.event_id,p_rows:awardRows,p_expected_configuration_revision:proposal.configurationRevision,
+   p_expected_rules_version:proposal.rulesVersion,p_expected_funding_revision:proposal.fundingRevision,
+   p_expected_qualification_revision:proposal.qualificationRevision,p_expected_payout_input_hash:proposal.payoutInputHash,
+   p_request_id:crypto.randomUUID(),p_reason:'Isolated Final Day TEST prize schedule'};
+  const configured=await rpc('multi_day_save_prize_configuration_v1',awardIntent);
+  expect(configured).toMatchObject({ok:true,state:'CONFIGURED',idempotent:false});
+  expect(await rpc('multi_day_save_prize_configuration_v1',awardIntent)).toEqual({...configured,idempotent:true});
   phase='final-day-payout-funding-preview';report();
   const payoutPreview=await rpc('multi_day_payout_preview_v1',{p_event_id:event.event_id});
   expect(payoutPreview).toMatchObject({ok:true,eventId:event.event_id,finalTournamentId:finalTour,
