@@ -2308,6 +2308,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalRankingReviewRecorded=false;
  let finalOfficialRanks=0;
  let finalCloseReconcileDelta:number|null=null;
+ let finalPayoutFunding:{registrations:number;poolVnd:number;feesVnd:number;unpaidVnd:number;shortfallVnd:number}|null=null;
  let firstFlightSeatingReview:string|null=null;
  let recoveredPaidSeatings=0;
  let secondFlightSeatingReview:string|null=null;
@@ -2316,8 +2317,8 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
-  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
+  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout execution and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -2953,6 +2954,21 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(ranked.map(entry=>entry.finishedPlace).sort((a,b)=>a-b)).toEqual(Array.from({length:23},(_,i)=>i+1));
   finalOfficialRanks=ranked.length;
   finalCloseReconcileDelta=official.reconcile_delta;
+  phase='final-day-payout-funding-preview';report();
+  const preview=await rpc('multi_day_payout_preview_v1',{p_event_id:event.event_id});
+  expect(preview).toMatchObject({ok:true,eventId:event.event_id,finalTournamentId:finalTour,
+   directPoolVnd:31*6000000,feesVnd:31*600000,transferPoolVnd:0,recordedOverlayVnd:0,paidPlayerVnd:0});
+  const funding=preview.sourceSnapshot.registrations as {
+   registrationId:string;flightId:string;poolVnd:number;feeVnd:number;totalVnd:number;ledgerNetVnd:number;
+  }[];
+  expect(funding).toHaveLength(31);
+  expect(new Set(funding.map(row=>row.registrationId)).size).toBe(31);
+  expect(funding.filter(row=>row.flightId===tour)).toHaveLength(27);
+  expect(funding.filter(row=>row.flightId===flightB)).toHaveLength(4);
+  for(const row of funding)expect(row).toMatchObject({poolVnd:6000000,feeVnd:600000,totalVnd:6600000,ledgerNetVnd:6600000});
+  expect(preview.sourceSnapshot.payments).toEqual([]);
+  finalPayoutFunding={registrations:funding.length,poolVnd:preview.directPoolVnd,feesVnd:preview.feesVnd,
+   unpaidVnd:preview.unpaidObligationVnd,shortfallVnd:preview.requiredShortfallVnd};
   phase='passed';
  }finally{report();await mobileContext.close();}
 });
