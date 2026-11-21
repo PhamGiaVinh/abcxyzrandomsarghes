@@ -2007,6 +2007,9 @@ ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded
 INSERT INTO public.multi_day_package_release_v1(id,enabled,allowed_club_ids)
 VALUES(true,true,ARRAY['a2000000-0000-4000-8000-000000000001'::uuid])
 ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded.allowed_club_ids;
+INSERT INTO public.club_settings(club_id,player_history_enabled)
+VALUES('a2000000-0000-4000-8000-000000000001',true)
+ON CONFLICT(club_id) DO UPDATE SET player_history_enabled=true;
 WITH slots AS (
  SELECT n table_number FROM generate_series(1,100)n
  WHERE NOT EXISTS(SELECT 1 FROM public.game_tables g WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.table_number=n)
