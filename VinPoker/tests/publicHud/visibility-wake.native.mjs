@@ -97,6 +97,7 @@ const waitState=async(application,kind)=>{for(let i=0;i<40;i++){if(sql(`SELECT E
  sql(`UPDATE tracker_analytics_v1.jobs SET available_at=clock_timestamp() WHERE kind='visibility' AND entity_id='${tour}';`);await drain();
 }
 // Closing a still-public tour must leave its committed hand fingerprints current.
+sql(readFileSync('supabase/pending-migrations/20261121125307_public_hud_refresh_public_status_fingerprint.sql','utf8'));
 {
  const tour=ids(7),hand=handId(7,1);tours.push(tour);
  sql(`INSERT INTO public.tournaments(id,status) VALUES('${tour}','live');
