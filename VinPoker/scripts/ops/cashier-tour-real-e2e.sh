@@ -1774,6 +1774,8 @@ MULTIDAY_PAYMENT_FIXTURE
         fi
         docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$migration_path"
       done
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+        <"$repo_root/supabase/pending-migrations/20261121055644_multiday_prize_cash_drawer_v1.sql"
     fi
     # The fixed marker is set only inside this already-owned ephemeral stack.
     { printf "COMMENT ON DATABASE postgres IS 'vinpoker-operational-schema-fence-disposable';\nSET vinpoker.isolated_schema_fence='cashier-current-schema-v1';\n";
@@ -2093,7 +2095,7 @@ CONSOLIDATION_SEATING_PROBE
       exit "$consolidation_browser_status"
     fi
     # Compare payout markers and the actual drawer movement store after the same
-    # tour. The current payout marker does not identify the drawer or reserve.
+    # tour, including the exact linked shift and prize-payment identity.
     docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
       >"$repo_root/output/operations-latency/consolidation-prize-cash-ledger-http.json" <<'CONSOLIDATION_CASH_LEDGER'
 BEGIN READ ONLY;
@@ -2112,7 +2114,7 @@ WITH events AS (
   AND c.tournament_id=p.tournament_id AND c.participation_id=p.multi_day_participation_id AND c.amount_vnd=p.prize_amount AND c.method=p.method
  WHERE p.status='paid' AND p.method='cash'
 ), drawer AS (
- SELECT m.direction,m.purpose,m.applied_amount
+ SELECT m.direction,m.purpose,m.applied_amount,m.prize_payment_id,m.shift_id
  FROM events e JOIN public.tournaments t ON t.event_id=e.id AND t.club_id=e.club_id
  JOIN public.cashier_buyin_movements m ON m.tournament_id=t.id AND m.club_id=e.club_id AND m.method='cash'
 )
@@ -2120,7 +2122,11 @@ SELECT jsonb_build_object('kind','SAME_EVENT_PRIZE_MARKERS_AND_BUYIN_DRAWER','ev
  'paidRows',count(*),'verifiedPaidRows',count(verified_payment_id),'paidVnd',coalesce(sum(prize_amount),0),
  'buyinCashInVnd',(SELECT coalesce(sum(applied_amount),0) FROM drawer WHERE direction='in' AND purpose='buyin'),
  'eventDrawerCashOutVnd',(SELECT coalesce(sum(applied_amount),0) FROM drawer WHERE direction='out'),
- 'fundingSourceVerified',false,'qualification',false,'productionChanged',false)
+ 'linkedDrawerRows',(SELECT count(*) FROM drawer d JOIN prizes p ON p.id=d.prize_payment_id AND p.prize_amount=d.applied_amount
+  WHERE d.direction='out' AND d.purpose='prize_payout'),
+ 'payoutShiftCount',(SELECT count(DISTINCT shift_id) FROM drawer WHERE purpose='prize_payout'),
+ 'shiftVarianceVnd',(SELECT max(s.variance_cash) FROM public.cashier_till_shifts s WHERE s.id IN(SELECT shift_id FROM drawer WHERE purpose='prize_payout')),
+ 'qualification',false,'productionChanged',false)
 FROM prizes;
 ROLLBACK;
 CONSOLIDATION_CASH_LEDGER
@@ -2129,7 +2135,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
 assert.deepEqual([r.events,r.paidRows,r.verifiedPaidRows,r.paidVnd,r.buyinCashInVnd],[1,23,23,183400000,204600000]);
-assert.equal(r.fundingSourceVerified,false);
+assert.deepEqual([r.linkedDrawerRows,r.payoutShiftCount,r.eventDrawerCashOutVnd,r.shiftVarianceVnd],[23,1,183400000,0]);
 CONSOLIDATION_CASH_ASSERT
   else
     run_browser_proof '' '' 'real check-in HTTP commit, independent observation, exact retry and tenant boundary$'

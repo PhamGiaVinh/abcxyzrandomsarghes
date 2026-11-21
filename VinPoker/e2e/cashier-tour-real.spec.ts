@@ -2320,7 +2320,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
   bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
-  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Physical funding-source reconciliation and load qualification are outside this run.'},null,2));
+  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Drawer source is verified in the isolated TEST DB. Production and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -3032,6 +3032,15 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(await rpc('close_tournament',closeIntent)).toMatchObject({outcome:'already_closed',report_id:official.report_id});
   finalPayoutPaidRows=proof.length;
   finalPayoutPaidVnd=183400000;
+  phase='final-day-close-cash-drawer';report();
+  const shifts=await read('/rest/v1/cashier_till_shifts?select=id,opening_cash&club_id=eq.'+club+'&closed_at=is.null');
+  expect(shifts).toHaveLength(1);
+  const [shift]=shifts;
+  const drawer=await rpc('cashier_shift_summary_v1',{p_shift_id:shift.id});
+  expect(drawer).toMatchObject({ok:true,totals:{cash_in:204600000,cash_out:183400000,cash_adjustments:0}});
+  expect(shift.opening_cash).toBe(0);
+  const closedDrawer=await rpc('cashier_close_shift_v1',{p_shift_id:shift.id,p_counted_cash:21200000});
+  expect(closedDrawer).toMatchObject({ok:true,expected_cash:21200000,counted_cash:21200000,variance_cash:0});
   phase='passed';
  }finally{report();await mobileContext.close();}
 });
