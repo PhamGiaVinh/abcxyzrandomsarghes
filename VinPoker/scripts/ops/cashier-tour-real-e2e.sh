@@ -1698,7 +1698,9 @@ REVOKE ALL ON TABLE public.stack_template_issuance FROM PUBLIC, anon, authentica
 GRANT SELECT ON TABLE public.stack_template_issuance TO authenticated;
 CHIP_ISSUANCE_CAPTURED_ACL
       for migration in \
+        20270128000013_floor_mode_request_safe_boundary_v1.sql \
         20270128000016_chip_color_up_serialized_integrity_v1.sql \
+        20270128000049_floor_mode_tombstone_guard_v1.sql \
         20270128000069_chip_issuance_exact_intent_v1.sql \
         20270128000127_multiday_canonical_final_seating_v1.sql \
         20270128000128_multiday_final_participation_name_v1.sql \
