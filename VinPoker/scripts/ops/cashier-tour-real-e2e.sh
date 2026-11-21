@@ -1943,13 +1943,9 @@ END $$;
 INSERT INTO public.centerpoint_tournament_ops_release(id,enabled,allowed_club_ids)
 VALUES(true,true,ARRAY['a2000000-0000-4000-8000-000000000001'::uuid])
 ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded.allowed_club_ids;
-INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
-VALUES('a3000000-0000-4000-8000-000000000014','a2000000-0000-4000-8000-000000000001','Floor consolidation TEST',
- 'registering','registering',now(),6000000,600000,0,false,0,0);
-INSERT INTO public.tournament_levels(id,tournament_id,level_number,small_blind,big_blind,ante,duration_minutes,is_break)
-VALUES('ac730001-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000014',1,100,200,0,20,false);
-UPDATE public.tournaments SET current_level=1,current_level_id='ac730001-0000-4000-8000-000000000001'
-WHERE id='a3000000-0000-4000-8000-000000000014';
+INSERT INTO public.multi_day_package_release_v1(id,enabled,allowed_club_ids)
+VALUES(true,true,ARRAY['a2000000-0000-4000-8000-000000000001'::uuid])
+ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded.allowed_club_ids;
 WITH slots AS (
  SELECT n table_number FROM generate_series(1,100)n
  WHERE NOT EXISTS(SELECT 1 FROM public.game_tables g WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.table_number=n)
@@ -2001,6 +1997,7 @@ if(scope==='floor-consolidation'){
  const floor=read('cashier-http-consolidation-browser-http.json');
  assert.equal(floor.sha,sha);assert.equal(floor.phase,'passed');assert.equal(floor.qualification,false);
  assert.ok(floor.deferredCount>0);assert.equal(floor.handFinished,true);assert.deepEqual(floor.afterCounts,[9,9,9]);
+ assert.equal(floor.sealedBags,27);assert.equal(floor.lockedChips,540000);
 }
 if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});assert.deepEqual(prize.dealerCheckout,{committed:true,retryPreserved:true,breakEnded:true,swingUpdated:true});assert.deepEqual(prize.dealerPay,{accrualMatches:true,fixedStatement:true,paidOnce:true,selfBalanceCleared:true,financeMatched:true,mobileReceiptVisible:true});}
 assert.equal(audience.viewers,Number(count));

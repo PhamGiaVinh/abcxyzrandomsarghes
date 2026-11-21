@@ -2279,7 +2279,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  test.setTimeout(150_000);
  const api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,'');
  const anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
- const tour='a3000000-0000-4000-8000-000000000014';
+ let tour='';
  const club='a2000000-0000-4000-8000-000000000001';
  const owner=await loginOwner(page);
  const staff=await loginFixtureStaff();
@@ -2290,10 +2290,12 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let afterCounts:number[]=[];
  let deferredCount=0;
  let handFinished=false;
+ let sealedBags=0;
+ let lockedChips:number|null=null;
  let failedHttp:{path:string;status:number;code:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,failedHttp,qualification:false,productionChanged:false,
-  limits:'One isolated TEST tour with 27 actual paid registrations. A zero-pot Tracker hand exercises deferred transfers and conservation. This is not a full tour close or load qualification.'},null,2));
+  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,failedHttp,qualification:false,productionChanged:false,
+  limits:'One isolated multi-day flight with 27 paid registrations, deferred transfers after a zero-pot hand, and the Chip Ops bag lock. Final day, physical bank movements and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -2305,6 +2307,11 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   return data;
  };
  const rpc=(name:string,args:Record<string,unknown>,token=owner)=>post('/rest/v1/rpc/'+name,args,token);
+ const read=async(path:string)=>{
+  const response=await fetch(api+path,{headers:{apikey:anon,Authorization:'Bearer '+owner},signal:AbortSignal.timeout(10000)});
+  expect(response.ok,path.split('?')[0]).toBe(true);
+  return response.json();
+ };
  type Table={tournament_table_id:string;table_session_id:string;table_number:number;max_seats:number;control_epoch:number;
   control_mode:string;seats:{entry_id:string;chip_count:number;seat_number:number}[]};
  const roster=async()=>(await rpc(floorRosterRpc,{p_tournament_id:tour})) as Table[];
@@ -2312,6 +2319,18 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   .sort((a,b)=>a[0].localeCompare(b[0]));
  try{
   report();
+  const actor=(await read('/auth/v1/user')).id;
+  const future=(seconds:number)=>new Date(Date.now()+seconds*1000).toISOString();
+  const event=await rpc('create_tournament_event_with_flights_v2',{p_club_id:club,p_expected_actor_id:actor,p_request_id:crypto.randomUUID(),
+   p_config:{name:'Floor consolidation and bagging TEST',itm_percent:15,buy_in:6000000,rake_amount:600000,service_fee_amount:0,
+    starting_stack:20000,guarantee_amount:0,location:'TEST',game_type:'nlh',minutes_per_level:20,late_reg_close_level:6,
+    flight_count:2,final_start_time:future(900),flight_start_times:[future(120),future(240)]},
+   p_levels:Array.from({length:8},(_,index)=>({level_number:index+1,small_blind:100*(index+1),big_blind:200*(index+1),ante:0,duration_minutes:20,is_break:false}))});
+  expect(event.ok).toBe(true);
+  const flights=await read('/rest/v1/tournaments?select=id&event_id=eq.'+event.event_id+'&phase=eq.flight&order=flight_label');
+  expect(flights).toHaveLength(2);
+  tour=flights[0].id;
+  expect(await rpc('multi_day_set_qualification_rules_v2',{p_event_id:event.event_id,p_policy:'SELECT_LARGEST',p_min_cash_x:1,p_day2_percent:85})).toMatchObject({ok:true});
   for(let index=1;index<=4;index++){
    const result=await rpc('floor_open_tournament_table_v3',{p_tournament_id:tour,
     p_game_table_id:'ac730000-0000-4000-8000-'+String(index).padStart(12,'0'),p_control_mode:index===2?'tracker':'manual',p_request_id:crypto.randomUUID()});
@@ -2352,13 +2371,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
    await expect(advice).toBeVisible();
    return {cards,advice,sourceCard:cards.and(map.locator(`[data-floor-table-number="${source.table_number}"]`))};
   }));
-  const read=async(path:string)=>{
-   const response=await fetch(api+path,{headers:{apikey:anon,Authorization:'Bearer '+owner},signal:AbortSignal.timeout(10000)});
-   expect(response.ok,path.split('?')[0]).toBe(true);
-   return response.json();
-  };
   phase='tracker-hand-start';report();
-  const actor=(await read('/auth/v1/user')).id;
   expect(await rpc('floor_start_tournament_clock',{p_tournament_id:tour})).toMatchObject({ok:true});
   const started=await rpc('start_tracker_hand_v3',{p_tournament_id:tour,p_tournament_table_id:target.tournament_table_id,
    p_table_session_id:target.table_session_id,p_control_epoch:target.control_epoch,p_hand_number:880014,
@@ -2407,6 +2420,40 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   afterCounts=after.map(table=>table.seats.length);
   expect(afterCounts).toEqual([9,9,9]);
   expect(identity(after)).toEqual(frozen);
+  phase='end-flight';report();
+  expect(await rpc('multi_day_end_flight_v1',{p_flight_tournament_id:tour,p_day_number:1,p_request_id:crypto.randomUUID()})).toMatchObject({ok:true});
+  const baggingState=()=>rpc('multi_day_bagging_state_v1',{p_flight_tournament_id:tour});
+  const bagging=await baggingState();
+  expect(bagging).toMatchObject({status:'bagging',manager:true});
+  type BagRow={playerId:string;trackedStack:number;sealed:boolean};
+  const bags=bagging.rows as BagRow[];
+  expect(bags).toHaveLength(27);
+  expect(bags.reduce((sum,row)=>sum+row.trackedStack,0)).toBe(540000);
+  phase='chip-ops-bagging';report();
+  const chipRoute=`/ops/chip-ops?club=${club}&t=${tour}`;
+  await page.goto(chipRoute);
+  const panel=page.getByRole('region',{name:'Flight bagging'});
+  await expect(panel).toBeVisible();
+  for(const [index,bag] of bags.entries()){
+   const input=panel.getByRole('textbox',{name:'Bag code for '+bag.playerId,exact:true});
+   const row=input.locator('xpath=../..');
+   await input.fill('TEST-BAG-'+(index+1));
+   await row.getByRole('spinbutton',{name:'Bag total for '+bag.playerId,exact:true}).fill(String(bag.trackedStack));
+   await row.getByRole('button',{name:'Save',exact:true}).click();
+   await row.getByRole('button',{name:'Seal',exact:true}).click();
+   await expect(row.getByText(/Sealed v/)).toBeVisible();
+   sealedBags++;
+  }
+  phase='lock-bags-and-read-mobile';report();
+  await panel.getByRole('button',{name:'Lock flight bagging',exact:true}).click();
+  await expect(panel.getByText(/Day 1 · Locked/)).toBeVisible();
+  const locked=await baggingState();
+  expect(locked.status).toBe('locked');
+  expect(locked.rows.every((row:BagRow)=>row.sealed)).toBe(true);
+  lockedChips=locked.rows.reduce((sum:number,row:{bagTotal:number})=>sum+row.bagTotal,0);
+  expect(lockedChips).toBe(540000);
+  await phone.goto(chipRoute);
+  await expect(phone.getByRole('region',{name:'Flight bagging'}).getByText(/Day 1 · Locked/)).toBeVisible();
   phase='passed';
  }finally{report();await mobileContext.close();}
 });
