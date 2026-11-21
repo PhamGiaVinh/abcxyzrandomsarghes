@@ -2301,7 +2301,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
   const data=await response.json();
   if(!response.ok){
-   failedHttp={path,status:response.status,code:typeof data?.code==='string'&&/^[A-Z0-9]{5}$/.test(data.code)?data.code:null};
+   failedHttp={path,status:response.status,code:typeof data?.code==='string'&&/^(?:[A-Z0-9]{5}|PGRST\d{3})$/.test(data.code)?data.code:null};
   }
   expect(response.ok,path).toBe(true);
   return data;
@@ -2321,10 +2321,10 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   report();
   const actor=(await read('/auth/v1/user')).id;
   const future=(seconds:number)=>new Date(Date.now()+seconds*1000).toISOString();
-  const event=await rpc('create_tournament_event_with_flights_v2',{p_club_id:club,p_expected_actor_id:actor,p_request_id:crypto.randomUUID(),
-   p_config:{name:'Floor consolidation and bagging TEST',itm_percent:15,buy_in:6000000,rake_amount:600000,service_fee_amount:0,
-    starting_stack:20000,guarantee_amount:0,location:'TEST',game_type:'nlh',minutes_per_level:20,late_reg_close_level:6,
-    flight_count:2,final_start_time:future(900),flight_start_times:[future(120),future(240)]},
+  // The retained runner schema exposes the older atomic create RPC.
+  const event=await rpc('create_tournament_event_with_flights',{p_club_id:club,p_name:'Floor consolidation and bagging TEST',
+   p_itm_percent:15,p_buy_in:6000000,p_rake_amount:600000,p_starting_stack:20000,p_game_type:'nlh',
+   p_minutes_per_level:20,p_late_reg_close_level:6,p_flight_count:2,p_final_start_time:future(900),p_flight_start_times:[future(120),future(240)],
    p_levels:Array.from({length:8},(_,index)=>({level_number:index+1,small_blind:100*(index+1),big_blind:200*(index+1),ante:0,duration_minutes:20,is_break:false}))});
   expect(event.ok).toBe(true);
   const flights=await read('/rest/v1/tournaments?select=id&event_id=eq.'+event.event_id+'&phase=eq.flight&order=flight_label');

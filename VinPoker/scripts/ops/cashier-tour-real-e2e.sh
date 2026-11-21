@@ -1682,6 +1682,11 @@ assert.equal(receipt?.users,2000);assert.equal(receipt?.eventsPerSecond,20000);a
 assert.equal(receipt.cachedUsers,2000);assert.equal(receipt.cachedEventsPerSecond,20000);assert.equal(receipt.cachedJoinsPerSecond,5000);assert.equal(receipt.cachedBytesPerSecond,100000000);
 assert.equal(receipt.productionChanged,false);writeFileSync(process.argv[3],JSON.stringify(receipt,null,2));
 AUDIENCE_REALTIME_RECEIPT
+    if [[ "$diagnostic_scope" == floor-consolidation ]]; then
+      # Exact source for the retained multi-day creator's initial child statuses.
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+        <"$repo_root/supabase/migrations/20270128000208_main_event_child_live_status_v1.sql"
+    fi
     # The fixed marker is set only inside this already-owned ephemeral stack.
     { printf "COMMENT ON DATABASE postgres IS 'vinpoker-operational-schema-fence-disposable';\nSET vinpoker.isolated_schema_fence='cashier-current-schema-v1';\n";
       cat "$repo_root/supabase/pending-tests/operations_schema_freeze_fixture.sql"; } |
