@@ -295,7 +295,8 @@ try{
      assert.ok(loaded.history.parsePublicClockSummary(data,tour));timings.clock.push(Date.now()-at);return true;
     }catch(cause){
      physicalFailure=true;
-     if(!ownedAudienceCancellation(cause,controller,timeout)){fail('spectator_clock');diagnostic('spectator_clock',cause,cause?.audienceHttpStatus);}
+     // The clock and table consume the same HTTP response in this bundle.
+     if(!ownedAudienceCancellation(cause,controller,timeout)){fail('spectator_clock');diagnostic('spectator_clock',cause,cause?.publicTableHttpStatus??cause?.audienceHttpStatus);}
      throw cause;
     }
    })():Promise.resolve(false);
