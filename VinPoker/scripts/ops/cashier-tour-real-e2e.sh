@@ -1592,6 +1592,9 @@ CLOSE_PRIZE_CANDIDATE_PATH
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$(cat "$test_root/close-prize-candidate-path")"
   fi
   if [[ "$diagnostic_scope" == prize-replay ]]; then
+    # The reviewed recovery catalog predates the verified payout boundary.
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/migrations/20270128000145_multiday_verified_payment_boundary_v1.sql"
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
       <"$repo_root/supabase/pending-migrations/20261121055644_multiday_prize_cash_drawer_v1.sql"
     # This baseline predates the finance helper and the F&B intent writers.
