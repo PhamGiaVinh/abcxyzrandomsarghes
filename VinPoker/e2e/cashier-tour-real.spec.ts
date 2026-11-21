@@ -2301,13 +2301,14 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalCarriedChips=0;
  let finalSeated=0;
  let finalClockStarted=false;
+ let finalTrackerTables=0,finalTrackerChips=0;
   let finalSelectedBags=0;
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
-  limits:'Two isolated flights through Final Day seating and clock start from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
+  bankReturned,secondFlightBags,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  limits:'Two isolated flights through Final Day seating, clock start and initial Tracker hands from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -2695,6 +2696,40 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(await rpc('floor_start_tournament_clock',{p_tournament_id:finalTour})).toMatchObject({ok:true});
   expect(await rpc('get_tournament_clock',{p_tournament_id:finalTour})).toMatchObject({is_running:true});
   finalClockStarted=true;
+  phase='final-day-tracker';report();
+  for(const [index,table] of finalTables.entries()){
+   const [dealer]=await read('/rest/v1/dealers?select=id&club_id=eq.'+club+'&full_name=eq.'+encodeURIComponent('HTTP latency TEST '+(6+index)));
+   const attendance=await rpc('operator_check_in_dealer_v1',{p_dealer_id:dealer.id,p_club_id:club,
+    p_shift_id:'ad300000-0000-4000-8000-000000000001',p_request_id:crypto.randomUUID()});
+   expect(attendance.outcome).toBe('checked_in');
+   expect(await rpc('assign_dealer_to_table',{p_attendance_id:attendance.attendance_id,p_table_id:table.game_table_id,p_club_id:club,
+    p_idempotency_key:crypto.randomUUID(),p_swing_due_at:new Date(Date.now()+15*60000).toISOString()})).toMatchObject({outcome:'ok'});
+   const [session]=await read('/rest/v1/table_sessions?select=revision,control_epoch&id=eq.'+table.table_session_id);
+   expect(await rpc('floor_request_table_control_mode_v4',{p_tournament_table_id:table.tournament_table_id,
+    p_table_session_id:table.table_session_id,p_control_mode:'tracker',p_expected_revision:session.revision,
+    p_expected_epoch:session.control_epoch,p_request_id:crypto.randomUUID()})).toMatchObject({ok:true});
+  }
+  const playable=await rpc(floorRosterRpc,{p_tournament_id:finalTour}) as Table[];
+  expect(playable).toHaveLength(3);
+  const openedPlayers=new Set<string>();
+  for(const table of playable){
+   expect(table.control_mode).toBe('tracker');
+   const started=await rpc('start_tracker_hand_v3',{p_tournament_id:finalTour,p_tournament_table_id:table.tournament_table_id,
+    p_table_session_id:table.table_session_id,p_control_epoch:table.control_epoch,p_hand_number:890001,
+    p_hand_time:new Date().toISOString(),p_created_by:actor,p_button_seat:table.seats[0].seat_number});
+   expect(started.status).toBe('success');
+   const players=await read('/rest/v1/hand_players?select=player_id,starting_stack&hand_id=eq.'+started.hand_id) as {player_id:string;starting_stack:number}[];
+   expect(players).toHaveLength(table.seats.length);
+   for(const player of players){
+    expect(openedPlayers.has(player.player_id)).toBe(false);
+    expect(player.starting_stack).toBe(table.seats.find(seat=>seat.player_id===player.player_id)?.chip_count);
+    openedPlayers.add(player.player_id);
+    finalTrackerChips+=player.starting_stack;
+   }
+   finalTrackerTables++;
+  }
+  expect(openedPlayers.size).toBe(23);
+  expect(finalTrackerChips).toBe(finalCarriedChips);
   phase='passed';
  }finally{report();await mobileContext.close();}
 });
