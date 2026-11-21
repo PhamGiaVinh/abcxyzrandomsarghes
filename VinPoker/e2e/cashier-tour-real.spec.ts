@@ -2295,6 +2295,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let mobileBaggingLockRefreshed=false;
  let dealerBaggingUiRefreshed=false;
  let dealerTrackerTableScoped=false;
+ let floorAlertHandoffVerified=false;
  let dealerBaggingDiagnostics:Record<string,unknown>|null=null;
  let dealerBaggingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let dealerBaggingReadback:{assignedRows:number;locked:boolean}|null=null;
@@ -2325,7 +2326,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,dealerBaggingDiagnostics,dealerTrackerTableScoped,staffedTables,trackerCountRows,issuedPhysicalChips,
+  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,dealerBaggingDiagnostics,dealerTrackerTableScoped,floorAlertHandoffVerified,staffedTables,trackerCountRows,issuedPhysicalChips,
   bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,finalPayoutDrawerDenialsVerified,finalPayoutDrawerRaceVerified,finalPayoutDrawerLockVerified,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Drawer source is verified in the isolated TEST DB. Production and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
@@ -2525,6 +2526,28 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const playersPath='/rest/v1/hand_players?select=player_id,entry_number,seat_number,starting_stack&hand_id=eq.'+hand.id+'&order=seat_number';
   const handPlayers=await read(playersPath);
   expect(handPlayers).toHaveLength(target.seats.length);
+  phase='tracker-alert-to-floor-inbox';report();
+  const alertPage=await mobileContext.newPage();
+  try{
+   await alertPage.goto('/ops/alerts?club='+club);
+   await expect(alertPage.getByRole('heading',{name:'Cảnh báo Floor',exact:true})).toBeVisible();
+   const alertIntent={p_tournament_id:tour,p_tournament_table_id:target.tournament_table_id,p_hand_id:hand.id,
+    p_action_id:null,p_kind:'call_floor',p_message:'',p_request_id:crypto.randomUUID(),
+    p_expected_action:null,p_source_revision:null};
+   const alert=await rpc('report_tracker_floor_operational_alert_v2',alertIntent,trackerDealer!.token);
+   expect(alert).toMatchObject({ok:true,request_id:alertIntent.p_request_id,alert_id:expect.any(String)});
+   const retry=await rpc('report_tracker_floor_operational_alert_v2',alertIntent,trackerDealer!.token);
+   expect(retry).toMatchObject({ok:true,alert_id:alert.alert_id});
+   const rows=await read('/rest/v1/tracker_floor_alerts?select=id,tournament_id,hand_id,title&id=eq.'+alert.alert_id);
+   expect(rows).toEqual([{id:alert.alert_id,tournament_id:tour,hand_id:hand.id,title:expect.any(String)}]);
+   const inbox=alertPage.getByRole('region',{name:'Cảnh báo Voice Tracker'});
+   const link=inbox.getByRole('button',{name:new RegExp('^'+rows[0].title)});
+   await expect(link).toBeVisible({timeout:20000});
+   await link.click();
+   await expect.poll(()=>{const url=new URL(alertPage.url());return [url.pathname,url.searchParams.get('alert')];})
+    .toEqual(['/ops/floor/tournaments/'+tour+'/tables',alert.alert_id]);
+   floorAlertHandoffVerified=true;
+  }finally{await alertPage.close();}
   phase='confirmed-floor-write';report();
   await observers[0].sourceCard.click();
   await page.getByRole('button',{name:'Đóng & chuyển người',exact:true}).click();
