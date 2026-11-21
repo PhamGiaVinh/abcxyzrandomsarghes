@@ -1884,7 +1884,7 @@ BATCH_SOURCE_METADATA
       # Same-tour close and HUD shadow use the pending trigger in this
       # already owned fixture, before the continuous audience freezes DDL.
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-        <"$repo_root/supabase/pending-migrations/20261121125307_public_hud_refresh_public_status_fingerprint.sql"
+        <"$repo_root/supabase/pending-migrations/20261121132000_public_hud_equivalent_status_fingerprint.sql"
     fi
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
     node --input-type=module - "$test_root/isolated-status.json" "$repo_root/output/operations-latency/operations-schema-readiness-http.json" <<'CURRENT_SCHEMA_HTTP_READY'
@@ -2951,7 +2951,7 @@ if [[ "$operations_candidate_probe" == 1 ]]; then
     # pauses before withdrawal so active spectators keep their public scope.
     mkdir -p "$test_root/hud-control/requests" "$test_root/hud-control/receipts"
     hud_control_nonce="$(node -e 'console.log(require("node:crypto").randomUUID())')"
-    LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" LOCAL_OPERATIONS_HUD_CONTROL_NONCE="$hud_control_nonce" node "$repo_root/scripts/ops/prepare-operations-public-hud.mjs" \
+    LOCAL_HUD_EQUIVALENT_PUBLIC_STATUSES="$((source_batch_probe && prize_close_probe))" LOCAL_OPERATIONS_SOURCE_SHA="$source_sha" LOCAL_OPERATIONS_HUD_CONTROL_NONCE="$hud_control_nonce" node "$repo_root/scripts/ops/prepare-operations-public-hud.mjs" \
       "$test_root/isolated-status.json" "$db_container" "$repo_root/output/operations-latency/operations-hud-backfill-http.json" "$test_root/hud-control" >"$test_root/hud-projector-private.log" 2>&1 &
     hud_projector_pid=$!
     hud_prepared=false

@@ -31,9 +31,9 @@ export function normalizeSource(row){
  return {...row.hand,settlement:valid?{verified:true,current:true,
   winnerPlayerIds:[...new Set(proof.pots.flatMap(p=>p.winnerIds))],eligiblePlayerIds:proof.handRanks.map(r=>r.playerId),showdown:proof.handRanks.length>=2}:null};
 }
-export function createShadow(classifier){
+export function createShadow(classifier,{equivalentPublicStatuses=false}={}){
  const players=new Map(),tours=new Map();
- const report={kind:'READ_ONLY_RAW_SOURCE_SHADOW_NOT_LOAD_TEST',complete:false,passed:false,snapshot:null,version:classifier.PUBLIC_HUD_PROJECTION_VERSION,classifierSha256:classifier.shadowClassifierSha256,sqlSha256:createHash('sha256').update(shadowSql).digest('hex'),
+ const report={kind:'READ_ONLY_RAW_SOURCE_SHADOW_NOT_LOAD_TEST',complete:false,passed:false,snapshot:null,version:classifier.PUBLIC_HUD_PROJECTION_VERSION,classifierSha256:classifier.shadowClassifierSha256,sqlSha256:createHash('sha256').update(equivalentPublicStatuses?shadowSqlForEquivalentPublicStatuses():shadowSql).digest('hex'),
   sourceHands:0,contributions:0,results:0,playerTotals:0,tournamentTotals:0,mismatches:0,examples:[]};
  let header=false,end=false;
  function mismatch(code,key,details={}){report.mismatches++;if(report.examples.length<20)report.examples.push({code,entityHash:createHash('sha256').update(String(key)).digest('hex'),...details});}
@@ -69,7 +69,8 @@ export function createShadow(classifier){
      const mismatchedFields=[];
      if(actual.tournament_id!==row.tournamentId)mismatchedFields.push('tournament_id');
      if(String(actual.source_revision)!==String(row.sourceRevision))mismatchedFields.push('source_revision');
-     if(actual.source_fingerprint!==row.fingerprint)mismatchedFields.push('source_fingerprint');
+     if(actual.source_fingerprint!==row.fingerprint
+      && !(equivalentPublicStatuses && row.legacyPublicFingerprints?.includes(actual.source_fingerprint)))mismatchedFields.push('source_fingerprint');
      if(mismatchedFields.length)mismatch('hand_source_identity',row.id,{mismatchedFields});}
     const scoped=total(tours,JSON.stringify([row.tournamentId,playerId]));add(scoped,counters);
     if(row.publicEligible)add(total(players,playerId),counters);
@@ -164,3 +165,20 @@ async function main(){
  console.log(JSON.stringify(shadow.report));if(!shadow.report.passed)process.exitCode=1;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(()=>{console.error('Shadow certification failed; no activation was performed');process.exitCode=1;});
+
+export function shadowSqlForEquivalentPublicStatuses(){
+ const marker=" 'fingerprint',tracker_analytics_v1.hand_fingerprint(ids.id),";
+ return shadowSql.replace(marker,marker+`
+ 'legacyPublicFingerprints',CASE WHEN EXISTS (
+   SELECT 1 FROM public.tournaments t WHERE t.id=h.tournament_id AND t.deleted_at IS NULL
+     AND t.status IN ('live','final_table','completed','finished')
+ ) THEN (
+   SELECT jsonb_agg(md5(jsonb_build_object(
+     'hand',jsonb_build_array(h.id,h.tournament_id,h.source_revision,h.status,h.is_voided,h.hand_time,h.hand_number),
+     'policy',jsonb_build_array(NULL::timestamptz,legacy.status),
+     'proof',(SELECT jsonb_agg(jsonb_build_array(o.id,o.source_revision,o.settlement_revision,o.status,o.public_outcome)
+       ORDER BY o.settlement_revision,o.id) FROM public.tournament_settlement_outcomes o WHERE o.hand_id=ids.id)
+   )::text))
+   FROM (VALUES ('final_table'),('completed'),('finished')) legacy(status)
+ ) ELSE '[]'::jsonb END,`);
+}

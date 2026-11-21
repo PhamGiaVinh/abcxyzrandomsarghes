@@ -9,7 +9,7 @@ import {createHash} from 'node:crypto';
 import {build} from 'esbuild';
 import {createClient} from '@supabase/supabase-js';
 import {loadPackage,MANIFEST_HASH} from './tracker-hud-20261104-release.mjs';
-import {loadClassifier,createShadow,shadowSql} from './tracker-hud-shadow.mjs';
+import {loadClassifier,createShadow,shadowSql,shadowSqlForEquivalentPublicStatuses} from './tracker-hud-shadow.mjs';
 import {createOperationalHudControl} from './operations-hud-control.mjs';
 
 const workerBuild={entryPoints:[fileURLToPath(new URL('../../supabase/functions/public-hud-projector-v1/worker.ts',import.meta.url))],bundle:true,write:false,platform:'node',format:'esm',logLevel:'silent'};
@@ -101,8 +101,11 @@ try{
  }
  assert.equal(complete,true,'Actual backfill checkpoint must finish');
  report.phase='shadow';save();
- const classifier=await loadClassifier(),shadow=createShadow(classifier);
- execute(shadowSql).split('\n').filter(Boolean).forEach(line=>shadow.accept(JSON.parse(line)));
+ const equivalentPublicStatuses=process.env.LOCAL_HUD_EQUIVALENT_PUBLIC_STATUSES==='1';
+ const shadowQuery=equivalentPublicStatuses?shadowSqlForEquivalentPublicStatuses():shadowSql;
+ const shadowOptions={equivalentPublicStatuses};
+ const classifier=await loadClassifier(),shadow=createShadow(classifier,shadowOptions);
+ execute(shadowQuery).split('\n').filter(Boolean).forEach(line=>shadow.accept(JSON.parse(line)));
  report.shadow=shadow.finish();assert.equal(report.shadow.complete,true);assert.equal(report.shadow.passed,true);assert.equal(report.shadow.mismatches,0);
  report.phase='activate-isolated';save();
  execute('UPDATE tracker_analytics_v1.config SET enabled=true WHERE singleton AND backfill_complete AND hands_done AND results_done AND NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.jobs) AND NOT EXISTS(SELECT 1 FROM tracker_analytics_v1.visibility_barriers);');
@@ -136,7 +139,7 @@ try{
   await control.stop();
   const drainUntil=Date.now()+15000;
   while(Number(execute('SELECT count(*) FROM tracker_analytics_v1.jobs;'))>0||spectatorPending()>0){assert.ok(Date.now()<drainUntil,'Final fixture drain deadline');await work();await spectatorWork();}
-  const final=createShadow(classifier);execute(shadowSql).split('\n').filter(Boolean).forEach(line=>final.accept(JSON.parse(line)));
+  const final=createShadow(classifier,shadowOptions);execute(shadowQuery).split('\n').filter(Boolean).forEach(line=>final.accept(JSON.parse(line)));
   report.finalShadow=final.finish();assert.equal(report.finalShadow.passed,true);assert.equal(report.finalShadow.mismatches,0);
   assert.equal(execute('SELECT ops_load_fixture_v1.catalog_fingerprint();'),scope.catalog);
   report.controls=control.report();report.phase='stopped';save();
