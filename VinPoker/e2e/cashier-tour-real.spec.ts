@@ -2300,13 +2300,14 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalQualified=0;
  let finalCarriedChips=0;
  let finalSeated=0;
+ let finalClockStarted=false;
   let finalSelectedBags=0;
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
-  limits:'Two isolated flights through Final Day seating from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
+  bankReturned,secondFlightBags,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  limits:'Two isolated flights through Final Day seating and clock start from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -2682,6 +2683,18 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(new Set(seated.map(seat=>seat.player_id)).size).toBe(23);
   for(const seat of seated)expect(seat.chip_count).toBe(finalRows.find(row=>row.playerId===seat.player_id)?.stack);
   finalSeated=seated.length;
+  phase='final-day-resume';report();
+  const finalTour=event.final_tournament_id;
+  const redraw=await rpc('get_public_tournament_redraw_v1',{p_tournament_id:finalTour});
+  expect(redraw.batch_id).toBe(draw.planId);
+  expect(Number.isInteger(redraw.redraw_revision)).toBe(true);
+  const continueArgs={p_batch_id:redraw.batch_id,p_expected_redraw_revision:redraw.redraw_revision,p_request_id:crypto.randomUUID()};
+  const continued=await rpc('floor_continue_tournament_redraw_v1',continueArgs);
+  expect(continued).toMatchObject({ok:true});
+  expect(await rpc('floor_continue_tournament_redraw_v1',continueArgs)).toEqual(continued);
+  expect(await rpc('floor_start_tournament_clock',{p_tournament_id:finalTour})).toMatchObject({ok:true});
+  expect(await rpc('get_tournament_clock',{p_tournament_id:finalTour})).toMatchObject({is_running:true});
+  finalClockStarted=true;
   phase='passed';
  }finally{report();await mobileContext.close();}
 });
