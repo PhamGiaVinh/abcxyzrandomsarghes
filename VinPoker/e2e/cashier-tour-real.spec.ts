@@ -2546,6 +2546,10 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
    await link.click();
    await expect.poll(()=>{const url=new URL(alertPage.url());return [url.pathname,url.searchParams.get('alert')];})
     .toEqual(['/ops/floor/tournaments/'+tour+'/tables',alert.alert_id]);
+   const review=alertPage.getByRole('dialog',{name:'Kiểm tra & sửa hand',exact:true});
+   await expect(review.getByText(/Hand còn mở:/)).toBeVisible();
+   await expect(review.getByText('Hand #880014',{exact:true})).toBeVisible();
+   expect(await read('/rest/v1/tournament_hands?select=id,status,hand_time,source_revision&id=eq.'+hand.id)).toEqual([hand]);
    floorAlertHandoffVerified=true;
   }finally{await alertPage.close();}
   phase='confirmed-floor-write';report();
