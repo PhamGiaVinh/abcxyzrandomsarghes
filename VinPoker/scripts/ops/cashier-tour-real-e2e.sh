@@ -1699,7 +1699,9 @@ GRANT SELECT ON TABLE public.stack_template_issuance TO authenticated;
 CHIP_ISSUANCE_CAPTURED_ACL
       for migration in \
         20270128000016_chip_color_up_serialized_integrity_v1.sql \
+        20270128000035_tournament_seat_assign_integrity_v1.sql \
         20270128000036_floor_manual_entry_roundtrip_v1.sql \
+        20270128000066_floor_manual_seat_session_fence_v1.sql \
         20270128000069_chip_issuance_exact_intent_v1.sql \
         20270128000127_multiday_canonical_final_seating_v1.sql \
         20270128000128_multiday_final_participation_name_v1.sql \
