@@ -1364,6 +1364,9 @@ run_browser_proof() {
     container_args+=(--name "$network-hud-browser")
     container_args+=(--volume "$test_root/hud-control/requests:/fixtures/hud-control/requests" --volume "$test_root/hud-control/receipts:/fixtures/hud-control/receipts:ro")
   fi
+  if [[ "$diagnostic_scope" == floor-consolidation ]]; then
+    container_args+=(--env "LOCAL_CONSOLIDATION_SERVICE_KEY=$service_key")
+  fi
   if [[ -n "$selector" ]]; then test_args+=(--grep "$selector"); fi
 docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --volume "$repo_root:/app:ro" --workdir /app \

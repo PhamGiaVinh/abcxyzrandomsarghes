@@ -2306,13 +2306,14 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalLastTableClosed=false;
  let finalRankingField=0,finalRankingReviewGroups=0;
  let firstFlightSeatingReview:string|null=null;
+ let recoveredPaidSeatings=0;
  let secondFlightSeatingReview:string|null=null;
   let finalSelectedBags=0;
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and ranking evidence from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -2331,6 +2332,33 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const response=await fetch(api+path,{headers:{apikey:anon,Authorization:'Bearer '+owner},signal:AbortSignal.timeout(10000)});
   expect(response.ok,path.split('?')[0]).toBe(true);
   return response.json();
+ };
+ const verifyPaidSeating=async(payment:{result?:{seating_state?:string}},registrationId:string,amount:number)=>{
+  if(payment.result?.seating_state!=='needs_review'){
+   expect(payment).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});
+   return;
+  }
+  expect(payment).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'needs_review'}});
+  const serviceKey=process.env.LOCAL_CONSOLIDATION_SERVICE_KEY;
+  if(!serviceKey)throw new Error('Missing isolated Cashier recovery credential');
+  const headers={apikey:serviceKey,Authorization:'Bearer '+serviceKey,'Content-Type':'application/json'};
+  const moves=async()=>{
+   const response=await fetch(api+'/rest/v1/cashier_buyin_movements?select=id,applied_amount&registration_id=eq.'+registrationId+
+    '&purpose=eq.buyin&direction=eq.in',{headers,signal:AbortSignal.timeout(5000)});
+   expect(response.ok,'read isolated Cashier movement').toBe(true);
+   return await response.json() as {id:string;applied_amount:number}[];
+  };
+  const before=await moves();
+  expect(before).toHaveLength(1);
+  expect(before[0].applied_amount).toBe(amount);
+  const response=await fetch(api+'/rest/v1/rpc/cashier_retry_paid_seating_v1',{
+   method:'POST',headers,body:JSON.stringify({p_auto_confirm:false,p_limit:1}),signal:AbortSignal.timeout(10000)});
+  expect(response.ok,'isolated paid seating recovery').toBe(true);
+  expect(await response.json()).toMatchObject({ok:true,attempted:1,seated:1,needs_review:0});
+  const [saved]=await read('/rest/v1/tournament_registrations?select=status,cashier_seating_error&id=eq.'+registrationId);
+  expect(saved).toMatchObject({status:'confirmed',cashier_seating_error:null});
+  expect(await moves()).toEqual(before);
+  recoveredPaidSeatings++;
  };
  type Table={tournament_table_id:string;table_session_id:string;game_table_id:string;table_number:number;max_seats:number;session_revision:number;control_epoch:number;
   control_mode:string;seats:{entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number}[]};
@@ -2412,7 +2440,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
     const reason=saved?.cashier_seating_error;
     firstFlightSeatingReview=typeof reason==='string'&&/^[a-z][a-z0-9_]{0,79}$/i.test(reason)?reason:'unknown';
    }
-   expect(payment).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});
+   await verifyPaidSeating(payment,registration.registration_id,intent.amount);
   }
   const before=await roster();
   beforeCounts=before.map(table=>table.seats.length);
@@ -2590,7 +2618,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
     const reason=saved?.cashier_seating_error;
     secondFlightSeatingReview=typeof reason==='string'&&/^[a-z][a-z0-9_]{0,79}$/i.test(reason)?reason:'unknown';
    }
-   expect(payment).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});
+   await verifyPaidSeating(payment,registration.registration_id,registrationArgs.amount);
   }
   const [secondTable]=await rpc(floorRosterRpc,{p_tournament_id:flightB}) as Table[];
   expect(secondTable.seats).toHaveLength(4);
