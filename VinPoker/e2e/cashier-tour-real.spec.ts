@@ -3127,6 +3127,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const dealerPay={accrualMatches:false,fixedStatement:false,paidOnce:false,selfBalanceCleared:false,financeMatched:false,mobileReceiptVisible:false};
  const clockUi={started:false,paused:false,resumed:false};
  let prizeDrawerVerified=false;
+ let bankPrizeKeptDrawer=false;
  let prizeDrawerCloseVariance:number|null=null;
  const prizeDrawerDenials={noOpenShift:false,insufficientFunds:false,busy:false};
  const fnb={guestOrder:false,guestPaidVisible:false,counterPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
@@ -3135,7 +3136,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let guestContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,dealerClose,dealerCheckout,dealerPay,clockUi,fnb,fnbTour,prizeDrawerVerified,prizeDrawerCloseVariance,prizeDrawerDenials,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with clock, replay, F&B, Cashier payment, Floor close, Dealer Swing, checkout and one TEST part-time statement. Excludes automatic return after rest, refunds and load. Drawer linkage is tested only in the prize-replay scope.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,dealerClose,dealerCheckout,dealerPay,clockUi,fnb,fnbTour,prizeDrawerVerified,prizeDrawerCloseVariance,prizeDrawerDenials,bankPrizeKeptDrawer,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with clock, replay, F&B, Cashier payment, Floor close, Dealer Swing, checkout and one TEST part-time statement. Excludes automatic return after rest, refunds and load. Drawer linkage is tested only in the prize-replay scope.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -3408,6 +3409,8 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    ).toBe(true);
    writeFileSync('/latency/single-day-drawer-lock-request','test');
    await waitForLockState('READY');
+   expect(readFileSync('/latency/single-day-bank-proof','utf8').trim()).toBe('BANK_VERIFIED');
+   bankPrizeKeptDrawer=true;
    await assertDenied('cash_prize_drawer_busy','55P03');
    await waitForLockState('RELEASED');
    prizeDrawerDenials.busy=true;

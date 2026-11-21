@@ -1948,6 +1948,44 @@ hold_test_drawer() (
   local lock_path="$repo_root/output/operations-latency"
   for _ in {1..210}; do
     if [[ -f "$lock_path/$prefix-drawer-lock-request" ]]; then
+      if [[ "$prefix" == single-day ]]; then
+        docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+          >"$lock_path/$prefix-bank-proof" <<'SINGLE_DAY_BANK_PRIZE'
+BEGIN;
+SET LOCAL lock_timeout='3s';
+DO $$
+DECLARE
+ tour_id CONSTANT uuid:='a3000000-0000-4000-8000-000000000005';
+ fixture_club CONSTANT uuid:='a2000000-0000-4000-8000-000000000001';
+ actor uuid; drawer_id uuid; request_id uuid:=gen_random_uuid();
+ quote jsonb; receipt jsonb; paid jsonb; drawer_before jsonb;
+BEGIN
+ IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
+ THEN RAISE EXCEPTION 'bank_prize_requires_disposable_fixture';END IF;
+ SELECT c.owner_id INTO STRICT actor FROM public.clubs c JOIN public.tournaments t ON t.club_id=c.id
+ WHERE c.id=fixture_club AND t.id=tour_id AND t.name='Canonical paid prize TEST';
+ SELECT s.id INTO STRICT drawer_id FROM public.cashier_till_shifts s WHERE s.club_id=fixture_club AND s.closed_at IS NULL;
+ PERFORM set_config('request.jwt.claim.sub',actor::text,true);
+ quote:=public.get_tournament_payout_recipients(tour_id)->'places'->0;
+ IF quote->>'isPaid' IS DISTINCT FROM 'false' OR quote->>'prizeAmount' IS DISTINCT FROM '18000000'
+ THEN RAISE EXCEPTION 'bank_prize_fixture_not_payable';END IF;
+ drawer_before:=public.cashier_shift_summary_v1(drawer_id);
+ paid:=public.record_tournament_prize_payment_v2(tour_id,1,'bank',quote->>'confirmationToken',request_id);
+ receipt:=public.get_tournament_prize_payment_receipt_v2(request_id);
+ IF paid->>'ok' IS DISTINCT FROM 'true' OR paid->>'prize_amount' IS DISTINCT FROM '18000000'
+ OR receipt->'result' IS DISTINCT FROM paid
+ OR NOT EXISTS(SELECT 1 FROM public.tournament_prize_payments p
+  WHERE p.id=(paid->>'payment_id')::uuid AND p.tournament_id=tour_id AND p.status='paid' AND p.method='bank')
+ OR EXISTS(SELECT 1 FROM public.cashier_buyin_movements m
+  WHERE m.prize_payment_id=(paid->>'payment_id')::uuid)
+ OR public.cashier_shift_summary_v1(drawer_id) IS DISTINCT FROM drawer_before
+ THEN RAISE EXCEPTION 'bank_prize_receipt_or_drawer_mismatch';END IF;
+END $$;
+ROLLBACK;
+SELECT 'BANK_VERIFIED';
+SINGLE_DAY_BANK_PRIZE
+      fi
       docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
         >"$lock_path/$prefix-drawer-lock-status" <<'CONSOLIDATION_DRAWER_LOCK'
 BEGIN;
@@ -2280,7 +2318,7 @@ if(scope==='floor-consolidation'){
  assert.equal(floor.secondFlightBags,4);assert.equal(floor.finalSelectedBags,27);assert.equal(floor.finalQualified,23);
  assert.equal(floor.finalCarriedChips,460000);assert.equal(floor.finalSeated,23);
 }
-if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.equal(prize.prizeDrawerVerified,true);assert.equal(prize.prizeDrawerCloseVariance,0);assert.deepEqual(prize.prizeDrawerDenials,{noOpenShift:true,insufficientFunds:true,busy:true});assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});assert.deepEqual(prize.dealerCheckout,{committed:true,retryPreserved:true,breakEnded:true,swingUpdated:true});assert.deepEqual(prize.dealerPay,{accrualMatches:true,fixedStatement:true,paidOnce:true,selfBalanceCleared:true,financeMatched:true,mobileReceiptVisible:true});}
+if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.equal(prize.prizeDrawerVerified,true);assert.equal(prize.prizeDrawerCloseVariance,0);assert.deepEqual(prize.prizeDrawerDenials,{noOpenShift:true,insufficientFunds:true,busy:true});assert.equal(prize.bankPrizeKeptDrawer,true);assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});assert.deepEqual(prize.dealerCheckout,{committed:true,retryPreserved:true,breakEnded:true,swingUpdated:true});assert.deepEqual(prize.dealerPay,{accrualMatches:true,fixedStatement:true,paidOnce:true,selfBalanceCleared:true,financeMatched:true,mobileReceiptVisible:true});}
 assert.equal(audience.viewers,Number(count));
 for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.equal(audience.checks[key],true,key);
 assert.equal(audience.phase,Object.values(audience.checks).every(v=>v===true)?'passed':'failed');
