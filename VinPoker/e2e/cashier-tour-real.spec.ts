@@ -2301,14 +2301,14 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalCarriedChips=0;
  let finalSeated=0;
  let finalClockStarted=false;
- let finalTrackerTables=0,finalTrackerChips=0;
+ let finalTrackerTables=0,finalTrackerChips=0,finalShowdowns=0,finalSurvivors=0;
   let finalSelectedBags=0;
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
-  limits:'Two isolated flights through Final Day seating, clock start and initial Tracker hands from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
+  bankReturned,secondFlightBags,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -2708,6 +2708,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const playable=await rpc(floorRosterRpc,{p_tournament_id:finalTour}) as Table[];
   expect(playable).toHaveLength(3);
   const openedPlayers=new Set<string>();
+  const openedHands:{table:Table;handId:string}[]=[];
   for(const table of playable){
    expect(table.control_mode).toBe('tracker');
    const started=await rpc('start_tracker_hand_v3',{p_tournament_id:finalTour,p_tournament_table_id:table.tournament_table_id,
@@ -2722,10 +2723,73 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
     openedPlayers.add(player.player_id);
     finalTrackerChips+=player.starting_stack;
    }
+   openedHands.push({table,handId:started.hand_id});
    finalTrackerTables++;
   }
   expect(openedPlayers.size).toBe(23);
   expect(finalTrackerChips).toBe(finalCarriedChips);
+  phase='final-day-showdowns';report();
+  for(const {table,handId} of openedHands){
+   const handRead=async()=>{
+    const [hand]=await read('/rest/v1/tournament_hands?select=id,hand_time,source_revision,tracker_sb_position,tracker_bb_position,tracker_bba,status&id=eq.'+handId);
+    return hand;
+   };
+   let hand=await handRead();
+   expect(hand.tracker_bba).toBe(0);
+   const players=await read('/rest/v1/hand_players?select=player_id,entry_number,seat_number,starting_stack&hand_id=eq.'+handId+'&order=seat_number') as {
+    player_id:string;entry_number:number;seat_number:number;starting_stack:number;
+   }[];
+   expect(players.every(player=>player.starting_stack===20000)).toBe(true);
+   const sb=players.find(player=>player.seat_number===hand.tracker_sb_position);
+   const bb=players.find(player=>player.seat_number===hand.tracker_bb_position);
+   if(!sb||!bb)throw new Error('Final Day blind seats missing');
+   const next=players.indexOf(bb)+1;
+   const order=[...players.slice(next),...players.slice(0,next)];
+   const actions=[
+    {player:sb,type:'post_sb',amount:100},
+    {player:bb,type:'post_bb',amount:200},
+    ...order.map(player=>({player,type:'all_in',amount:player.starting_stack-(player===sb?100:player===bb?200:0)})),
+   ].map(({player,type,amount},index)=>({player_id:player.player_id,entry_number:player.entry_number,
+    street:'preflop',action_type:type,action_amount:amount,action_order:index+1}));
+   for(const action of actions){
+    expect(await rpc('record_action',{p_hand_id:handId,p_player_id:action.player_id,p_action_type:action.action_type,
+     p_action_order:action.action_order,p_entry_number:action.entry_number,p_street:action.street,p_action_amount:action.action_amount,
+     p_idempotency_key:crypto.randomUUID(),p_trace_id:'isolated-final-day-showdown',p_user_id:actor})).toMatchObject({status:'success'});
+   }
+   const board=['Tc','Jc','Qc','2d','3h'];
+   const cards=[['Ac','Kc'],...['4','5','6','7','8','9','T','J'].map(rank=>[rank+'d',rank+'h'])];
+   expect(await rpc('update_community_cards',{p_hand_id:handId,p_community_cards:board,p_user_id:actor})).toMatchObject({status:'success'});
+   hand=await handRead();
+   const reveals=players.map((player,index)=>({player_id:player.player_id,entry_number:player.entry_number,hole_cards:cards[index]}));
+   expect(await rpc('show_tracker_manual_cards_v1',{p_hand_id:handId,p_session_id:table.table_session_id,p_epoch:table.control_epoch,
+    p_revision:hand.source_revision,p_request_key:crypto.randomUUID(),p_cards:reveals})).toMatchObject({status:'success'});
+   hand=await handRead();
+   const pot=players.length*20000;
+   const payload={players:players.map((player,index)=>({...player,ending_stack:index===0?pot:0,
+    is_eliminated:index!==0,side_pots:[],hole_cards:cards[index]})),actions,community_cards:board,
+    side_pots:[{amount:pot,eligible_player_ids:players.map(player=>player.player_id)}],pot_size:pot,hand_time:hand.hand_time};
+   const intent={p_intent:{actor_id:actor,request_id:crypto.randomUUID(),tournament_id:finalTour,
+    tournament_table_id:table.tournament_table_id,hand_id:handId,table_session_id:table.table_session_id,
+    control_epoch:table.control_epoch,source_revision:hand.source_revision,payload}};
+   let finished=await rpc('record_tracker_manual_hand_v1',intent);
+   for(const delay of [100,200,400]){
+    if(finished.error!=='manual_finish_busy')break;
+    await new Promise(resolve=>setTimeout(resolve,delay));
+    finished=await rpc('record_tracker_manual_hand_v1',intent);
+   }
+   expect(finished).toMatchObject({ok:true,hand_id:handId,starting_total:pot,ending_total:pot});
+   expect(await rpc('record_tracker_manual_hand_v1',intent)).toEqual(finished);
+   expect((await handRead()).status).toBe('completed');
+   const updated=await rpc(floorRosterRpc,{p_tournament_id:finalTour}) as Table[];
+   expect(updated.find(row=>row.tournament_table_id===table.tournament_table_id)?.seats)
+    .toMatchObject([{player_id:players[0].player_id,chip_count:pot}]);
+   finalShowdowns++;
+  }
+  const remaining=await rpc(floorRosterRpc,{p_tournament_id:finalTour}) as Table[];
+  const survivors=remaining.flatMap(table=>table.seats);
+  finalSurvivors=survivors.length;
+  expect(finalSurvivors).toBe(3);
+  expect(survivors.reduce((total,seat)=>total+seat.chip_count,0)).toBe(finalCarriedChips);
   phase='passed';
  }finally{report();await mobileContext.close();}
 });
