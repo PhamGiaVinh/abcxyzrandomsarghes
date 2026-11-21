@@ -17,20 +17,6 @@ type CockpitProps = {
 export function DealerTabletCockpit(props: CockpitProps) {
   const { hook } = props;
   const [trackerAllowed, setTrackerAllowed] = useState(false);
-  const [flight, setFlight] = useState(false);
-  useEffect(() => {
-    let active = true;
-    setFlight(false);
-    const check = async () => {
-      try {
-        const result = await supabase.from("tournaments").select("phase")
-          .eq("id", hook.tournamentId).maybeSingle();
-        if (active) setFlight(!result.error && result.data?.phase === "flight");
-      } catch { if (active) setFlight(false); }
-    };
-    if (hook.tournamentId) void check();
-    return () => { active = false; };
-  }, [hook.tournamentId]);
   useEffect(() => {
     let alive = true;
     setTrackerAllowed(false);
@@ -60,14 +46,30 @@ export function DealerTabletCockpit(props: CockpitProps) {
     window.addEventListener("focus", refresh);
     return () => { alive = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); };
   }, [hook.tournamentId, hook.tournamentTableId]);
-  return <>
-    <DealerTabletLayout {...props} trackerAllowed={trackerAllowed} />
-    {flight && <div className="mx-auto max-w-5xl px-4 pb-5">
-      <OpsAuthProvider>
-        <MultiDayBaggingPanel tournamentId={hook.tournamentId} />
-      </OpsAuthProvider>
-    </div>}
-  </>;
+  return <DealerTabletLayout {...props} trackerAllowed={trackerAllowed} />;
+}
+
+export function DealerFlightBagging({ tournamentId }: { tournamentId: string }) {
+  const [flight, setFlight] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setFlight(false);
+    const check = async () => {
+      try {
+        const result = await supabase.from("tournaments").select("phase")
+          .eq("id", tournamentId).maybeSingle();
+        if (active) setFlight(!result.error && result.data?.phase === "flight");
+      } catch { if (active) setFlight(false); }
+    };
+    if (tournamentId) void check();
+    return () => { active = false; };
+  }, [tournamentId]);
+  if (!flight) return null;
+  return <div className="mx-auto max-w-5xl px-4 pb-5">
+    <OpsAuthProvider>
+      <MultiDayBaggingPanel tournamentId={tournamentId} />
+    </OpsAuthProvider>
+  </div>;
 }
 
 /** Presentation shared with the offline tablet preview; production authority is loaded above. */

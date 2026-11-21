@@ -24,7 +24,7 @@ vi.mock("@/ops/chip-ops/MultiDayBaggingPanel", () => ({
   MultiDayBaggingPanel: ({ tournamentId }: { tournamentId: string }) => <p>Dealer bagging for {tournamentId}</p>,
 }));
 import { supabase } from "@/integrations/supabase/client";
-import { DealerTabletCockpit, DealerTabletLayout } from "./DealerTabletCockpit";
+import { DealerFlightBagging, DealerTabletCockpit, DealerTabletLayout } from "./DealerTabletCockpit";
 
 afterEach(cleanup);
 beforeEach(() => { vi.mocked(supabase.rpc).mockReset(); vi.mocked(supabase.from).mockReset(); });
@@ -89,7 +89,7 @@ describe("Dealer tablet server context", () => {
     vi.mocked(supabase.from).mockReturnValue({
       select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { phase: "flight" }, error: null }) }) }),
     } as never);
-    render(<DealerTabletCockpit {...boundProps} />);
+    render(<DealerFlightBagging tournamentId="tournament" />);
     expect(await screen.findByTestId("verified-ops-session")).toContainElement(screen.getByText("Dealer bagging for tournament"));
   });
   it("accepts server-validated session authority even with a null display table number", async () => {
