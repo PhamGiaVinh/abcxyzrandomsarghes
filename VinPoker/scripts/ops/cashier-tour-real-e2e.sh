@@ -1700,6 +1700,9 @@ CHIP_ISSUANCE_CAPTURED_ACL
       for migration in \
         20270128000016_chip_color_up_serialized_integrity_v1.sql \
         20270128000069_chip_issuance_exact_intent_v1.sql \
+        20270128000130_multiday_final_roster_read_v1.sql \
+        20270128000131_multiday_initial_draw_plan_v1.sql \
+        20270128000132_multiday_initial_draw_apply_v1.sql \
         20270128000171_chip_setup_create_bind_receipts_v1.sql \
         20270128000176_chip_template_save_receipts_v1.sql \
         20270128000177_chip_setup_metadata_receipts_v1.sql \
@@ -1975,7 +1978,7 @@ ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded
 WITH slots AS (
  SELECT n table_number FROM generate_series(1,100)n
  WHERE NOT EXISTS(SELECT 1 FROM public.game_tables g WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.table_number=n)
- ORDER BY n LIMIT 4
+ ORDER BY n LIMIT 7
 ), numbered AS (SELECT row_number() OVER(ORDER BY table_number) n,table_number FROM slots)
 INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
 SELECT ('ac730000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'a2000000-0000-4000-8000-000000000001',
@@ -2025,6 +2028,8 @@ if(scope==='floor-consolidation'){
  assert.ok(floor.deferredCount>0);assert.equal(floor.handFinished,true);assert.deepEqual(floor.afterCounts,[9,9,9]);
  assert.equal(floor.sealedBags,27);assert.equal(floor.lockedChips,540000);
  assert.equal(floor.issuedPhysicalChips,540000);assert.equal(floor.bankReturned,true);
+ assert.equal(floor.secondFlightBags,4);assert.equal(floor.finalQualified,27);assert.equal(floor.finalCarriedChips,540000);
+ assert.equal(floor.finalSeated,27);
 }
 if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});assert.deepEqual(prize.dealerCheckout,{committed:true,retryPreserved:true,breakEnded:true,swingUpdated:true});assert.deepEqual(prize.dealerPay,{accrualMatches:true,fixedStatement:true,paidOnce:true,selfBalanceCleared:true,financeMatched:true,mobileReceiptVisible:true});}
 assert.equal(audience.viewers,Number(count));
