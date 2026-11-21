@@ -118,10 +118,12 @@ function ScopedFloorTableMapPanelV3({
     { enabled: tournamentEnded || FEATURES.floorTableControlV3 },
   ), [supabase, tournamentEnded]);
   const [tables, setTables] = useState<FloorTournamentTableRoster[]>([]);
+  const [entryReads, setEntryReads] = useState<{ scope: string; seat: boolean; restore: boolean } | null>(null);
   const [seatableEntries, setSeatableEntries] = useState<FloorSeatableEntry[]>([]);
   const [restorableEntries, setRestorableEntries] = useState<FloorRestorableEntry[]>([]);
   const [restoreTarget, setRestoreTarget] = useState<{ scope: string; entryId: string; name: string; destination: { tableId: string; seatNumber: number } } | null>(null);
   const [pendingMoves, setPendingMoves] = useState<FloorPendingTrackerMove[]>([]);
+  const hasPendingMove = pendingMoves.some(move => move.status === "pending");
   const [secondaryLoadError, setSecondaryLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [rosterReady, setRosterReady] = useState(false);
@@ -170,20 +172,30 @@ function ScopedFloorTableMapPanelV3({
       .filter((seat) => !occupied.has(seat) && !locked.has(seat));
   }, [selectedTable]);
 
-  const readScope = `${actorId ?? ""}:${tournament.id}`;
+  const readScope = JSON.stringify([actorId, tournament.id, sessionEpoch]);
+  const seatableReady = !loading && entryReads?.scope === readScope && entryReads.seat;
+  const restorableReady = !loading && entryReads?.scope === readScope && entryReads.restore;
+  const entryReady = !!entrySelection && (entrySelection.kind === "seat"
+    ? seatableReady && seatableEntries.some((entry) => entry.entryId === entrySelection.entryId)
+    : restorableReady && restorableEntries.some((entry) => entry.entryId === entrySelection.entryId));
   const selectedSessionScope = JSON.stringify([readScope, sessionEpoch ?? null, selectedTable?.tournamentTableId,
     selectedTable?.tableSessionId, selectedTable?.controlEpoch]);
   const selectedWriteScope = JSON.stringify([selectedSessionScope, selectedTable?.sessionRevision]);
   const selectedWriteScopeRef = useRef(selectedWriteScope);
   selectedWriteScopeRef.current = selectedWriteScope;
+  const closeRosterReady = !v3.fastBustEnabled || (!loadError && (!loading || rosterReady));
   const actionIsCurrent = pendingActionScope === selectedWriteScope && !loadError
     && (!loading || (v3.fastBustEnabled && rosterReady && pendingTableAction === "close"));
+  const tableActionIsCurrent = v3.fastBustEnabled && pendingTableAction === "close"
+    ? pendingActionScope === selectedSessionScope && selectedTable?.seats.length === 0
+    : actionIsCurrent;
   const bustActionIsCurrent = pendingActionScope === (v3.fastBustEnabled ? selectedSessionScope : selectedWriteScope)
     && !loadError && (v3.fastBustEnabled || !loading);
   const currentReadScope = useRef(readScope);
   currentReadScope.current = readScope;
   const readSequence = useRef(0);
   const liveHintEpoch = useRef(0);
+  const refreshInBackground = useRef<(() => Promise<void>) | null>(null);
   const liveReadId = useId();
   const load = useCallback(async (silent = false, onRosterVerified?: () => void) => {
     const sequence = ++readSequence.current;
@@ -226,8 +238,14 @@ function ScopedFloorTableMapPanelV3({
         setLoadError(message);
         if (!silent) toast.error(message);
       }
-      if (entries.ok) setSeatableEntries(entries.data);
-      if (restorable.ok) setRestorableEntries(restorable.data);
+      setEntryReads({ scope: readScope, seat: entries.ok, restore: restorable.ok });
+      setEntrySelection((selection) => {
+        if (!selection) return null;
+        const list = selection.kind === "seat" ? entries : restorable;
+        return list.ok && list.data.some((entry) => entry.entryId === selection.entryId) ? selection : null;
+      });
+      setSeatableEntries(entries.ok ? entries.data : []);
+      setRestorableEntries(restorable.ok ? restorable.data : []);
       if (pending.ok) setPendingMoves(pending.data);
       const secondaryFailures = [entries, restorable, pending].filter((result) => !result.ok);
       setSecondaryLoadError(secondaryFailures.length > 0
@@ -242,6 +260,8 @@ function ScopedFloorTableMapPanelV3({
         setRestorableEntries([]);
         setPendingMoves([]);
       }
+      setEntryReads(null);
+      setEntrySelection(null);
       const message = "Không thể kết nối để tải dữ liệu bàn. Hãy kiểm tra mạng và thử lại.";
       setLoadError(message);
       if (!silent) toast.error(message);
@@ -274,6 +294,7 @@ function ScopedFloorTableMapPanelV3({
       try { failures = await load(true) ? 0 : Math.min(failures + 1, 4); }
       finally { reading = false; if (active && queued) schedule(); }
     };
+    refreshInBackground.current = refresh;
     const invalidate = () => {
       if (!active) return;
       // Keep writes fenced until a read covers the latest hint; allow same-scope display progress.
@@ -321,6 +342,7 @@ function ScopedFloorTableMapPanelV3({
     document.addEventListener("visibilitychange", resume);
     poll();
     return () => {
+      refreshInBackground.current = null;
       active = false; clearTimeout(debounce); clearTimeout(fallback);
       publication.unsubscribe();
       window.removeEventListener("online", resume);
@@ -331,12 +353,15 @@ function ScopedFloorTableMapPanelV3({
   }, [actorId, sessionEpoch, tournament.id, tournamentEnded, v3.enabled, load, liveReadId, supabase]);
 
   useEffect(() => {
-    if (!pendingMoves.some((move) => move.status === "pending")) return;
+    if (!hasPendingMove) return;
     const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") void load(true);
+      if (document.visibilityState !== "visible") return;
+      const refresh = refreshInBackground.current;
+      if (refresh) void refresh();
+      else void load(true);
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [load, pendingMoves]);
+  }, [load, hasPendingMove]);
 
   useEffect(() => {
     if (!selectedTable) return;
@@ -350,12 +375,18 @@ function ScopedFloorTableMapPanelV3({
   useEffect(() => {
     setEntrySelection(null);
     setPendingFreeSitSeat(null);
-    setPendingTableAction(null);
+    setPendingTableAction((action) => v3.fastBustEnabled && action === "close" ? action : null);
     setBreakPlan(null);
     setBreakPlanLoading(false);
     setBreakPlanError(null);
     setLockReason("Giữ ghế cho vận hành");
-  }, [selectedSeatNumber, selectedTableId, selectedWriteScope]);
+  }, [selectedSeatNumber, selectedTableId, selectedWriteScope, v3.fastBustEnabled]);
+
+  useEffect(() => {
+    if (v3.fastBustEnabled && pendingTableAction === "close" && !tableActionIsCurrent) {
+      setPendingTableAction(null);
+    }
+  }, [pendingTableAction, tableActionIsCurrent, v3.fastBustEnabled]);
 
   // Other people's operations may change the table revision while Floor confirms
   // this exact seat. Only a different seat/session/actor retires that intent.
@@ -584,7 +615,7 @@ function ScopedFloorTableMapPanelV3({
           maxSeats={manualPlayerTable?.maxSeats ?? 0} occupiedSeats={manualPlayerTable?.seats.map((s) => s.seatNumber) ?? []}
           lockedSeats={manualPlayerTable?.seatLocks.map((s) => s.seatNumber) ?? []} defaultSeatNumber={manualPlayerTarget.seat}
           onDone={() => { onParticipationChanged?.(); void load(true); }} />}
-      <RestoreBustDialog actorId={actorId} tournamentId={tournament.id} target={restoreTarget?.scope === selectedSessionScope ? restoreTarget : null}
+      <RestoreBustDialog actorId={actorId} tournamentId={tournament.id} target={restorableReady && restoreTarget?.scope === selectedSessionScope && restorableEntries.some((entry) => entry.entryId === restoreTarget.entryId) ? restoreTarget : null}
         onClose={() => setRestoreTarget(null)}
         onRestored={() => { setEntrySelection(null); onParticipationChanged?.(); toast.success("Đã khôi phục người chơi vào ghế."); void load(); }} />
       {FEATURES.floorRedrawSeatLockV1 && (
@@ -681,6 +712,11 @@ function ScopedFloorTableMapPanelV3({
                       </Button>
                       <p className="text-xs text-muted-foreground">Danh sách chỉ gồm entry hợp lệ của giải. Chọn “Đã loại” để khôi phục.</p>
                       <FloorEntryPicker
+                        availability={{
+                          seat: seatableReady ? "ready" : loading ? "loading" : "failed",
+                          restore: restorableReady ? "ready" : loading ? "loading" : "failed",
+                        }}
+                        onRetry={() => void load()}
                         seatableEntries={seatableEntries}
                         restorableEntries={restorableEntries}
                         value={entrySelection}
@@ -719,7 +755,7 @@ function ScopedFloorTableMapPanelV3({
                         <Button
                           data-ops-action="floor.players.restore"
                           className="min-h-12 w-full"
-                          disabled={busy}
+                          disabled={busy || !entryReady}
                           onClick={() => setRestoreTarget({
                             scope: selectedSessionScope,
                             entryId: entrySelection.entryId,
@@ -733,9 +769,9 @@ function ScopedFloorTableMapPanelV3({
                         <Button
                           data-ops-action="floor.tables.add_player"
                           className="min-h-12 w-full"
-                          disabled={busy || !entrySelection}
+                          disabled={busy || !entryReady}
                           onClick={() => {
-                            if (!entrySelection) return;
+                            if (!entrySelection || !entryReady) return;
                             void run("Đã thêm người vào ghế.", () => v3.assignEntryToSeat({
                               entryId: entrySelection.entryId,
                               tournamentTableId: selectedTable.tournamentTableId,
@@ -763,7 +799,7 @@ function ScopedFloorTableMapPanelV3({
                 />
 
                 <section className="grid gap-2 sm:grid-cols-2">
-                  <Button data-ops-action="floor.tables.open_close_table" variant="outline" className="min-h-12" disabled={busy || selectedTable.seats.length !== 0} onClick={() => { setPendingActionScope(selectedWriteScope); setPendingTableAction("close"); }}>Đóng bàn trống</Button>
+                  <Button data-ops-action="floor.tables.open_close_table" variant="outline" className="min-h-12" disabled={busy || !closeRosterReady || selectedTable.seats.length !== 0} onClick={() => { setPendingActionScope(v3.fastBustEnabled ? selectedSessionScope : selectedWriteScope); setPendingTableAction("close"); }}>Đóng bàn trống</Button>
                   <Button
                     data-ops-action="floor.tables.open_break_v3"
                     variant="outline"
@@ -868,6 +904,7 @@ function ScopedFloorTableMapPanelV3({
             <AlertDialogCancel data-ops-action="floor.player.cancel_bust" className="min-h-12">Giữ người chơi</AlertDialogCancel>
             <AlertDialogAction
               data-ops-action="floor.player.bust"
+              aria-busy={busy}
               className="min-h-12 bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={busy || !selectedTable || !pendingBustSeat}
               onClick={async (event) => {
@@ -909,13 +946,13 @@ function ScopedFloorTableMapPanelV3({
                 if (ok) setPendingBustSeat(null);
               }}
             >
-              Xác nhận loại
+              {busy ? "Đang xử lý…" : "Xác nhận loại"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={pendingTableAction !== null && actionIsCurrent} onOpenChange={(open) => { if (!open) setPendingTableAction(null); }}>
+      <AlertDialog open={pendingTableAction !== null && tableActionIsCurrent} onOpenChange={(open) => { if (!open) setPendingTableAction(null); }}>
         <AlertDialogContent className="operations-typography box-border max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-md overflow-y-auto rounded-xl p-4 sm:p-6">
           <AlertDialogHeader>
             <AlertDialogTitle>{pendingTableAction === "break" ? "Đóng và chuyển toàn bộ người chơi?" : "Đóng bàn trống?"}</AlertDialogTitle>
@@ -986,10 +1023,10 @@ function ScopedFloorTableMapPanelV3({
               <AlertDialogAction
                 data-ops-action="floor.tables.close_table"
                 className="min-h-12"
-                disabled={busy || !selectedTable}
+                disabled={busy || !selectedTable || !closeRosterReady}
                  onClick={async (event) => {
                    event.preventDefault();
-                   if (!actionIsCurrent || !selectedTable) return;
+                   if (!tableActionIsCurrent || !closeRosterReady || !selectedTable) return;
                    const ok = await run("Đã đóng bàn và giải phóng bàn vật lý.", async () => {
                      const result = await v3.closeTournamentTable({
                      tournamentTableId: selectedTable.tournamentTableId,
