@@ -257,6 +257,9 @@ test('targeted receipt preserves failed full delivery qualification and rejects 
  prize.prizeDrawerDenials = { noOpenShift: true, insufficientFunds: true, busy: true };
  prize.bankPrizeKeptDrawer = true;
  write('cashier-http-prize-close-http.json', prize);
+ assert.notEqual(run({}, '1', 'prize-replay').status, 0, 'Missing closed shift browser proof must fail');
+ prize.prizeDrawerClosedUiVerified = true;
+ write('cashier-http-prize-close-http.json', prize);
  assert.equal(run({}, '1', 'prize-replay').status, 0);
 });
 
