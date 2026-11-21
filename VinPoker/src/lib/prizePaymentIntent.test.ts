@@ -1,10 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { clearPrizePaymentIntent, persistPrizePaymentIntent, prizePaymentJournalKey, resolvePrizePaymentResult,parsePrizePaymentIntent,prizePaymentPayload,resolvePrizePaymentReceipt,
+import { clearPrizePaymentIntent, persistPrizePaymentIntent, prizeDrawerRetryMessage, prizePaymentJournalKey, resolvePrizePaymentResult,parsePrizePaymentIntent,prizePaymentPayload,resolvePrizePaymentReceipt,
   type PrizePaymentIntent } from "./prizePaymentIntent";
 const intent: PrizePaymentIntent = { actorId: "actor", tournamentId: "tour", requestId: "10000000-0000-4000-8000-000000000001",
   entryId: "10000000-0000-4000-8000-000000000002", recipientRef: "10000000-0000-4000-8000-000000000003",
   recipientName: "TEST", finishedPlace: 1, prizeAmount: 100, confirmationToken: "a".repeat(32), method: "cash" };
 describe("payout recovery boundary", () => {
+  it.each([
+    ["55P03", "cash_prize_drawer_busy", "Két đang bận"],
+    ["23514", "cash_prize_requires_open_shift", "Ca chưa mở két"],
+    ["23514", "cash_prize_drawer_amount_unavailable", "Két không đủ tiền"],
+  ])("explains the exact recoverable drawer error %s / %s", (code, message, label) => {
+    const qualified = { ...intent, multiDayEventId: intent.entryId, multiDayParticipationId: intent.recipientRef };
+    const error = { code, message };
+    expect(prizeDrawerRetryMessage(qualified, error)).toEqual(expect.stringContaining(label));
+    expect(prizeDrawerRetryMessage(qualified, error)).toEqual(expect.stringContaining("Gửi lại yêu cầu cũ"));
+    expect(prizeDrawerRetryMessage(intent, error)).toBeNull();
+    expect(prizeDrawerRetryMessage({ ...qualified, method: "bank" }, error)).toBeNull();
+    expect(prizeDrawerRetryMessage(qualified, { code: "XX000", message })).toBeNull();
+    expect(resolvePrizePaymentResult(qualified, { ok: false, error: message })).toEqual({ status: "unknown" });
+  });
   it.each(['payout_confirmation_stale','place_not_finalized','no_unpaid_obligation'])('retains established definitive rejection handling for %s',error=>{
     expect(resolvePrizePaymentResult(intent,{ok:false,error})).toEqual({status:'rejected',error});
   });

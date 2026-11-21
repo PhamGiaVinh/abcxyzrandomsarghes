@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatVND } from "@/lib/format";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import { clearPrizePaymentIntent, parsePrizePaymentIntent, persistPrizePaymentIntent,
-  prizePaymentJournalKey, resolvePrizePaymentReceipt, resolvePrizePaymentResult,
+  prizeDrawerRetryMessage, prizePaymentJournalKey, resolvePrizePaymentReceipt, resolvePrizePaymentResult,
   type PrizePaymentIntent } from "@/lib/prizePaymentIntent";
 import type { PayoutRecipientPlace } from "./useTournamentPayoutRecipients";
 
@@ -50,7 +50,7 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
     try {
       if (!recovery) persistPrizePaymentIntent(sessionStorage, intent);
       const rpc = supabase.rpc.bind(supabase) as unknown as (name: string, args: Record<string, unknown>) =>
-        PromiseLike<{ data: unknown; error: { message?: string } | null }>;
+        PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>;
       const response = await waitForManualPlayerResponse(Promise.resolve(recovery
         ? rpc("get_tournament_prize_payment_receipt_v2", { p_request_id: intent.requestId })
         : intent.multiDayEventId?rpc("record_multi_day_prize_payment_v1",{
@@ -60,7 +60,11 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
           p_finished_place: intent.finishedPlace, p_method: intent.method,
           p_expected_token: intent.confirmationToken, p_request_id: intent.requestId })));
       if (!alive.current) return;
-      if (response.error) throw new Error(response.error.message || unknown);
+      if (response.error) {
+        const retryMessage = recovery ? null : prizeDrawerRetryMessage(intent, response.error);
+        toast.error(retryMessage ?? unknown);
+        return;
+      }
       const resolution = recovery ? resolvePrizePaymentReceipt(intent, response.data) : resolvePrizePaymentResult(intent, response.data);
       if (resolution.status === "unknown") { toast.error(unknown); return; }
       clearPrizePaymentIntent(sessionStorage, intent);
