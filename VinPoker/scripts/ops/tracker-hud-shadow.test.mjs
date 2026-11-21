@@ -59,6 +59,8 @@ test('equivalent public fingerprints require explicit opt in and do not bypass r
  const rows=records();rows[1].legacyPublicFingerprints=['legacy-proof'];rows[1].projected[0].source_fingerprint='legacy-proof';
  assert.equal(run(rows).passed,false);
  const options={equivalentPublicStatuses:true};
+ assert.throws(()=>run(rows,options));
+ rows[0]={...rows[0],equivalentStatusDefinitionHashes:["30c14514ffa4d20111fcbd028d96c921","ae3bba424a7cc0c9d9b8579c068a09fd"]};
  assert.equal(run(rows,options).passed,true);
  rows[1].projected[0].source_revision=1;
  assert.deepEqual(run(rows,options).examples[0].mismatchedFields,['source_revision']);

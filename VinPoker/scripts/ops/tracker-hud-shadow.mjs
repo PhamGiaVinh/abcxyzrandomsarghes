@@ -31,6 +31,10 @@ export function normalizeSource(row){
  return {...row.hand,settlement:valid?{verified:true,current:true,
   winnerPlayerIds:[...new Set(proof.pots.flatMap(p=>p.winnerIds))],eligiblePlayerIds:proof.handRanks.map(r=>r.playerId),showdown:proof.handRanks.length>=2}:null};
 }
+const equivalentStatusDefinitionHashes = ["30c14514ffa4d20111fcbd028d96c921","ae3bba424a7cc0c9d9b8579c068a09fd"];
+export function assertEquivalentStatusDefinitions(row){
+ assert.deepEqual(row.equivalentStatusDefinitionHashes,equivalentStatusDefinitionHashes);
+}
 export function createShadow(classifier,{equivalentPublicStatuses=false}={}){
  const players=new Map(),tours=new Map();
  const report={kind:'READ_ONLY_RAW_SOURCE_SHADOW_NOT_LOAD_TEST',complete:false,passed:false,snapshot:null,version:classifier.PUBLIC_HUD_PROJECTION_VERSION,classifierSha256:classifier.shadowClassifierSha256,sqlSha256:createHash('sha256').update(equivalentPublicStatuses?shadowSqlForEquivalentPublicStatuses():shadowSql).digest('hex'),
@@ -53,7 +57,9 @@ export function createShadow(classifier,{equivalentPublicStatuses=false}={}){
    assert.equal(row.readOnly,true);assert.equal(row.isolation,'repeatable read');
    assert.equal(row.version,classifier.PUBLIC_HUD_PROJECTION_VERSION);
    assert.equal(row.backfillComplete,true);assert.equal(row.handsDone,true);assert.equal(row.resultsDone,true);
-   assert.equal(row.pendingJobs,0);assert.equal(row.barriers,0);return;
+   assert.equal(row.pendingJobs,0);assert.equal(row.barriers,0);
+   if(equivalentPublicStatuses)assertEquivalentStatusDefinitions(row);
+   return;
   }
   assert.ok(header&&!end);
   if(row.kind==='hand'){
@@ -146,14 +152,15 @@ async function main(){
  const production=process.argv.includes('--production-read-only')&&env.PGHOST==='db.orlesggcjamwuknxwcpk.supabase.co'&&env.PGPORT==='5432'&&db==='postgres'&&env.PGSSLMODE==='require';
  assert.ok(local||production,'Exact read-only target required');
  assert.ok(env.TRACKER_HUD_SHADOW_REPORT,'Nonsecret report destination required');
- const shadow=createShadow(await loadClassifier());
+ const equivalentPublicStatuses=process.argv.includes('--equivalent-public-statuses');
+ const shadow=createShadow(await loadClassifier(),{equivalentPublicStatuses});
  const windows=process.platform==='win32'&&local;
  const args=['-w','-X','-qAt','-v','ON_ERROR_STOP=1','-v','FETCH_COUNT=100'];
  const child=spawn(windows?'wsl':'psql',windows?['-d','PokerVision-P16-4C-Eval','--','env',`PGHOST=${env.PGHOST}`,`PGPORT=${env.PGPORT}`,`PGUSER=${env.PGUSER}`,`PGDATABASE=${db}`,'psql',...args]:args,{env,stdio:['pipe','pipe','pipe']});
  // Consume diagnostics privately without retaining raw SQL/rows/credentials.
  child.stderr.resume();
  const done=new Promise((resolve,reject)=>{child.on('error',()=>reject(Error('Shadow database process unavailable')));child.on('close',code=>resolve(code));});
- child.stdin.on('error',()=>{});child.stdin.end(shadowSql);
+ child.stdin.on('error',()=>{});child.stdin.end(equivalentPublicStatuses?shadowSqlForEquivalentPublicStatuses():shadowSql);
  try{for await(const line of createInterface({input:child.stdout}))if(line.trim()){
    const row=JSON.parse(line);
    if(row.kind==='header')shadow.report.target=validateShadowTarget(row,env,local);
@@ -168,7 +175,10 @@ if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))ma
 
 export function shadowSqlForEquivalentPublicStatuses(){
  const marker=" 'fingerprint',tracker_analytics_v1.hand_fingerprint(ids.id),";
- return shadowSql.replace(marker,marker+`
+ return shadowSql.replace(" 'pendingJobs',"," 'equivalentStatusDefinitionHashes',jsonb_build_array(\n"+
+  "  (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='tracker_analytics_v1.hand_fingerprint(uuid)'::regprocedure),\n"+
+  "  (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='tracker_analytics_v1.visibility_changed()'::regprocedure)),\n"+
+  " 'pendingJobs',").replace(marker,marker+`
  'legacyPublicFingerprints',CASE WHEN EXISTS (
    SELECT 1 FROM public.tournaments t WHERE t.id=h.tournament_id AND t.deleted_at IS NULL
      AND t.status IN ('live','final_table','completed','finished')

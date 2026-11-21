@@ -3,7 +3,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {build} from 'esbuild';
 import {sql,jsonSql,sqlAsync,service} from './nativeDb.mjs';
 import {nativeWorkerClient} from './nativeRpc.mjs';
-import {shadowSqlForEquivalentPublicStatuses} from '../../scripts/ops/tracker-hud-shadow.mjs';
+import {assertEquivalentStatusDefinitions,shadowSqlForEquivalentPublicStatuses} from '../../scripts/ops/tracker-hud-shadow.mjs';
 const migration=readFileSync('supabase/migrations/20261106111519_public_hud_visibility_work_wakeup.sql','utf8');
 const recovery=readFileSync('tests/publicHud/visibility-wake.forward-rollback.sql','utf8');
 const strip=s=>s.replace(/^BEGIN;\r?\n/m,'').replace(/COMMIT;\s*$/,'');
@@ -130,8 +130,12 @@ const closeFingerprintEvidence=await (async()=>{
  const fixtureIds=legacyHands.map(id=>literal(id)).join(',');
  const readLegacyRows=()=>sql(legacyQuery.replace(handScope,
   `LEFT JOIN public.tournament_hands h ON h.id=ids.id WHERE ids.id IN (${fixtureIds}) ORDER BY ids.id;`)).split('\n')
-   .filter(Boolean).map(line=>JSON.parse(line)).filter(row=>row.kind==='hand'&&legacyHands.includes(row.id));
- const legacyRows=readLegacyRows();
+   .filter(Boolean).map(line=>JSON.parse(line));
+ const firstLegacyRead=readLegacyRows();
+ const definitionHeader=firstLegacyRead.find(row=>row.kind==='header');
+ assert.ok(definitionHeader);
+ assertEquivalentStatusDefinitions(definitionHeader);
+ const legacyRows=firstLegacyRead.filter(row=>row.kind==='hand'&&legacyHands.includes(row.id));
  assert.equal(legacyRows.length,legacyHands.length);
  for(const row of legacyRows){
   assert.equal(row.projected.length,1);
@@ -155,7 +159,14 @@ const closeFingerprintEvidence=await (async()=>{
  const drainCompletedMs=performance.now()-start;
  assert.equal(matches(),`${count}:${count}`,'Closing a public tour must leave all hand fingerprints current');
  assert.equal(barrier(tour),0);
- return {hands:count,legacyStatusesVerified:legacyRows.length,obsoleteRevisionRejected:true,writeAcknowledgedMs,drainCompletedMs};
+ const recoverDefinitions=readFileSync('scripts/ops/public-hud-equivalent-status-recovery.sql','utf8');
+ sql(recoverDefinitions);
+ assert.equal(matches(),`${count}:0`,'Definition rollback must expose normalized rows that still need reconciliation');
+ sql(`SELECT tracker_analytics_v1.enqueue('hand',id,true)
+  FROM public.tournament_hands WHERE tournament_id='${tour}';`);
+ await drain();
+ assert.equal(matches(),`${count}:${count}`,'Recovery must reproject normalized rows before readers return');
+ return {hands:count,definitionRecoveryAndReprojection:true,legacyStatusesVerified:legacyRows.length,obsoleteRevisionRejected:true,exactDefinitionsVerified:true,writeAcknowledgedMs,drainCompletedMs};
 })();
 
 for(const tour of tours)sql(`DELETE FROM public.tournaments WHERE id='${tour}';`);await drain();assert.deepEqual(totals(),beforeTotals,'Publish/retire must conserve every original player counter and winnings');
