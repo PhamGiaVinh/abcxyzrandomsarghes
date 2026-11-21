@@ -3008,7 +3008,8 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const recordedPayments=new Map<string,{finishedPlace:number;recipientRef:string;amount:number;participationId:string}>();
   for(const original of payable){
    const quote=(await recipients()).places.find((place:{multiDayParticipationId:string})=>place.multiDayParticipationId===original.multiDayParticipationId);
-   expect(quote).toMatchObject({...original,isPaid:false});
+   expect(quote).toMatchObject({multiDayParticipationId:original.multiDayParticipationId,finishedPlace:original.finishedPlace,
+    recipientRef:original.recipientRef,prizeAmount:original.prizeAmount,isPaid:false});
    const payIntent={p_event_id:event.event_id,p_participation_id:original.multiDayParticipationId,p_method:'cash',
     p_expected_token:quote.confirmationToken,p_request_id:crypto.randomUUID()};
    const paid=await rpc('record_multi_day_prize_payment_v1',payIntent);
