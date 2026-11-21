@@ -1880,6 +1880,12 @@ BATCH_SOURCE_METADATA
         fi
       fi
     fi
+    if [[ "$source_batch_probe" == 1 && "$prize_close_probe" == 1 ]]; then
+      # Same-tour close and HUD shadow use the pending trigger in this
+      # already owned fixture, before the continuous audience freezes DDL.
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+        <"$repo_root/supabase/pending-migrations/20261121125307_public_hud_refresh_public_status_fingerprint.sql"
+    fi
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
     node --input-type=module - "$test_root/isolated-status.json" "$repo_root/output/operations-latency/operations-schema-readiness-http.json" <<'CURRENT_SCHEMA_HTTP_READY'
 import assert from 'node:assert/strict';import {readFileSync,writeFileSync} from 'node:fs';
