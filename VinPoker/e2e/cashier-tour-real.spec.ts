@@ -3044,8 +3044,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   phase='final-day-prize-drawer-lock';report();
   const lockStatus='/latency/consolidation-drawer-lock-status';
   const waitForLockState=(state:string)=>expect.poll(
-   ()=>existsSync(lockStatus)&&readFileSync(lockStatus,'utf8').split(/?
-/).includes(state),
+   ()=>existsSync(lockStatus)&&readFileSync(lockStatus,'utf8').split(String.fromCharCode(10)).map(line=>line.trim()).includes(state),
    {timeout:12000,intervals:[50,100,250]}
   ).toBe(true);
   writeFileSync('/latency/consolidation-drawer-lock-request','test');
