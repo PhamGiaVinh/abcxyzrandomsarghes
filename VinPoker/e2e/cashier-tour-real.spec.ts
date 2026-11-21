@@ -3585,6 +3585,9 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   const swingCard=swing.locator('#table-card-'+opened.p_game_table_id);
   const swingAlert=swing.getByText('Canonical paid prize TEST • Thiếu dealer',{exact:true});
   await expect(swingCard).toBeVisible();
+  const expandAlerts=swing.getByRole('button',{name:/^\+ \d+ việc nữa/});
+  await expect(swingAlert.or(expandAlerts).first()).toBeVisible();
+  if(!await swingAlert.isVisible() && await expandAlerts.isVisible()) await expandAlerts.click();
   await expect(swingAlert).toBeVisible();
   let assignmentId:string|undefined;
   let attendanceId:string|undefined;
