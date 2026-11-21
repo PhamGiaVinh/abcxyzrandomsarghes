@@ -3037,10 +3037,11 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(shifts).toHaveLength(1);
   const [shift]=shifts;
   const drawer=await rpc('cashier_shift_summary_v1',{p_shift_id:shift.id});
-  expect(drawer).toMatchObject({ok:true,totals:{cash_in:204600000,cash_out:183400000,cash_adjustments:0}});
+  // The shared fixture adds one 6.6M buy-in outside the event; the SQL audit checks event-only totals.
+  expect(drawer).toMatchObject({ok:true,totals:{cash_in:211200000,cash_out:183400000,cash_adjustments:0}});
   expect(shift.opening_cash).toBe(0);
-  const closedDrawer=await rpc('cashier_close_shift_v1',{p_shift_id:shift.id,p_counted_cash:21200000});
-  expect(closedDrawer).toMatchObject({ok:true,expected_cash:21200000,counted_cash:21200000,variance_cash:0});
+  const closedDrawer=await rpc('cashier_close_shift_v1',{p_shift_id:shift.id,p_counted_cash:27800000});
+  expect(closedDrawer).toMatchObject({ok:true,expected_cash:27800000,counted_cash:27800000,variance_cash:0});
   phase='passed';
  }finally{report();await mobileContext.close();}
 });
