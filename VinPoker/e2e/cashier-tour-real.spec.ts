@@ -3128,7 +3128,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const clockUi={started:false,paused:false,resumed:false};
  let prizeDrawerVerified=false;
  let prizeDrawerCloseVariance:number|null=null;
- const prizeDrawerDenials={noOpenShift:false,insufficientFunds:false};
+ const prizeDrawerDenials={noOpenShift:false,insufficientFunds:false,busy:false};
  const fnb={guestOrder:false,guestPaidVisible:false,counterPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
  const fnbTour={desktop:false,mobile:false};
  let swingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
@@ -3379,12 +3379,12 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    phase='single-day-prize-drawer-denials';report();
    const collectedCash=19800000;
    const intent={p_tournament_id:tour,p_finished_place:1,p_method:'cash',p_expected_token:place.confirmationToken,p_request_id:crypto.randomUUID()};
-   const assertDenied=async(message:string)=>{
+   const assertDenied=async(message:string,code='23514')=>{
     const response=await fetch(api+'/rest/v1/rpc/record_tournament_prize_payment_v2',{
      method:'POST',headers,body:JSON.stringify(intent),signal:AbortSignal.timeout(10000),
     });
     expect(response.ok).toBe(false);
-    expect(await response.json()).toMatchObject({code:'23514',message});
+    expect(await response.json()).toMatchObject({code,message});
     const receipt=await rpc('get_tournament_prize_payment_receipt_v2',{p_request_id:intent.p_request_id});
     expect(receipt.found).toBe(false);
     const payouts=await rpc('get_tournament_payout_recipients',{p_tournament_id:tour});
@@ -3400,6 +3400,17 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    expect(emptyClose).toMatchObject({ok:true,expected_cash:0,variance_cash:0});
    prizeDrawerDenials.insufficientFunds=true;
    const payoutShift=await rpc('cashier_open_shift_v1',{p_club_id:club,p_opening_cash:collectedCash});
+   phase='single-day-prize-drawer-lock';report();
+   const lockStatus='/latency/single-day-drawer-lock-status';
+   const waitForLockState=(state:string)=>expect.poll(
+    ()=>existsSync(lockStatus)&&readFileSync(lockStatus,'utf8').split('\n').some(line=>line.trim()===state),
+    {timeout:12000,intervals:[50,100,250]},
+   ).toBe(true);
+   writeFileSync('/latency/single-day-drawer-lock-request','test');
+   await waitForLockState('READY');
+   await assertDenied('cash_prize_drawer_busy','55P03');
+   await waitForLockState('RELEASED');
+   prizeDrawerDenials.busy=true;
    drawerBefore=await rpc('cashier_shift_summary_v1',{p_shift_id:payoutShift.shift_id});
    expect(drawerBefore).toMatchObject({ok:true,shift_id:payoutShift.shift_id,opening_cash:collectedCash,totals:{cash_in:0,cash_out:0,cash_adjustments:0,prize_cash_out:0}});
   }

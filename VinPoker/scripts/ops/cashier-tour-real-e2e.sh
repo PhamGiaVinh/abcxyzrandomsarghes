@@ -1943,6 +1943,35 @@ fi
 # Validate the fresh46-attendance fixture before the first browser handover.
 # Later checkout stages intentionally make those attendances ineligible.
 if [[ "$schema_mode" == current && "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
+hold_test_drawer() (
+  local prefix="$1"
+  local lock_path="$repo_root/output/operations-latency"
+  for _ in {1..210}; do
+    if [[ -f "$lock_path/$prefix-drawer-lock-request" ]]; then
+      docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+        >"$lock_path/$prefix-drawer-lock-status" <<'CONSOLIDATION_DRAWER_LOCK'
+BEGIN;
+SET LOCAL lock_timeout='3s';
+DO $$ BEGIN
+ IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
+ THEN RAISE EXCEPTION 'consolidation_drawer_lock_requires_disposable_fixture';END IF;
+ PERFORM 1 FROM public.cashier_till_shifts
+ WHERE club_id='a2000000-0000-4000-8000-000000000001' AND closed_at IS NULL FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'consolidation_drawer_lock_shift_missing';END IF;
+END $$;
+SELECT 'READY';
+SELECT pg_sleep(8);
+ROLLBACK;
+SELECT 'RELEASED';
+CONSOLIDATION_DRAWER_LOCK
+      exit
+    fi
+    sleep 1
+  done
+  exit 1
+)
+
 run_prize_close_proof() {
   prize_history_before="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT coalesce((SELECT player_history_enabled::text FROM public.club_settings WHERE club_id='a2000000-0000-4000-8000-000000000001'),'missing');")"
   [[ "$prize_history_before" == true || "$prize_history_before" == false || "$prize_history_before" == missing ]]
@@ -1977,8 +2006,21 @@ DO $$ DECLARE actor uuid; BEGIN
 END $$;
 PRIZE_DEALER_WAGE_FIXTURE
   fi
+  local prize_lock_pid=
+  if [[ "$diagnostic_scope" == prize-replay ]]; then
+    hold_test_drawer single-day &
+    prize_lock_pid=$!
+  fi
   prize_close_status=0
   LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED=1 run_browser_proof '' '' 'final current Floor Cashier prizes close over real Auth HTTP' || prize_close_status=$?
+  if [[ -n "$prize_lock_pid" ]]; then
+    if [[ "$prize_close_status" == 0 ]]; then
+      wait "$prize_lock_pid" || prize_close_status=$?
+    else
+      kill -TERM "$prize_lock_pid" 2>/dev/null || true
+      wait "$prize_lock_pid" || true
+    fi
+  fi
   if [[ "$prize_history_before" == missing ]]; then
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "DELETE FROM public.club_settings WHERE club_id='a2000000-0000-4000-8000-000000000001';"
   else
@@ -2100,32 +2142,7 @@ CONSOLIDATION_FIXTURE
     # Hold the actual drawer row on a separate PostgreSQL connection. The
     # browser asks only after opening the payout shift, and sees READY only
     # once SELECT FOR UPDATE has completed.
-    (
-      lock_path="$repo_root/output/operations-latency"
-      for _ in {1..210}; do
-        if [[ -f "$lock_path/consolidation-drawer-lock-request" ]]; then
-          docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres             >"$lock_path/consolidation-drawer-lock-status" <<'CONSOLIDATION_DRAWER_LOCK'
-BEGIN;
-SET LOCAL lock_timeout='3s';
-DO $$ BEGIN
- IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
- OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
- THEN RAISE EXCEPTION 'consolidation_drawer_lock_requires_disposable_fixture';END IF;
- PERFORM 1 FROM public.cashier_till_shifts
- WHERE club_id='a2000000-0000-4000-8000-000000000001' AND closed_at IS NULL FOR UPDATE;
- IF NOT FOUND THEN RAISE EXCEPTION 'consolidation_drawer_lock_shift_missing';END IF;
-END $$;
-SELECT 'READY';
-SELECT pg_sleep(8);
-ROLLBACK;
-SELECT 'RELEASED';
-CONSOLIDATION_DRAWER_LOCK
-          exit
-        fi
-        sleep 1
-      done
-      exit 1
-    ) &
+    hold_test_drawer consolidation &
     consolidation_lock_pid=$!
     consolidation_browser_status=0
     run_browser_proof '' '' 'Floor consolidation renders the 27 paid seats over real Auth HTTP' || consolidation_browser_status=$?
@@ -2263,7 +2280,7 @@ if(scope==='floor-consolidation'){
  assert.equal(floor.secondFlightBags,4);assert.equal(floor.finalSelectedBags,27);assert.equal(floor.finalQualified,23);
  assert.equal(floor.finalCarriedChips,460000);assert.equal(floor.finalSeated,23);
 }
-if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.equal(prize.prizeDrawerVerified,true);assert.equal(prize.prizeDrawerCloseVariance,0);assert.deepEqual(prize.prizeDrawerDenials,{noOpenShift:true,insufficientFunds:true});assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});assert.deepEqual(prize.dealerCheckout,{committed:true,retryPreserved:true,breakEnded:true,swingUpdated:true});assert.deepEqual(prize.dealerPay,{accrualMatches:true,fixedStatement:true,paidOnce:true,selfBalanceCleared:true,financeMatched:true,mobileReceiptVisible:true});}
+if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.equal(prize.prizeDrawerVerified,true);assert.equal(prize.prizeDrawerCloseVariance,0);assert.deepEqual(prize.prizeDrawerDenials,{noOpenShift:true,insufficientFunds:true,busy:true});assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});assert.deepEqual(prize.dealerCheckout,{committed:true,retryPreserved:true,breakEnded:true,swingUpdated:true});assert.deepEqual(prize.dealerPay,{accrualMatches:true,fixedStatement:true,paidOnce:true,selfBalanceCleared:true,financeMatched:true,mobileReceiptVisible:true});}
 assert.equal(audience.viewers,Number(count));
 for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.equal(audience.checks[key],true,key);
 assert.equal(audience.phase,Object.values(audience.checks).every(v=>v===true)?'passed':'failed');
