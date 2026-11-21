@@ -254,6 +254,7 @@ test('targeted receipt preserves failed full delivery qualification and rejects 
  write('cashier-http-prize-close-http.json', prize);
  assert.notEqual(run({}, '1', 'prize-replay').status, 0, 'Drawer variance must fail');
  prize.prizeDrawerCloseVariance = 0;
+ prize.prizeDrawerDenials = { noOpenShift: true, insufficientFunds: true };
  write('cashier-http-prize-close-http.json', prize);
  assert.equal(run({}, '1', 'prize-replay').status, 0);
 });
