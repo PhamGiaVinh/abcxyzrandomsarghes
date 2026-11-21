@@ -1,0 +1,83 @@
+name: Cashier 1730 current-schema migration
+on:
+  push:
+    branches: [codex/cashier-1730-current-schema-ci]
+    paths: [.github/workflows/cashier-1730-current-schema.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  current-schema-catalog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PGHOST: 127.0.0.1
+      PGPORT: '55441'
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_cashier_1730_ci
+      SCHEMA_ARTIFACT_SHA256: d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source and recovery provenance
+        env:
+          SCHEMA_ARTIFACT_DIR: ${{ runner.temp }}/cashier-1730-schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = PhamGiaVinh/abcxyzrandomsarghes
+          candidate=47bf50e95126b6b25e94b0075efb3274a13d5e96
+          path=VinPoker/supabase/pending-migrations/20261121055644_multiday_prize_cash_drawer_v1.sql
+          git fetch --no-tags origin "$candidate"
+          test "$(git rev-parse "$candidate:$path")" = b17840f432f1bd7cc4f95a3500276c1b38591db9
+          git show "$candidate:$path" > "$RUNNER_TEMP/cashier-1730.sql"
+          prerequisite=VinPoker/supabase/migrations/20270128000145_multiday_verified_payment_boundary_v1.sql
+          test "$(git hash-object "$prerequisite")" = e8c827aa6f6c0937286674bbb539bd7c9146df45
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/38275767630" |
+            jq -e '.id == 38275767630 and .conclusion == "success" and .event == "workflow_dispatch"
+              and .workflow_id == 322144993 and .head_branch == "main"
+              and .head_sha == "09cff8a829caf3f514a615b231ab96f4ed238757"
+              and (.actor.login | ascii_downcase) == "phamgiavinh"' >/dev/null
+          gh run download 38275767630 -n reviewed-operations-schema -D "$SCHEMA_ARTIFACT_DIR"
+          gh run download 38275767630 -n reviewed-operations-schema-provenance -D "$RUNNER_TEMP/cashier-1730-provenance"
+          node VinPoker/scripts/deploy/validate-live-public-schema-artifact.mjs \
+            --artifact-directory "$SCHEMA_ARTIFACT_DIR" \
+            --operations-recovery-provenance "$RUNNER_TEMP/cashier-1730-provenance/reviewed-operations-schema.provenance.json" \
+            --recovery-run-id 38275767630
+      - name: Apply candidate to disposable PostgreSQL
+        env:
+          SCHEMA_ARTIFACT_DIR: ${{ runner.temp }}/cashier-1730-schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name cashier-1730-pg --network host \
+            -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB="$PGDATABASE" \
+            postgres:17 -c listen_addresses=127.0.0.1 -c port="$PGPORT" >/dev/null
+          for _ in $(seq 1 30); do
+            if pg_isready -q; then break; fi
+            sleep 1
+          done
+          pg_isready -q
+          node VinPoker/scripts/ops/restore-schema-test-baseline.mjs
+          psql -Xq -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270128000145_multiday_verified_payment_boundary_v1.sql
+          psql -Xq -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/cashier-1730.sql"
+          psql -Xq -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT FROM pg_trigger
+              WHERE tgrelid = 'public.tournament_prize_payments'::regclass
+                AND tgname = 'cashier_prize_drawer_outflow' AND tgenabled = 'O'
+                AND tgfoid = 'private.cashier_record_prize_drawer_outflow_v1()'::regprocedure
+            ) OR NOT EXISTS (
+              SELECT FROM pg_index
+              WHERE indexrelid = 'public.cashier_movement_prize_payment_unique'::regclass
+                AND indisunique AND indisvalid
+            ) OR EXISTS (
+              SELECT FROM public.cashier_buyin_movements WHERE prize_payment_id IS NOT NULL
+            ) THEN
+              RAISE EXCEPTION 'Cashier 1730 catalog or no-backfill postcondition failed';
+            END IF;
+          END $$;
+          SQL
+          echo 'Cashier 1730 reviewed current-schema migration applied. Historical pre03 proof remains separate.'
