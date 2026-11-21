@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { formatVND } from "@/lib/format";
 import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 import { clearPrizePaymentIntent, parsePrizePaymentIntent, persistPrizePaymentIntent,
-  prizePaymentJournalKey, resolvePrizePaymentReceipt, resolvePrizePaymentResult,
+  prizeDrawerRetryMessage, prizePaymentJournalKey, resolvePrizePaymentReceipt, resolvePrizePaymentResult,
   type PrizePaymentIntent } from "@/lib/prizePaymentIntent";
 import type { PayoutRecipientPlace } from "./useTournamentPayoutRecipients";
 
@@ -29,6 +29,7 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
   const [pending, setPending] = useState<PrizePaymentIntent | null>(null);
   const [blocked, setBlocked] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [cashReceipt, setCashReceipt] = useState<{ paymentId: string; shiftId: string | null } | null>(null);
   const alive = useRef(true), writing = useRef(false);
   useEffect(() => {
     alive.current = true;
@@ -43,6 +44,29 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
     return () => { alive.current = false; };
   }, [actorId, tournamentId]);
 
+  const lookupCashReceipt = async (paymentId: string) => {
+    if (!actorId || !alive.current || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(paymentId)) return;
+    const lookup = { paymentId, shiftId: null };
+    setCashReceipt(lookup);
+    try {
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(
+        supabase.from("cashier_buyin_movements")
+          .select("shift_id")
+          .eq("tournament_id", tournamentId)
+          .eq("prize_payment_id" as never, paymentId)
+          .eq("purpose", "prize_payout")
+          .eq("method", "cash")
+          .eq("direction", "out")
+          .maybeSingle(),
+      ));
+      const shiftId = data?.shift_id;
+      if (!alive.current || error || !shiftId) return;
+      setCashReceipt(current => current === lookup ? { paymentId, shiftId } : current);
+    } catch {
+      // Missing or unavailable ledger data leaves this receipt unverified.
+    }
+  };
+
   const execute = async (intent: PrizePaymentIntent, recovery: boolean) => {
     if (writing.current || !alive.current) return;
     writing.current = true;
@@ -50,7 +74,7 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
     try {
       if (!recovery) persistPrizePaymentIntent(sessionStorage, intent);
       const rpc = supabase.rpc.bind(supabase) as unknown as (name: string, args: Record<string, unknown>) =>
-        PromiseLike<{ data: unknown; error: { message?: string } | null }>;
+        PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }>;
       const response = await waitForManualPlayerResponse(Promise.resolve(recovery
         ? rpc("get_tournament_prize_payment_receipt_v2", { p_request_id: intent.requestId })
         : intent.multiDayEventId?rpc("record_multi_day_prize_payment_v1",{
@@ -60,7 +84,11 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
           p_finished_place: intent.finishedPlace, p_method: intent.method,
           p_expected_token: intent.confirmationToken, p_request_id: intent.requestId })));
       if (!alive.current) return;
-      if (response.error) throw new Error(response.error.message || unknown);
+      if (response.error) {
+        const retryMessage = recovery ? null : prizeDrawerRetryMessage(intent, response.error);
+        toast.error(retryMessage ?? unknown);
+        return;
+      }
       const resolution = recovery ? resolvePrizePaymentReceipt(intent, response.data) : resolvePrizePaymentResult(intent, response.data);
       if (resolution.status === "unknown") { toast.error(unknown); return; }
       clearPrizePaymentIntent(sessionStorage, intent);
@@ -68,6 +96,9 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
       if (resolution.status === "rejected") toast.error(errors[resolution.error] || "Hệ thống từ chối yêu cầu trả thưởng. Hãy tải lại danh sách.");
       else toast.success(`${resolution.outcome === "already_paid" ? "Đã ghi nhận trả trước đó" : "Đã ghi nhận trả"} · Hạng ${intent.finishedPlace} · ${formatVND(resolution.amount)}`);
       reload();
+      if (resolution.status === "committed" && intent.method === "cash") {
+        void lookupCashReceipt(resolution.paymentId);
+      }
     } catch {
       if (alive.current) toast.error(unknown);
     } finally {
@@ -83,6 +114,7 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
         finishedPlace: place.finishedPlace, prizeAmount: place.prizeAmount, confirmationToken: place.confirmationToken, method,
         multiDayEventId:place.multiDayEventId,multiDayParticipationId:place.multiDayParticipationId }), actorId, tournamentId);
       persistPrizePaymentIntent(sessionStorage, intent);
+      setCashReceipt(null);
       setPending(intent);
       await execute(intent, false);
     } catch {
@@ -92,7 +124,7 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
       }
     }
   };
-  return { pending, blocked, busy, submit,
+  return { pending, blocked, busy, cashReceipt, lookupCashReceipt, submit,
     recover: () => pending ? execute(pending, true) : Promise.resolve(),
     retry: () => pending ? execute(pending, false) : Promise.resolve() };
 }

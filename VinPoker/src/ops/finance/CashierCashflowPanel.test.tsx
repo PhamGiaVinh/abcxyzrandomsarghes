@@ -25,8 +25,16 @@ it.each(["confirmed", "wrong club", "wrong cutoff", "missing numbers"])("handles
   render(<CashierCashflowPanel clubId="club-test" range={range} />);
   if (kind === "confirmed") {
     expect(await screen.findByText("150.000 VND")).toBeVisible();
+    expect(screen.queryByText("Thưởng đã chi từ két")).not.toBeInTheDocument();
   } else {
     expect(await screen.findByRole("alert")).toHaveTextContent("Không tải được");
     expect(screen.queryByText("150.000 VND")).not.toBeInTheDocument();
   }
+});
+
+it("displays the drawer prize outflow from the server", async () => {
+  rpc.mockResolvedValue({ data: { ...response, cash_flow: { ...response.cash_flow, prize_cash_out: 125000 } }, error: null });
+  render(<CashierCashflowPanel clubId="club-test" range={range} />);
+  expect(await screen.findByText("Thưởng đã chi từ két")).toBeVisible();
+  expect(screen.getByText("125.000 VND")).toBeVisible();
 });
