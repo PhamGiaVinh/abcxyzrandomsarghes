@@ -2304,6 +2304,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalTrackerTables=0,finalTrackerChips=0,finalShowdowns=0,finalSurvivors=0;
  let finalClosedTables=0,finalDealerAssignmentsReleased=0,finalWinnerChips=0;
  let finalLastTableClosed=false;
+ let finalRankingField=0,finalRankingReviewGroups=0;
  let firstFlightSeatingReview:string|null=null;
  let secondFlightSeatingReview:string|null=null;
   let finalSelectedBags=0;
@@ -2311,8 +2312,8 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
-  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns and last-table closure from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
+  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and ranking evidence from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -2877,6 +2878,19 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(lastAssignments[0].status).not.toBe('assigned');
   expect(lastAssignments[0].released_at).not.toBeNull();
   finalLastTableClosed=true;
+  phase='final-day-rank-review';report();
+  const ranking=await rpc('get_tournament_ranking_review_v1',{p_tournament_id:finalTour});
+  expect(ranking).toMatchObject({ok:true,review:null,source:{field:23,survivors:1,missingOrders:0,
+   activeHand:false,evidencePending:false,requiresReview:true,hasOfficial:false}});
+  const entries=ranking.source.entries as {playerId:string;status:string;finishedPlace:number|null}[];
+  expect(entries.filter(entry=>entry.status==='busted')).toHaveLength(22);
+  expect(entries.filter(entry=>entry.status!=='busted').map(entry=>entry.playerId)).toEqual([expectedWinner]);
+  expect(entries.every(entry=>entry.finishedPlace===null)).toBe(true);
+  const groups=ranking.source.simultaneousGroups as {handId:string;entryIds:string[]}[];
+  expect(groups.map(group=>group.handId).sort()).toEqual([...openedHands.map(hand=>hand.handId),deciding.hand_id].sort());
+  expect(new Set(groups.flatMap(group=>group.entryIds)).size).toBe(22);
+  finalRankingField=ranking.source.field;
+  finalRankingReviewGroups=groups.length;
   phase='passed';
  }finally{report();await mobileContext.close();}
 });

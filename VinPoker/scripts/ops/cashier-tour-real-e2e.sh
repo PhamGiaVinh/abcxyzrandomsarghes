@@ -1715,7 +1715,8 @@ CHIP_ISSUANCE_CAPTURED_ACL
         20270128000171_chip_setup_create_bind_receipts_v1.sql \
         20270128000176_chip_template_save_receipts_v1.sql \
         20270128000177_chip_setup_metadata_receipts_v1.sql \
-        20270128000223_chip_bank_adjust_receipt_v2.sql; do
+        20270128000223_chip_bank_adjust_receipt_v2.sql \
+        20270128000296_manual_ranking_review_v1.sql; do
         docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
           <"$repo_root/supabase/migrations/$migration"
       done
