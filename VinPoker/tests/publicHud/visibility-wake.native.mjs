@@ -3,6 +3,7 @@ import {readFileSync,writeFileSync} from 'node:fs';
 import {build} from 'esbuild';
 import {sql,jsonSql,sqlAsync,service} from './nativeDb.mjs';
 import {nativeWorkerClient} from './nativeRpc.mjs';
+import {shadowSqlForEquivalentPublicStatuses} from '../../scripts/ops/tracker-hud-shadow.mjs';
 const migration=readFileSync('supabase/migrations/20261106111519_public_hud_visibility_work_wakeup.sql','utf8');
 const recovery=readFileSync('tests/publicHud/visibility-wake.forward-rollback.sql','utf8');
 const strip=s=>s.replace(/^BEGIN;\r?\n/m,'').replace(/COMMIT;\s*$/,'');
@@ -111,7 +112,39 @@ const closeFingerprintEvidence=await (async()=>{
   WHERE source_fingerprint=tracker_analytics_v1.hand_fingerprint(hand_id))::text
   FROM tracker_analytics_v1.hand_contributions WHERE tournament_id='${tour}';`);
  assert.equal(matches(),`${count}:${count}`,'Live hands must start with current fingerprints');
+
+ const legacyHands=['final_table','completed','finished'].map((status,index)=>{
+  const legacyTour=ids(8+index),legacyHand=handId(100+index,1);
+  tours.push(legacyTour);
+  sql(`INSERT INTO public.tournaments(id,status) VALUES('${legacyTour}','${status}');
+   INSERT INTO public.tournament_hands(id,tournament_id,status) VALUES('${legacyHand}','${legacyTour}','completed');
+   INSERT INTO public.hand_players(hand_id,tournament_id,player_id,seat_number,starting_stack)
+   VALUES('${legacyHand}','${legacyTour}','30000000-0000-4000-8000-000000000001',1,1000);`);
+  return legacyHand;
+ });
+ await drain();
  sql(readFileSync('supabase/pending-migrations/20261121132000_public_hud_equivalent_status_fingerprint.sql','utf8'));
+ const handScope='LEFT JOIN public.tournament_hands h ON h.id=ids.id ORDER BY ids.id;';
+ const legacyQuery=shadowSqlForEquivalentPublicStatuses();
+ assert.ok(legacyQuery.includes(handScope));
+ const fixtureIds=legacyHands.map(id=>literal(id)).join(',');
+ const readLegacyRows=()=>sql(legacyQuery.replace(handScope,
+  `LEFT JOIN public.tournament_hands h ON h.id=ids.id WHERE ids.id IN (${fixtureIds}) ORDER BY ids.id;`)).split('\n')
+   .filter(Boolean).map(line=>JSON.parse(line)).filter(row=>row.kind==='hand'&&legacyHands.includes(row.id));
+ const legacyRows=readLegacyRows();
+ assert.equal(legacyRows.length,legacyHands.length);
+ for(const row of legacyRows){
+  assert.equal(row.projected.length,1);
+  assert.notEqual(row.projected[0].source_fingerprint,row.fingerprint);
+  assert.ok(row.legacyPublicFingerprints.includes(row.projected[0].source_fingerprint));
+ }
+ const changedHand=legacyHands[0];
+ sql(`UPDATE public.tournament_hands SET source_revision=source_revision+1 WHERE id='${changedHand}';`);
+ const changed=readLegacyRows().find(row=>row.id===changedHand);
+ assert.ok(changed);
+ assert.ok(!changed.legacyPublicFingerprints.includes(changed.projected[0].source_fingerprint));
+ await drain();
+
  const start=performance.now();
  sql(`UPDATE public.tournaments SET status='completed' WHERE id='${tour}';`);
  const writeAcknowledgedMs=performance.now()-start;
@@ -122,7 +155,7 @@ const closeFingerprintEvidence=await (async()=>{
  const drainCompletedMs=performance.now()-start;
  assert.equal(matches(),`${count}:${count}`,'Closing a public tour must leave all hand fingerprints current');
  assert.equal(barrier(tour),0);
- return {hands:count,writeAcknowledgedMs,drainCompletedMs};
+ return {hands:count,legacyStatusesVerified:legacyRows.length,obsoleteRevisionRejected:true,writeAcknowledgedMs,drainCompletedMs};
 })();
 
 for(const tour of tours)sql(`DELETE FROM public.tournaments WHERE id='${tour}';`);await drain();assert.deepEqual(totals(),beforeTotals,'Publish/retire must conserve every original player counter and winnings');
