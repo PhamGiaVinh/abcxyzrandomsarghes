@@ -15,31 +15,42 @@ type AlertRow = {
   status: string;
 };
 
-export function FloorVoiceAlertInbox({ tournaments, onSelect }: {
+type InboxProps = {
   tournaments: readonly TournamentRef[];
+  readScope: string | null;
   onSelect: (tournamentId: string, alertId: string) => void;
-}) {
+};
+
+export function FloorVoiceAlertInbox(props: InboxProps) {
+  if (!props.readScope) return null;
+  const tournamentIds = props.tournaments.map((tournament) => tournament.id).sort().join(",");
+  return <ScopedVoiceAlertInbox key={JSON.stringify([props.readScope, tournamentIds])} {...props} tournamentIds={tournamentIds} />;
+}
+
+function ScopedVoiceAlertInbox({ tournaments, onSelect, tournamentIds }: InboxProps & { tournamentIds: string }) {
   const client = useSupabaseClient() as SupabaseClient;
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const tournamentIds = tournaments.map((tournament) => tournament.id).sort().join(",");
 
   useEffect(() => {
     let active = true;
+    let readGeneration = 0;
     const load = async () => {
       if (!tournamentIds) {
         setAlerts([]);
         setError(null);
         return;
       }
+      const generation = ++readGeneration;
       const { data, error: readError } = await client
         .from("tracker_floor_alerts")
         .select("id,tournament_id,physical_table_id,hand_id,title,priority,status")
         .in("tournament_id", tournamentIds.split(","))
         .in("status", ["open", "acknowledged", "in_progress"])
         .order("created_at", { ascending: true });
-      if (!active) return;
+      if (!active || generation !== readGeneration) return;
       if (readError) {
+        setAlerts([]);
         setError(readError.message);
         return;
       }
@@ -54,10 +65,12 @@ export function FloorVoiceAlertInbox({ tournaments, onSelect }: {
       if (document.visibilityState === "visible") void load();
     };
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onVisible);
     return () => {
       active = false;
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onVisible);
     };
   }, [client, tournamentIds]);
 

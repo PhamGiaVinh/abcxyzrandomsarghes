@@ -6,6 +6,8 @@ import type { ClubRow } from "./TournamentManagerShared";
 import { DailyTournamentsBoard } from "./DailyTournamentsBoard";
 import { MultiDayTournamentsBoard } from "./MultiDayTournamentsBoard";
 import { FloorVoiceAlertInbox } from "./FloorVoiceAlertInbox";
+import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 /**
  * Floor landing — the entry point of Floor tournament management. A segmented
@@ -16,6 +18,7 @@ import { FloorVoiceAlertInbox } from "./FloorVoiceAlertInbox";
  */
 export function FloorTournamentsLanding({ clubIds, clubs, onSelect }: { clubIds: string[]; clubs: ClubRow[]; onSelect: (id: string) => void }) {
   const data = useFloorTournaments(clubIds);
+  const { user, session, loading: authLoading } = useAuth();
   const [view, setView] = useState<"daily" | "multi">("daily");
   const [, setSearchParams] = useSearchParams();
 
@@ -42,7 +45,7 @@ export function FloorTournamentsLanding({ clubIds, clubs, onSelect }: { clubIds:
   return (
     <div className="space-y-3">
       {FEATURES.trackerVoiceInput && (
-        <FloorVoiceAlertInbox tournaments={data.tours} onSelect={(tournamentId, alertId) => {
+        <FloorVoiceAlertInbox readScope={!authLoading && user ? JSON.stringify([user.id, sessionReadEpoch(session), [...clubIds].sort()]) : null} tournaments={data.tours} onSelect={(tournamentId, alertId) => {
           setSearchParams((current) => {
             const next = new URLSearchParams(current);
             next.set("alert", alertId);

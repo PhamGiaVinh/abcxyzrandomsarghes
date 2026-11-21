@@ -4,6 +4,7 @@ import { useTournaments } from "@/hooks/useTournaments";
 import { useOpsCapabilities } from "@/ops/auth/OpsCapabilityProvider";
 import { useOpsWorkspace } from "@/ops/workspace/OpsWorkspaceProvider";
 import { useOpsAuth } from "@/ops/auth/OpsAuthProvider";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 
 export default function OpsAlerts() {
   const navigate = useNavigate();
@@ -28,6 +29,7 @@ export default function OpsAlerts() {
       {activeClub && !isLoading && !error && (
         <>
           <FloorVoiceAlertInbox
+            readScope={!authLoading && user && !scopeLoading && !scopeError ? JSON.stringify([user.id, sessionReadEpoch(session), activeClub]) : null}
             tournaments={(tournaments ?? []).map((tournament) => ({ id: tournament.id, name: tournament.name }))}
             onSelect={(tournamentId, alertId) => navigate(`/ops/floor/tournaments/${tournamentId}/tables?club=${encodeURIComponent(activeClub)}&alert=${encodeURIComponent(alertId)}`)}
           />

@@ -262,6 +262,7 @@ export default function OpsTournaments() {
 
       {FEATURES.trackerVoiceInput && (
         <FloorVoiceAlertInbox
+          readScope={!authLoading && user ? JSON.stringify([user.id, sessionReadEpoch(session), activeClub]) : null}
           tournaments={allVMs}
           onSelect={(id, alertId) => navigate(`/ops/floor/tournaments/${id}/tables?club=${encodeURIComponent(activeClub)}&alert=${encodeURIComponent(alertId)}`)}
         />
