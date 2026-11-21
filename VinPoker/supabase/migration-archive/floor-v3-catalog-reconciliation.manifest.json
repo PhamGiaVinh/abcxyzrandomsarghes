@@ -10169,6 +10169,12 @@
       "version": "20270128000345",
       "filename": "20270128000345_floor_operator_fast_bust_v1.sql",
       "sha256": "6a64cf4c2d4f54c980f046261aa8dabf02c2a601ade7f4393b612c9fcfa297a2"
+    },
+    {
+      "version": "20270128000346",
+      "filename": "20270128000346_public_hud_equivalent_status_fingerprint.sql",
+      "sha256": "af996d72c2c30a2394dca2e1125caa0b0810000e4a89b304f0310e4fde235a0a",
+      "domain": "public-hud"
     }
   ],
   "floorActiveAllowlist": [
