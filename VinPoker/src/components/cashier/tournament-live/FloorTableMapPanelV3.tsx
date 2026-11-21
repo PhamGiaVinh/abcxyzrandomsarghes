@@ -180,12 +180,16 @@ function ScopedFloorTableMapPanelV3({
     && (!loading || (v3.fastBustEnabled && rosterReady && pendingTableAction === "close"));
   const bustActionIsCurrent = pendingActionScope === (v3.fastBustEnabled ? selectedSessionScope : selectedWriteScope)
     && !loadError && (v3.fastBustEnabled || !loading);
+  const pendingTableOpen = useRef<{ scope: string; tableId: string } | null>(null);
+  const tableOpenScope = JSON.stringify([readScope, sessionEpoch ?? null]);
+  const currentTableOpenScope = useRef(tableOpenScope);
+  currentTableOpenScope.current = tableOpenScope;
   const currentReadScope = useRef(readScope);
   currentReadScope.current = readScope;
   const readSequence = useRef(0);
   const liveHintEpoch = useRef(0);
   const liveReadId = useId();
-  const load = useCallback(async (silent = false, onRosterVerified?: () => void) => {
+  const load = useCallback(async (silent = false) => {
     const sequence = ++readSequence.current;
     const hintAtStart = liveHintEpoch.current;
     const isCurrent = () => currentReadScope.current === readScope && readSequence.current === sequence;
@@ -206,7 +210,13 @@ function ScopedFloorTableMapPanelV3({
             setTables(roster.data);
             setLoadError(null);
             setRosterReady(true);
-            onRosterVerified?.();
+            const requested = pendingTableOpen.current;
+            pendingTableOpen.current = null;
+            if (requested?.scope === currentTableOpenScope.current
+              && roster.data.some(table => table.tournamentTableId === requested.tableId)) {
+              setSelectedTableId(requested.tableId);
+              setSelectedSeatNumber(null);
+            }
           }
           return roster;
         }),
@@ -579,7 +589,8 @@ function ScopedFloorTableMapPanelV3({
           // The sheet may have been closed across a server-only mode transition.
           // Read once at entry; never require a failed write to discover new fences.
           if (v3.fastBustEnabled) {
-            void load(true, () => { setSelectedTableId(tableId); setSelectedSeatNumber(null); });
+            pendingTableOpen.current = { scope: tableOpenScope, tableId };
+            void load(true);
             return;
           }
           void load(true).then((verified) => {

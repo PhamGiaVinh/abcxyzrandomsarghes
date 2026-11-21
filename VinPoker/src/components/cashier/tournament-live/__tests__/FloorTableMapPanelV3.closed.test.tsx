@@ -154,6 +154,20 @@ it("observes the scoped source tables and coalesces changes into a fresh roster"
   await screen.findByRole("button", { name: /Bàn 2, 0\/9 ghế/ });
   expect(state.roster).toHaveBeenCalledTimes(2);
 });
+it("opens the requested table when a newer roster read supersedes the click refresh", async () => {
+  v3.fastBustEnabled = true;
+  state.roster.mockResolvedValue({ ok: true, data: [table(2)] });
+  const view = render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={0} />);
+  const row = await screen.findByRole("button", { name: /Bàn 2, 0\/9 ghế/ });
+  let finishClick!: (value: unknown) => void;
+  state.roster.mockImplementationOnce(() => new Promise(resolve => { finishClick = resolve; }));
+  fireEvent.click(row);
+  await waitFor(() => expect(state.roster).toHaveBeenCalledTimes(2));
+  view.rerender(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" sessionEpoch={1} refreshTrigger={1} />);
+  await screen.findByRole("heading", { name: /Bàn 2 · 0\/9/ });
+  await act(async () => { finishClick({ ok: true, data: [table(3)] }); });
+  expect(screen.getByRole("heading", { name: /Bàn 2 · 0\/9/ })).toBeInTheDocument();
+});
 it("publishes same-scope snapshots while keeping newer hints fenced", async () => {
   render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />);
   await screen.findByText(/Chưa có bàn đang hoạt động/);
