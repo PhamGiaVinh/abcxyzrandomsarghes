@@ -3080,7 +3080,10 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const [shift]=shifts;
   const drawer=await rpc('cashier_shift_summary_v1',{p_shift_id:shift.id});
   expect(shift.id).toBe(payoutShift.shift_id);
-  expect(drawer).toMatchObject({ok:true,totals:{cash_in:0,cash_out:183400000,cash_adjustments:0}});
+  expect(drawer).toMatchObject({ok:true,totals:{cash_in:0,cash_out:0,prize_cash_out:183400000,cash_adjustments:0}});
+  const financeRange={p_club_id:club,p_from:new Date(Date.now()-3600000).toISOString(),p_to:new Date(Date.now()+3600000).toISOString()};
+  expect(await rpc('cashier_cashflow_range_v1',financeRange)).toMatchObject({ok:true,club_id:club,
+   cash_flow:{cash_in:211200000,cash_out:0,prize_cash_out:183400000}});
   expect(shift.opening_cash).toBe(211200000);
   const closedDrawer=await rpc('cashier_close_shift_v1',{p_shift_id:shift.id,p_counted_cash:27800000});
   expect(closedDrawer).toMatchObject({ok:true,expected_cash:27800000,counted_cash:27800000,variance_cash:0});

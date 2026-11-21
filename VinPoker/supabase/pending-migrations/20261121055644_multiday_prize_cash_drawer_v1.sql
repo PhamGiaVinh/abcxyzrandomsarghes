@@ -91,18 +91,25 @@ AFTER INSERT ON public.tournament_prize_payments
 FOR EACH ROW WHEN (NEW.multi_day_participation_id IS NOT NULL AND NEW.method='cash' AND NEW.status='paid')
 EXECUTE FUNCTION private.cashier_record_multiday_prize_drawer_outflow_v1();
 
--- Keep every existing summary field and authorization check. Existing
--- close_shift already sums all cash movements by shift; the reader excluded prizes.
+-- Keep the existing refund field and add a separate, authoritative prize debit.
+-- The shift close already sums cash ledger movements by shift.
 DO $migration$
 DECLARE
-  target regprocedure:='public.cashier_shift_summary_v1(uuid)'::regprocedure;
-  definition text:=pg_get_functiondef(target);
-  anchor text:=$old$direction='out' AND purpose='refund'$old$;
+  target regprocedure;
+  definition text;
   cash_anchor text:=$old$'cash_out',coalesce(sum(amount) FILTER (WHERE method='cash' AND direction='out' AND purpose='refund'),0),$old$;
+  prize_line text:=$new$
+    'prize_cash_out',coalesce(sum(amount) FILTER (WHERE method='cash' AND direction='out' AND purpose='prize_payout'),0),$new$;
 BEGIN
-  IF length(definition)-length(replace(definition,cash_anchor,''))<>length(cash_anchor) THEN
-    RAISE EXCEPTION 'cashier_prize_drawer_summary_definition_drift';
-  END IF;
-  EXECUTE replace(definition,cash_anchor,replace(cash_anchor,anchor,$new$direction='out' AND purpose IN ('refund','prize_payout')$new$));
+  FOREACH target IN ARRAY ARRAY[
+    'public.cashier_shift_summary_v1(uuid)'::regprocedure,
+    'public.cashier_cashflow_range_v1(uuid,timestamptz,timestamptz)'::regprocedure
+  ] LOOP
+    definition:=pg_get_functiondef(target);
+    IF length(definition)-length(replace(definition,cash_anchor,''))<>length(cash_anchor) THEN
+      RAISE EXCEPTION 'cashier_prize_drawer_summary_definition_drift: %',target;
+    END IF;
+    EXECUTE replace(definition,cash_anchor,cash_anchor||prize_line);
+  END LOOP;
 END $migration$;
 COMMIT;

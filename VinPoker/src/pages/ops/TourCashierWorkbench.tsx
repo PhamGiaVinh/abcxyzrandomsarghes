@@ -50,7 +50,7 @@ function isRefund(value: unknown): value is Refund {
 }
 
 type RefundRead = { registrationId: string; loading: boolean; value: Refund | null; error: string | null };
-type ShiftSummary = { ok: boolean; club_id: string; shift_id: string; totals: { cash_in: number; cash_out: number; bank_in: number;
+type ShiftSummary = { ok: boolean; club_id: string; shift_id: string; totals: { cash_in: number; cash_out: number; prize_cash_out?: number; bank_in: number;
   bank_out: number; unallocated_bank: number; cash_adjustments: number } };
 type Issue = { kind: "surplus" | "unmatched"; bank_transaction_id: string; amount: number;
   reference_code: string | null; occurred_at: string | null };
@@ -67,6 +67,7 @@ function isShiftSummary(value: unknown, shiftId: string, clubId: string): value 
   const result = value as Partial<ShiftSummary>;
   return result.ok === true && result.shift_id === shiftId && result.club_id === clubId
     && !!result.totals && typeof result.totals === "object" && !Array.isArray(result.totals)
+    && (result.totals.prize_cash_out === undefined || isKnownMoney(result.totals.prize_cash_out))
     && (["cash_in", "cash_out", "bank_in", "bank_out", "unallocated_bank", "cash_adjustments"] as const)
       .every((key) => isKnownMoney(result.totals?.[key]));
 }
@@ -695,6 +696,9 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
     {shiftSummary?.ok && <section className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-[#101c17] p-3 text-xs sm:grid-cols-4" aria-label="Báo cáo ca hiện tại">
       <span>Tiền mặt nhận<strong className="block text-sm text-white">{formatMoney(shiftSummary.totals.cash_in)}</strong></span>
       <span>Tiền mặt hoàn<strong className="block text-sm text-white">{formatMoney(shiftSummary.totals.cash_out)}</strong></span>
+      {shiftSummary.totals.prize_cash_out !== undefined && (
+        <span>Thưởng đã chi từ két<strong className="block text-sm text-white">{formatMoney(shiftSummary.totals.prize_cash_out)}</strong></span>
+      )}
       <span>Ngân hàng nhận<strong className="block text-sm text-white">{formatMoney(shiftSummary.totals.bank_in)}</strong></span>
       <span>Khoản thừa chưa phân bổ<strong className="block text-sm text-amber-200">{formatMoney(shiftSummary.totals.unallocated_bank)}</strong></span>
       <p className="col-span-full text-[#9fb1a6]">Tiền ngân hàng không cộng vào tiền mặt phải kiểm đếm. Số này chỉ là các khoản trên sổ giao dịch mới của ca.</p>
