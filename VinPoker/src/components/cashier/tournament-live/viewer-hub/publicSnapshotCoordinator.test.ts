@@ -207,6 +207,22 @@ describe('shared tournament read scheduling', () => {
       if(boundary==='removed'){await vi.advanceTimersByTimeAsync(3000);expect(read).toHaveBeenCalledTimes(1);}
     }finally{detail.stop();metadata.stop();release();await Promise.resolve();log.mockRestore();visibility.mockRestore();random.mockRestore();vi.useRealTimers();}
   });
+  it('does not make the selected table pay a fresh interval after a metadata dispatch', async () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, 'random').mockReturnValue(.5);
+    const client = {}, table = vi.fn(async () => {}), metadata = vi.fn(async () => {});
+    const detail = registerPublicTournamentRead(client, 'independent-table', table, 'table');
+    const summary = registerPublicTournamentRead(client, 'independent-table', metadata);
+    try {
+      detail.request(); summary.request(); await vi.advanceTimersByTimeAsync(0);
+      summary.request(); await vi.advanceTimersByTimeAsync(1750);
+      expect(metadata).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(50); detail.request();
+      await vi.advanceTimersByTimeAsync(249); expect(table).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1); expect(table).toHaveBeenCalledTimes(2);
+      expect(metadata).toHaveBeenCalledTimes(2);
+    } finally { detail.stop(); summary.stop(); random.mockRestore(); vi.useRealTimers(); }
+  });
   it('keeps the original interval and jitter when a queued table completes before its own deadline',async()=>{
     vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(.5);
     const base=Date.now(),starts:number[]=[];let release!:()=>void;

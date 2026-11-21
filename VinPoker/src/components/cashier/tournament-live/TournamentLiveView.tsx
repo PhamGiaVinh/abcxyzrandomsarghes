@@ -994,7 +994,7 @@ function TournamentLiveViewContent({
     const publicV2 = spectator && FEATURES.publicSpectatorRealtimeV2;
     if(publicV2){
       let full=false;
-      const coordinator=registerPublicTournamentRead(supabase,tournamentId,async()=>{if(initialReadFailedRef.current)return;const requestedFull=full;full=false;await loadAllData(!requestedFull);});
+      const coordinator=registerPublicTournamentRead(supabase,tournamentId,async()=>{if(initialReadFailedRef.current)return;const requestedFull=full;full=false;await loadAllData(!requestedFull);},"table");
       const observation=observePublicTournament(supabase,tournamentId,event=>{
         if(event.reason==='status'){setRealtimeStatus(event.online?'online':'offline');return;}
         if(event.invalidatePending){requestSeqRef.current++;liveReadRef.current?.controller.abort();liveReadRef.current=null;}

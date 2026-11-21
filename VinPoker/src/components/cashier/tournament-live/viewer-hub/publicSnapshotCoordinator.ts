@@ -92,7 +92,7 @@ const tournamentReads = new WeakMap<object, Map<string, ReadGroup>>();
 
 // One dispatch clock per client/tournament. Consumers retain their own request
 // cancellation and epoch fences; a slow section never holds another section.
-export function registerPublicTournamentRead(client: object, tournamentId: string, refresh: () => Promise<void>, overview = false): PublicReadRegistration {
+export function registerPublicTournamentRead(client: object, tournamentId: string, refresh: () => Promise<void>, mode: boolean | "table" = false): PublicReadRegistration {
   let groups = tournamentReads.get(client);
   if (!groups) { groups = new Map(); tournamentReads.set(client, groups); }
   let group = groups.get(tournamentId);
@@ -174,7 +174,8 @@ export function registerPublicTournamentRead(client: object, tournamentId: strin
     // a steady-state dispatch already scheduled.
   }
   const current = group;
-  if (overview) current.enableSectionScheduling();
+  if (mode) current.enableSectionScheduling();
+  const overview = mode === true;
   const slot: ReadSlot = { refresh, pending: false, running: false, first: true, active: true, interval: overview ? PUBLIC_SPECTATOR_OVERVIEW_READ_INTERVAL_MS : PUBLIC_SPECTATOR_READ_INTERVAL_MS, lastStart: null, due: null };
   current.slots.add(slot);
   return {

@@ -321,7 +321,7 @@ try{
     if(!physicalFailure){fail('spectator_detail_contract');diagnostic('spectator_detail_contract',cause);}
     state.observation.reportResult(false);
    }finally{state.detailInFlight=false;controller.abort();}
-  })())):null;
+  })()),"table"):null;
   state.clockCoordinator=selected?{request(){state.detailFull=true;recordAudienceDetailEvent(state,'request');state.detailCoordinator.request();},stop(){}}:loaded.coordinator.registerPublicTournamentRead(client,tour,()=>track((async()=>{
    if(stopping)return;
    const started=Date.now(),epoch=loaded.observer.publicReadEpoch(client,tour,'clock');
