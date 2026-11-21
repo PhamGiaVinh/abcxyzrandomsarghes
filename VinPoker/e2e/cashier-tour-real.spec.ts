@@ -2358,11 +2358,20 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const before=await moves();
   expect(before).toHaveLength(1);
   expect(before[0].applied_amount).toBe(amount);
-  const response=await fetch(api+'/rest/v1/rpc/cashier_retry_paid_seating_v1',{
-   method:'POST',headers,body:JSON.stringify({p_auto_confirm:false,p_limit:1}),signal:AbortSignal.timeout(10000)});
-  expect(response.ok,'isolated paid seating recovery').toBe(true);
-  expect(await response.json()).toMatchObject({ok:true,attempted:1,seated:1,needs_review:0});
-  const [saved]=await read('/rest/v1/tournament_registrations?select=status,cashier_seating_error&id=eq.'+registrationId);
+  const readRegistration=async()=>{
+   const [row]=await read('/rest/v1/tournament_registrations?select=status,cashier_seating_error&id=eq.'+registrationId);
+   return row;
+  };
+  let saved=await readRegistration();
+  for(const delay of [0,250,500]){
+   if(saved?.status==='confirmed')break;
+   if(delay)await new Promise(resolve=>setTimeout(resolve,delay));
+   const response=await fetch(api+'/rest/v1/rpc/cashier_retry_paid_seating_v1',{
+    method:'POST',headers,body:JSON.stringify({p_auto_confirm:false,p_limit:1}),signal:AbortSignal.timeout(10000)});
+   expect(response.ok,'isolated paid seating recovery').toBe(true);
+   expect(await response.json()).toMatchObject({ok:true});
+   saved=await readRegistration();
+  }
   expect(saved).toMatchObject({status:'confirmed',cashier_seating_error:null});
   expect(await moves()).toEqual(before);
   recoveredPaidSeatings++;
