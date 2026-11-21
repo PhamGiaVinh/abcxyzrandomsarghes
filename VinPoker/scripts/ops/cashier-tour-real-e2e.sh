@@ -1968,12 +1968,12 @@ BEGIN
  SELECT s.id INTO STRICT drawer_id FROM public.cashier_till_shifts s WHERE s.club_id=fixture_club AND s.closed_at IS NULL;
  PERFORM set_config('request.jwt.claim.sub',actor::text,true);
  quote:=public.get_tournament_payout_recipients(tour_id)->'places'->0;
- IF quote->>'isPaid' IS DISTINCT FROM 'false' OR quote->>'prizeAmount' IS DISTINCT FROM '18000000'
+ IF (quote->>'isPaid')::boolean IS DISTINCT FROM false OR (quote->>'prizeAmount')::numeric IS DISTINCT FROM 18000000
  THEN RAISE EXCEPTION 'bank_prize_fixture_not_payable';END IF;
  drawer_before:=public.cashier_shift_summary_v1(drawer_id);
  paid:=public.record_tournament_prize_payment_v2(tour_id,1,'bank',quote->>'confirmationToken',request_id);
  receipt:=public.get_tournament_prize_payment_receipt_v2(request_id);
- IF paid->>'ok' IS DISTINCT FROM 'true' OR paid->>'prize_amount' IS DISTINCT FROM '18000000'
+ IF (paid->>'ok')::boolean IS DISTINCT FROM true OR (paid->>'prize_amount')::numeric IS DISTINCT FROM 18000000
  OR receipt->'result' IS DISTINCT FROM paid
  OR NOT EXISTS(SELECT 1 FROM public.tournament_prize_payments p
   WHERE p.id=(paid->>'payment_id')::uuid AND p.tournament_id=tour_id AND p.status='paid' AND p.method='bank')
