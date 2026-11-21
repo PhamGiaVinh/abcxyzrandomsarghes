@@ -170,7 +170,7 @@ CLOCK_FAILURE_STATE
     # Browser scope failures need the gateway's fixed error classifications,
     # not raw request logs, headers, JWTs, response bodies or customer records.
     docker logs --timestamps "$gateway_container" --tail 100000 2>&1 |
-      node "$repo_root/VinPoker/scripts/ops/classify-isolated-gateway-failures.mjs" >"$repo_root/output/operations-latency/gateway-failure-http.json" || true
+      node "$repo_root/scripts/ops/classify-isolated-gateway-failures.mjs" >"$repo_root/output/operations-latency/gateway-failure-http.json" || true
   fi
   if [[ "$exit_code" != 0 && -n "${db_container:-}" ]]; then
     mkdir -p "$repo_root/output/operations-latency"
