@@ -1722,14 +1722,25 @@ CHIP_ISSUANCE_CAPTURED_ACL
         20270128000182_tournament_finalizer_server_only_v1.sql \
         20270128000223_chip_bank_adjust_receipt_v2.sql \
         20270128000296_manual_ranking_review_v1.sql; do
+        migration_path="$repo_root/supabase/migrations/$migration"
         if [[ "$migration" == 20270128000123_* ]]; then
-          docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "
-            SELECT signature || '|' || coalesce(md5(replace(pg_get_functiondef(to_regprocedure(signature)),chr(13),'')),'missing')
-            FROM (VALUES ('public.close_tournament(uuid,text)'),('public.finalize_tournament_results(uuid)'),
-              ('floor_private.felt_tournament_close_blockers_v1(uuid)')) x(signature);"
+          # This owned CI catalog already has the reviewed paid-prize close reader/writer.
+          # pin both definitions; adapt only the expected close-writer hash in a temporary copy.
+          migration_path="$test_root/official-results-on-paid-prize-fixture.sql"
+          node --input-type=module - "$repo_root/supabase/migrations/$migration" "$migration_path" <<'OFFICIAL_CLOSE_FIXTURE'
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync,writeFileSync } from 'node:fs';
+const [source,destination]=process.argv.slice(2);
+const sql=readFileSync(source,'utf8').replace(/\r\n/g,'\n');
+const oldHash='5b007d2e26b9e735db6c88fb58034982';
+const paidHash='ec7a85d3aa0484eaff6e46c448426119';
+assert.equal(createHash('sha256').update(sql).digest('hex'),'8a5ce9fca6af9793ef5a8b91a224fffbf00d182f4b0728a072c3df7e546c33c8');
+assert.equal(sql.split(oldHash).length,2);
+writeFileSync(destination,sql.replace(oldHash,paidHash));
+OFFICIAL_CLOSE_FIXTURE
         fi
-        docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-          <"$repo_root/supabase/migrations/$migration"
+        docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$migration_path"
       done
     fi
     # The fixed marker is set only inside this already-owned ephemeral stack.
