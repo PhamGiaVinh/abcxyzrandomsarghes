@@ -96,23 +96,32 @@ const waitState=async(application,kind)=>{for(let i=0;i<40;i++){if(sql(`SELECT E
  assert.equal(work(tour),0);assert.equal(barrier(tour),1);assert.equal(eligible(tour),false,'Busy parent keeps the existing retry');
  sql(`UPDATE tracker_analytics_v1.jobs SET available_at=clock_timestamp() WHERE kind='visibility' AND entity_id='${tour}';`);await drain();
 }
-// Closing a still-public tour must leave its committed hand fingerprints current.
+// Cross the 200-hand metadata page boundary while closing a still-public tour.
 sql(readFileSync('supabase/pending-migrations/20261121125307_public_hud_refresh_public_status_fingerprint.sql','utf8'));
-{
- const tour=ids(7),hand=handId(7,1);tours.push(tour);
+const closeFingerprintEvidence=await (async()=>{
+ const tour=ids(7),count=201;tours.push(tour);
+ const hands=Array.from({length:count},(_,i)=>handId(7,i+1));
+ const values=hands.map(hand=>`('${hand}','${tour}','completed')`).join(',');
  sql(`INSERT INTO public.tournaments(id,status) VALUES('${tour}','live');
- INSERT INTO public.tournament_hands(id,tournament_id,status) VALUES('${hand}','${tour}','completed');
+ INSERT INTO public.tournament_hands(id,tournament_id,status) VALUES ${values};
  INSERT INTO public.hand_players(hand_id,tournament_id,player_id,seat_number,starting_stack)
- VALUES('${hand}','${tour}','30000000-0000-4000-8000-000000000001',1,1000);`);
+ SELECT id,tournament_id,'30000000-0000-4000-8000-000000000001',1,1000
+ FROM public.tournament_hands WHERE tournament_id='${tour}';`);
  await drain();
  const matches=()=>sql(`SELECT count(*)::text||':'||count(*) FILTER (
-  WHERE source_fingerprint=tracker_analytics_v1.hand_fingerprint('${hand}'))::text
-  FROM tracker_analytics_v1.hand_contributions WHERE hand_id='${hand}';`);
- assert.equal(matches(),'1:1','Live hand must start with a current fingerprint');
+  WHERE source_fingerprint=tracker_analytics_v1.hand_fingerprint(hand_id))::text
+  FROM tracker_analytics_v1.hand_contributions WHERE tournament_id='${tour}';`);
+ assert.equal(matches(),`${count}:${count}`,'Live hands must start with current fingerprints');
+ const start=performance.now();
  sql(`UPDATE public.tournaments SET status='completed' WHERE id='${tour}';`);
+ const writeAcknowledgedMs=performance.now()-start;
+ assert.equal(work(tour),0,'The tour writer must not create per-hand visibility work');
  await drain();
- assert.equal(matches(),'1:1','Closing a public tour must leave the hand fingerprint current');
-}
+ const drainCompletedMs=performance.now()-start;
+ assert.equal(matches(),`${count}:${count}`,'Closing a public tour must leave all hand fingerprints current');
+ assert.equal(barrier(tour),0);
+ return {hands:count,writeAcknowledgedMs,drainCompletedMs};
+})();
 
 for(const tour of tours)sql(`DELETE FROM public.tournaments WHERE id='${tour}';`);await drain();assert.deepEqual(totals(),beforeTotals,'Publish/retire must conserve every original player counter and winnings');
 assert.deepEqual(metadata(),beforeMeta);
@@ -126,5 +135,5 @@ assert.equal(checks(`ALTER FUNCTION ${signature} STABLE;`).visibilityWakePublish
 assert.equal(checks('GRANT SELECT ON tracker_analytics_v1.visibility_wake_original_v1 TO anon;').visibilityWakePrivate,false);
 assert.equal(sql(`BEGIN;${strip(recovery)}SELECT md5(replace(pg_get_functiondef('${signature}'::regprocedure),chr(13),''));ROLLBACK;`),'88a66fee5368a32e79a663dcadcd99e3');assert.equal(hash(),candidateHash);
 sql(`UPDATE tracker_analytics_v1.config SET enabled=${flags.enabled},worker_enabled=${flags.worker} WHERE singleton;`);
-const report={kind:'NATIVE_REQUIRED_WORK_PARENT_WAKE_REAL_PROJECTOR',passed:true,candidateHash,checks:['stale-publication-no-wake','rollback-no-wake','unleased-current-generation-eligible-now','barrier-only-cleared-by-metadata','new-generation-unchanged','leased-parent-unchanged','ordinary-hand-no-wake','two-real-concurrent-publishers-parent-skip','actual-parent-child-lock-order-no-deadlock','deleted-source-subtraction','all-original-counter-and-winnings-conservation','metadata-and-private-ACL','guarded-recovery'],qualification:false,productionChanged:false,limitations:'Tiny actual PostgreSQL/compiled-worker correctness and lock-order proof, not HTTP/WS latency or elimination of every restoration deadline. Busy parents keep the original retry.'};
+const report={kind:'NATIVE_REQUIRED_WORK_PARENT_WAKE_REAL_PROJECTOR',passed:true,candidateHash,closeFingerprintEvidence,checks:['stale-publication-no-wake','rollback-no-wake','unleased-current-generation-eligible-now','barrier-only-cleared-by-metadata','new-generation-unchanged','leased-parent-unchanged','ordinary-hand-no-wake','two-real-concurrent-publishers-parent-skip','actual-parent-child-lock-order-no-deadlock','deleted-source-subtraction','all-original-counter-and-winnings-conservation','metadata-and-private-ACL','guarded-recovery'],qualification:false,productionChanged:false,limitations:'Tiny actual PostgreSQL/compiled-worker correctness and lock-order proof, not HTTP/WS latency or elimination of every restoration deadline. Busy parents keep the original retry.'};
 if(process.env.PUBLIC_HUD_VISIBILITY_WAKE_REPORT)writeFileSync(process.env.PUBLIC_HUD_VISIBILITY_WAKE_REPORT,JSON.stringify(report,null,2));console.log(JSON.stringify(report));
