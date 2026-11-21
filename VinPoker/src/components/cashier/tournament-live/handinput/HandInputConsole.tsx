@@ -27,5 +27,9 @@ export function HandInputConsole({ tournamentId }: { tournamentId: string }) {
     <RacetrackHandInputConsole hook={hook} />
   ) : (
     <StandaloneHandInputConsole hook={hook} />
-  )}</TrackerInputCardProvider>;
+  )}
+    {FEATURES.trackerRacetrackUi && FEATURES.trackerTabletLayout && (
+      <DealerFlightBagging key={tournamentId} tournamentId={tournamentId} />
+    )}
+  </TrackerInputCardProvider>;
 }
