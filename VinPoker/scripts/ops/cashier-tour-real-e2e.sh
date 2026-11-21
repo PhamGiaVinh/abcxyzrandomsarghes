@@ -2175,6 +2175,16 @@ WITH slots AS (
 INSERT INTO public.game_tables(id,club_id,table_name,table_number,table_type,status,operational_status)
 SELECT ('ac730000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'a2000000-0000-4000-8000-000000000001',
  'Consolidation TEST '||n,table_number,'tournament','inactive','available' FROM numbered;
+DO $$
+DECLARE linked integer;
+BEGIN
+ UPDATE public.dealers d SET user_id=u.id
+ FROM generate_series(1,4) n JOIN auth.users u ON u.email='cashier-latency-'||n||'@test.invalid'
+ WHERE d.club_id='a2000000-0000-4000-8000-000000000001'
+   AND d.full_name='HTTP latency TEST '||n AND d.user_id IS NULL;
+ GET DIAGNOSTICS linked=ROW_COUNT;
+ IF linked<>4 THEN RAISE EXCEPTION 'consolidation_dealer_fixture_link_mismatch'; END IF;
+END $$;
 COMMIT;
 CONSOLIDATION_FIXTURE
     # Hold the actual drawer row on a separate PostgreSQL connection. The
@@ -2313,7 +2323,7 @@ if(scope==='floor-consolidation'){
  const floor=read('cashier-http-consolidation-browser-http.json');
  assert.equal(floor.sha,sha);assert.equal(floor.phase,'passed');assert.equal(floor.qualification,false);
  assert.ok(floor.deferredCount>0);assert.equal(floor.handFinished,true);assert.deepEqual(floor.afterCounts,[9,9,9]);
- assert.equal(floor.sealedBags,27);assert.equal(floor.lockedChips,540000);assert.equal(floor.mobileBaggingLockRefreshed,true);
+ assert.equal(floor.sealedBags,27);assert.equal(floor.lockedChips,540000);assert.equal(floor.mobileBaggingLockRefreshed,true);assert.ok(floor.dealerBaggingReadback?.assignedRows>0);assert.equal(floor.dealerBaggingReadback?.locked,true);
  assert.equal(floor.issuedPhysicalChips,540000);assert.equal(floor.bankReturned,true);
  assert.equal(floor.secondFlightBags,4);assert.equal(floor.finalSelectedBags,27);assert.equal(floor.finalQualified,23);
  assert.equal(floor.finalCarriedChips,460000);assert.equal(floor.finalSeated,23);
