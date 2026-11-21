@@ -2306,6 +2306,8 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalLastTableClosed=false;
  let finalRankingField=0,finalRankingReviewGroups=0;
  let finalRankingReviewRecorded=false;
+ let finalOfficialRanks=0;
+ let finalCloseReconcileDelta:number|null=null;
  let firstFlightSeatingReview:string|null=null;
  let recoveredPaidSeatings=0;
  let secondFlightSeatingReview:string|null=null;
@@ -2314,8 +2316,8 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
-  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and explicit Floor ranking review from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
+  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -2936,6 +2938,21 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const readBack=await rpc('get_tournament_ranking_review_v1',{p_tournament_id:finalTour});
   expect(readBack).toMatchObject({ok:true,review:confirmation.review,source:{hasOfficial:false}});
   finalRankingReviewRecorded=true;
+  phase='final-day-official-close';report();
+  const readiness=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:finalTour});
+  expect(readiness).toMatchObject({ready:true});
+  const closeIntent={p_tournament_id:finalTour,p_reason:'Isolated Final Day official results TEST'};
+  const official=await rpc('close_tournament',closeIntent);
+  expect(official).toMatchObject({outcome:'closed',reconcile_delta:0});
+  expect(official.report_id).toEqual(expect.any(String));
+  expect(await rpc('close_tournament',closeIntent)).toMatchObject({outcome:'already_closed',report_id:official.report_id});
+  const officialRanking=await rpc('get_tournament_ranking_review_v1',{p_tournament_id:finalTour});
+  expect(officialRanking).toMatchObject({ok:true,source:{hasOfficial:true,field:23}});
+  const ranked=officialRanking.source.entries as {entryId:string;finishedPlace:number}[];
+  expect([...ranked].sort((a,b)=>a.finishedPlace-b.finishedPlace).map(entry=>entry.entryId)).toEqual(orderedEntryIds);
+  expect(ranked.map(entry=>entry.finishedPlace).sort((a,b)=>a-b)).toEqual(Array.from({length:23},(_,i)=>i+1));
+  finalOfficialRanks=ranked.length;
+  finalCloseReconcileDelta=official.reconcile_delta;
   phase='passed';
  }finally{report();await mobileContext.close();}
 });
