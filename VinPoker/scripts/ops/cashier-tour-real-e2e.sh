@@ -1792,6 +1792,18 @@ BEGIN
  EXECUTE replace(definition,anchor,anchor||$log$
     RAISE LOG 'VINPOKER_CONSOLIDATION_ORIGINAL_SEATING_STATE=%', SQLSTATE;$log$);
 END $diagnostic$;
+DO $diagnostic$
+DECLARE target regprocedure:='public.cashier_record_cash_buyin_v1(uuid,bigint,uuid)'::regprocedure;
+ definition text:=replace(pg_get_functiondef(target),chr(13),'');
+ anchor text:=$old$    v_result := public.cashier_try_seat_paid_v1(v_reg.id,v_actor);
+  EXCEPTION WHEN OTHERS THEN$old$;
+BEGIN
+ IF (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid=target) IS DISTINCT FROM '96a76df15097db2e6186763497e5420c'
+ OR length(definition)-length(replace(definition,anchor,''))<>length(anchor)
+ THEN RAISE EXCEPTION 'consolidation_payment_log_dependency_drift';END IF;
+ EXECUTE replace(definition,anchor,anchor||$log$
+    RAISE LOG 'VINPOKER_CONSOLIDATION_PAYMENT_SEATING_STATE=%', SQLSTATE;$log$);
+END $diagnostic$;
 CONSOLIDATION_SEATING_LOG
     fi
     # The fixed marker is set only inside this already-owned ephemeral stack.
@@ -2073,8 +2085,8 @@ COMMIT;
 CONSOLIDATION_FIXTURE
     consolidation_browser_status=0
     run_browser_proof '' '' 'Floor consolidation renders the 27 paid seats over real Auth HTTP' || consolidation_browser_status=$?
-    docker logs "$db_container" 2>&1 | grep -oE 'VINPOKER_CONSOLIDATION_ORIGINAL_SEATING_STATE=[A-Z0-9]{5}' \
-      >"$repo_root/output/operations-latency/consolidation-original-seating-sqlstate.txt" || true
+    (docker logs "$db_container" 2>&1 | grep -oE 'VINPOKER_CONSOLIDATION_(ORIGINAL|PAYMENT)_SEATING_STATE=[A-Z0-9]{5}' || true) |
+      jq -Rn '[inputs]' >"$repo_root/output/operations-latency/consolidation-original-seating-sqlstate-http.json"
     if [[ "$consolidation_browser_status" != 0 ]]; then
       docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
         >"$repo_root/output/operations-latency/consolidation-seating-rollback-probe-http.json" <<'CONSOLIDATION_SEATING_PROBE' || true
