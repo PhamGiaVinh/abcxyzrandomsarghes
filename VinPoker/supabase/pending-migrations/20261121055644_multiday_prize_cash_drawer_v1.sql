@@ -66,10 +66,15 @@ BEGIN
      OR NOT private.is_verified_multi_day_payment_v1(NEW) THEN
     RAISE EXCEPTION 'cash_prize_drawer_actor_or_payment_invalid' USING ERRCODE='42501';
   END IF;
-  -- Share the same row lock as drawer adjustment and shift close.
-  SELECT * INTO shift FROM public.cashier_till_shifts
-    WHERE club_id=NEW.club_id AND closed_at IS NULL FOR UPDATE;
-  IF NOT FOUND THEN
+  -- The payout writer already holds the event lock. A buy-in or refund can
+  -- hold this shift while waiting for the same event; never wait back on it.
+  BEGIN
+    SELECT * INTO shift FROM public.cashier_till_shifts
+      WHERE club_id=NEW.club_id AND closed_at IS NULL FOR UPDATE NOWAIT;
+  EXCEPTION WHEN lock_not_available THEN
+    RAISE EXCEPTION 'cash_prize_drawer_busy' USING ERRCODE='55P03';
+  END;
+  IF shift.id IS NULL THEN
     RAISE EXCEPTION 'cash_prize_requires_open_shift' USING ERRCODE='23514';
   END IF;
   SELECT shift.opening_cash+coalesce(sum(CASE m.direction WHEN 'in' THEN m.amount ELSE -m.amount END),0)
