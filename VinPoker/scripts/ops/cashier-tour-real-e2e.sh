@@ -2092,6 +2092,45 @@ ROLLBACK;
 CONSOLIDATION_SEATING_PROBE
       exit "$consolidation_browser_status"
     fi
+    # Compare payout markers and the actual drawer movement store after the same
+    # tour. The current payout marker does not identify the drawer or reserve.
+    docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      >"$repo_root/output/operations-latency/consolidation-prize-cash-ledger-http.json" <<'CONSOLIDATION_CASH_LEDGER'
+BEGIN READ ONLY;
+DO $$ BEGIN
+ IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
+ THEN RAISE EXCEPTION 'consolidation_cash_audit_requires_disposable_fixture'; END IF;
+END $$;
+WITH events AS (
+ SELECT id,club_id,final_tournament_id FROM public.tournament_events
+ WHERE club_id='a2000000-0000-4000-8000-000000000001' AND name='Floor consolidation and bagging TEST'
+), prizes AS (
+ SELECT p.id,p.prize_amount,c.payment_id AS verified_payment_id
+ FROM events e JOIN public.tournament_prize_payments p ON p.club_id=e.club_id AND p.tournament_id=e.final_tournament_id
+ LEFT JOIN private.multi_day_payment_commits_v1 c ON c.payment_id=p.id AND c.event_id=e.id AND c.club_id=e.club_id
+  AND c.tournament_id=p.tournament_id AND c.participation_id=p.multi_day_participation_id AND c.amount_vnd=p.prize_amount AND c.method=p.method
+ WHERE p.status='paid' AND p.method='cash'
+), drawer AS (
+ SELECT m.direction,m.purpose,m.applied_amount
+ FROM events e JOIN public.tournaments t ON t.event_id=e.id AND t.club_id=e.club_id
+ JOIN public.cashier_buyin_movements m ON m.tournament_id=t.id AND m.club_id=e.club_id AND m.method='cash'
+)
+SELECT jsonb_build_object('kind','SAME_EVENT_PRIZE_MARKERS_AND_BUYIN_DRAWER','events',(SELECT count(*) FROM events),
+ 'paidRows',count(*),'verifiedPaidRows',count(verified_payment_id),'paidVnd',coalesce(sum(prize_amount),0),
+ 'buyinCashInVnd',(SELECT coalesce(sum(applied_amount),0) FROM drawer WHERE direction='in' AND purpose='buyin'),
+ 'eventDrawerCashOutVnd',(SELECT coalesce(sum(applied_amount),0) FROM drawer WHERE direction='out'),
+ 'fundingSourceVerified',false,'qualification',false,'productionChanged',false)
+FROM prizes;
+ROLLBACK;
+CONSOLIDATION_CASH_LEDGER
+    node --input-type=module - "$repo_root/output/operations-latency/consolidation-prize-cash-ledger-http.json" <<'CONSOLIDATION_CASH_ASSERT'
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const r=JSON.parse(readFileSync(process.argv[2],'utf8'));
+assert.deepEqual([r.events,r.paidRows,r.verifiedPaidRows,r.paidVnd,r.buyinCashInVnd],[1,23,23,183400000,204600000]);
+assert.equal(r.fundingSourceVerified,false);
+CONSOLIDATION_CASH_ASSERT
   else
     run_browser_proof '' '' 'real check-in HTTP commit, independent observation, exact retry and tenant boundary$'
     targeted_checkin_state="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "SELECT
