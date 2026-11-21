@@ -2308,6 +2308,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalRankingReviewRecorded=false;
  let finalOfficialRanks=0;
  let finalCloseReconcileDelta:number|null=null;
+ let finalPayoutObligationsLocked=false;
  let finalPayoutFunding:{registrations:number;poolVnd:number;feesVnd:number;unpaidVnd:number;shortfallVnd:number}|null=null;
  let firstFlightSeatingReview:string|null=null;
  let recoveredPaidSeatings=0;
@@ -2317,7 +2318,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout execution and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -2982,6 +2983,19 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(payoutPreview.sourceSnapshot.payments).toEqual([]);
   finalPayoutFunding={registrations:funding.length,poolVnd:payoutPreview.directPoolVnd,feesVnd:payoutPreview.feesVnd,
    unpaidVnd:payoutPreview.unpaidObligationVnd,shortfallVnd:payoutPreview.requiredShortfallVnd};
+  phase='final-day-lock-payout-obligations';report();
+  expect(payoutPreview.unpaidObligationVnd).toBe(183400000);
+  const lockIntent={p_event_id:event.event_id,p_expected_rules_version:payoutPreview.rulesVersion,
+   p_expected_funding_revision:payoutPreview.fundingRevision,p_expected_qualification_revision:payoutPreview.qualificationRevision,
+   p_expected_payout_input_hash:payoutPreview.payoutInputHash,p_request_id:crypto.randomUUID()};
+  const lockedPayout=await rpc('multi_day_finalize_payout_v1',lockIntent);
+  expect(lockedPayout).toMatchObject({ok:true,state:'FINALIZED_OBLIGATIONS',eventId:event.event_id,finalTournamentId:finalTour,
+   unpaidObligationVnd:183400000,paidPlayerVnd:0,requiredShortfallVnd:0,paymentExecution:'NOT_PERFORMED',idempotent:false});
+  expect(await rpc('multi_day_finalize_payout_v1',lockIntent)).toEqual({...lockedPayout,idempotent:true});
+  const payoutState=await rpc('multi_day_payout_postfinal_state_v1',{p_event_id:event.event_id});
+  expect(payoutState).toMatchObject({unpaidObligationVnd:183400000,paidPlayerVnd:0});
+  expect(await read('/rest/v1/tournament_prize_payments?select=id&tournament_id=eq.'+finalTour)).toEqual([]);
+  finalPayoutObligationsLocked=true;
   phase='passed';
  }finally{report();await mobileContext.close();}
 });
