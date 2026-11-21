@@ -3126,13 +3126,15 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const dealerCheckout={committed:false,retryPreserved:false,breakEnded:false,swingUpdated:false};
  const dealerPay={accrualMatches:false,fixedStatement:false,paidOnce:false,selfBalanceCleared:false,financeMatched:false,mobileReceiptVisible:false};
  const clockUi={started:false,paused:false,resumed:false};
+ let prizeDrawerVerified=false;
+ let prizeDrawerCloseVariance:number|null=null;
  const fnb={guestOrder:false,guestPaidVisible:false,counterPaidVisible:false,paidOnce:false,stockDelta:0,revenueDelta:0,cogsDelta:0};
  const fnbTour={desktop:false,mobile:false};
  let swingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let guestContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,dealerClose,dealerCheckout,dealerPay,clockUi,fnb,fnbTour,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with clock, replay, F&B, Cashier payment, Floor close, Dealer Swing, checkout and one TEST part-time statement. Excludes automatic return after rest, refunds, load and prize cash funding.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,dealerClose,dealerCheckout,dealerPay,clockUi,fnb,fnbTour,prizeDrawerVerified,prizeDrawerCloseVariance,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with clock, replay, F&B, Cashier payment, Floor close, Dealer Swing, checkout and one TEST part-time statement. Excludes automatic return after rest, refunds and load. Drawer linkage is tested only in the prize-replay scope.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -3152,6 +3154,22 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const identity=await fetch(api+'/auth/v1/user',{headers,signal:AbortSignal.timeout(5000)});expect(identity.ok).toBe(true);const ownerId=(await identity.json()).id as string;
  try{
   report();const opened={p_tournament_id:tour,p_game_table_id:'ac720000-0000-4000-8000-000000000001',p_control_mode:'tracker',p_request_id:crypto.randomUUID()};expect((await rpc('floor_open_tournament_table_v3',opened)).ok).toBe(true);
+  const checkPrizeDrawer=process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE==='prize-replay';
+  let prizeShiftId:string|undefined;
+  if(checkPrizeDrawer){
+   phase='single-day-cashier-shift-open';report();
+   const existing=await read('cashier_till_shifts?select=id&club_id=eq.'+club+'&closed_at=is.null');
+   expect(existing.length).toBeLessThanOrEqual(1);
+   if(existing.length){
+    const prior=await rpc('cashier_shift_summary_v1',{p_shift_id:existing[0].id});
+    const {cash_in,cash_out,prize_cash_out,cash_adjustments}=prior.totals;
+    const counted=prior.opening_cash+cash_in-cash_out-prize_cash_out+cash_adjustments;
+    expect(await rpc('cashier_close_shift_v1',{p_shift_id:existing[0].id,p_counted_cash:counted})).toMatchObject({ok:true,variance_cash:0});
+   }
+   const shift=await rpc('cashier_open_shift_v1',{p_club_id:club,p_opening_cash:0});
+   expect(shift).toMatchObject({ok:true,shift_id:expect.any(String)});
+   prizeShiftId=shift.shift_id;
+  }
   phase='register-and-pay';report();
   for(const actor of staff){const actorHeaders={...headers,Authorization:'Bearer '+actor.token},registered=await request('tournament-register','/functions/v1/tournament-register',{tournament_id:tour},actorHeaders);expect(registered.success).toBe(true);expect(Number(registered.total_pay)).toBe(6600000);
    const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registered.registration_id,amount:6600000,request_id:crypto.randomUUID()},args={p_intent:intent,p_action:'record'};
@@ -3352,6 +3370,12 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   }
   const unpaid=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(unpaid.prize_total).toBe(0);
   const recipients=await rpc('get_tournament_payout_recipients',{p_tournament_id:tour});expect(recipients.places).toHaveLength(1);const place=recipients.places[0];expect(place.finishedPlace).toBe(1);expect(place.prizeAmount).toBe(18000000);expect(place.isPaid).toBe(false);
+  let drawerBefore:{shift_id:string;opening_cash:number;totals:{cash_in:number;cash_out:number;cash_adjustments:number;prize_cash_out:number}}|undefined;
+  if(prizeShiftId){
+   phase='prize-drawer-baseline';report();
+   drawerBefore=await rpc('cashier_shift_summary_v1',{p_shift_id:prizeShiftId});
+   expect(drawerBefore).toMatchObject({ok:true,shift_id:prizeShiftId,opening_cash:0,totals:{cash_in:19800000,cash_out:0,cash_adjustments:0,prize_cash_out:0}});
+  }
   phase='prize-payment-browser';report();await page.goto('/cashier?tab=tournament_payouts&tournament='+tour);
   await expect(page.getByRole('heading',{name:'Trả thưởng giải',exact:true})).toBeVisible({timeout:30000});await expect(page.locator('#payout-tournament')).toHaveValue(tour);payoutUi.loaded=true;
   const payButton=page.getByRole('button',{name:'Ghi nhận đã trả',exact:true});await expect(payButton).toBeVisible();await payButton.click();
@@ -3364,6 +3388,14 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   phase='concurrent-prize-payment-recovery';report();
   const paid=await Promise.all(Array.from({length:4},()=>rpc('record_tournament_prize_payment_v2',payment)));for(const value of paid)expect(value).toEqual(uiResult);expect(paid[0].ok).toBe(true);expect(paid[0].prize_amount).toBe(18000000);const receipt=await rpc('get_tournament_prize_payment_receipt_v2',{p_request_id:payment.p_request_id});expect(receipt.found).toBe(true);expect(receipt.result).toEqual(paid[0]);
   const afterPayment=await rpc('get_tournament_payout_recipients',{p_tournament_id:tour});expect(afterPayment.paidCount).toBe(1);expect(afterPayment.paidTotal).toBe(18000000);paidRows=afterPayment.paidCount;
+  if(drawerBefore){
+   phase='single-day-prize-drawer-reconciliation';report();
+   const after=await rpc('cashier_shift_summary_v1',{p_shift_id:drawerBefore.shift_id});
+   expect(after.totals).toMatchObject({cash_out:drawerBefore.totals.cash_out,prize_cash_out:drawerBefore.totals.prize_cash_out+18000000});
+   const movements=await read('cashier_buyin_movements?select=shift_id,tournament_id,method,direction,purpose,amount&prize_payment_id=eq.'+uiResult.payment_id);
+   expect(movements).toEqual([{shift_id:drawerBefore.shift_id,tournament_id:tour,method:'cash',direction:'out',purpose:'prize_payout',amount:18000000}]);
+   prizeDrawerVerified=true;
+  }
   phase='release-and-close';report();const t=(await roster())[0];expect(t.seats).toHaveLength(1);const winner=t.seats[0],free={p_entry_id:winner.entry_id,p_expected_revision:t.session_revision,p_expected_control_epoch:t.control_epoch,p_expected_chip_count:winner.chip_count,p_request_id:crypto.randomUUID(),p_reason:'isolated final winner Free Sit'};const freed=await rpc('floor_free_sit_player_v1',free);expect(freed.ok).toBe(true);expect(freed.stack_preserved).toBe(60000);expect(await rpc('floor_free_sit_player_v1',free)).toEqual(freed);
   phase='floor-close-swing-observation';report();
   const empty=(await roster())[0];
@@ -3556,6 +3588,15 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   }
   const ready=await rpc('get_tournament_close_readiness_v1',{p_tournament_id:tour});expect(ready.ready).toBe(true);expect(ready.prize_total).toBe(18000000);expect(ready.reconcile_delta).toBe(0);
   const closed=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated canonical paid prize HTTP'});expect(closed.outcome).toBe('closed');expect(closed.prize_total).toBe(18000000);expect(closed.club_revenue).toBe(1800000);expect(closed.reconcile_delta).toBe(0);expect(closed.reconciled).toBe(true);prizeTotal=closed.prize_total;reconcileDelta=closed.reconcile_delta;
+  if(drawerBefore){
+   phase='single-day-cashier-shift-close';report();
+   const countedCash=1800000;
+   const tillClose=await rpc('cashier_close_shift_v1',{p_shift_id:drawerBefore.shift_id,p_counted_cash:countedCash});
+   expect(tillClose).toMatchObject({ok:true,expected_cash:countedCash,counted_cash:countedCash,variance_cash:0});
+   const closedShift=await rpc('cashier_shift_summary_v1',{p_shift_id:drawerBefore.shift_id});
+   expect(closedShift).toMatchObject({ok:true,expected_cash:countedCash,counted_cash:countedCash,variance_cash:0,totals:{cash_in:19800000,cash_out:0,prize_cash_out:18000000}});
+   prizeDrawerCloseVariance=closedShift.variance_cash;
+  }
   const retry=await rpc('close_tournament',{p_tournament_id:tour,p_reason:'isolated close recovery'});expect(retry.outcome).toBe('already_closed');expect(retry.report_id).toBe(closed.report_id);expect(failure).toBeNull();phase='passed';report();
  }catch(error){phase+='-failed';report();throw error;}finally{await Promise.all([swingContext?.close(),clockContext?.close(),guestContext?.close()]);}
 });

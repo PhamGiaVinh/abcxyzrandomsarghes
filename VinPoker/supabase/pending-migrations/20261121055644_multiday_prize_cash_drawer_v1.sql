@@ -54,7 +54,7 @@ BEGIN
    ) THEN RETURN NEW; END IF;$new$);
 END $migration$;
 
-CREATE FUNCTION private.cashier_record_multiday_prize_drawer_outflow_v1()
+CREATE FUNCTION private.cashier_record_prize_drawer_outflow_v1()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
   actor uuid:=auth.uid();
@@ -63,11 +63,11 @@ DECLARE
 BEGIN
   IF actor IS NULL OR NEW.paid_by IS DISTINCT FROM actor
      OR NOT public.is_club_cashier(actor,NEW.club_id)
-     OR NOT private.is_verified_multi_day_payment_v1(NEW) THEN
+     OR (NEW.multi_day_participation_id IS NOT NULL AND NOT private.is_verified_multi_day_payment_v1(NEW)) THEN
     RAISE EXCEPTION 'cash_prize_drawer_actor_or_payment_invalid' USING ERRCODE='42501';
   END IF;
-  -- The payout writer already holds the event lock. A buy-in or refund can
-  -- hold this shift while waiting for the same event; never wait back on it.
+  -- The payout writer already holds a tournament or event lock. A buy-in or refund can
+  -- hold this shift while waiting for those locks; never wait back on it.
   BEGIN
     SELECT * INTO shift FROM public.cashier_till_shifts
       WHERE club_id=NEW.club_id AND closed_at IS NULL FOR UPDATE NOWAIT;
@@ -89,12 +89,12 @@ BEGIN
     (NEW.club_id,NEW.tournament_id,shift.id,NEW.id,'out','cash','prize_payout',NEW.prize_amount,NEW.prize_amount,actor,'prize:'||NEW.id::text);
   RETURN NEW;
 END $$;
-REVOKE ALL ON FUNCTION private.cashier_record_multiday_prize_drawer_outflow_v1() FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION private.cashier_record_prize_drawer_outflow_v1() FROM PUBLIC,anon,authenticated,service_role;
 
-CREATE TRIGGER cashier_multiday_prize_drawer_outflow
+CREATE TRIGGER cashier_prize_drawer_outflow
 AFTER INSERT ON public.tournament_prize_payments
-FOR EACH ROW WHEN (NEW.multi_day_participation_id IS NOT NULL AND NEW.method='cash' AND NEW.status='paid')
-EXECUTE FUNCTION private.cashier_record_multiday_prize_drawer_outflow_v1();
+FOR EACH ROW WHEN (NEW.method='cash' AND NEW.status='paid')
+EXECUTE FUNCTION private.cashier_record_prize_drawer_outflow_v1();
 
 -- Keep the existing refund field and add a separate, authoritative prize debit.
 -- The shift close already sums cash ledger movements by shift.

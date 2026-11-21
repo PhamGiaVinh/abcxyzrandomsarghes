@@ -1592,6 +1592,8 @@ CLOSE_PRIZE_CANDIDATE_PATH
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$(cat "$test_root/close-prize-candidate-path")"
   fi
   if [[ "$diagnostic_scope" == prize-replay ]]; then
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      <"$repo_root/supabase/pending-migrations/20261121055644_multiday_prize_cash_drawer_v1.sql"
     # This baseline predates the finance helper and the F&B intent writers.
     # Exercise only the exact capture/reader slice on the joined guest-sale journey.
     node --input-type=module - "$repo_root" <<'TOUR_FNB_CAPTURE_READER' |
@@ -2258,7 +2260,7 @@ if(scope==='floor-consolidation'){
  assert.equal(floor.secondFlightBags,4);assert.equal(floor.finalSelectedBags,27);assert.equal(floor.finalQualified,23);
  assert.equal(floor.finalCarriedChips,460000);assert.equal(floor.finalSeated,23);
 }
-if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});assert.deepEqual(prize.dealerCheckout,{committed:true,retryPreserved:true,breakEnded:true,swingUpdated:true});assert.deepEqual(prize.dealerPay,{accrualMatches:true,fixedStatement:true,paidOnce:true,selfBalanceCleared:true,financeMatched:true,mobileReceiptVisible:true});}
+if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.equal(prize.prizeDrawerVerified,true);assert.equal(prize.prizeDrawerCloseVariance,0);assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});assert.deepEqual(prize.dealerCheckout,{committed:true,retryPreserved:true,breakEnded:true,swingUpdated:true});assert.deepEqual(prize.dealerPay,{accrualMatches:true,fixedStatement:true,paidOnce:true,selfBalanceCleared:true,financeMatched:true,mobileReceiptVisible:true});}
 assert.equal(audience.viewers,Number(count));
 for(const key of ['zeroErrors','atLeast30Seconds','allViewers','tableP95Within3Seconds'])assert.equal(audience.checks[key],true,key);
 assert.equal(audience.phase,Object.values(audience.checks).every(v=>v===true)?'passed':'failed');

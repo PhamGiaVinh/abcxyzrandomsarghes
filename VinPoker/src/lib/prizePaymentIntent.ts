@@ -36,7 +36,7 @@ const resolvedRejections=new Set(['invalid_payment_intent','tournament_not_found
   'place_not_finalized','place_ambiguous','prize_invalid','recipient_missing','payout_confirmation_stale',
   'paid_result_conflict','multi_day_obligations_not_finalized','multi_day_package_release_off','no_unpaid_obligation']);
 export function prizeDrawerRetryMessage(intent: PrizePaymentIntent, error: {code?: string;message?: string}): string | null {
-  if (intent.method !== "cash" || !intent.multiDayParticipationId || !intent.multiDayEventId) return null;
+  if (intent.method !== "cash") return null;
   if (error.code === "55P03" && error.message === "cash_prize_drawer_busy") {
     return "Két đang bận. Khi két sẵn sàng, chọn Gửi lại yêu cầu cũ.";
   }

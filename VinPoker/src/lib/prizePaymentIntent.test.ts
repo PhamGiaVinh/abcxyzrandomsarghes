@@ -14,7 +14,7 @@ describe("payout recovery boundary", () => {
     const error = { code, message };
     expect(prizeDrawerRetryMessage(qualified, error)).toEqual(expect.stringContaining(label));
     expect(prizeDrawerRetryMessage(qualified, error)).toEqual(expect.stringContaining("Gửi lại yêu cầu cũ"));
-    expect(prizeDrawerRetryMessage(intent, error)).toBeNull();
+    expect(prizeDrawerRetryMessage({ ...intent, method: "cash" }, error)).toEqual(expect.stringContaining(label));
     expect(prizeDrawerRetryMessage({ ...qualified, method: "bank" }, error)).toBeNull();
     expect(prizeDrawerRetryMessage(qualified, { code: "XX000", message })).toBeNull();
     expect(resolvePrizePaymentResult(qualified, { ok: false, error: message })).toEqual({ status: "unknown" });
