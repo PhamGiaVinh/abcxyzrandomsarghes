@@ -156,6 +156,8 @@ it("keeps an exact bust confirmation during refresh and guards repeated clicks",
   await waitFor(() => expect(state.roster).toHaveBeenCalledTimes(3));
   const confirm = screen.getByRole("button", { name: "Xác nhận loại" });
   fireEvent.click(confirm); fireEvent.click(confirm);
+  expect(screen.getByRole("button", { name: "Đang xử lý…" })).toBeDisabled();
+  expect(confirm).toHaveAttribute("aria-busy", "true");
   expect(state.bust).toHaveBeenCalledTimes(1);
   await act(async () => { finish({ ok: false, error: "seat_identity_changed" }); });
 });

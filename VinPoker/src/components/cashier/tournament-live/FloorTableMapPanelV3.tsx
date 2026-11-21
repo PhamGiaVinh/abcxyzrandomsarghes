@@ -904,6 +904,7 @@ function ScopedFloorTableMapPanelV3({
             <AlertDialogCancel data-ops-action="floor.player.cancel_bust" className="min-h-12">Giữ người chơi</AlertDialogCancel>
             <AlertDialogAction
               data-ops-action="floor.player.bust"
+              aria-busy={busy}
               className="min-h-12 bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={busy || !selectedTable || !pendingBustSeat}
               onClick={async (event) => {
@@ -945,7 +946,7 @@ function ScopedFloorTableMapPanelV3({
                 if (ok) setPendingBustSeat(null);
               }}
             >
-              Xác nhận loại
+              {busy ? "Đang xử lý…" : "Xác nhận loại"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
