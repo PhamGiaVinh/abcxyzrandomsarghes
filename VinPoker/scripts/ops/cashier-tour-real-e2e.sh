@@ -1717,8 +1717,17 @@ CHIP_ISSUANCE_CAPTURED_ACL
         20270128000171_chip_setup_create_bind_receipts_v1.sql \
         20270128000176_chip_template_save_receipts_v1.sql \
         20270128000177_chip_setup_metadata_receipts_v1.sql \
+        20270128000180_tournament_finalizer_one_survivor_v1.sql \
+        20270128000181_tournament_finalizer_serialization_v1.sql \
+        20270128000182_tournament_finalizer_server_only_v1.sql \
         20270128000223_chip_bank_adjust_receipt_v2.sql \
         20270128000296_manual_ranking_review_v1.sql; do
+        if [[ "$migration" == 20270128000123_* ]]; then
+          docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres -c "
+            SELECT signature || '|' || coalesce(md5(replace(pg_get_functiondef(to_regprocedure(signature)),chr(13),'')),'missing')
+            FROM (VALUES ('public.close_tournament(uuid,text)'),('public.finalize_tournament_results(uuid)'),
+              ('floor_private.felt_tournament_close_blockers_v1(uuid)')) x(signature);"
+        fi
         docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
           <"$repo_root/supabase/migrations/$migration"
       done
