@@ -162,6 +162,14 @@ const closeFingerprintEvidence=await (async()=>{
  const recoverDefinitions=readFileSync('scripts/ops/public-hud-equivalent-status-recovery.sql','utf8');
  sql(recoverDefinitions);
  assert.equal(matches(),`${count}:0`,'Definition rollback must expose normalized rows that still need reconciliation');
+ // Inject a missed tombstone only in the isolated fixture. The retained
+ // contribution must be retired even though the source cursor cannot see it.
+ const orphan=legacyHands.at(-1);
+ sql(`BEGIN; SET LOCAL session_replication_role=replica;
+  DELETE FROM public.hand_players WHERE hand_id='${orphan}';
+  DELETE FROM public.tournament_hands WHERE id='${orphan}'; COMMIT;`);
+ const orphanContributions=()=>sql(`SELECT count(*) FROM tracker_analytics_v1.hand_contributions WHERE hand_id='${orphan}';`);
+ assert.equal(orphanContributions(),'1');
  const pageSql=readFileSync('scripts/ops/public-hud-equivalent-status-reconcile-page.sql','utf8');
  let cursor='',pages=0;
  for(;;){
@@ -175,8 +183,9 @@ const closeFingerprintEvidence=await (async()=>{
   assert.ok(pages<100,'Isolated fixture pagination exceeded its budget');
  }
  assert.ok(pages>1,'Recovery must cross a keyset page boundary');
+ assert.equal(orphanContributions(),'0','Retained contribution must be retired through the recovery page');
  assert.equal(matches(),`${count}:${count}`,'Recovery must reproject normalized rows before readers return');
- return {hands:count,definitionRecoveryAndReprojection:true,recoveryPages:pages,legacyStatusesVerified:legacyRows.length,obsoleteRevisionRejected:true,exactDefinitionsVerified:true,writeAcknowledgedMs,drainCompletedMs};
+ return {hands:count,definitionRecoveryAndReprojection:true,recoveryPages:pages,orphanRetired:true,legacyStatusesVerified:legacyRows.length,obsoleteRevisionRejected:true,exactDefinitionsVerified:true,writeAcknowledgedMs,drainCompletedMs};
 })();
 
 for(const tour of tours)sql(`DELETE FROM public.tournaments WHERE id='${tour}';`);await drain();assert.deepEqual(totals(),beforeTotals,'Publish/retire must conserve every original player counter and winnings');

@@ -31,6 +31,6 @@ WITH source_page AS (
 ), queued AS MATERIALIZED (
  SELECT hand_id,tracker_analytics_v1.enqueue('hand',hand_id,true) AS result FROM page
 )
-SELECT jsonb_build_object('scanned',count(*),'next_after_hand_id',max(hand_id::text),
+SELECT jsonb_build_object('scanned',count(*),'next_after_hand_id',(SELECT hand_id FROM page ORDER BY hand_id DESC LIMIT 1),
  'done',count(*)<200) FROM queued;
 COMMIT;
