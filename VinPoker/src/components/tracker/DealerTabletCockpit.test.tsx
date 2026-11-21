@@ -17,8 +17,8 @@ vi.mock("@/integrations/supabase/client", () => {
   return { supabase: { rpc: vi.fn(), from: vi.fn(() => query) } };
 });
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: { floorTableControlV3: true, trackerOperationalFloorAlerts: false } }));
-vi.mock("@/ops/chip-ops/MultiDayBaggingPanel", () => ({
-  MultiDayBaggingPanel: ({ tournamentId }: { tournamentId: string }) => <p>Dealer bagging for {tournamentId}</p>,
+vi.mock("@/ops/auth/OpsAuthProvider", () => ({
+  OpsAuthProvider: ({ children }: import("react").PropsWithChildren) => <div data-testid="verified-ops-session">{children}</div>,
 }));
 vi.mock("@/ops/chip-ops/MultiDayBaggingPanel", () => ({
   MultiDayBaggingPanel: ({ tournamentId }: { tournamentId: string }) => <p>Dealer bagging for {tournamentId}</p>,
@@ -90,7 +90,7 @@ describe("Dealer tablet server context", () => {
       select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { phase: "flight" }, error: null }) }) }),
     } as never);
     render(<DealerTabletCockpit {...boundProps} />);
-    expect(await screen.findByText("Dealer bagging for tournament")).toBeTruthy();
+    expect(await screen.findByTestId("verified-ops-session")).toContainElement(screen.getByText("Dealer bagging for tournament"));
   });
   it("accepts server-validated session authority even with a null display table number", async () => {
     respond([row]);

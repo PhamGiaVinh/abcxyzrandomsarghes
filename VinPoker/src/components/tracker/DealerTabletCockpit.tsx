@@ -5,6 +5,7 @@ import { FEATURES } from "@/lib/featureFlags";
 import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from "@/lib/floorTableControlV3";
 import type { StandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
 import { MultiDayBaggingPanel } from "@/ops/chip-ops/MultiDayBaggingPanel";
+import { OpsAuthProvider } from "@/ops/auth/OpsAuthProvider";
 import { DealerShotClock } from "./DealerShotClock";
 import { DealerFloorAlertControls } from "./DealerFloorAlertControls";
 import "./dealerTablet.css";
@@ -62,7 +63,9 @@ export function DealerTabletCockpit(props: CockpitProps) {
   return <>
     <DealerTabletLayout {...props} trackerAllowed={trackerAllowed} />
     {flight && <div className="mx-auto max-w-5xl px-4 pb-5">
-      <MultiDayBaggingPanel tournamentId={hook.tournamentId} />
+      <OpsAuthProvider>
+        <MultiDayBaggingPanel tournamentId={hook.tournamentId} />
+      </OpsAuthProvider>
     </div>}
   </>;
 }

@@ -2323,7 +2323,7 @@ if(scope==='floor-consolidation'){
  const floor=read('cashier-http-consolidation-browser-http.json');
  assert.equal(floor.sha,sha);assert.equal(floor.phase,'passed');assert.equal(floor.qualification,false);
  assert.ok(floor.deferredCount>0);assert.equal(floor.handFinished,true);assert.deepEqual(floor.afterCounts,[9,9,9]);
- assert.equal(floor.sealedBags,27);assert.equal(floor.lockedChips,540000);assert.equal(floor.mobileBaggingLockRefreshed,true);assert.ok(floor.dealerBaggingReadback?.assignedRows>0);assert.equal(floor.dealerBaggingReadback?.locked,true);
+ assert.equal(floor.sealedBags,27);assert.equal(floor.lockedChips,540000);assert.equal(floor.mobileBaggingLockRefreshed,true);assert.equal(floor.dealerBaggingUiRefreshed,true);assert.ok(floor.dealerBaggingReadback?.assignedRows>0);assert.equal(floor.dealerBaggingReadback?.locked,true);
  assert.equal(floor.issuedPhysicalChips,540000);assert.equal(floor.bankReturned,true);
  assert.equal(floor.secondFlightBags,4);assert.equal(floor.finalSelectedBags,27);assert.equal(floor.finalQualified,23);
  assert.equal(floor.finalCarriedChips,460000);assert.equal(floor.finalSeated,23);

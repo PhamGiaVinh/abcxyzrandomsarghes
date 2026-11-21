@@ -2293,6 +2293,8 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let sealedBags=0;
  let lockedChips:number|null=null;
  let mobileBaggingLockRefreshed=false;
+ let dealerBaggingUiRefreshed=false;
+ let dealerBaggingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let dealerBaggingReadback:{assignedRows:number;locked:boolean}|null=null;
  let staffedTables=0;
  let trackerCountRows=0;
@@ -2321,7 +2323,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingReadback,staffedTables,trackerCountRows,issuedPhysicalChips,
+  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,staffedTables,trackerCountRows,issuedPhysicalChips,
   bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,finalPayoutDrawerDenialsVerified,finalPayoutDrawerRaceVerified,finalPayoutDrawerLockVerified,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Drawer source is verified in the isolated TEST DB. Production and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
@@ -2617,6 +2619,18 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const mobilePanel=phone.getByRole('region',{name:'Flight bagging'});
   await expect(mobilePanel.getByText(/Day 1 · Bagging open/)).toBeVisible();
   const mobileRoute=phone.url();
+  dealerBaggingContext=await browser.newContext({
+   baseURL:process.env.PLAYWRIGHT_BASE_URL,viewport:{width:390,height:844},isMobile:true,hasTouch:true,locale:'vi-VN',
+  });
+  const dealerPhone=await dealerBaggingContext.newPage();
+  await dealerPhone.addInitScript(({key,session})=>localStorage.setItem(key,JSON.stringify(session)),{
+   key:process.env.LOCAL_SUPABASE_STORAGE_KEY!,session:dealer!.session,
+  });
+  await dealerPhone.goto('/tracker/hand-input?tournament='+tour);
+  const dealerPanel=dealerPhone.getByRole('region',{name:'Flight bagging'});
+  await expect(dealerPanel.getByText(/Day 1 · Bagging open/)).toBeVisible();
+  await expect(dealerPanel.getByRole('textbox',{name:/^Bag code for /})).toHaveCount(assignedRows.length);
+  await expect(dealerPanel.getByRole('button',{name:'Lock flight bagging',exact:true})).toHaveCount(0);
   await panel.getByRole('button',{name:'Lock flight bagging',exact:true}).click();
   await expect(panel.getByText(/Day 1 · Locked/)).toBeVisible();
   const locked=await baggingState();
@@ -2641,6 +2655,19 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(dealerAfter).toMatchObject({flightId:tour,manager:false,status:'locked',dayVersion:locked.dayVersion,rows:expectedDealerRows});
   expect(dealerAfter.rows).toHaveLength(assignedRows.length);
   dealerBaggingReadback={assignedRows:assignedRows.length,locked:true};
+  const dealerRead=dealerPhone.waitForResponse(reply=>
+   new URL(reply.url()).pathname==='/rest/v1/rpc/multi_day_bagging_state_v1' && reply.request().method()==='POST',
+  );
+  await dealerPhone.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  const dealerReply=await dealerRead;
+  expect(dealerReply.ok()).toBe(true);
+  expect(dealerReply.request().postDataJSON()).toEqual({p_flight_tournament_id:tour});
+  expect(await dealerReply.json()).toEqual(dealerAfter);
+  await expect(dealerPanel.getByText(/Day 1 · Locked/)).toBeVisible();
+  const dealerBagInputs=dealerPanel.getByRole('textbox',{name:/^Bag code for /});
+  await expect(dealerBagInputs).toHaveCount(assignedRows.length);
+  for(const input of await dealerBagInputs.all()) await expect(input).toBeDisabled();
+  dealerBaggingUiRefreshed=true;
   phase='physical-chip-return';report();
   expect(bankRows(await bank())).toEqual(bankRows(issuedBank));
   const outstanding=await issuance();
@@ -3143,7 +3170,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const closedDrawer=await rpc('cashier_close_shift_v1',{p_shift_id:shift.id,p_counted_cash:27800000});
   expect(closedDrawer).toMatchObject({ok:true,expected_cash:27800000,counted_cash:27800000,variance_cash:0});
   phase='passed';
- }finally{report();await mobileContext.close();}
+ }finally{report();await dealerBaggingContext?.close();await mobileContext.close();}
 });
 
 test('final current Floor Cashier prizes close over real Auth HTTP',async({page,browser})=>{
