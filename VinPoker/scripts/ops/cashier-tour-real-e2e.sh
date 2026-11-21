@@ -1776,6 +1776,23 @@ MULTIDAY_PAYMENT_FIXTURE
       done
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
         <"$repo_root/supabase/pending-migrations/20261121055644_multiday_prize_cash_drawer_v1.sql"
+      # Diagnostics for the original failing call, enabled only in this disposable
+      # run. Keep the original exception and never log the message or payload.
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CONSOLIDATION_SEATING_LOG'
+DO $diagnostic$
+DECLARE target regprocedure:='public.cashier_try_seat_paid_v1(uuid,uuid)'::regprocedure;
+ definition text:=replace(pg_get_functiondef(target),chr(13),'');
+ anchor text:='  EXCEPTION WHEN OTHERS THEN';
+BEGIN
+ IF current_user<>'postgres' OR current_database()<>'postgres'
+ OR NOT EXISTS(SELECT 1 FROM public.clubs WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST')
+ OR (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid=target) IS DISTINCT FROM 'd5cdbb52ba83fd3b0a44911b09db91dd'
+ OR length(definition)-length(replace(definition,anchor,''))<>length(anchor)
+ THEN RAISE EXCEPTION 'consolidation_seating_log_dependency_drift'; END IF;
+ EXECUTE replace(definition,anchor,anchor||$log$
+    RAISE LOG 'VINPOKER_CONSOLIDATION_ORIGINAL_SEATING_STATE=%', SQLSTATE;$log$);
+END $diagnostic$;
+CONSOLIDATION_SEATING_LOG
     fi
     # The fixed marker is set only inside this already-owned ephemeral stack.
     { printf "COMMENT ON DATABASE postgres IS 'vinpoker-operational-schema-fence-disposable';\nSET vinpoker.isolated_schema_fence='cashier-current-schema-v1';\n";
@@ -2056,6 +2073,8 @@ COMMIT;
 CONSOLIDATION_FIXTURE
     consolidation_browser_status=0
     run_browser_proof '' '' 'Floor consolidation renders the 27 paid seats over real Auth HTTP' || consolidation_browser_status=$?
+    docker logs "$db_container" 2>&1 | grep -oE 'VINPOKER_CONSOLIDATION_ORIGINAL_SEATING_STATE=[A-Z0-9]{5}' \
+      >"$repo_root/output/operations-latency/consolidation-original-seating-sqlstate.txt" || true
     if [[ "$consolidation_browser_status" != 0 ]]; then
       docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
         >"$repo_root/output/operations-latency/consolidation-seating-rollback-probe-http.json" <<'CONSOLIDATION_SEATING_PROBE' || true
