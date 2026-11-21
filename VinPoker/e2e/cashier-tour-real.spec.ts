@@ -2304,13 +2304,14 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalTrackerTables=0,finalTrackerChips=0,finalShowdowns=0,finalSurvivors=0;
  let finalClosedTables=0,finalDealerAssignmentsReleased=0,finalWinnerChips=0;
  let finalLastTableClosed=false;
+ let firstFlightSeatingReview:string|null=null;
  let secondFlightSeatingReview:string|null=null;
   let finalSelectedBags=0;
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,secondFlightSeatingReview,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns and last-table closure from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -2404,8 +2405,13 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
    const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registration.registration_id,
     amount:Number(registration.total_pay),request_id:crypto.randomUUID()};
    expect(intent.amount).toBe(6600000);
-   expect(await rpc('resolve_cashier_cash_buyin_intent_v1',{p_intent:intent,p_action:'record'},actor.token))
-    .toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});
+   const payment=await rpc('resolve_cashier_cash_buyin_intent_v1',{p_intent:intent,p_action:'record'},actor.token);
+   if(payment.result?.seating_state==='needs_review'){
+    const [saved]=await read('/rest/v1/tournament_registrations?select=cashier_seating_error&id=eq.'+registration.registration_id);
+    const reason=saved?.cashier_seating_error;
+    firstFlightSeatingReview=typeof reason==='string'&&/^[a-z][a-z0-9_]{0,79}$/i.test(reason)?reason:'unknown';
+   }
+   expect(payment).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});
   }
   const before=await roster();
   beforeCounts=before.map(table=>table.seats.length);
