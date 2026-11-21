@@ -44,6 +44,7 @@ function ScopedPrizePayoutTrackingSection({ tournamentId, actorId }: { tournamen
   const { loading, error, notApplied, data, reload } = useTournamentPayoutRecipients(tournamentId);
   const [target, setTarget] = useState<PayoutRecipientPlace | null>(null);
   const [method, setMethod] = useState<string>("cash");
+  const [receiptCode, setReceiptCode] = useState("");
   const payment = usePrizePaymentIntent(actorId, tournamentId, reload);
   const busy = payment.busy;
   const verified = !loading && !error && !notApplied && data?.tournamentId === tournamentId;
@@ -87,6 +88,20 @@ function ScopedPrizePayoutTrackingSection({ tournamentId, actorId }: { tournamen
         </p>
       )}
 
+      {verified && (
+        <div className="flex flex-wrap items-end gap-2 text-xs">
+          <label className="grid min-w-0 gap-1">
+            Mã biên nhận tiền mặt
+            <input className="min-h-9 rounded border bg-background px-2" value={receiptCode}
+              onChange={event => setReceiptCode(event.target.value)} maxLength={36} />
+          </label>
+          <Button type="button" size="sm" variant="outline"
+            disabled={busy || !!payment.pending || receiptCode.trim().length !== 36}
+            onClick={() => { void payment.lookupCashReceipt(receiptCode.trim()); }}>
+            Tra ca xuất két
+          </Button>
+        </div>
+      )}
       {verified && payment.cashReceipt && (
         <p className="break-all text-xs text-muted-foreground">
           Biên nhận <code>{payment.cashReceipt.paymentId}</code> · Mã ca xuất két:{" "}

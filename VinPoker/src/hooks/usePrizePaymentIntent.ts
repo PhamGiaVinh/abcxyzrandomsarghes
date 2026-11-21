@@ -44,6 +44,29 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
     return () => { alive.current = false; };
   }, [actorId, tournamentId]);
 
+  const lookupCashReceipt = async (paymentId: string) => {
+    if (!actorId || !alive.current || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(paymentId)) return;
+    const lookup = { paymentId, shiftId: null };
+    setCashReceipt(lookup);
+    try {
+      const { data, error } = await waitForManualPlayerResponse(Promise.resolve(
+        supabase.from("cashier_buyin_movements")
+          .select("shift_id")
+          .eq("tournament_id", tournamentId)
+          .eq("prize_payment_id" as never, paymentId)
+          .eq("purpose", "prize_payout")
+          .eq("method", "cash")
+          .eq("direction", "out")
+          .maybeSingle(),
+      ));
+      const shiftId = data?.shift_id;
+      if (!alive.current || error || !shiftId) return;
+      setCashReceipt(current => current === lookup ? { paymentId, shiftId } : current);
+    } catch {
+      // Missing or unavailable ledger data leaves this receipt unverified.
+    }
+  };
+
   const execute = async (intent: PrizePaymentIntent, recovery: boolean) => {
     if (writing.current || !alive.current) return;
     writing.current = true;
@@ -74,22 +97,7 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
       else toast.success(`${resolution.outcome === "already_paid" ? "Đã ghi nhận trả trước đó" : "Đã ghi nhận trả"} · Hạng ${intent.finishedPlace} · ${formatVND(resolution.amount)}`);
       reload();
       if (resolution.status === "committed" && intent.method === "cash") {
-        const { paymentId } = resolution;
-        setCashReceipt({ paymentId, shiftId: null });
-        void waitForManualPlayerResponse(Promise.resolve().then(() =>
-          supabase.from("cashier_buyin_movements")
-            .select("shift_id")
-            .eq("prize_payment_id" as never, paymentId)
-            .eq("purpose", "prize_payout")
-            .eq("method", "cash")
-            .eq("direction", "out")
-            .maybeSingle(),
-        )).then(({ data, error }) => {
-          if (!alive.current || error || !data?.shift_id) return;
-          setCashReceipt(current => current?.paymentId === paymentId ? { paymentId, shiftId: data.shift_id } : current);
-        }).catch(() => {
-          // The confirmed payment is independent of the optional drawer read.
-        });
+        void lookupCashReceipt(resolution.paymentId);
       }
     } catch {
       if (alive.current) toast.error(unknown);
@@ -106,6 +114,7 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
         finishedPlace: place.finishedPlace, prizeAmount: place.prizeAmount, confirmationToken: place.confirmationToken, method,
         multiDayEventId:place.multiDayEventId,multiDayParticipationId:place.multiDayParticipationId }), actorId, tournamentId);
       persistPrizePaymentIntent(sessionStorage, intent);
+      setCashReceipt(null);
       setPending(intent);
       await execute(intent, false);
     } catch {
@@ -115,7 +124,7 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
       }
     }
   };
-  return { pending, blocked, busy, cashReceipt, submit,
+  return { pending, blocked, busy, cashReceipt, lookupCashReceipt, submit,
     recover: () => pending ? execute(pending, true) : Promise.resolve(),
     retry: () => pending ? execute(pending, false) : Promise.resolve() };
 }

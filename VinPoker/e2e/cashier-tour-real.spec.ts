@@ -3614,6 +3614,10 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    expect(movements).toEqual([{shift_id:drawerBefore.shift_id,tournament_id:tour,method:'cash',direction:'out',purpose:'prize_payout',amount:18000000}]);
    const receiptLine=page.getByText('Mã ca xuất két:',{exact:false}).filter({hasText:uiResult.payment_id});
    await expect(receiptLine).toContainText(drawerBefore.shift_id);
+   await page.reload();
+   await page.getByLabel('Mã biên nhận tiền mặt').fill(uiResult.payment_id);
+   await page.getByRole('button',{name:'Tra ca xuất két',exact:true}).click();
+   await expect(receiptLine).toContainText(drawerBefore.shift_id);
    prizeDrawerVerified=true;
   }
   phase='release-and-close';report();const t=(await roster())[0];expect(t.seats).toHaveLength(1);const winner=t.seats[0],free={p_entry_id:winner.entry_id,p_expected_revision:t.session_revision,p_expected_control_epoch:t.control_epoch,p_expected_chip_count:winner.chip_count,p_request_id:crypto.randomUUID(),p_reason:'isolated final winner Free Sit'};const freed=await rpc('floor_free_sit_player_v1',free);expect(freed.ok).toBe(true);expect(freed.stack_preserved).toBe(60000);expect(await rpc('floor_free_sit_player_v1',free)).toEqual(freed);
