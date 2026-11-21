@@ -2311,9 +2311,10 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
   const data=await response.json();
-  if(!response.ok){
+  if(!response.ok||data?.ok===false||data?.success===false){
+   const reason=data?.error??data?.message;
    failedHttp={path,status:response.status,code:typeof data?.code==='string'&&/^(?:[A-Z0-9]{5}|PGRST\d{3})$/.test(data.code)?data.code:null,
-    reason:typeof data?.message==='string'&&/^multi_day_[a-z_]+$/.test(data.message)?data.message:null};
+    reason:typeof reason==='string'&&/^[a-z][a-z0-9_]{0,79}$/i.test(reason)?reason:null};
   }
   expect(response.ok,path).toBe(true);
   return data;
