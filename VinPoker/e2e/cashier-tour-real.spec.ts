@@ -2294,9 +2294,10 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let lockedChips:number|null=null;
  let staffedTables=0;
  let trackerCountRows=0;
+ let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,failedHttp,qualification:false,productionChanged:false,
+  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'One isolated multi-day flight with 27 paid registrations, deferred transfers after a zero-pot hand, and the Chip Ops bag lock. Final day, physical bank movements and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -2460,9 +2461,25 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(bags.reduce((sum,row)=>sum+row.trackedStack,0)).toBe(540000);
   phase='chip-ops-bagging';report();
   const chipRoute=`/ops/chip-ops?club=${club}&t=${tour}`;
+  const inventory=await rpc('get_issued_chip_inventory',{p_tournament_id:tour});
+  expect(inventory).toMatchObject({tournament_id:tour,reconciled:true});
+  const reads:{rpc:string;status:number}[]=[];
+  page.on('response',reply=>{
+   const endpoint=new URL(reply.url());
+   const name=endpoint.pathname.split('/').at(-1)!;
+   if(endpoint.origin===new URL(api).origin && ['get_issued_chip_inventory','multi_day_bagging_state_v1','stack_template','tournaments'].includes(name) && reads.length<30){
+    reads.push({rpc:name,status:reply.status()});
+   }
+  });
   await page.goto(chipRoute);
   const panel=page.getByRole('region',{name:'Flight bagging'});
-  await expect(panel).toBeVisible();
+  try{await expect(panel).toBeVisible();}
+  catch(error){
+   const eligibleCode=await page.getByText(/^CHIP_(?:OPS|TOURNAMENT)_[A-Z0-9_]+$/).first().textContent({timeout:1000}).catch(()=>null);
+   chipOpsScreen={atExpectedRoute:new URL(page.url()).pathname==='/ops/chip-ops',reads,
+    errorCode:eligibleCode,inventoryFailure:await page.getByText('Không tải được tồn chip',{exact:true}).isVisible()};
+   throw error;
+  }
   for(const [index,bag] of bags.entries()){
    const input=panel.getByRole('textbox',{name:'Bag code for '+bag.playerId,exact:true});
    const row=input.locator('xpath=../..');
