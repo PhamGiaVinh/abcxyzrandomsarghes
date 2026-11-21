@@ -3353,6 +3353,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const closedDrawer=await rpc('cashier_close_shift_v1',{p_shift_id:shift.id,p_counted_cash:27800000});
   expect(closedDrawer).toMatchObject({ok:true,expected_cash:27800000,counted_cash:27800000,variance_cash:0});
   phase='same-tour-dealer-payroll';report();
+  {
   const dealerSession=attendanceBySession.get(source.table_session_id)!;
   expect(dealerSession).toBeTruthy();
   const dealerActor=staff.find(member=>member.userId===assignedDealers.get(source.table_session_id))!;
@@ -3388,6 +3389,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(await balance()).toMatchObject({balance_vnd:0,live_accrual_active:false});
   expect(await readWages()-beforePay).toBe(accrued.balance_vnd);
   sameTourDealerPayVerified=true;
+  }
   phase='passed';
  }finally{report();await Promise.all([dealerBaggingContext?.close(),consolidationObserverContext?.close(),consolidationTrackerContext?.close(),mobileContext.close()]);}
 });
