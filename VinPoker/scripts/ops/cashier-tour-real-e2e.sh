@@ -2083,8 +2083,44 @@ SELECT ('ac730000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'a2000000-0000-4
  'Consolidation TEST '||n,table_number,'tournament','inactive','available' FROM numbered;
 COMMIT;
 CONSOLIDATION_FIXTURE
+    # Hold the actual drawer row on a separate PostgreSQL connection. The
+    # browser asks only after opening the payout shift, and sees READY only
+    # once SELECT FOR UPDATE has completed.
+    (
+      lock_path="$repo_root/output/operations-latency"
+      for _ in {1..210}; do
+        if [[ -f "$lock_path/consolidation-drawer-lock-request" ]]; then
+          docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres             >"$lock_path/consolidation-drawer-lock-status" <<'CONSOLIDATION_DRAWER_LOCK'
+BEGIN;
+SET LOCAL lock_timeout='3s';
+DO $$ BEGIN
+ IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen AND admission_at IS NOT NULL)
+ THEN RAISE EXCEPTION 'consolidation_drawer_lock_requires_disposable_fixture';END IF;
+ PERFORM 1 FROM public.cashier_till_shifts
+ WHERE club_id='a2000000-0000-4000-8000-000000000001' AND closed_at IS NULL FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'consolidation_drawer_lock_shift_missing';END IF;
+END $$;
+echo READY
+SELECT pg_sleep(8);
+ROLLBACK;
+echo RELEASED
+CONSOLIDATION_DRAWER_LOCK
+          exit
+        fi
+        sleep 1
+      done
+      exit 1
+    ) &
+    consolidation_lock_pid=$!
     consolidation_browser_status=0
     run_browser_proof '' '' 'Floor consolidation renders the 27 paid seats over real Auth HTTP' || consolidation_browser_status=$?
+    if [[ "$consolidation_browser_status" == 0 ]]; then
+      wait "$consolidation_lock_pid"
+    else
+      kill -TERM "$consolidation_lock_pid" 2>/dev/null || true
+      wait "$consolidation_lock_pid" || true
+    fi
     (docker logs "$db_container" 2>&1 | grep -oE 'VINPOKER_CONSOLIDATION_(ORIGINAL|PAYMENT)_SEATING_STATE=[A-Z0-9]{5}' || true) |
       jq -Rn '[inputs]' >"$repo_root/output/operations-latency/consolidation-original-seating-sqlstate-http.json"
     if [[ "$consolidation_browser_status" != 0 ]]; then

@@ -2310,7 +2310,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalCloseReconcileDelta:number|null=null;
  let finalPayoutObligationsLocked=false;
  let finalPayoutPaidRows=0,finalPayoutPaidVnd=0;
- let finalPayoutDrawerDenialsVerified=false,finalPayoutDrawerRaceVerified=false;
+ let finalPayoutDrawerDenialsVerified=false,finalPayoutDrawerRaceVerified=false,finalPayoutDrawerLockVerified=false;
  let finalPayoutFunding:{registrations:number;poolVnd:number;feesVnd:number;unpaidVnd:number;shortfallVnd:number}|null=null;
  let firstFlightSeatingReview:string|null=null;
  let recoveredPaidSeatings=0;
@@ -2320,7 +2320,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,finalPayoutDrawerDenialsVerified,finalPayoutDrawerRaceVerified,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,finalPayoutDrawerDenialsVerified,finalPayoutDrawerRaceVerified,finalPayoutDrawerLockVerified,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Drawer source is verified in the isolated TEST DB. Production and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -3041,6 +3041,20 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const payoutShift=await rpc('cashier_open_shift_v1',{p_club_id:club,p_opening_cash:211200000});
   expect(payoutShift.ok).toBe(true);
   finalPayoutDrawerDenialsVerified=true;
+  phase='final-day-prize-drawer-lock';report();
+  const lockStatus='/latency/consolidation-drawer-lock-status';
+  const waitForLockState=(state:string)=>expect.poll(
+   ()=>existsSync(lockStatus)&&readFileSync(lockStatus,'utf8').split(/?
+/).includes(state),
+   {timeout:12000,intervals:[50,100,250]}
+  ).toBe(true);
+  writeFileSync('/latency/consolidation-drawer-lock-request','test');
+  await waitForLockState('READY');
+  const busyPrize=await attemptPrize(denialIntent);
+  expect(busyPrize.data).toMatchObject({code:'55P03',message:'cash_prize_drawer_busy'});
+  await waitForLockState('RELEASED');
+  expect(await read('/rest/v1/tournament_prize_payments?select=id&tournament_id=eq.'+finalTour)).toEqual([]);
+  finalPayoutDrawerLockVerified=true;
   const recordedPayments=new Map<string,{finishedPlace:number;recipientRef:string;amount:number;participationId:string}>();
   for(const original of payable){
    const quote=(await recipients()).places.find((place:{multiDayParticipationId:string})=>place.multiDayParticipationId===original.multiDayParticipationId);
