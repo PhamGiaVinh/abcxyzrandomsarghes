@@ -2310,6 +2310,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalCloseReconcileDelta:number|null=null;
  let finalPayoutObligationsLocked=false;
  let finalPayoutPaidRows=0,finalPayoutPaidVnd=0;
+ let finalPayoutDrawerDenialsVerified=false,finalPayoutDrawerRaceVerified=false;
  let finalPayoutFunding:{registrations:number;poolVnd:number;feesVnd:number;unpaidVnd:number;shortfallVnd:number}|null=null;
  let firstFlightSeatingReview:string|null=null;
  let recoveredPaidSeatings=0;
@@ -2319,7 +2320,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,finalPayoutDrawerDenialsVerified,finalPayoutDrawerRaceVerified,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Drawer source is verified in the isolated TEST DB. Production and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -3005,6 +3006,32 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
    multiDayParticipationId:string;finishedPlace:number;recipientRef:string;prizeAmount:number;
   }[];
   expect(payable.reduce((sum,place)=>sum+place.prizeAmount,0)).toBe(183400000);
+  const attemptPrize=async(intent:Record<string,unknown>)=>{
+   const response=await fetch(api+'/rest/v1/rpc/record_multi_day_prize_payment_v1',{
+    method:'POST',headers:{apikey:anon,Authorization:'Bearer '+owner,'Content-Type':'application/json'},
+    body:JSON.stringify(intent),signal:AbortSignal.timeout(15000)});
+   return {status:response.status,data:await response.json()};
+  };
+  const openShifts=()=>read('/rest/v1/cashier_till_shifts?select=id,opening_cash&club_id=eq.'+club+'&closed_at=is.null');
+  const [collectionShift]=await openShifts();
+  const collected=await rpc('cashier_shift_summary_v1',{p_shift_id:collectionShift.id});
+  expect(collected).toMatchObject({ok:true,opening_cash:0,totals:{cash_in:211200000,cash_out:0,cash_adjustments:0}});
+  expect(await rpc('cashier_close_shift_v1',{p_shift_id:collectionShift.id,p_counted_cash:211200000}))
+   .toMatchObject({ok:true,counted_cash:211200000,variance_cash:0});
+  const firstDue=due.places.find((place:{prizeAmount:number})=>place.prizeAmount>0);
+  const denialIntent={p_event_id:event.event_id,p_participation_id:firstDue.multiDayParticipationId,p_method:'cash',
+   p_expected_token:firstDue.confirmationToken,p_request_id:crypto.randomUUID()};
+  expect(await attemptPrize(denialIntent)).toMatchObject({status:400,data:{code:'23514',message:'cash_prize_requires_open_shift'}});
+  const emptyShift=await rpc('cashier_open_shift_v1',{p_club_id:club,p_opening_cash:0});
+  expect(emptyShift.ok).toBe(true);
+  expect(await attemptPrize(denialIntent)).toMatchObject({status:400,data:{code:'23514',message:'cash_prize_drawer_amount_unavailable'}});
+  expect(await read('/rest/v1/tournament_prize_payments?select=id&tournament_id=eq.'+finalTour)).toEqual([]);
+  expect(await rpc('multi_day_payout_postfinal_state_v1',{p_event_id:event.event_id})).toMatchObject({unpaidObligationVnd:183400000,paidPlayerVnd:0});
+  expect(await rpc('cashier_close_shift_v1',{p_shift_id:emptyShift.shift_id,p_counted_cash:0}))
+   .toMatchObject({ok:true,expected_cash:0,variance_cash:0});
+  const payoutShift=await rpc('cashier_open_shift_v1',{p_club_id:club,p_opening_cash:211200000});
+  expect(payoutShift.ok).toBe(true);
+  finalPayoutDrawerDenialsVerified=true;
   const recordedPayments=new Map<string,{finishedPlace:number;recipientRef:string;amount:number;participationId:string}>();
   for(const original of payable){
    const quote=(await recipients()).places.find((place:{multiDayParticipationId:string})=>place.multiDayParticipationId===original.multiDayParticipationId);
@@ -3012,10 +3039,25 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
     recipientRef:original.recipientRef,prizeAmount:original.prizeAmount,isPaid:false});
    const payIntent={p_event_id:event.event_id,p_participation_id:original.multiDayParticipationId,p_method:'cash',
     p_expected_token:quote.confirmationToken,p_request_id:crypto.randomUUID()};
-   const paid=await rpc('record_multi_day_prize_payment_v1',payIntent);
+   let paid;
+   let committedIntent=payIntent;
+   if(recordedPayments.size===0){
+    const competingIntent={...payIntent,p_request_id:crypto.randomUUID()};
+    const intents=[payIntent,competingIntent];
+    const outcomes=await Promise.all(intents.map(attemptPrize));
+    const winners=outcomes.filter(outcome=>outcome.status===200&&outcome.data.ok===true);
+    expect(winners).toHaveLength(1);
+    expect(outcomes.find(outcome=>outcome.data.ok===false)).toMatchObject({status:200,data:{error:'payout_confirmation_stale'}});
+    const winner=winners[0];
+    paid=winner.data;
+    committedIntent=intents[outcomes.indexOf(winner)];
+    finalPayoutDrawerRaceVerified=true;
+   }else{
+    paid=await rpc('record_multi_day_prize_payment_v1',payIntent);
+   }
    expect(paid).toMatchObject({ok:true,outcome:'recorded',tournament_id:finalTour,finished_place:original.finishedPlace,
     recipient_ref:original.recipientRef,prize_amount:original.prizeAmount});
-   expect(await rpc('record_multi_day_prize_payment_v1',payIntent)).toEqual(paid);
+   expect(await rpc('record_multi_day_prize_payment_v1',committedIntent)).toEqual(paid);
    expect(recordedPayments.has(paid.payment_id)).toBe(false);
    recordedPayments.set(paid.payment_id,{finishedPlace:original.finishedPlace,recipientRef:original.recipientRef,
     amount:original.prizeAmount,participationId:original.multiDayParticipationId});
@@ -3033,13 +3075,13 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   finalPayoutPaidRows=proof.length;
   finalPayoutPaidVnd=183400000;
   phase='final-day-close-cash-drawer';report();
-  const shifts=await read('/rest/v1/cashier_till_shifts?select=id,opening_cash&club_id=eq.'+club+'&closed_at=is.null');
+  const shifts=await openShifts();
   expect(shifts).toHaveLength(1);
   const [shift]=shifts;
   const drawer=await rpc('cashier_shift_summary_v1',{p_shift_id:shift.id});
-  // The shared fixture adds one 6.6M buy-in outside the event; the SQL audit checks event-only totals.
-  expect(drawer).toMatchObject({ok:true,totals:{cash_in:211200000,cash_out:183400000,cash_adjustments:0}});
-  expect(shift.opening_cash).toBe(0);
+  expect(shift.id).toBe(payoutShift.shift_id);
+  expect(drawer).toMatchObject({ok:true,totals:{cash_in:0,cash_out:183400000,cash_adjustments:0}});
+  expect(shift.opening_cash).toBe(211200000);
   const closedDrawer=await rpc('cashier_close_shift_v1',{p_shift_id:shift.id,p_counted_cash:27800000});
   expect(closedDrawer).toMatchObject({ok:true,expected_cash:27800000,counted_cash:27800000,variance_cash:0});
   phase='passed';
