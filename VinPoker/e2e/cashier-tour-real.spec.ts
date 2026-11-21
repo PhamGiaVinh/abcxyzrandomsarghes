@@ -2313,6 +2313,9 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let dealerBaggingUiRefreshed=false;
  let dealerTrackerTableScoped=false;
  let floorAlertHandoffVerified=false;
+ let consolidationObserverContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
+ let consolidationTrackerContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
+ let swingAndTrackerObserved=false;
  let dealerBaggingDiagnostics:Record<string,unknown>|null=null;
  let dealerBaggingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let dealerBaggingReadback:{assignedRows:number;locked:boolean}|null=null;
@@ -2343,7 +2346,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,dealerBaggingDiagnostics,dealerTrackerTableScoped,floorAlertHandoffVerified,staffedTables,trackerCountRows,issuedPhysicalChips,
+  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,dealerBaggingDiagnostics,dealerTrackerTableScoped,floorAlertHandoffVerified,swingAndTrackerObserved,staffedTables,trackerCountRows,issuedPhysicalChips,
   bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,finalPayoutDrawerDenialsVerified,finalPayoutDrawerRaceVerified,finalPayoutDrawerLockVerified,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Drawer source is verified in the isolated TEST DB. Production and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
@@ -2518,6 +2521,26 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(target.seats.length).toBeGreaterThanOrEqual(2);
   expect(target.seats.length).toBeLessThan(9);
   const source=before.filter(table=>table.control_mode==='manual'&&table.seats.length>0).sort((a,b)=>a.seats.length-b.seats.length)[0];
+  consolidationObserverContext=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:'vi-VN'});
+  const consolidationSwing=await consolidationObserverContext.newPage();
+  await loginOwner(consolidationSwing);
+  await consolidationSwing.goto('/dealer-swing');
+  await selectDealerSwingClub(consolidationSwing,'Cashier Edge TEST');
+  const swingSource=consolidationSwing.locator('#table-card-'+source.game_table_id);
+  const swingDestination=consolidationSwing.locator('#table-card-'+target.game_table_id);
+  await expect(swingSource).toBeVisible();
+  await expect(swingDestination).toBeVisible();
+  consolidationTrackerContext=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:"vi-VN"});
+  const consolidationTracker=await consolidationTrackerContext.newPage();
+  await consolidationTracker.addInitScript(({key,session})=>localStorage.setItem(key,JSON.stringify(session)),{
+   key:process.env.LOCAL_SUPABASE_STORAGE_KEY!,session:trackerDealer!.session,
+  });
+  const trackerScopeReply=consolidationTracker.waitForResponse(reply=>reply.ok()&&
+   reply.url()===api+'/rest/v1/rpc/get_tracker_hand_input_tables_v4'&&reply.request().postDataJSON()?.p_tournament_id===tour);
+  await consolidationTracker.goto('/tracker/hand-input?'+new URLSearchParams({tournament:tour,table:target.game_table_id}));
+  const initialTrackerScope=await (await trackerScopeReply).json();
+  expect(initialTrackerScope.tables).toHaveLength(1);
+  expect(initialTrackerScope.tables[0]).toMatchObject({table_session_id:target.table_session_id});
   await page.setViewportSize({width:1366,height:900});
   const phone=await mobileContext.newPage();
   await loginOwner(phone);
@@ -2607,6 +2630,10 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   afterCounts=after.map(table=>table.seats.length);
   expect(afterCounts).toEqual([9,9,9]);
   expect(identity(after)).toEqual(frozen);
+  await expect(swingSource).toHaveCount(0,{timeout:15000});
+  await expect(swingDestination).toBeVisible();
+  await expect(consolidationTracker).toHaveURL(/\/tracker\/hand-input/);
+  swingAndTrackerObserved=true;
   phase='end-flight-prerequisites';report();
   const activeAssignments=await read('/rest/v1/dealer_assignments?select=table_session_id&status=eq.assigned&released_at=is.null&club_id=eq.'+club);
   const assignmentSessions=activeAssignments.map((row:{table_session_id:string})=>row.table_session_id);
@@ -3253,7 +3280,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const closedDrawer=await rpc('cashier_close_shift_v1',{p_shift_id:shift.id,p_counted_cash:27800000});
   expect(closedDrawer).toMatchObject({ok:true,expected_cash:27800000,counted_cash:27800000,variance_cash:0});
   phase='passed';
- }finally{report();await dealerBaggingContext?.close();await mobileContext.close();}
+ }finally{report();await Promise.all([dealerBaggingContext?.close(),consolidationObserverContext?.close(),consolidationTrackerContext?.close(),mobileContext.close()]);}
 });
 
 test('final current Floor Cashier prizes close over real Auth HTTP',async({page,browser})=>{
