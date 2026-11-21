@@ -2292,16 +2292,19 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let handFinished=false;
  let sealedBags=0;
  let lockedChips:number|null=null;
- let failedHttp:{path:string;status:number;code:string|null}|null=null;
+ let staffedTables=0;
+ let trackerCountRows=0;
+ let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,failedHttp,qualification:false,productionChanged:false,
+  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,failedHttp,qualification:false,productionChanged:false,
   limits:'One isolated multi-day flight with 27 paid registrations, deferred transfers after a zero-pot hand, and the Chip Ops bag lock. Final day, physical bank movements and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
   const data=await response.json();
   if(!response.ok){
-   failedHttp={path,status:response.status,code:typeof data?.code==='string'&&/^(?:[A-Z0-9]{5}|PGRST\d{3})$/.test(data.code)?data.code:null};
+   failedHttp={path,status:response.status,code:typeof data?.code==='string'&&/^(?:[A-Z0-9]{5}|PGRST\d{3})$/.test(data.code)?data.code:null,
+    reason:typeof data?.message==='string'&&/^multi_day_[a-z_]+$/.test(data.message)?data.message:null};
   }
   expect(response.ok,path).toBe(true);
   return data;
@@ -2312,8 +2315,8 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(response.ok,path.split('?')[0]).toBe(true);
   return response.json();
  };
- type Table={tournament_table_id:string;table_session_id:string;table_number:number;max_seats:number;control_epoch:number;
-  control_mode:string;seats:{entry_id:string;chip_count:number;seat_number:number}[]};
+ type Table={tournament_table_id:string;table_session_id:string;game_table_id:string;table_number:number;max_seats:number;control_epoch:number;
+  control_mode:string;seats:{entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number}[]};
  const roster=async()=>(await rpc(floorRosterRpc,{p_tournament_id:tour})) as Table[];
  const identity=(tables:Table[])=>tables.flatMap(table=>table.seats.map(seat=>[seat.entry_id,seat.chip_count] as const))
   .sort((a,b)=>a[0].localeCompare(b[0]));
@@ -2353,6 +2356,17 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const frozen=identity(before);
   expect(new Set(frozen.map(([entry])=>entry)).size).toBe(27);
   expect(frozen.reduce((total,[,chips])=>total+chips,0)).toBe(540000);
+  phase='dealer-checkin-and-assignment';report();
+  for(const [index,table] of before.entries()){
+   const name=encodeURIComponent('HTTP latency TEST '+(index+1));
+   const dealers=await read('/rest/v1/dealers?select=id&club_id=eq.'+club+'&full_name=eq.'+name);
+   expect(dealers).toHaveLength(1);
+   const attendance=await rpc('operator_check_in_dealer_v1',{p_dealer_id:dealers[0].id,p_club_id:club,
+    p_shift_id:'ad300000-0000-4000-8000-000000000001',p_request_id:crypto.randomUUID()});
+   expect(attendance.outcome).toBe('checked_in');
+   expect(await rpc('assign_dealer_to_table',{p_attendance_id:attendance.attendance_id,p_table_id:table.game_table_id,p_club_id:club,
+    p_idempotency_key:crypto.randomUUID(),p_swing_due_at:new Date(Date.now()+15*60000).toISOString()})).toMatchObject({outcome:'ok'});
+  }
   const target=before.find(table=>table.control_mode==='tracker')!;
   expect(target.seats.length).toBeGreaterThanOrEqual(2);
   expect(target.seats.length).toBeLessThan(9);
@@ -2420,6 +2434,21 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   afterCounts=after.map(table=>table.seats.length);
   expect(afterCounts).toEqual([9,9,9]);
   expect(identity(after)).toEqual(frozen);
+  phase='end-flight-prerequisites';report();
+  const activeAssignments=await read('/rest/v1/dealer_assignments?select=table_session_id&status=eq.assigned&released_at=is.null&club_id=eq.'+club);
+  const assignmentSessions=activeAssignments.map((row:{table_session_id:string})=>row.table_session_id);
+  staffedTables=after.filter(table=>assignmentSessions.filter((session:string)=>session===table.table_session_id).length===1).length;
+  expect(staffedTables).toBe(3);
+  expect(assignmentSessions).not.toContain(source.table_session_id);
+  const counts=await read('/rest/v1/tournament_chip_counts?select=player_id,entry_number,chip_count,updated_at&tournament_id=eq.'+tour) as
+   {player_id:string;entry_number:number;chip_count:number;updated_at:string|null}[];
+  trackerCountRows=counts.length;
+  for(const seat of after.flatMap(table=>table.seats)){
+   const actual=counts.filter(row=>row.player_id===seat.player_id&&row.entry_number===seat.entry_no);
+   expect(actual).toHaveLength(1);
+   expect(actual[0].chip_count).toBe(seat.chip_count);
+   expect(actual[0].updated_at).toBeTruthy();
+  }
   phase='end-flight';report();
   expect(await rpc('multi_day_end_flight_v1',{p_flight_tournament_id:tour,p_day_number:1,p_request_id:crypto.randomUUID()})).toMatchObject({ok:true});
   const baggingState=()=>rpc('multi_day_bagging_state_v1',{p_flight_tournament_id:tour});
