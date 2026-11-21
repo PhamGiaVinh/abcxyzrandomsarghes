@@ -2293,7 +2293,7 @@ test('current owner rake closes once and exports the immutable event-day snapsho
 
 test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({page,browser})=>{
  test.skip(process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE!=='floor-consolidation','Dedicated isolated consolidation fixture');
- test.setTimeout(220_000);
+ test.setTimeout(260_000);
  const api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,'');
  const anon=process.env.LOCAL_SUPABASE_ANON_KEY!;
  let tour='';
@@ -2316,6 +2316,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let consolidationObserverContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let consolidationTrackerContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let swingAndTrackerObserved=false;
+ let sameTourFnbVerified=false;
  let dealerBaggingDiagnostics:Record<string,unknown>|null=null;
  let dealerBaggingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let dealerBaggingReadback:{assignedRows:number;locked:boolean}|null=null;
@@ -2346,7 +2347,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,dealerBaggingDiagnostics,dealerTrackerTableScoped,floorAlertHandoffVerified,swingAndTrackerObserved,staffedTables,trackerCountRows,issuedPhysicalChips,
+  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,dealerBaggingDiagnostics,dealerTrackerTableScoped,floorAlertHandoffVerified,swingAndTrackerObserved,sameTourFnbVerified,staffedTables,trackerCountRows,issuedPhysicalChips,
   bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,finalPayoutDrawerDenialsVerified,finalPayoutDrawerRaceVerified,finalPayoutDrawerLockVerified,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Drawer source is verified in the isolated TEST DB. Production and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
@@ -2634,6 +2635,75 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   await expect(swingDestination).toBeVisible();
   await expect(consolidationTracker).toHaveURL(/\/tracker\/hand-input/);
   swingAndTrackerObserved=true;
+  phase='same-flight-fnb-finance';report();
+  const settings=await rpc('fnb_update_settings',{p_club_id:club,p_guest_order_enabled:true});
+  expect(settings.error).toBeUndefined();
+  const qr=await rpc('fnb_issue_table_qr_token',{p_club_id:club,p_table_ref:target.game_table_id,p_label:'Consolidated flight TEST'});
+  expect(qr.status).toBe('ok');
+  expect(typeof qr.token).toBe('string');
+  const guestContext=await browser.newContext({baseURL:process.env.PLAYWRIGHT_BASE_URL,locale:'vi-VN',viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+  try {
+  const guestPage=await guestContext.newPage();
+  await guestPage.goto('/fnb/order?'+new URLSearchParams({t:qr.token})).catch(()=>{
+   throw new Error('TEST guest menu navigation failed');
+  });
+  await guestPage.getByRole('button',{name:'1',exact:true}).click();
+  await guestPage.getByRole('button',{name:'Xem thực đơn',exact:true}).click();
+  await guestPage.getByRole('button',{name:'Thêm Operations TEST water',exact:true}).click();
+  await guestPage.getByRole('button',{name:/^Xem đơn \(1 món\)/}).click();
+  await guestPage.getByPlaceholder('Tên của bạn (tuỳ chọn)').fill('Game table guest TEST');
+  await guestPage.getByRole('button',{name:/^Tiền mặt/}).click();
+  const [orderResponse]=await Promise.all([
+   guestPage.waitForResponse(response=>response.url()===api+'/rest/v1/rpc/fnb_guest_create_order',{timeout:10000}),
+   guestPage.getByRole('button',{name:'Gửi đơn — trả tiền mặt',exact:true}).click(),
+  ]);
+  expect(orderResponse.ok()).toBe(true);
+  const orderIntent=orderResponse.request().postDataJSON();
+  expect(orderIntent.p_token===qr.token).toBe(true);
+  expect(orderIntent.p_seat).toBe(1);
+  expect(orderIntent.p_payment_method).toBe('cash');
+  expect(orderIntent.p_lines).toEqual([{menu_item_id:'afb20000-0000-4000-8000-000000000001',qty:1}]);
+  const order=await orderResponse.json();
+  expect(typeof order.order_id).toBe('string');
+  await expect(guestPage.getByText('Đã gửi đơn!',{exact:true})).toBeVisible();
+  expect((await rpc('fnb_guest_create_order',orderIntent,anon)).order_id).toBe(order.order_id);
+  const counter=await consolidationObserverContext.newPage();
+  await counter.goto('/fnb');
+  await counter.getByRole('tab',{name:'Chờ thanh toán',exact:true}).click();
+  const pending=counter.getByRole('tabpanel');
+  await expect(pending.getByText(/Game table guest TEST/)).toBeVisible();
+  const collect=pending.getByRole('button',{name:'Thu tiền',exact:true});
+  await collect.click();
+  const paymentDialog=counter.getByRole('dialog',{name:'Thu tiền (trả trước)'});
+  await expect(paymentDialog.getByText('Tổng cộng',{exact:true}).locator('..').getByText(/20[.,]000/)).toBeVisible();
+  const [paidResponse]=await Promise.all([
+   counter.waitForResponse(response=>response.url()===api+'/rest/v1/rpc/fnb_mark_paid',{timeout:10000}),
+   paymentDialog.getByRole('button',{name:'Thu tiền',exact:true}).click(),
+  ]);
+  expect(paidResponse.ok()).toBe(true);
+  const paymentIntent=paidResponse.request().postDataJSON();
+  expect(paymentIntent.p_order_id===order.order_id).toBe(true);
+  expect(await paidResponse.json()).toMatchObject({status:'ok',idempotent:false,subtotal_vnd:20000,cogs_vnd:5000});
+  await expect(collect).toHaveCount(0);
+  await counter.getByRole('tab',{name:'Đã thu',exact:true}).click();
+  await expect(counter.getByRole('tabpanel').getByText(/Game table guest TEST/)).toBeVisible();
+  expect(await rpc('fnb_mark_paid',paymentIntent)).toMatchObject({status:'ok',idempotent:true,order_id:order.order_id});
+  await expect(guestPage.getByText('Đã nhận đơn!',{exact:true})).toBeVisible({timeout:20000});
+  const otherTour='a3000000-0000-4000-8000-000000000001';
+  const window={p_club_id:club,p_from:'-infinity',p_to:'infinity'};
+  const readTour=(id:string)=>rpc('get_tour_fnb_attribution_v1',{...window,p_tournament_id:id});
+  expect(await readTour(tour)).toMatchObject({tournamentId:tour,revenue:20000,cogs:5000,sales:1});
+  expect(await readTour(otherTour)).toMatchObject({tournamentId:otherTour,revenue:0,cogs:0,sales:0});
+  await counter.goto('/ops/finance?club='+club);
+  await counter.getByLabel('Giải cần xem',{exact:true}).selectOption(tour);
+  const attribution=counter.getByRole('region',{name:'F&B theo giải'});
+  await expect(attribution.getByText('20.000 đ',{exact:true})).toBeVisible();
+  await expect(attribution.getByText('5.000 đ',{exact:true})).toBeVisible();
+  await counter.close();
+  sameTourFnbVerified=true;
+  } finally {
+   await guestContext.close();
+  }
   phase='end-flight-prerequisites';report();
   const activeAssignments=await read('/rest/v1/dealer_assignments?select=table_session_id&status=eq.assigned&released_at=is.null&club_id=eq.'+club);
   const assignmentSessions=activeAssignments.map((row:{table_session_id:string})=>row.table_session_id);

@@ -1117,7 +1117,7 @@ fi
 floor_redraw_build=off
 tour_fnb_build=false
 if [[ "$operations_candidate_probe" == 1 ]]; then floor_redraw_build=preview; fi
-if [[ "$diagnostic_scope" == prize-replay ]]; then tour_fnb_build=true; fi
+if [[ "$diagnostic_scope" == prize-replay || "$diagnostic_scope" == floor-consolidation ]]; then tour_fnb_build=true; fi
 (cd "$repo_root" && \
   VITE_SUPABASE_URL="http://$browser_gateway:8000" \
   VITE_SUPABASE_PUBLISHABLE_KEY="$anon_key" \
@@ -1605,9 +1605,11 @@ CLOSE_PRIZE_CANDIDATE_PATH
       <"$repo_root/supabase/migrations/20270128000145_multiday_verified_payment_boundary_v1.sql"
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
       <"$repo_root/supabase/pending-migrations/20261121055644_multiday_prize_cash_drawer_v1.sql"
+  fi
+  if [[ "$diagnostic_scope" == prize-replay || "$diagnostic_scope" == floor-consolidation ]]; then
     # This baseline predates the finance helper and the F&B intent writers.
     # Exercise only the exact capture/reader slice on the joined guest-sale journey.
-    node --input-type=module - "$repo_root" <<'TOUR_FNB_CAPTURE_READER' |
+    node --input-type=module - "$repo_root" "$diagnostic_scope" <<'TOUR_FNB_CAPTURE_READER' |
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -1625,7 +1627,8 @@ const prior=read('supabase/migrations/20270128000047_floor_closed_session_attend
 const restTrigger=prior.match(/^ALTER FUNCTION floor_private\.reconcile_closed_session_attendance_v1\(\)[\s\S]+?^EXECUTE FUNCTION floor_private\.reconcile_closed_session_attendance_v1\(\);/m);
 assert.ok(restBody&&restTrigger);
 const restPreflight="DO $$ BEGIN ASSERT to_regprocedure('floor_private.reconcile_closed_session_attendance_v1()') IS NULL; ASSERT NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='public.table_sessions'::regclass AND tgname='trg_reconcile_closed_session_attendance_v1'); END $$;";
-process.stdout.write(slice.replace('BEGIN;','BEGIN;\n'+helper[0])+'\n'+restPreflight+'\n'+restBody[0]+'\n'+restTrigger[0]+'\nCOMMIT;\n');
+const restSetup=process.argv[3]==='prize-replay'?[restPreflight,restBody[0],restTrigger[0]]:[];
+process.stdout.write([slice.replace('BEGIN;','BEGIN;\n'+helper[0]),...restSetup,'COMMIT;',''].join('\n'));
 TOUR_FNB_CAPTURE_READER
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
   fi
