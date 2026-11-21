@@ -2964,9 +2964,9 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
    p_expected_rules_version:proposal.rulesVersion,p_expected_funding_revision:proposal.fundingRevision,
    p_expected_qualification_revision:proposal.qualificationRevision,p_expected_payout_input_hash:proposal.payoutInputHash,
    p_request_id:crypto.randomUUID(),p_reason:'Isolated Final Day TEST prize schedule'};
-  const configured=await rpc('multi_day_save_prize_configuration_v1',awardIntent);
-  expect(configured).toMatchObject({ok:true,state:'CONFIGURED',idempotent:false});
-  expect(await rpc('multi_day_save_prize_configuration_v1',awardIntent)).toEqual({...configured,idempotent:true});
+  const savedAwards=await rpc('multi_day_save_prize_configuration_v1',awardIntent);
+  expect(savedAwards).toMatchObject({ok:true,state:'CONFIGURED',idempotent:false});
+  expect(await rpc('multi_day_save_prize_configuration_v1',awardIntent)).toEqual({...savedAwards,idempotent:true});
   phase='final-day-payout-funding-preview';report();
   const payoutPreview=await rpc('multi_day_payout_preview_v1',{p_event_id:event.event_id});
   expect(payoutPreview).toMatchObject({ok:true,eventId:event.event_id,finalTournamentId:finalTour,
