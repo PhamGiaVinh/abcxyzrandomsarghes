@@ -2290,14 +2290,19 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let afterCounts:number[]=[];
  let deferredCount=0;
  let handFinished=false;
+ let failedHttp:{path:string;status:number;code:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,qualification:false,productionChanged:false,
+  beforeCounts,afterCounts,deferredCount,handFinished,failedHttp,qualification:false,productionChanged:false,
   limits:'One isolated TEST tour with 27 actual paid registrations. A zero-pot Tracker hand exercises deferred transfers and conservation. This is not a full tour close or load qualification.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
+  const data=await response.json();
+  if(!response.ok){
+   failedHttp={path,status:response.status,code:typeof data?.code==='string'&&/^[A-Z0-9]{5}$/.test(data.code)?data.code:null};
+  }
   expect(response.ok,path).toBe(true);
-  return response.json();
+  return data;
  };
  const rpc=(name:string,args:Record<string,unknown>,token=owner)=>post('/rest/v1/rpc/'+name,args,token);
  type Table={tournament_table_id:string;table_session_id:string;table_number:number;max_seats:number;control_epoch:number;
@@ -2354,6 +2359,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   };
   phase='tracker-hand-start';report();
   const actor=(await read('/auth/v1/user')).id;
+  expect(await rpc('floor_start_tournament_clock',{p_tournament_id:tour})).toMatchObject({ok:true});
   const started=await rpc('start_tracker_hand_v3',{p_tournament_id:tour,p_tournament_table_id:target.tournament_table_id,
    p_table_session_id:target.table_session_id,p_control_epoch:target.control_epoch,p_hand_number:880014,
    p_hand_time:new Date().toISOString(),p_created_by:actor,p_button_seat:target.seats[0].seat_number});

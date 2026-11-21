@@ -1946,6 +1946,10 @@ ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled,allowed_club_ids=excluded
 INSERT INTO public.tournaments(id,club_id,name,status,live_status,start_time,buy_in,rake_amount,service_fee_amount,free_rake_enabled,free_rake_slots,free_rake_used)
 VALUES('a3000000-0000-4000-8000-000000000014','a2000000-0000-4000-8000-000000000001','Floor consolidation TEST',
  'registering','registering',now(),6000000,600000,0,false,0,0);
+INSERT INTO public.tournament_levels(id,tournament_id,level_number,small_blind,big_blind,ante,duration_minutes,is_break)
+VALUES('ac730001-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000014',1,100,200,0,20,false);
+UPDATE public.tournaments SET current_level=1,current_level_id='ac730001-0000-4000-8000-000000000001'
+WHERE id='a3000000-0000-4000-8000-000000000014';
 WITH slots AS (
  SELECT n table_number FROM generate_series(1,100)n
  WHERE NOT EXISTS(SELECT 1 FROM public.game_tables g WHERE g.club_id='a2000000-0000-4000-8000-000000000001' AND g.table_number=n)
