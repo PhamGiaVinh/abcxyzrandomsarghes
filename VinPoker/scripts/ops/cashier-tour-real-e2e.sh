@@ -1627,7 +1627,7 @@ const prior=read('supabase/migrations/20270128000047_floor_closed_session_attend
 const restTrigger=prior.match(/^ALTER FUNCTION floor_private\.reconcile_closed_session_attendance_v1\(\)[\s\S]+?^EXECUTE FUNCTION floor_private\.reconcile_closed_session_attendance_v1\(\);/m);
 assert.ok(restBody&&restTrigger);
 const restPreflight="DO $$ BEGIN ASSERT to_regprocedure('floor_private.reconcile_closed_session_attendance_v1()') IS NULL; ASSERT NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='public.table_sessions'::regclass AND tgname='trg_reconcile_closed_session_attendance_v1'); END $$;";
-const restSetup=process.argv[3]==='prize-replay'?[restPreflight,restBody[0],restTrigger[0]]:[];
+const restSetup=[restPreflight,restBody[0],restTrigger[0]];
 process.stdout.write([slice.replace('BEGIN;','BEGIN;\n'+helper[0]),...restSetup,'COMMIT;',''].join('\n'));
 TOUR_FNB_CAPTURE_READER
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
@@ -2196,7 +2196,7 @@ SELECT ('ac730000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'a2000000-0000-4
 DO $$
 DECLARE linked integer;
 BEGIN
- UPDATE public.dealers d SET user_id=u.id
+ UPDATE public.dealers d SET user_id=u.id,employment_type='part_time',hourly_rate_vnd=60000
  FROM generate_series(1,4) n JOIN auth.users u ON u.email='cashier-latency-'||n||'@test.invalid'
  WHERE d.club_id='a2000000-0000-4000-8000-000000000001'
    AND d.full_name='HTTP latency TEST '||n AND d.user_id IS NULL;

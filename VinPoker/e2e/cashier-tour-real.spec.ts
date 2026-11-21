@@ -2317,6 +2317,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let consolidationTrackerContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let swingAndTrackerObserved=false;
  let sameTourFnbVerified=false;
+ let sameTourDealerPayVerified=false;
  let dealerBaggingDiagnostics:Record<string,unknown>|null=null;
  let dealerBaggingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let dealerBaggingReadback:{assignedRows:number;locked:boolean}|null=null;
@@ -2347,7 +2348,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,dealerBaggingDiagnostics,dealerTrackerTableScoped,floorAlertHandoffVerified,swingAndTrackerObserved,sameTourFnbVerified,staffedTables,trackerCountRows,issuedPhysicalChips,
+  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,dealerBaggingDiagnostics,dealerTrackerTableScoped,floorAlertHandoffVerified,swingAndTrackerObserved,sameTourFnbVerified,sameTourDealerPayVerified,staffedTables,trackerCountRows,issuedPhysicalChips,
   bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,finalPayoutDrawerDenialsVerified,finalPayoutDrawerRaceVerified,finalPayoutDrawerLockVerified,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Drawer source is verified in the isolated TEST DB. Production and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
@@ -2495,6 +2496,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(frozen.reduce((total,[,chips])=>total+chips,0)).toBe(540000);
   phase='dealer-checkin-and-assignment';report();
   const assignedDealers=new Map<string,string>();
+  const attendanceBySession=new Map<string,{dealerId:string;attendanceId:string}>();
   for(const [index,table] of before.entries()){
    const name=encodeURIComponent('HTTP latency TEST '+(index+1));
    const dealers=await read('/rest/v1/dealers?select=id,user_id&club_id=eq.'+club+'&full_name=eq.'+name);
@@ -2504,6 +2506,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
    const attendance=await rpc('operator_check_in_dealer_v1',{p_dealer_id:dealers[0].id,p_club_id:club,
     p_shift_id:'ad300000-0000-4000-8000-000000000001',p_request_id:crypto.randomUUID()});
    expect(attendance.outcome).toBe('checked_in');
+   attendanceBySession.set(table.table_session_id,{dealerId:dealers[0].id,attendanceId:attendance.attendance_id});
    expect(await rpc('assign_dealer_to_table',{p_attendance_id:attendance.attendance_id,p_table_id:table.game_table_id,p_club_id:club,
     p_idempotency_key:crypto.randomUUID(),p_swing_due_at:new Date(Date.now()+15*60000).toISOString()})).toMatchObject({outcome:'ok'});
   }
@@ -3349,6 +3352,42 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(shift.opening_cash).toBe(211200000);
   const closedDrawer=await rpc('cashier_close_shift_v1',{p_shift_id:shift.id,p_counted_cash:27800000});
   expect(closedDrawer).toMatchObject({ok:true,expected_cash:27800000,counted_cash:27800000,variance_cash:0});
+  phase='same-tour-dealer-payroll';report();
+  const dealerSession=attendanceBySession.get(source.table_session_id)!;
+  expect(dealerSession).toBeTruthy();
+  const dealerActor=staff.find(member=>member.userId===assignedDealers.get(source.table_session_id))!;
+  const payrollOperator=staff.find(member=>member.userId!==dealerActor.userId)!;
+  const attendancePath='/rest/v1/dealer_attendance?select=status,current_state,check_in_time,check_out_time&id=eq.'+dealerSession.attendanceId;
+  const breaksPath='/rest/v1/dealer_breaks?select=break_start,break_end,expected_duration_minutes,reason&attendance_id=eq.'+dealerSession.attendanceId;
+  const [onBreak]=await read(attendancePath);
+  expect(onBreak).toMatchObject({current_state:'on_break',check_out_time:null});
+  const startedBreak=await read(breaksPath);
+  expect(startedBreak).toEqual([expect.objectContaining({break_start:expect.any(String),break_end:null,reason:'floor_tournament_table_closed'})]);
+  expect(startedBreak[0].expected_duration_minutes).toBeGreaterThanOrEqual(15);
+  const checkout=()=>post('/functions/v1/checkout-dealer',{attendance_id:dealerSession.attendanceId},payrollOperator.token);
+  const [receipt]=(await checkout()).results;
+  expect(receipt).toMatchObject({success:true,attendance_id:dealerSession.attendanceId,check_out_time:expect.any(String)});
+  const [retry]=(await checkout()).results;
+  expect(retry).toMatchObject({success:true,idempotent:true,check_out_time:receipt.check_out_time});
+  expect(await read(attendancePath)).toEqual([expect.objectContaining({current_state:'checked_out',check_out_time:receipt.check_out_time})]);
+  expect(await read(breaksPath)).toEqual([expect.objectContaining({break_end:expect.any(String)})]);
+  const balance=()=>rpc('get_my_pt_wage',{p_dealer_id:dealerSession.dealerId},dealerActor.token);
+  const accrued=await balance();
+  expect(accrued).toMatchObject({hourly_rate_vnd:60000,current_shift_open:false,live_accrual_active:false});
+  expect(accrued.balance_vnd).toBeGreaterThan(0);
+  const statement=await rpc('finalize_part_time_payroll_statement',{p_request_id:crypto.randomUUID(),p_club_id:club,p_dealer_id:dealerSession.dealerId,p_reason:'Isolated multi-flight TEST'});
+  expect(statement).toMatchObject({state:'finalized',net_amount_vnd:accrued.balance_vnd});
+  const today=financeBusinessToday();
+  const tomorrow=new Date(Date.parse(today+'T00:00:00Z')+86400000).toISOString().slice(0,10);
+  const readWages=async()=>parseFinanceCore(await rpc('get_club_finance_summary_v2',{p_from_date:today,p_to_date:tomorrow,p_club_id:club})).cost.ptWagePaid;
+  const beforePay=await readWages();
+  const payArgs={p_statement_id:statement.statement_id,p_payment_method:'cash',p_idempotency_key:crypto.randomUUID(),p_note:'Isolated multi-flight TEST'};
+  const payment=await rpc('pay_finalized_part_time_payroll_statement',payArgs,payrollOperator.token);
+  expect(payment.amount_vnd).toBe(accrued.balance_vnd);
+  expect(await rpc('pay_finalized_part_time_payroll_statement',payArgs,payrollOperator.token)).toMatchObject({idempotent:true,payment_id:payment.payment_id});
+  expect(await balance()).toMatchObject({balance_vnd:0,live_accrual_active:false});
+  expect(await readWages()-beforePay).toBe(accrued.balance_vnd);
+  sameTourDealerPayVerified=true;
   phase='passed';
  }finally{report();await Promise.all([dealerBaggingContext?.close(),consolidationObserverContext?.close(),consolidationTrackerContext?.close(),mobileContext.close()]);}
 });
