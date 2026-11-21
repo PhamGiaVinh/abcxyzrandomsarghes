@@ -2304,12 +2304,13 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalTrackerTables=0,finalTrackerChips=0,finalShowdowns=0,finalSurvivors=0;
  let finalClosedTables=0,finalDealerAssignmentsReleased=0,finalWinnerChips=0;
  let finalLastTableClosed=false;
+ let secondFlightSeatingReview:string|null=null;
   let finalSelectedBags=0;
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  bankReturned,secondFlightBags,secondFlightSeatingReview,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns and last-table closure from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -2576,8 +2577,13 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
    expect(Number(registration.total_pay)).toBe(6600000);
    const registrationArgs={actor_id:player.userId,club_id:club,tournament_id:flightB,registration_id:registration.registration_id,
     amount:6600000,request_id:crypto.randomUUID()};
-   expect(await rpc('resolve_cashier_cash_buyin_intent_v1',{p_intent:registrationArgs,p_action:'record'},player.token))
-    .toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});
+   const payment=await rpc('resolve_cashier_cash_buyin_intent_v1',{p_intent:registrationArgs,p_action:'record'},player.token);
+   if(payment.result?.seating_state==='needs_review'){
+    const [saved]=await read('/rest/v1/tournament_registrations?select=cashier_seating_error&id=eq.'+registration.registration_id);
+    const reason=saved?.cashier_seating_error;
+    secondFlightSeatingReview=typeof reason==='string'&&/^[a-z][a-z0-9_]{0,79}$/i.test(reason)?reason:'unknown';
+   }
+   expect(payment).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});
   }
   const [secondTable]=await rpc(floorRosterRpc,{p_tournament_id:flightB}) as Table[];
   expect(secondTable.seats).toHaveLength(4);
