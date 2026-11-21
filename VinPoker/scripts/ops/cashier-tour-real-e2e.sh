@@ -1700,6 +1700,9 @@ CHIP_ISSUANCE_CAPTURED_ACL
       for migration in \
         20270128000016_chip_color_up_serialized_integrity_v1.sql \
         20270128000069_chip_issuance_exact_intent_v1.sql \
+        20270128000127_multiday_canonical_final_seating_v1.sql \
+        20270128000128_multiday_final_participation_name_v1.sql \
+        20270128000129_multiday_final_playable_stack_v1.sql \
         20270128000130_multiday_final_roster_read_v1.sql \
         20270128000131_multiday_initial_draw_plan_v1.sql \
         20270128000132_multiday_initial_draw_apply_v1.sql \
