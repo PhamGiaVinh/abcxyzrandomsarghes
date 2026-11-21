@@ -3327,9 +3327,9 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   const before=await roster();expect(before).toHaveLength(1);expect(before[0].seats).toHaveLength(3);expect(before[0].seats.reduce((n,s)=>n+s.chip_count,0)).toBe(60000);
   phase='same-table-guest-order-finance';report();
   const day=financeBusinessToday();
-  const readFinance=async()=>{
-   const summary=parseFinanceCore(await rpc('get_club_finance_summary_v2',{p_from_date:day,p_to_date:day,p_club_id:club}));
-   assertFinanceCalendarScope(summary.data,{from:day,to:day,clubId:club});
+  const readFinance=async(from=day,to=from)=>{
+   const summary=parseFinanceCore(await rpc('get_club_finance_summary_v2',{p_from_date:from,p_to_date:to,p_club_id:club}));
+   assertFinanceCalendarScope(summary.data,{from,to,clubId:club});
    return summary;
   };
   const financeBefore=await readFinance();
@@ -3739,7 +3739,10 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    expect((await rpc('finalize_part_time_payroll_statement',finalizeIntent)).statement_id).toBe(statement.statement_id);
    dealerPay.fixedStatement=true;
    const payrollIntent={p_statement_id:statement.statement_id,p_payment_method:'cash',p_idempotency_key:crypto.randomUUID(),p_note:'Isolated TEST cash'};
-   const financeBeforePay=await readFinance();
+   // Freeze a range that includes both sides of a local midnight during payment.
+   const payrollDay=financeBusinessToday();
+   const nextPayrollDay=new Date(Date.parse(payrollDay+'T00:00:00Z')+86400000).toISOString().slice(0,10);
+   const financeBeforePay=await readFinance(payrollDay,nextPayrollDay);
    const payment=await rpc('pay_finalized_part_time_payroll_statement',payrollIntent,checkoutHeaders);
    expect(payment.amount_vnd).toBe(accrued.balance_vnd);
    const payrollRetry=await rpc('pay_finalized_part_time_payroll_statement',payrollIntent,checkoutHeaders);
@@ -3751,7 +3754,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
     expect.objectContaining({amount_vnd:accrued.balance_vnd,payment_method:'cash'}),
    ]);
    dealerPay.selfBalanceCleared=true;
-   const financeAfterPay=await readFinance();
+   const financeAfterPay=await readFinance(payrollDay,nextPayrollDay);
    expect(financeAfterPay.cost.ptWagePaid-financeBeforePay.cost.ptWagePaid).toBe(accrued.balance_vnd);
    dealerPay.financeMatched=true;
    const dealerContext=await browser.newContext({
