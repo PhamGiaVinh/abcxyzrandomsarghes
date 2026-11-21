@@ -2595,9 +2595,17 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(await rpc('heartbeat_lock',{p_hand_id:secondHand.id,p_user_id:actor})).toMatchObject({status:'success'});
   const secondPayload={players:secondPlayers.map((player:{starting_stack:number})=>({...player,ending_stack:player.starting_stack,
    is_eliminated:false,side_pots:[],hole_cards:[]})),actions:[],community_cards:[],side_pots:[],hand_time:secondHand.hand_time,pot_size:0};
-  expect(await rpc('record_tracker_manual_hand_v1',{p_intent:{actor_id:actor,request_id:crypto.randomUUID(),tournament_id:flightB,
+  const secondFinishArgs={p_intent:{actor_id:actor,request_id:crypto.randomUUID(),tournament_id:flightB,
    tournament_table_id:secondTable.tournament_table_id,hand_id:secondHand.id,table_session_id:secondTable.table_session_id,
-   control_epoch:secondTable.control_epoch,source_revision:secondHand.source_revision,payload:secondPayload}})).toMatchObject({ok:true});
+   control_epoch:secondTable.control_epoch,source_revision:secondHand.source_revision,payload:secondPayload}};
+  let secondFinish=await rpc('record_tracker_manual_hand_v1',secondFinishArgs);
+  for(const delay of [100,200,400]){
+   if(secondFinish.error!=='manual_finish_busy')break;
+   await new Promise(resolve=>setTimeout(resolve,delay));
+   secondFinish=await rpc('record_tracker_manual_hand_v1',secondFinishArgs);
+  }
+  expect(secondFinish).toMatchObject({ok:true,hand_id:secondHand.id});
+  expect(await rpc('record_tracker_manual_hand_v1',secondFinishArgs)).toEqual(secondFinish);
   phase='second-flight-bagging';report();
   expect(await rpc('multi_day_end_flight_v1',{p_flight_tournament_id:flightB,p_day_number:1,p_request_id:crypto.randomUUID()})).toMatchObject({ok:true});
   const secondBags=await rpc('multi_day_bagging_state_v1',{p_flight_tournament_id:flightB});
