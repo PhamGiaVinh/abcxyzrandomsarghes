@@ -96,6 +96,23 @@ const waitState=async(application,kind)=>{for(let i=0;i<40;i++){if(sql(`SELECT E
  assert.equal(work(tour),0);assert.equal(barrier(tour),1);assert.equal(eligible(tour),false,'Busy parent keeps the existing retry');
  sql(`UPDATE tracker_analytics_v1.jobs SET available_at=clock_timestamp() WHERE kind='visibility' AND entity_id='${tour}';`);await drain();
 }
+// Closing a still-public tour must leave its committed hand fingerprints current.
+{
+ const tour=ids(7),hand=handId(7,1);tours.push(tour);
+ sql(`INSERT INTO public.tournaments(id,status) VALUES('${tour}','live');
+ INSERT INTO public.tournament_hands(id,tournament_id,status) VALUES('${hand}','${tour}','completed');
+ INSERT INTO public.hand_players(hand_id,tournament_id,player_id,seat_number,starting_stack)
+ VALUES('${hand}','${tour}','30000000-0000-4000-8000-000000000001',1,1000);`);
+ await drain();
+ const matches=()=>sql(`SELECT count(*)::text||':'||count(*) FILTER (
+  WHERE source_fingerprint=tracker_analytics_v1.hand_fingerprint('${hand}'))::text
+  FROM tracker_analytics_v1.hand_contributions WHERE hand_id='${hand}';`);
+ assert.equal(matches(),'1:1','Live hand must start with a current fingerprint');
+ sql(`UPDATE public.tournaments SET status='completed' WHERE id='${tour}';`);
+ await drain();
+ assert.equal(matches(),'1:1','Closing a public tour must leave the hand fingerprint current');
+}
+
 for(const tour of tours)sql(`DELETE FROM public.tournaments WHERE id='${tour}';`);await drain();assert.deepEqual(totals(),beforeTotals,'Publish/retire must conserve every original player counter and winnings');
 assert.deepEqual(metadata(),beforeMeta);
 const keys=['visibilityRestorePublisherMatches','visibilityWakePublisherMatches','visibilityWakePrivate'];
