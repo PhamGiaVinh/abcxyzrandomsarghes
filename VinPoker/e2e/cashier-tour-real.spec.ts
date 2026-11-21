@@ -2294,11 +2294,13 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let lockedChips:number|null=null;
  let staffedTables=0;
  let trackerCountRows=0;
+ let issuedPhysicalChips=0;
+ let bankReturned=false;
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
-  limits:'One isolated multi-day flight with 27 paid registrations, deferred transfers after a zero-pot hand, and the Chip Ops bag lock. Final day, physical bank movements and load qualification are outside this run.'},null,2));
+  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,bankReturned,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  limits:'One isolated multi-day flight with 27 paid entries, deferred moves, browser bag lock and receipt-checked chip bank issue/return over real HTTP. Final Day and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -2335,6 +2337,49 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(flights).toHaveLength(2);
   tour=flights[0].id;
   expect(await rpc('multi_day_set_qualification_rules_v2',{p_event_id:event.event_id,p_policy:'SELECT_LARGEST',p_min_cash_x:1,p_day2_percent:85})).toMatchObject({ok:true});
+  phase='physical-chip-bank-setup';report();
+  const setupArgs={p_tournament_id:tour,p_expected_actor:actor};
+  const set=await rpc('chip_ops_create_and_bind_set_v1',{...setupArgs,p_name:'Consolidation chip set TEST',p_request_id:crypto.randomUUID()});
+  expect(set).toMatchObject({outcome:'created_bound'});
+  const lines:{denomination_id:string;count:number}[]=[];
+  for(const [index,value,count] of [[0,100,20],[1,500,36]]){
+   const result=await rpc('chip_ops_apply_setup_metadata_v1',{...setupArgs,p_request_id:crypto.randomUUID(),
+    p_payload:{operation:'add',chip_set_id:set.chip_set_id,value,color:null,label:'TEST '+value,display_order:index}});
+   expect(result).toMatchObject({outcome:'applied'});
+   lines.push({denomination_id:result.result.denomination_id,count});
+  }
+  const savedTemplate=await rpc('chip_ops_save_stack_template_v2',{...setupArgs,p_chip_set_id:set.chip_set_id,p_name:'20K TEST',
+   p_stack_value:20000,p_lines:lines.sort((a,b)=>a.denomination_id.localeCompare(b.denomination_id)),p_request_id:crypto.randomUUID()});
+  expect(savedTemplate).toMatchObject({outcome:'saved'});
+  const template=savedTemplate.result.stack_template_id;
+  const bank=()=>rpc('get_chip_bank',{p_club_id:club});
+  type Denom={denomination_id:string;value:number;on_hand_count:number;version:number};
+  const bankRows=(state:{denominations:Denom[]})=>state.denominations.map(row=>[row.denomination_id,row.on_hand_count] as const).sort();
+  const configured=await bank();
+  for(const denom of configured.denominations as Denom[]){
+   const args={p_club_id:club,p_denomination_id:denom.denomination_id,p_direction:'thu',p_count:2000,
+    p_tournament_id:tour,p_old_version:denom.version,p_idempotency_key:crypto.randomUUID(),p_expected_actor:actor};
+   const intake=await rpc('chip_ops_bank_adjust_v2',args);
+   expect(intake).toMatchObject({status:'ok',outcome:'applied'});
+   expect(await rpc('chip_ops_bank_adjust_v2',args)).toEqual({...intake,idempotent:true});
+  }
+  expect(await rpc('chip_ops_set_bank_coupling',{p_club_id:club,p_enabled:true})).toMatchObject({coupling_enabled:true});
+  const stocked=await bank();
+  const issuance=()=>rpc('get_chip_issuance_state_v1',{p_stack_template_id:template,p_expected_actor:actor});
+  const setIssued=(count:number,revision:number)=>rpc('chip_ops_set_issuance_v2',{p_stack_template_id:template,p_issued_count:count,
+   p_expected_revision:revision,p_request_id:crypto.randomUUID(),p_expected_actor:actor});
+  const initialIssuance=await issuance();
+  expect(initialIssuance.issued_count).toBe(0);
+  expect(await setIssued(27,initialIssuance.revision)).toMatchObject({status:'ok',issued_count:27,coupled:true});
+  const issuedBank=await bank();
+  const physicallyIssued=issuedBank.denominations as Denom[];
+  for(const line of lines){
+   const before=stocked.denominations.find((row:Denom)=>row.denomination_id===line.denomination_id) as Denom;
+   const after=physicallyIssued.find(row=>row.denomination_id===line.denomination_id)!;
+   expect(before.on_hand_count-after.on_hand_count).toBe(27*line.count);
+   issuedPhysicalChips+=(before.on_hand_count-after.on_hand_count)*before.value;
+  }
+  expect(issuedPhysicalChips).toBe(540000);
   for(let index=1;index<=4;index++){
    const result=await rpc('floor_open_tournament_table_v3',{p_tournament_id:tour,
     p_game_table_id:'ac730000-0000-4000-8000-'+String(index).padStart(12,'0'),p_control_mode:index===2?'tracker':'manual',p_request_id:crypto.randomUUID()});
@@ -2500,6 +2545,15 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(lockedChips).toBe(540000);
   await phone.goto(chipRoute);
   await expect(phone.getByRole('region',{name:'Flight bagging'}).getByText(/Day 1 · Locked/)).toBeVisible();
+  phase='physical-chip-return';report();
+  expect(bankRows(await bank())).toEqual(bankRows(issuedBank));
+  const outstanding=await issuance();
+  expect(outstanding.issued_count).toBe(27);
+  expect(await setIssued(0,outstanding.revision)).toMatchObject({status:'ok',issued_count:0,coupled:true});
+  expect(bankRows(await bank())).toEqual(bankRows(stocked));
+  const verifiedBags=await baggingState();
+  expect(verifiedBags).toEqual(locked);
+  bankReturned=true;
   phase='passed';
  }finally{report();await mobileContext.close();}
 });

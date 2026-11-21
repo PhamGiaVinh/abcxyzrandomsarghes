@@ -1686,6 +1686,18 @@ AUDIENCE_REALTIME_RECEIPT
       # Exact source for the retained multi-day creator's initial child statuses.
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
         <"$repo_root/supabase/migrations/20270128000208_main_event_child_live_status_v1.sql"
+      # The retained snapshot predates these receipt-checked physical chip writers.
+      for migration in \
+        20270128000011_chip_ops_bank_adjust_integrity_v1.sql \
+        20270128000016_chip_color_up_serialized_integrity_v1.sql \
+        20270128000069_chip_issuance_exact_intent_v1.sql \
+        20270128000171_chip_setup_create_bind_receipts_v1.sql \
+        20270128000176_chip_template_save_receipts_v1.sql \
+        20270128000177_chip_setup_metadata_receipts_v1.sql \
+        20270128000223_chip_bank_adjust_receipt_v2.sql; do
+        docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+          <"$repo_root/supabase/migrations/$migration"
+      done
     fi
     # The fixed marker is set only inside this already-owned ephemeral stack.
     { printf "COMMENT ON DATABASE postgres IS 'vinpoker-operational-schema-fence-disposable';\nSET vinpoker.isolated_schema_fence='cashier-current-schema-v1';\n";
@@ -2003,6 +2015,7 @@ if(scope==='floor-consolidation'){
  assert.equal(floor.sha,sha);assert.equal(floor.phase,'passed');assert.equal(floor.qualification,false);
  assert.ok(floor.deferredCount>0);assert.equal(floor.handFinished,true);assert.deepEqual(floor.afterCounts,[9,9,9]);
  assert.equal(floor.sealedBags,27);assert.equal(floor.lockedChips,540000);
+ assert.equal(floor.issuedPhysicalChips,540000);assert.equal(floor.bankReturned,true);
 }
 if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});assert.deepEqual(prize.dealerCheckout,{committed:true,retryPreserved:true,breakEnded:true,swingUpdated:true});assert.deepEqual(prize.dealerPay,{accrualMatches:true,fixedStatement:true,paidOnce:true,selfBalanceCleared:true,financeMatched:true,mobileReceiptVisible:true});}
 assert.equal(audience.viewers,Number(count));
