@@ -1748,6 +1748,30 @@ assert.equal(sql.split(oldHash).length,2);
 writeFileSync(destination,sql.replace(oldHash,paidHash));
 OFFICIAL_CLOSE_FIXTURE
         fi
+        if [[ "$migration" == 20270128000147_* ]]; then
+          # The isolated prize-close bootstrap already installed the same route.
+          # Install the remaining functions only after verifying that route.
+          migration_path="$test_root/multiday-payment-on-existing-route-fixture.sql"
+          node --input-type=module - "$repo_root/supabase/migrations/$migration" "$migration_path" <<'MULTIDAY_PAYMENT_FIXTURE'
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync, writeFileSync } from 'node:fs';
+const [source,destination]=process.argv.slice(2);
+const sql=readFileSync(source,'utf8').replace(/\r\n/g,'\n');
+assert.equal(createHash('sha256').update(sql).digest('hex'),'5e1768faab611c8688129ee4645a083ec85eb337fe5221183f1d8b402a97be98');
+const route=/DO \$\$\nDECLARE target regprocedure:='public\.get_tournament_payout_recipients\(uuid\)'::regprocedure;[\s\S]*?END \$\$;/g;
+assert.equal([...sql.matchAll(route)].length,1);
+writeFileSync(destination,sql.replace(route,()=>`DO $$ BEGIN
+ IF current_user<>'postgres' OR NOT EXISTS(
+  SELECT 1 FROM pg_proc WHERE oid='public.get_tournament_payout_recipients(uuid)'::regprocedure
+   AND md5(replace(pg_get_functiondef(oid),chr(13),''))='13e7c254ebf5eabe622246759d772c0c'
+   AND proowner='postgres'::regrole AND prosecdef AND provolatile='s'
+   AND proconfig=ARRAY['search_path=""']::text[]
+   AND proacl::text='{postgres=X/postgres,authenticated=X/postgres}'
+ ) THEN RAISE EXCEPTION 'multiday_payment_fixture_existing_route_drift';END IF;
+END $$;`));
+MULTIDAY_PAYMENT_FIXTURE
+        fi
         docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$migration_path"
       done
     fi
