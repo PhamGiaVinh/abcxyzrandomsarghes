@@ -83,7 +83,8 @@ export function OpsModuleGate({
         "/ops/fnb/kitchen": "/fnb/kitchen",
         "/ops/fnb/admin": "/fnb/admin",
       } as Record<string, string>)[location.pathname] ?? module.operationalRoute
-    : location.pathname === module.route ? module.operationalRoute : undefined;
+    : location.pathname === module.route && !(module.id === "chip-ops" && params.get("t"))
+      ? module.operationalRoute : undefined;
   const content = module.id === "cashier" && OPS_TOUR_CASHIER_ENABLED && location.pathname === module.route && clubId
     ? <Navigate to={`/ops/cashier/tour?club=${encodeURIComponent(clubId)}`} replace />
     : operationalRoute

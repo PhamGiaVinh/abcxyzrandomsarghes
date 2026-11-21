@@ -42,6 +42,15 @@ describe("operational module document entry", () => {
     expect(replace).toHaveBeenCalledWith("https://vinpoker.vercel.app" + target);
     expect(screen.queryByText("child workspace")).not.toBeInTheDocument();
   });
+  it.each([true, false])("opens flight bagging only with verified chip scope (%s)", allowed => {
+    h.clubs = allowed ? ["club-a"] : ["club-b"];
+    render(<MemoryRouter initialEntries={["/ops/chip-ops?club=club-a&t=flight-a"]}>
+      <OpsModuleGate capability="chip-ops"><div>flight bagging workspace</div></OpsModuleGate>
+    </MemoryRouter>);
+    expect(replace).not.toHaveBeenCalled();
+    expect(Boolean(screen.queryByText("flight bagging workspace"))).toBe(allowed);
+    if (!allowed) expect(screen.getByText(/không thuộc phạm vi quyền/)).toBeVisible();
+  });
   it.each([
     ["counter", "/fnb"], ["serve", "/fnb/serve"], ["kitchen", "/fnb/kitchen"], ["admin", "/fnb/admin"],
   ])("retains the F&B %s destination without granting its facet", (facet, target) => {
