@@ -2302,13 +2302,14 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalSeated=0;
  let finalClockStarted=false;
  let finalTrackerTables=0,finalTrackerChips=0,finalShowdowns=0,finalSurvivors=0;
+ let finalClosedTables=0,finalDealerAssignmentsReleased=0;
   let finalSelectedBags=0;
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
-  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
+  bankReturned,secondFlightBags,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns and final table consolidation from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});
@@ -2327,7 +2328,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(response.ok,path.split('?')[0]).toBe(true);
   return response.json();
  };
- type Table={tournament_table_id:string;table_session_id:string;game_table_id:string;table_number:number;max_seats:number;control_epoch:number;
+ type Table={tournament_table_id:string;table_session_id:string;game_table_id:string;table_number:number;max_seats:number;session_revision:number;control_epoch:number;
   control_mode:string;seats:{entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number}[]};
  const roster=async()=>(await rpc(floorRosterRpc,{p_tournament_id:tour})) as Table[];
  const identity=(tables:Table[])=>tables.flatMap(table=>table.seats.map(seat=>[seat.entry_id,seat.chip_count] as const))
@@ -2790,6 +2791,37 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   finalSurvivors=survivors.length;
   expect(finalSurvivors).toBe(3);
   expect(survivors.reduce((total,seat)=>total+seat.chip_count,0)).toBe(finalCarriedChips);
+  phase='final-day-consolidation';report();
+  const orderedTables=[...remaining].sort((a,b)=>a.table_number-b.table_number);
+  for(const source of orderedTables.slice(1).reverse()){
+   const current=await rpc(floorRosterRpc,{p_tournament_id:finalTour}) as Table[];
+   const table=current.find(row=>row.tournament_table_id===source.tournament_table_id);
+   if(!table)throw new Error('Final Day source table missing before consolidation');
+   const args={p_tournament_table_id:table.tournament_table_id,p_expected_revision:table.session_revision,p_draw_mode:'fill_lowest_table'};
+   const plan=await rpc('floor_plan_break_table_v1',args);
+   expect(plan.complete).toBe(true);
+   const intent={...args,p_request_id:crypto.randomUUID(),p_plan_hash:plan.plan_hash};
+   const receipt=await rpc('floor_break_table_v5',intent);
+   expect(receipt).toMatchObject({ok:true,closed:true});
+   expect(await rpc('floor_break_table_v5',intent)).toEqual(receipt);
+   finalClosedTables++;
+  }
+  const lastTables=await rpc(floorRosterRpc,{p_tournament_id:finalTour}) as Table[];
+  expect(lastTables.map(table=>table.tournament_table_id)).toEqual([orderedTables[0].tournament_table_id]);
+  expect(identity(lastTables)).toEqual(identity(remaining));
+  const sessionIds=orderedTables.map(table=>table.table_session_id);
+  const assignments=await read('/rest/v1/dealer_assignments?select=table_session_id,status,released_at&table_session_id=in.('+sessionIds.join(',')+')') as {
+   table_session_id:string;status:string;released_at:string|null;
+  }[];
+  for(const source of orderedTables.slice(1)){
+   const releases=assignments.filter(row=>row.table_session_id===source.table_session_id);
+   expect(releases).toHaveLength(1);
+   expect(releases[0].released_at).not.toBeNull();
+   expect(releases[0].status).not.toBe('assigned');
+  }
+  expect(assignments.filter(row=>row.released_at===null&&row.status==='assigned').map(row=>row.table_session_id))
+   .toEqual([lastTables[0].table_session_id]);
+  finalDealerAssignmentsReleased=2;
   phase='passed';
  }finally{report();await mobileContext.close();}
 });
