@@ -1708,6 +1708,7 @@ CHIP_ISSUANCE_CAPTURED_ACL
         20270128000132_multiday_initial_draw_apply_v1.sql \
         20270128000133_multiday_initial_draw_cancel_v1.sql \
         20270128000134_multiday_initial_draw_tv_hold_v1.sql \
+        20270128000143_multiday_floor_roundtrip_v1.sql \
         20270128000171_chip_setup_create_bind_receipts_v1.sql \
         20270128000176_chip_template_save_receipts_v1.sql \
         20270128000177_chip_setup_metadata_receipts_v1.sql \
