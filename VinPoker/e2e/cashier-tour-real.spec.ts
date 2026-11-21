@@ -2955,10 +2955,10 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   finalOfficialRanks=ranked.length;
   finalCloseReconcileDelta=official.reconcile_delta;
   phase='final-day-payout-funding-preview';report();
-  const preview=await rpc('multi_day_payout_preview_v1',{p_event_id:event.event_id});
-  expect(preview).toMatchObject({ok:true,eventId:event.event_id,finalTournamentId:finalTour,
+  const payoutPreview=await rpc('multi_day_payout_preview_v1',{p_event_id:event.event_id});
+  expect(payoutPreview).toMatchObject({ok:true,eventId:event.event_id,finalTournamentId:finalTour,
    directPoolVnd:31*6000000,feesVnd:31*600000,transferPoolVnd:0,recordedOverlayVnd:0,paidPlayerVnd:0});
-  const funding=preview.sourceSnapshot.registrations as {
+  const funding=payoutPreview.sourceSnapshot.registrations as {
    registrationId:string;flightId:string;poolVnd:number;feeVnd:number;totalVnd:number;ledgerNetVnd:number;
   }[];
   expect(funding).toHaveLength(31);
@@ -2966,9 +2966,9 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(funding.filter(row=>row.flightId===tour)).toHaveLength(27);
   expect(funding.filter(row=>row.flightId===flightB)).toHaveLength(4);
   for(const row of funding)expect(row).toMatchObject({poolVnd:6000000,feeVnd:600000,totalVnd:6600000,ledgerNetVnd:6600000});
-  expect(preview.sourceSnapshot.payments).toEqual([]);
-  finalPayoutFunding={registrations:funding.length,poolVnd:preview.directPoolVnd,feesVnd:preview.feesVnd,
-   unpaidVnd:preview.unpaidObligationVnd,shortfallVnd:preview.requiredShortfallVnd};
+  expect(payoutPreview.sourceSnapshot.payments).toEqual([]);
+  finalPayoutFunding={registrations:funding.length,poolVnd:payoutPreview.directPoolVnd,feesVnd:payoutPreview.feesVnd,
+   unpaidVnd:payoutPreview.unpaidObligationVnd,shortfallVnd:payoutPreview.requiredShortfallVnd};
   phase='passed';
  }finally{report();await mobileContext.close();}
 });
