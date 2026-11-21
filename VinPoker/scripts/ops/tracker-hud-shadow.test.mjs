@@ -19,7 +19,7 @@ test('retains excluded tour contributions while excluding them from lifetime pub
 test('detects per-hand corruption even when the aggregate is corrupted identically',()=>{const rows=structuredClone(records());rows[1].projected[0].numerators[0]++;
  rows[2].value.numerators[0]++;rows[4].value.numerators[0]++;const r=run(rows);assert.equal(r.passed,false);assert.ok(r.examples.some(e=>e.code==='hand_counters'));assert.ok(r.examples.every(e=>/^[a-f0-9]{64}$/.test(e.entityHash)));});
 test('detects missing and orphan contributions plus stale source proof',()=>{const rows=structuredClone(records());rows[1].projected[0].source_fingerprint='old';rows[1].projected.push({...rows[1].projected[0],player_id:'orphan'});
- const r=run(rows);assert.equal(r.passed,false);assert.ok(r.examples.some(e=>e.code==='hand_source_identity'));assert.ok(r.examples.some(e=>e.code==='hand_player_coverage'));});
+ const r=run(rows);assert.equal(r.passed,false);assert.deepEqual(r.examples.find(e=>e.code==='hand_source_identity')?.mismatchedFields,['source_fingerprint']);assert.ok(r.examples.some(e=>e.code==='hand_player_coverage'));});
 test('detects missing aggregate rows',()=>{const rows=records().filter(row=>!(row.kind==='player'&&row.value.player_id==='a'));assert.ok(run(rows).examples.some(e=>e.code==='missing_player_total'));});
 test('detects stale replay metadata and settlement evidence despite matching counters',()=>{
  const rows=records();rows[1].projected[0].hand_number=99;

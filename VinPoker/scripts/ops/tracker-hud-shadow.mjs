@@ -36,7 +36,7 @@ export function createShadow(classifier){
  const report={kind:'READ_ONLY_RAW_SOURCE_SHADOW_NOT_LOAD_TEST',complete:false,passed:false,snapshot:null,version:classifier.PUBLIC_HUD_PROJECTION_VERSION,classifierSha256:classifier.shadowClassifierSha256,sqlSha256:createHash('sha256').update(shadowSql).digest('hex'),
   sourceHands:0,contributions:0,results:0,playerTotals:0,tournamentTotals:0,mismatches:0,examples:[]};
  let header=false,end=false;
- function mismatch(code,key){report.mismatches++;if(report.examples.length<20)report.examples.push({code,entityHash:createHash('sha256').update(String(key)).digest('hex')});}
+ function mismatch(code,key,details={}){report.mismatches++;if(report.examples.length<20)report.examples.push({code,entityHash:createHash('sha256').update(String(key)).digest('hex'),...details});}
  function check(actual,expected,code,key){try{assert.deepEqual(actual,expected);}catch{mismatch(code,key);}}
  function total(map,key){if(!map.has(key))map.set(key,{...classifier.emptyPublicHudCounters(),winnings:0n,resultCount:0});return map.get(key);}
  function add(target,row){for(const field of fields)row[field].forEach((n,i)=>{target[field][i]+=n;});
@@ -66,8 +66,11 @@ export function createShadow(classifier){
     if(actual){check(fromStored(actual),counters,'hand_counters',row.id);
      check({played_at:actual.played_at,hand_number:actual.hand_number,table_id:actual.table_id,session_id:actual.session_id},row.metadata,'hand_history_metadata',row.id);
      check(actual.settlement_evidence,row.evidence,'hand_settlement_evidence',row.id);
-     check([actual.tournament_id,String(actual.source_revision),actual.source_fingerprint],
-      [row.tournamentId,String(row.sourceRevision),row.fingerprint],'hand_source_identity',row.id);}
+     const mismatchedFields=[];
+     if(actual.tournament_id!==row.tournamentId)mismatchedFields.push('tournament_id');
+     if(String(actual.source_revision)!==String(row.sourceRevision))mismatchedFields.push('source_revision');
+     if(actual.source_fingerprint!==row.fingerprint)mismatchedFields.push('source_fingerprint');
+     if(mismatchedFields.length)mismatch('hand_source_identity',row.id,{mismatchedFields});}
     const scoped=total(tours,JSON.stringify([row.tournamentId,playerId]));add(scoped,counters);
     if(row.publicEligible)add(total(players,playerId),counters);
    }
