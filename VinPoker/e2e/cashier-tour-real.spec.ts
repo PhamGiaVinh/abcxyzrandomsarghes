@@ -3265,6 +3265,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  const payoutUi={loaded:false,dialogVerified:false,cancelPreservedUnpaid:false,confirmed:false,paidVisible:false};
  const replayUi={desktop:false,mobile:false};
  const tvUi={liveVisible:false,finishedVisible:false};
+ const tvDiagnostics:{responses:Record<string,number>;screen:string|null}={responses:{},screen:null};
  const tourCloseStatus:{before:string|null;after:string|null}={before:null,after:null};
  const tableCloseUi={floorCleared:false,swingCleared:false,swingAlertCleared:false};
  const dealerClose={checkedIn:false,assignmentVisible:false,assignmentReleased:false,breakRecorded:false,breakVisible:false};
@@ -3281,7 +3282,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
  let clockContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let guestContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  const timings:{operation:string;ms:number}[]=[];
- const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,tourCloseStatus,dealerClose,dealerCheckout,dealerPay,clockUi,tvUi,fnb,fnbTour,prizeDrawerVerified,prizeDrawerCloseVariance,prizeDrawerDenials,bankPrizeKeptDrawer,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with clock, replay, F&B, Cashier payment, Floor close, Dealer Swing, checkout and one TEST part-time statement. Excludes automatic return after rest, refunds and load. Drawer linkage is tested only in the prize-replay scope.'},null,2));
+ const report=()=>writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/,'-prize-close-http.json'),JSON.stringify({kind:'REAL_AUTH_FLOOR_CASHIER_PAID_PRIZE_CLOSE_HTTP',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,phase,failure,paidRows,prizeTotal,reconcileDelta,showdownHands,payoutUi,replayUi,tableCloseUi,tourCloseStatus,dealerClose,dealerCheckout,dealerPay,clockUi,tvUi,tvDiagnostics,fnb,fnbTour,prizeDrawerVerified,prizeDrawerCloseVariance,prizeDrawerDenials,bankPrizeKeptDrawer,timings,qualification:false,productionChanged:false,limits:'Fresh three-entry TEST tour with clock, replay, F&B, Cashier payment, Floor close, Dealer Swing, checkout and one TEST part-time statement. Excludes automatic return after rest, refunds and load. Drawer linkage is tested only in the prize-replay scope.'},null,2));
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
@@ -3452,8 +3453,20 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   expect((await rpc('floor_start_tournament_clock',{p_tournament_id:tour})).ok).toBe(true);
   let clock=await observeClock(true,'clock-start-to-visible',clockStarted);
   clockUi.started=true;
+  phase='same-tour-authenticated-tv';report();
   const tvPage=await page.context().newPage();
+  const tvReads=new Set([
+   '/auth/v1/user','/rest/v1/tournaments','/rest/v1/tournament_levels',
+   '/rest/v1/tournament_prizes','/rest/v1/rpc/get_tournament_clock',
+   '/rest/v1/rpc/get_tournament_participation_counts_v1',
+   '/rest/v1/rpc/get_tv_tournament_branding_v1','/rest/v1/rpc/get_public_tournament_redraw_v1',
+  ]);
+  tvPage.on('response',response=>{
+   const path=new URL(response.url()).pathname;
+   if(tvReads.has(path))tvDiagnostics.responses[path]=response.status();
+  });
   try {
+   await loginOwner(tvPage);
    await tvPage.goto('/tv/'+tour);
    const board=tvPage.getByRole('region',{name:'Bảng thông số giải đấu'});
    await expect(board.getByRole('heading',{name:'Canonical paid prize TEST',exact:true})).toBeVisible();
@@ -3461,6 +3474,12 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    await expect(board.getByText('Đang diễn ra',{exact:true})).toBeVisible();
    tvUi.liveVisible=true;
   } catch(error) {
+   const displayed=await tvPage.locator('body').innerText().catch(()=>'');
+   tvDiagnostics.screen=/Cần đăng nhập để hiển thị|Sign-in required/i.test(displayed)?'auth-required':
+    /Không tìm thấy giải|Tournament not found/i.test(displayed)?'not-found':
+    /Không tải được|Could not load/i.test(displayed)?'load-error':
+    /Đang tải|Loading/i.test(displayed)?'loading':'other';
+   report();
    await tvPage.close();
    throw error;
   }
