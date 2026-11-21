@@ -1790,7 +1790,16 @@ BEGIN
  OR length(definition)-length(replace(definition,anchor,''))<>length(anchor)
  THEN RAISE EXCEPTION 'consolidation_seating_log_dependency_drift'; END IF;
  EXECUTE replace(definition,anchor,anchor||$log$
-    RAISE LOG 'VINPOKER_CONSOLIDATION_ORIGINAL_SEATING_STATE=%', SQLSTATE;$log$);
+    DECLARE diagnostic_context text; diagnostic_frame text[];
+    BEGIN
+      GET STACKED DIAGNOSTICS diagnostic_context=PG_EXCEPTION_CONTEXT;
+      RAISE LOG 'VINPOKER_CONSOLIDATION_ORIGINAL_SEATING_STATE=%', SQLSTATE;
+      FOR diagnostic_frame IN
+        SELECT regexp_matches(diagnostic_context,'PL/pgSQL function ([a-zA-Z0-9_.]+)[(][^)]*[)] line ([0-9]+)','g')
+      LOOP
+        RAISE LOG 'VINPOKER_CONSOLIDATION_SEATING_FRAME=%:%', diagnostic_frame[1], diagnostic_frame[2];
+      END LOOP;
+    END;$log$);
 END $diagnostic$;
 DO $diagnostic$
 DECLARE target regprocedure:='public.cashier_record_cash_buyin_v1(uuid,bigint,uuid)'::regprocedure;
@@ -2121,7 +2130,7 @@ CONSOLIDATION_DRAWER_LOCK
       kill -TERM "$consolidation_lock_pid" 2>/dev/null || true
       wait "$consolidation_lock_pid" || true
     fi
-    (docker logs "$db_container" 2>&1 | grep -oE 'VINPOKER_CONSOLIDATION_(ORIGINAL|PAYMENT)_SEATING_STATE=[A-Z0-9]{5}' || true) |
+    (docker logs "$db_container" 2>&1 | grep -oE 'VINPOKER_CONSOLIDATION_((ORIGINAL|PAYMENT)_SEATING_STATE=[A-Z0-9]{5}|SEATING_FRAME=[a-zA-Z0-9_.]+:[0-9]+)' || true) |
       jq -Rn '[inputs]' >"$repo_root/output/operations-latency/consolidation-original-seating-sqlstate-http.json"
     if [[ "$consolidation_browser_status" != 0 ]]; then
       docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
