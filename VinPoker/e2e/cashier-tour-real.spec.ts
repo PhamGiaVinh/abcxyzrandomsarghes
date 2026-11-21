@@ -211,12 +211,29 @@ async function loginFixtureStaff(){
 
 async function selectDealerSwingClub(page:Page,name:string){
  const scope=page.getByRole('heading',{name:'Chọn CLB để vận hành Dealer Swing',exact:true}).locator('..');
- try{await expect(scope).toBeVisible();}catch(error){
-  if(process.env.LOCAL_OPERATIONS_LATENCY_REPORT)writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT.replace(/\.json$/,'-dealer-scope-failure-http.json'),JSON.stringify({kind:'ISOLATED_DEALER_SWING_SCOPE_FAILURE',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,test:test.info().title,path:new URL(page.url()).pathname,scopeReadFailures:scopeReadFailures.get(page)??[],scopeErrorVisible:await page.getByRole('alert').filter({hasText:/phạm vi CLB/}).isVisible(),qualification:false,limitations:'First-load failure retained without retry,role fallback,raw response bodies or credentials.'},null,2));
-  throw error;
- }
+ const scopeError=page.getByRole('alert').filter({hasText:/Không tải được phạm vi CLB/});
+ let retryStarted:number|null=null;
+ const report=(recovered:boolean)=>{
+  if(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT)return;
+  writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT.replace(/\.json$/,'-dealer-scope-failure-http.json'),JSON.stringify({
+   kind:'ISOLATED_DEALER_SWING_SCOPE_OBSERVATION',sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,test:test.info().title,
+   path:new URL(page.url()).pathname,scopeReadFailures:scopeReadFailures.get(page)??[],retried:retryStarted!==null,
+   recovered,qualification:false,limitations:'Only the visible retry may recover one HTTP 502; access errors still fail.',
+  },null,2));
+ };
+ try{
+  await expect(scope.or(scopeError)).toBeVisible();
+  if(await scopeError.isVisible()){
+   expect(scopeReadFailures.get(page)?.map(({status})=>status)).toEqual([502]);
+   retryStarted=performance.now();
+   await page.getByRole('button',{name:'Thử lại',exact:true}).click();
+   await expect(scope).toBeVisible();
+   report(true);
+  }
+ }catch(error){report(false);throw error;}
  await scope.getByRole('combobox').click();
  await page.getByRole('option',{name,exact:true}).click();
+ return retryStarted===null?null:performance.now()-retryStarted;
 }
 
 test('authenticated Cashier worklist HTTP latency on isolated fixture',async()=>{
@@ -3571,17 +3588,8 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
   const swing=await swingContext.newPage();
   await loginOwner(swing);
   await swing.goto('/dealer-swing');
-  const swingScope=swing.getByRole('heading',{name:'Chọn CLB để vận hành Dealer Swing',exact:true});
-  const swingScopeError=swing.getByRole('alert').filter({hasText:/Không tải được phạm vi CLB/});
-  await expect(swingScope.or(swingScopeError)).toBeVisible();
-  if(await swingScopeError.isVisible()){
-   expect(scopeReadFailures.get(swing)?.map(({status})=>status)).toEqual([502]);
-   const retryStarted=performance.now();
-   await swing.getByRole('button',{name:'Thử lại',exact:true}).click();
-   await expect(swingScope).toBeVisible();
-   timings.push({operation:'swing-scope-recovery-after-502',ms:performance.now()-retryStarted});
-  }
-  await selectDealerSwingClub(swing,'Cashier Edge TEST');
+  const swingRetryMs=await selectDealerSwingClub(swing,'Cashier Edge TEST');
+  if(swingRetryMs!==null)timings.push({operation:'swing-scope-recovery-after-502',ms:swingRetryMs});
   const swingCard=swing.locator('#table-card-'+opened.p_game_table_id);
   const swingAlert=swing.getByText('Canonical paid prize TEST • Thiếu dealer',{exact:true});
   await expect(swingCard).toBeVisible();
