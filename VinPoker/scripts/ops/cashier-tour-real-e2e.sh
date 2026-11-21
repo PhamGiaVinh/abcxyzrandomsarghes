@@ -1687,8 +1687,11 @@ AUDIENCE_REALTIME_RECEIPT
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
         <"$repo_root/supabase/migrations/20270128000208_main_event_child_live_status_v1.sql"
       # The retained snapshot predates these receipt-checked physical chip writers.
+      bank_preimage="$(docker exec "$db_container" psql -X -Atq -v ON_ERROR_STOP=1 -U postgres -d postgres \
+        -c "SELECT encode(extensions.digest(convert_to(prosrc,'UTF8'),'sha256'),'hex') FROM pg_proc
+          WHERE oid=to_regprocedure('public.chip_ops_bank_adjust(uuid,uuid,text,bigint,uuid,integer,text)');")"
+      [[ "$bank_preimage" == f25830296202a562c681a6318790c2fdb3203badd812e6e5882a7444e3a19934 ]]
       for migration in \
-        20270128000011_chip_ops_bank_adjust_integrity_v1.sql \
         20270128000016_chip_color_up_serialized_integrity_v1.sql \
         20270128000069_chip_issuance_exact_intent_v1.sql \
         20270128000171_chip_setup_create_bind_receipts_v1.sql \
