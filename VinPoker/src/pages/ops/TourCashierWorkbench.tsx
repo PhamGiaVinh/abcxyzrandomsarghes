@@ -713,6 +713,9 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
         </select>
       </label>
       <p className="mt-1 text-[#a9baae]">Thực đếm {formatReportedMoney(closedShift.counted_cash)} · Chênh lệch {formatReportedMoney(closedShift.variance_cash)}. Các số đã chốt không thay đổi.</p>
+      {closedShiftSummary?.ok && closedShiftSummary.shift_id === closedShift.id && closedShiftSummary.totals.prize_cash_out !== undefined && (
+        <p className="mt-1 text-[#a9baae]">Thưởng đã chi từ két: {formatMoney(closedShiftSummary.totals.prize_cash_out)}</p>
+      )}
       {closedShiftSummary?.ok && closedShiftSummary.shift_id === closedShift.id && <p className="mt-1 text-[#a9baae]">Điều chỉnh ghi bổ sung: {formatMoney(closedShiftSummary.totals.cash_adjustments)}. Không cộng vào doanh thu buy-in.</p>}
       <div className="mt-3 flex flex-wrap items-end gap-2">
         <label className="text-xs">Chiều điều chỉnh<select value={adjustDirection} onChange={(event) => { setAdjustDirection(event.target.value as "in" | "out"); adjustAttempt.current = null; }} className="mt-1 block min-h-11 rounded-lg border border-white/15 bg-[#08110c] px-2 text-white"><option value="in">Ghi tăng</option><option value="out">Ghi giảm</option></select></label>
