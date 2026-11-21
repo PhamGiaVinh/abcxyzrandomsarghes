@@ -2028,8 +2028,8 @@ if(scope==='floor-consolidation'){
  assert.ok(floor.deferredCount>0);assert.equal(floor.handFinished,true);assert.deepEqual(floor.afterCounts,[9,9,9]);
  assert.equal(floor.sealedBags,27);assert.equal(floor.lockedChips,540000);
  assert.equal(floor.issuedPhysicalChips,540000);assert.equal(floor.bankReturned,true);
- assert.equal(floor.secondFlightBags,4);assert.equal(floor.finalQualified,27);assert.equal(floor.finalCarriedChips,540000);
- assert.equal(floor.finalSeated,27);
+ assert.equal(floor.secondFlightBags,4);assert.equal(floor.finalSelectedBags,27);assert.equal(floor.finalQualified,23);
+ assert.equal(floor.finalCarriedChips,460000);assert.equal(floor.finalSeated,23);
 }
 if(scope==='prize-replay'){const prize=read('cashier-http-prize-close-http.json');assert.equal(prize.sha,sha);assert.equal(prize.phase,'passed');assert.deepEqual(prize.replayUi,{desktop:true,mobile:true});assert.deepEqual(prize.fnbTour,{desktop:true,mobile:true});assert.deepEqual(prize.dealerClose,{checkedIn:true,assignmentVisible:true,assignmentReleased:true,breakRecorded:true,breakVisible:true});assert.deepEqual(prize.dealerCheckout,{committed:true,retryPreserved:true,breakEnded:true,swingUpdated:true});assert.deepEqual(prize.dealerPay,{accrualMatches:true,fixedStatement:true,paidOnce:true,selfBalanceCleared:true,financeMatched:true,mobileReceiptVisible:true});}
 assert.equal(audience.viewers,Number(count));

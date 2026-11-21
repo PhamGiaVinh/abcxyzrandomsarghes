@@ -2300,11 +2300,12 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let finalQualified=0;
  let finalCarriedChips=0;
  let finalSeated=0;
+  let finalSelectedBags=0;
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
   beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,staffedTables,trackerCountRows,issuedPhysicalChips,
-  bankReturned,secondFlightBags,finalQualified,finalCarriedChips,finalSeated,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
+  bankReturned,secondFlightBags,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating from sealed bags. Physical bank movements and browser bagging cover Flight A. Payout and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
   const response=await fetch(api+path,{method:'POST',headers:{apikey:anon,Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -2614,24 +2615,39 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const preview=await rpc('multi_day_qualification_preview_v1',{p_event_id:event.event_id});
   expect(preview).toMatchObject({state:'READY',policy:'SELECT_LARGEST'});
   type EligibleBag={bagId:string;playerId:string;stack:number};
-  const eligible=preview.flights.flatMap((row:{eligibleBags:EligibleBag[]})=>row.eligibleBags) as EligibleBag[];
+  const previewFlights=preview.flights as {flightId:string;day2Target:number;eligibleBags:EligibleBag[]}[];
+  const eligible=previewFlights.flatMap(row=>row.eligibleBags);
   expect(eligible).toHaveLength(31);
-  const qualified=await rpc('multi_day_lock_qualification_v1',{p_event_id:event.event_id,p_bag_ids:eligible.map(row=>row.bagId),
+  expect(previewFlights.find(row=>row.flightId===tour)?.day2Target).toBe(23);
+  expect(previewFlights.find(row=>row.flightId===flightB)?.day2Target).toBe(4);
+  const denied=await fetch(api+'/rest/v1/rpc/multi_day_lock_qualification_v1',{method:'POST',
+   headers:{apikey:anon,Authorization:'Bearer '+owner,'Content-Type':'application/json'},signal:AbortSignal.timeout(10000),
+   body:JSON.stringify({p_event_id:event.event_id,p_bag_ids:eligible.map(row=>row.bagId),p_expected_source_hash:preview.sourceHash,p_request_id:crypto.randomUUID()})});
+  expect(denied.status).toBe(400);
+  expect(await denied.json()).toMatchObject({code:'23514',message:'multi_day_qualification_quota_mismatch'});
+  const returningPlayers=new Set(staff.slice(0,4).map(row=>row.userId));
+  const nominees=previewFlights.flatMap(flight=>[...flight.eligibleBags].sort((a,b)=>
+   Number(returningPlayers.has(b.playerId))-Number(returningPlayers.has(a.playerId))||a.playerId.localeCompare(b.playerId))
+   .slice(0,flight.day2Target));
+  finalSelectedBags=nominees.length;
+  expect(finalSelectedBags).toBe(27);
+  expect(new Set(nominees.map(bag=>bag.playerId)).size).toBe(23);
+  const qualified=await rpc('multi_day_lock_qualification_v1',{p_event_id:event.event_id,p_bag_ids:nominees.map(row=>row.bagId),
    p_expected_source_hash:preview.sourceHash,p_request_id:crypto.randomUUID()});
-  expect(qualified).toMatchObject({ok:true,participationCount:27});
+  expect(qualified).toMatchObject({ok:true,participationCount:23});
   const readFinal=()=>rpc('multi_day_final_roster_v1',{p_event_id:event.event_id});
   const finalDay=await readFinal();
   const finalRows=finalDay.players as {playerId:string;stack:number;state:string}[];
-  expect(finalRows).toHaveLength(27);
-  expect(new Set(finalRows.map(row=>row.playerId)).size).toBe(27);
+  expect(finalRows).toHaveLength(23);
+  expect(new Set(finalRows.map(row=>row.playerId)).size).toBe(23);
   for(const row of finalRows){
-   const choices=eligible.filter(bag=>bag.playerId===row.playerId);
+   const choices=nominees.filter(bag=>bag.playerId===row.playerId);
    expect(row.stack).toBe(Math.max(...choices.map(bag=>bag.stack)));
    expect(row.state).toBe('UNSEATED');
   }
   finalQualified=finalRows.length;
   finalCarriedChips=finalRows.reduce((total,row)=>total+row.stack,0);
-  expect(finalCarriedChips).toBe(540000);
+  expect(finalCarriedChips).toBe(460000);
   phase='final-day-initial-draw';report();
   const tableIds:string[]=[];
   for(let index=5;index<=7;index++){
@@ -2644,15 +2660,17 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const draw=await rpc('multi_day_plan_initial_draw_v1',{p_event_id:event.event_id,p_tournament_table_ids:tableIds,
    p_expected_source_hash:readyDraw.sourceHash,p_request_id:crypto.randomUUID()});
   expect(draw).toMatchObject({ok:true});
-  expect(draw.assignments).toHaveLength(27);
+  expect(draw.assignments).toHaveLength(23);
   const drawArgs={p_plan_id:draw.planId,p_request_id:crypto.randomUUID()};
   const applied=await rpc('multi_day_apply_initial_draw_v1',drawArgs);
   expect(applied.ok).toBe(true);
   expect(await rpc('multi_day_apply_initial_draw_v1',drawArgs)).toEqual({...applied,idempotent:true});
   const finalTables=await rpc(floorRosterRpc,{p_tournament_id:event.final_tournament_id}) as Table[];
-  expect(finalTables.map(table=>table.seats.length)).toEqual([9,9,9]);
+  expect(finalTables).toHaveLength(3);
+  expect(finalTables.every(table=>table.seats.length>0&&table.seats.length<=9)).toBe(true);
   const seated=finalTables.flatMap(table=>table.seats);
-  expect(new Set(seated.map(seat=>seat.player_id)).size).toBe(27);
+  expect(seated).toHaveLength(23);
+  expect(new Set(seated.map(seat=>seat.player_id)).size).toBe(23);
   for(const seat of seated)expect(seat.chip_count).toBe(finalRows.find(row=>row.playerId===seat.player_id)?.stack);
   finalSeated=seated.length;
   phase='passed';
