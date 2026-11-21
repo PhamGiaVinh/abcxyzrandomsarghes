@@ -16,6 +16,20 @@ import {
   type SeriesForecastEvaluationV1,
 } from "./forecastEvaluationTypes";
 import type { ForecastEvaluationInput } from "./forecastEvaluationTypes";
+import type { DecisionEventStateResponse } from "./decisionPacketRuntimeTypes";
+import { epochMicroseconds } from "./epochMicroseconds";
+
+type EvaluationIdentity = {
+  readonly forecast: ForecastEvaluationInput["forecast"];
+  readonly scoringEligibilityContractVersion?: string;
+  readonly packet: {
+    readonly packetId: string;
+    readonly packet: Pick<NonNullable<ForecastEvaluationInput["packet"]>["packet"],
+      "clubId" | "eventId" | "targetMetric" | "horizon" | "contentHash">;
+  } | null;
+};
+type EvaluationActual = Pick<EventActualRevision, "clubId" | "eventId" | "scope" | "sourceTimestamp" |
+  "metrics" | "revisionId" | "contentHash" | "finality" | "sourceKind" | "reconciliationStatus">;
 
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === "object" && !Object.isFrozen(value)) {
@@ -38,7 +52,7 @@ function normalizeExactCount(value: ExactCountInput, label: string): bigint {
   return BigInt(value);
 }
 
-function countMetricValue(actual: EventActualRevision, targetMetric: DecisionTargetMetric): number | null {
+function countMetricValue(actual: EvaluationActual, targetMetric: DecisionTargetMetric): number | null {
   if (targetMetric === "entries") return actual.metrics.entries.value;
   if (targetMetric === "unique_players") return actual.metrics.uniquePlayers.value;
   return actual.metrics.totalBullets.value;
@@ -49,7 +63,7 @@ function pushUnique(reasons: ForecastEvaluationBlockReason[], reason: ForecastEv
 }
 
 function blocked(
-  input: ForecastEvaluationInput,
+  input: EvaluationIdentity,
   reasons: readonly ForecastEvaluationBlockReason[],
   sourceState: "d2b" | "kernel" = "d2b",
 ): SeriesForecastEvaluationBlockedV1 {
@@ -140,9 +154,50 @@ export async function evaluateForecastActualV1(input: ForecastEvaluationInput): 
 
   // The eligibility resolver returns this same packet with a narrower interface;
   // retain the supplied persisted packet ID for hashing and the result receipt.
+  return evaluateResolvedPair(input, pair.actual);
+}
+
+/** Score only the current pair selected by the authenticated read model. */
+export async function evaluateDecisionEventStateV1(
+  state: DecisionEventStateResponse,
+  forecast: ForecastEvaluationForecastInput | null,
+): Promise<SeriesForecastEvaluationResult> {
+  const candidate = state.decisionPackets.find((packet) => packet.packetId === state.scoring.candidatePacketId);
+  const actual = state.actualTruth.chosenRevision;
+  const scope = { clubId: state.event.clubId, eventId: state.event.eventId };
+  const input = { forecast, packet: candidate ? { packetId: candidate.packetId, packet: { ...candidate, ...scope } } : null };
+  if (!candidate || candidate.packetState !== "frozen") return blocked(input, ["packet_not_frozen"]);
+  if (!forecast || !candidate.forecastSnapshotId) return blocked(input, ["no_forecast"]);
+  if (forecast.clubId !== scope.clubId || forecast.eventId !== scope.eventId ||
+      forecast.snapshotId !== candidate.forecastSnapshotId || forecast.targetMetric !== candidate.targetMetric ||
+      candidate.targetMetric !== state.scoring.targetMetric) return blocked(input, ["target_metric_mismatch"]);
+  if (!forecast.forecastIdentityEligible || forecast.provenanceCompleteness !== "complete" ||
+      candidate.forecastState !== "forecast_identity_eligible") return blocked(input, ["forecast_not_identity_eligible"]);
+  if (state.scoring.eligibility !== "eligible" || state.actualTruth.state !== "current" ||
+      !actual || state.scoring.candidateActualRevisionId !== actual.revisionId) return blocked(input, ["no_actual_revision"]);
+  if (actual.scope !== "event_total") return blocked(input, ["actual_scope_mismatch"]);
+  if (actual.finality !== "final" && actual.finality !== "corrected") return blocked(input, ["actual_not_final"]);
+  const issued = epochMicroseconds(forecast.forecastIssuedAt);
+  const cutoff = epochMicroseconds(forecast.asOfTs);
+  const asOf = epochMicroseconds(candidate.asOfTs);
+  const frozen = epochMicroseconds(candidate.frozenAt);
+  const target = epochMicroseconds(state.event.targetEventTs);
+  const outcome = epochMicroseconds(actual.sourceTimestamp);
+  if (actual.sourceTimestampState !== "exact" || cutoff === null || issued === null ||
+      asOf === null || frozen === null || target === null || outcome === null ||
+      !(cutoff <= issued && issued <= asOf && asOf <= frozen && frozen < target && target <= outcome)) {
+    return blocked(input, ["outcome_precedes_forecast"]);
+  }
+  return evaluateResolvedPair(input, { ...actual, ...scope });
+}
+
+async function evaluateResolvedPair(
+  input: EvaluationIdentity,
+  actualRevision: EvaluationActual | null,
+): Promise<SeriesForecastEvaluationResult> {
   const packet = input.packet;
   const forecast = input.forecast;
-  const actualRevision = pair.actual;
+
   if (!packet || !forecast || !actualRevision) return blocked(input, ["no_actual_revision"]);
   if (actualRevision.clubId !== packet.packet.clubId || actualRevision.eventId !== packet.packet.eventId) {
     return blocked(input, ["actual_identity_mismatch"], "kernel");

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -39,6 +39,8 @@ import type {
   EventActualMetricsInput,
   MetricAvailability,
 } from "@/lib/series-intelligence/decisionPacketV1";
+import { evaluateDecisionEventStateV1 } from "@/lib/series-intelligence/forecastEvaluationV1";
+import type { SeriesForecastEvaluationResult } from "@/lib/series-intelligence/forecastEvaluationTypes";
 import { useSeriesCapture } from "@/lib/series-intelligence/useSeriesCapture";
 
 const HORIZONS: readonly DecisionPacketHorizon[] = ["T-21", "T-7", "T-1", "T-0"];
@@ -204,10 +206,51 @@ export function DecisionRoomV1() {
   const [actualEntries, setActualEntries] = useState("");
   const [reconciliationMode, setReconciliationMode] = useState<ReconciliationMode>("blocked_conflict");
   const [reconciliationReason, setReconciliationReason] = useState("");
-  const [state, setState] = useState<DecisionEventStateResponse | null>(null);
+  const [loadedState, setState] = useState<DecisionEventStateResponse | null>(null);
+  const requestRevision = useRef(0);
+  const state = loadedState && loadedState.event.eventId === eventId && loadedState.event.clubId === capture.clubId
+    ? loadedState : null;
   const [stateError, setStateError] = useState<string | null>(null);
   const [loadingState, setLoadingState] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [evaluation, setEvaluation] = useState<{
+    source: DecisionEventStateResponse;
+    result: SeriesForecastEvaluationResult | null;
+  } | null>(null);
+  const candidatePacket = state?.decisionPackets.find((packet) => packet.packetId === state.scoring.candidatePacketId);
+  const scoringSnapshot = capture.snapshots.find((snapshot) =>
+    snapshot.id === candidatePacket?.forecastSnapshotId && snapshot.club_id === capture.clubId);
+
+  useEffect(() => {
+    if (!state || state.event.eventId !== eventId || state.event.clubId !== capture.clubId ||
+        state.scoring.eligibility !== "eligible" || !candidatePacket || !scoringSnapshot) return;
+    let active = true;
+    void evaluateDecisionEventStateV1(state, {
+      snapshotId: scoringSnapshot.id,
+      clubId: scoringSnapshot.club_id,
+      eventId: scoringSnapshot.event_id,
+      targetMetric: "entries",
+      forecastIssuedAt: scoringSnapshot.forecast_issued_at,
+      asOfTs: scoringSnapshot.as_of_ts,
+      provenanceCompleteness: scoringSnapshot.provenance_completeness === "complete" ? "complete" : null,
+      forecastIdentityEligible: scoringSnapshot.forecast_identity_eligible === true,
+      pointEstimate: scoringSnapshot.forecast_base,
+      low: scoringSnapshot.forecast_low,
+      high: scoringSnapshot.forecast_high,
+      engineId: scoringSnapshot.provenance_kind,
+      engineVersion: scoringSnapshot.engine_version,
+      predictorId: scoringSnapshot.predictor_id,
+      bandSemantics: null,
+    }).then((result) => {
+      if (active) setEvaluation({ source: state, result });
+    }, () => {
+      if (active) setEvaluation({ source: state, result: null });
+    });
+    return () => { active = false; };
+  }, [state, eventId, capture.clubId, candidatePacket, scoringSnapshot]);
+
+  const currentEvaluation = evaluation && evaluation.source === state && state?.event.eventId === eventId &&
+    state.event.clubId === capture.clubId && scoringSnapshot ? evaluation.result : null;
 
   useEffect(() => {
     setEventId((current) => (capture.events.some((event) => event.id === current) ? current : capture.events[0]?.id ?? ""));
@@ -219,13 +262,17 @@ export function DecisionRoomV1() {
   );
 
   const refreshState = async () => {
-    if (!eventId) {
+    const revision = ++requestRevision.current;
+    if (!eventId || !capture.clubId) {
+      setLoadingState(false);
+      setStateError(null);
       setState(null);
       return;
     }
     setLoadingState(true);
     setStateError(null);
     const result = await getDecisionEventState(eventId);
+    if (revision !== requestRevision.current) return;
     setLoadingState(false);
     if (result.ok === false) {
       setState(null);
@@ -241,11 +288,13 @@ export function DecisionRoomV1() {
     setReconciliationMode("blocked_conflict");
     setReconciliationReason("");
     void refreshState();
+    return () => { requestRevision.current++; };
     // Event selection is the deliberate refresh boundary; the button handles manual refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eventId]);
+  }, [eventId, capture.clubId]);
 
   const runMutation = async (action: () => Promise<{ readonly ok: boolean; readonly error?: string }>, message: string) => {
+    const revision = requestRevision.current;
     setSaving(true);
     const result = await action();
     setSaving(false);
@@ -254,7 +303,7 @@ export function DecisionRoomV1() {
       return false;
     }
     toast.success(message);
-    await refreshState();
+    if (revision === requestRevision.current) await refreshState();
     return true;
   };
 
@@ -269,15 +318,37 @@ export function DecisionRoomV1() {
       return;
     }
     const asOf = new Date();
+    const packetHorizon = sourcePacket?.horizon ?? horizon;
+    const targetEventTs = new Date(selectedEvent.start_time).toISOString();
+    const targetTime = Date.parse(targetEventTs);
+    const snapshot = sourcePacket ? undefined : capture.snapshots.find((candidate) => {
+      const cutoff = Date.parse(candidate.as_of_ts ?? "");
+      const issued = Date.parse(candidate.forecast_issued_at ?? "");
+      const saved = Date.parse(candidate.created_at);
+      return candidate.club_id === capture.clubId &&
+        candidate.event_id === selectedEvent.id &&
+        candidate.horizon === packetHorizon &&
+        candidate.forecast_identity_eligible === true &&
+        candidate.provenance_completeness === "complete" &&
+        Date.parse(candidate.target_event_ts ?? "") === targetTime &&
+        cutoff <= issued && issued <= saved &&
+        saved < targetTime && saved <= asOf.getTime();
+    });
+    if (sourcePacket?.forecastState === "manual_expectation") {
+      toast.error("Chưa hỗ trợ sửa hồ sơ có dự báo nhập tay.");
+      return;
+    }
+    const forecastSnapshotId = sourcePacket?.forecastSnapshotId ?? snapshot?.id ?? null;
+    const forecastState = sourcePacket?.forecastState ?? (snapshot ? "forecast_identity_eligible" : "no_forecast_available");
     const request = {
       eventId: selectedEvent.id,
-      horizon: sourcePacket?.horizon ?? horizon,
-      targetMetric: "entries" as const,
-      asOfTs: asOf.toISOString(),
-      sourceCutoff: new Date(asOf.getTime() - 1000).toISOString(),
-      targetEventTs: new Date(selectedEvent.start_time).toISOString(),
-      forecastSnapshotId: null,
-      forecastState: "no_forecast_available" as const,
+      horizon: packetHorizon,
+      targetMetric: sourcePacket?.targetMetric ?? "entries" as const,
+      asOfTs: sourcePacket?.asOfTs ?? asOf.toISOString(),
+      sourceCutoff: sourcePacket?.sourceCutoff ?? (snapshot?.as_of_ts ? new Date(snapshot.as_of_ts).toISOString() : new Date(asOf.getTime() - 1000).toISOString()),
+      targetEventTs,
+      forecastSnapshotId,
+      forecastState,
       manualExpectation: null,
       publicEvidence: [],
       registrationSlice: null,
@@ -288,8 +359,8 @@ export function DecisionRoomV1() {
       publicAction: null,
       decisionReason: decisionReason.trim() || normalizedCorrectionReason || null,
       alternatives: [],
-      assumptions: ["Decision Room V1 tạo packet không có dự báo khi chưa có snapshot đủ provenance."],
-      uncertaintyNotes: "Chưa có forecast snapshot identity-eligible.",
+      assumptions: forecastSnapshotId ? [] : ["Chưa có bản dự báo đủ dấu vết dữ liệu."],
+      uncertaintyNotes: forecastSnapshotId ? null : "Chưa có forecast snapshot identity-eligible.",
       supersedesPacketId: sourcePacket?.packetId ?? null,
       correctionReason: sourcePacket ? normalizedCorrectionReason : null,
       idempotencyKey: sourcePacket
@@ -432,7 +503,13 @@ export function DecisionRoomV1() {
               <CardContent className="space-y-2 text-sm">
                 <Badge variant={state.scoring.eligibility === "eligible" ? "default" : "outline"}>{state.scoring.eligibility === "eligible" ? "Đủ điều kiện" : "Đang chặn"}</Badge>
                 <ul className="space-y-1 text-xs text-muted-foreground">{state.scoring.blockReasons.length === 0 ? <li>Không có lý do chặn.</li> : state.scoring.blockReasons.map((reason) => <li key={reason}>· {BLOCK_REASON_LABELS[reason] ?? reason}</li>)}</ul>
-                <p className="border-t border-border/60 pt-2 text-[11px] text-muted-foreground">Room không tự tính điểm, không dự báo và không tạo quyết định tiền.</p>
+                {currentEvaluation?.kind === "evaluation" ? (
+                    <dl className="grid grid-cols-1 gap-2 border-t border-border/60 pt-2 sm:grid-cols-3" data-testid="decision-room-evaluation">
+                      <div><dt>Dự báo lượt mua</dt><dd>{currentEvaluation.pointEstimate}</dd></div>
+                      <div><dt>Kết quả đã đối chiếu</dt><dd>{currentEvaluation.actual}</dd></div>
+                      <div><dt>Sai số tuyệt đối</dt><dd>{currentEvaluation.absoluteError}</dd></div>
+                    </dl>
+                  ) : <p className="text-xs text-muted-foreground">Chưa có điểm đối chiếu cho hồ sơ này.</p>}
               </CardContent>
             </Card>
           </div>
