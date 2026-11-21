@@ -29,7 +29,7 @@ export function prizePaymentPayload(intent: PrizePaymentIntent) {
     ...(intent.multiDayEventId?{event_id:intent.multiDayEventId,participation_id:intent.multiDayParticipationId}:{}) };
 }
 export type PrizePaymentResolution = { status: "unknown" } | { status: "rejected"; error: string }
-  | { status: "committed"; outcome: "recorded" | "already_paid"; amount: number };
+  | { status: "committed"; outcome: "recorded" | "already_paid"; paymentId: string; amount: number };
 // Only established business rejections resolve a request. An unknown envelope
 // must preserve the journal; it says nothing conclusive about an earlier send.
 const resolvedRejections=new Set(['invalid_payment_intent','tournament_not_found','place_not_in_money',
@@ -62,7 +62,7 @@ export function resolvePrizePaymentResult(intent: PrizePaymentIntent, result: un
     || result.tournament_id !== intent.tournamentId || result.finished_place !== intent.finishedPlace
     || result.entry_id !== intent.entryId || result.recipient_ref !== intent.recipientRef
     || result.prize_amount !== intent.prizeAmount) return { status: "unknown" };
-  return { status: "committed", outcome: result.outcome as "recorded" | "already_paid", amount: intent.prizeAmount };
+  return { status: "committed", outcome: result.outcome as "recorded" | "already_paid", paymentId: result.payment_id, amount: intent.prizeAmount };
 }
 export function resolvePrizePaymentReceipt(intent: PrizePaymentIntent, receipt: unknown): PrizePaymentResolution {
   if (!record(receipt) || receipt.found !== true || receipt.actor_id !== intent.actorId

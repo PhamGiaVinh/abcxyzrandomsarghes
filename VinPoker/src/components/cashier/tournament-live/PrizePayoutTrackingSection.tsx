@@ -87,6 +87,13 @@ function ScopedPrizePayoutTrackingSection({ tournamentId, actorId }: { tournamen
         </p>
       )}
 
+      {verified && payment.cashReceipt && (
+        <p className="break-all text-xs text-muted-foreground">
+          Biên nhận <code>{payment.cashReceipt.paymentId}</code> · Mã ca xuất két:{" "}
+          {payment.cashReceipt.shiftId ? <code>{payment.cashReceipt.shiftId}</code> : "chưa xác minh"}
+        </p>
+      )}
+
       {payment.pending && (
         <div role="status" className="space-y-2 rounded border border-amber-500/30 p-2 text-xs">
           <p>Yêu cầu đang chờ xác minh · Hạng {payment.pending.finishedPlace} · {payment.pending.recipientName} · {formatVND(payment.pending.prizeAmount)}</p>

@@ -38,7 +38,7 @@ describe("payout recovery boundary", () => {
     const receipt={found:true,actor_id:'actor',request_id:intent.requestId,payload:prizePaymentPayload(qualified),result:{
       ok:true,outcome:'recorded',payment_id:'10000000-0000-4000-8000-000000000012',paid_at:'2026-10-18T00:00:00Z',
       tournament_id:'tour',finished_place:1,entry_id:intent.entryId,recipient_ref:intent.recipientRef,prize_amount:100}};
-    expect(resolvePrizePaymentReceipt(qualified,receipt).status).toBe('committed');
+    expect(resolvePrizePaymentReceipt(qualified,receipt)).toMatchObject({ status: 'committed', paymentId: receipt.result.payment_id });
     expect(resolvePrizePaymentReceipt(qualified,{...receipt,payload:{...receipt.payload,participation_id:intent.entryId}}).status).toBe('unknown');
   });
   it.each(["request_payload_conflict", "actor_not_allowed", "unauthorized"])(

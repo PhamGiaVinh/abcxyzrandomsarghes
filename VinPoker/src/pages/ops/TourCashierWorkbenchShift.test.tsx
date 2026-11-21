@@ -316,6 +316,7 @@ describe("closed Cashier shift correction", () => {
     }
     if (kind === 'verified') {
       expect(screen.getByText(/Thưởng đã chi từ két: 18.000.000 VND/)).toBeInTheDocument();
+      expect(within(screen.getByRole('region', { name: 'Điều chỉnh ca đã chốt' })).getByText('shift-a')).toBeVisible();
     } else {
       expect(screen.queryByText(/Thưởng đã chi từ két/)).not.toBeInTheDocument();
     }

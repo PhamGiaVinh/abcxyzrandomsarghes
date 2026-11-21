@@ -712,6 +712,7 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
           {closedShifts.map((item) => <option key={item.id} value={item.id}>Mở {dateTime(item.opened_at)} · chốt {dateTime(item.closed_at ?? null)}</option>)}
         </select>
       </label>
+      <p className="mt-1 break-all text-xs text-[#a9baae]">Mã ca: <code>{closedShift.id}</code></p>
       <p className="mt-1 text-[#a9baae]">Thực đếm {formatReportedMoney(closedShift.counted_cash)} · Chênh lệch {formatReportedMoney(closedShift.variance_cash)}. Các số đã chốt không thay đổi.</p>
       {closedShiftSummary?.ok && closedShiftSummary.shift_id === closedShift.id && closedShiftSummary.totals.prize_cash_out !== undefined && (
         <p className="mt-1 text-[#a9baae]">Thưởng đã chi từ két: {formatMoney(closedShiftSummary.totals.prize_cash_out)}</p>

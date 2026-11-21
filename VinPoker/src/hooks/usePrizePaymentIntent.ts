@@ -29,6 +29,7 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
   const [pending, setPending] = useState<PrizePaymentIntent | null>(null);
   const [blocked, setBlocked] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [cashReceipt, setCashReceipt] = useState<{ paymentId: string; shiftId: string | null } | null>(null);
   const alive = useRef(true), writing = useRef(false);
   useEffect(() => {
     alive.current = true;
@@ -72,6 +73,24 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
       if (resolution.status === "rejected") toast.error(errors[resolution.error] || "Hệ thống từ chối yêu cầu trả thưởng. Hãy tải lại danh sách.");
       else toast.success(`${resolution.outcome === "already_paid" ? "Đã ghi nhận trả trước đó" : "Đã ghi nhận trả"} · Hạng ${intent.finishedPlace} · ${formatVND(resolution.amount)}`);
       reload();
+      if (resolution.status === "committed" && intent.method === "cash") {
+        const { paymentId } = resolution;
+        setCashReceipt({ paymentId, shiftId: null });
+        void waitForManualPlayerResponse(Promise.resolve().then(() =>
+          supabase.from("cashier_buyin_movements")
+            .select("shift_id")
+            .eq("prize_payment_id" as never, paymentId)
+            .eq("purpose", "prize_payout")
+            .eq("method", "cash")
+            .eq("direction", "out")
+            .maybeSingle(),
+        )).then(({ data, error }) => {
+          if (!alive.current || error || !data?.shift_id) return;
+          setCashReceipt(current => current?.paymentId === paymentId ? { paymentId, shiftId: data.shift_id } : current);
+        }).catch(() => {
+          // The confirmed payment is independent of the optional drawer read.
+        });
+      }
     } catch {
       if (alive.current) toast.error(unknown);
     } finally {
@@ -96,7 +115,7 @@ export function usePrizePaymentIntent(actorId: string | undefined, tournamentId:
       }
     }
   };
-  return { pending, blocked, busy, submit,
+  return { pending, blocked, busy, cashReceipt, submit,
     recover: () => pending ? execute(pending, true) : Promise.resolve(),
     retry: () => pending ? execute(pending, false) : Promise.resolve() };
 }

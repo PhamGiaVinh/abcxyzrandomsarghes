@@ -3612,6 +3612,8 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    expect(after.totals).toMatchObject({cash_out:drawerBefore.totals.cash_out,prize_cash_out:drawerBefore.totals.prize_cash_out+18000000});
    const movements=await read('cashier_buyin_movements?select=shift_id,tournament_id,method,direction,purpose,amount&prize_payment_id=eq.'+uiResult.payment_id);
    expect(movements).toEqual([{shift_id:drawerBefore.shift_id,tournament_id:tour,method:'cash',direction:'out',purpose:'prize_payout',amount:18000000}]);
+   const receiptLine=page.getByText('Mã ca xuất két:',{exact:false}).filter({hasText:uiResult.payment_id});
+   await expect(receiptLine).toContainText(drawerBefore.shift_id);
    prizeDrawerVerified=true;
   }
   phase='release-and-close';report();const t=(await roster())[0];expect(t.seats).toHaveLength(1);const winner=t.seats[0],free={p_entry_id:winner.entry_id,p_expected_revision:t.session_revision,p_expected_control_epoch:t.control_epoch,p_expected_chip_count:winner.chip_count,p_request_id:crypto.randomUUID(),p_reason:'isolated final winner Free Sit'};const freed=await rpc('floor_free_sit_player_v1',free);expect(freed.ok).toBe(true);expect(freed.stack_preserved).toBe(60000);expect(await rpc('floor_free_sit_player_v1',free)).toEqual(freed);
@@ -3820,6 +3822,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page,
    expect(closedShift).toMatchObject({ok:true,expected_cash:countedCash,counted_cash:countedCash,variance_cash:0,totals:{cash_in:0,cash_out:0,prize_cash_out:18000000}});
    await page.goto('/ops/cashier/tour?club='+club);
    await expect(page.getByText('Thưởng đã chi từ két: 18.000.000 VND',{exact:true})).toBeVisible();
+   await expect(page.getByRole('region',{name:'Điều chỉnh ca đã chốt'}).getByText(drawerBefore.shift_id,{exact:true})).toBeVisible();
    prizeDrawerClosedUiVerified=true;
    prizeDrawerCloseVariance=closedShift.variance_cash;
   }
