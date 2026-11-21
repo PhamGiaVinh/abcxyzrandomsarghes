@@ -9,6 +9,7 @@ vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
 });
 import { MultiDayBaggingPanel } from "./MultiDayBaggingPanel";
 import { parseMultiDayBaggingState, validBaggingReceipt } from "./multiDayBaggingState";
+import { baggingJournalKey } from "./multiDayBaggingIntent";
 
 const playerId = "60000000-0000-0000-0000-000000000001";
 const state = {
@@ -31,6 +32,38 @@ beforeEach(() => {
 afterEach(()=>vi.useRealTimers());
 
 describe("flight bagging UI", () => {
+  it("keeps the journal warning visible after loading or refreshing the roster", async () => {
+    sessionStorage.setItem(baggingJournalKey("actor", "flight-id"), "corrupt");
+    render(<MultiDayBaggingPanel tournamentId="flight-id" />);
+    await screen.findByText(/Tracker stack: 100,000/);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await screen.findByText(/Tracker stack: 100,000/);
+    expect(screen.getByRole("alert")).toHaveTextContent("Cannot verify the saved bagging request.");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(h.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "multi_day_bagging_state_v1", "multi_day_bagging_state_v1",
+    ]);
+  });
+  it("keeps a second bag draft when the first bag is saved and reloaded", async () => {
+    const secondPlayer = "60000000-0000-0000-0000-000000000002";
+    const first = state.rows[0];
+    const second = { ...first, playerId: secondPlayer, seatNumber: 4 };
+    let rows = [first, second];
+    h.rpc.mockImplementation(async (name: string) => {
+      if (name === "multi_day_bagging_state_v1") return { data: { ...state, rows }, error: null };
+      rows = [{ ...first, bagCode: "BAG-01", bagTotal: 100000, bagRevision: 1 }, second];
+      return { data: saved, error: null };
+    });
+    render(<MultiDayBaggingPanel tournamentId="flight-id"/>);
+    for (const [id, code] of [[playerId, "BAG-01"], [secondPlayer, "BAG-02"]]) {
+      fireEvent.change(await screen.findByRole("textbox", { name: `Bag code for ${id}` }), { target: { value: code } });
+      fireEvent.change(screen.getByRole("spinbutton", { name: `Bag total for ${id}` }), { target: { value: "100000" } });
+    }
+    fireEvent.click(screen.getAllByRole("button", { name: "Save" })[0]);
+    await screen.findByText("Draft v1");
+    expect(screen.getByRole("textbox", { name: `Bag code for ${secondPlayer}` })).toHaveValue("BAG-02");
+    expect(screen.getByRole("spinbutton", { name: `Bag total for ${secondPlayer}` })).toHaveValue(100000);
+  });
   it('only retries the saved payload and key after an explicit missing-receipt check',async()=>{
     let writes=0;
     h.rpc.mockImplementation(async(name:string)=>name==='multi_day_bagging_state_v1'?{data:state,error:null}
@@ -204,5 +237,24 @@ describe("flight bagging UI", () => {
     await screen.findByText(/Tracker stack: 100,000/);
     expect(screen.queryByRole("button", { name: "Seal" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Lock flight bagging" })).toBeNull();
+  });
+
+  it("replaces a stale dealer draft with the sealed bag when the tab becomes visible", async () => {
+    h.rpc.mockResolvedValue({ data: { ...state, manager: false }, error: null });
+    const view = render(<MultiDayBaggingPanel tournamentId="flight-id" />);
+    const bagCode = await screen.findByRole("textbox", { name: `Bag code for ${playerId}` });
+    fireEvent.change(bagCode, { target: { value: "LOCAL-DRAFT" } });
+    h.rpc.mockResolvedValue({ data: {
+      ...state, manager: false, status: "locked", dayVersion: 1,
+      rows: [{ ...state.rows[0], bagCode: "SEALED-A", bagTotal: 100000, bagRevision: 2, sealed: true, sealedVersion: 2 }],
+    }, error: null });
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    expect(await screen.findByText(/Day 1 · Locked/)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: `Bag code for ${playerId}` })).toHaveValue("SEALED-A");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(h.rpc.mock.calls.map(([name]) => name)).toEqual(["multi_day_bagging_state_v1", "multi_day_bagging_state_v1"]);
+    view.unmount();
+    window.dispatchEvent(new Event("online"));
+    expect(h.rpc).toHaveBeenCalledTimes(2);
   });
 });

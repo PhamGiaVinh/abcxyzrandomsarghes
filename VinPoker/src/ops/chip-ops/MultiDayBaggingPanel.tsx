@@ -38,8 +38,10 @@ function MultiDayBaggingScope({ tournamentId,actorId }: { tournamentId: string;a
   const [notice, setNotice] = useState<string | null>(null);
   const [pending,setPending]=useState<BaggingIntent|null>(null);
   const [retryReady,setRetryReady]=useState(false);
-  const [journalBlocked,setJournalBlocked]=useState(true);
+  const [journalStatus, setJournalStatus] = useState<"loading" | "ready" | "blocked">("loading");
+  const journalBlocked = journalStatus !== "ready";
   const readGeneration = useRef(0);
+  const lastRead = useRef<BagState | null>(null);
   const alive = useRef(true);
   const writing = useRef(false);
   useEffect(() => {
@@ -47,8 +49,8 @@ function MultiDayBaggingScope({ tournamentId,actorId }: { tournamentId: string;a
     try {
       const raw=sessionStorage.getItem(baggingJournalKey(actorId,tournamentId));
       setPending(raw?parseBaggingIntent(raw,actorId,tournamentId):null);
-      setJournalBlocked(false);
-    } catch {setError('Cannot verify the saved bagging request. New mutations are blocked.');}
+      setJournalStatus("ready");
+    } catch { setJournalStatus("blocked"); }
     return () => { alive.current = false; readGeneration.current += 1; };
   }, [actorId,tournamentId]);
 
@@ -63,13 +65,35 @@ function MultiDayBaggingScope({ tournamentId,actorId }: { tournamentId: string;a
       if (result.error) throw new Error(result.error.message);
       const next = parseMultiDayBaggingState(result.data);
       setState(next);
-      setDrafts(Object.fromEntries(next.rows.map((row) => [row.playerId,
-        { code: row.bagCode ?? "", total: row.bagTotal === null ? "" : String(row.bagTotal) }])));
+      const previous = lastRead.current;
+      lastRead.current = next;
+      const previousRows = new Map(previous?.rows.map((row) => [row.playerId, row]));
+      setDrafts((currentDrafts) => Object.fromEntries(next.rows.map((row) => {
+        const prior = previousRows.get(row.playerId);
+        const draft = currentDrafts[row.playerId];
+        if (draft && prior && previous?.rosterHash === next.rosterHash
+          && next.status === "bagging" && !row.sealed && prior.bagRevision === row.bagRevision
+          && prior.trackedStack === row.trackedStack) {
+          return [row.playerId, draft];
+        }
+        return [row.playerId, { code: row.bagCode ?? "", total: row.bagTotal === null ? "" : String(row.bagTotal) }];
+      })));
       setError(null);
     } catch (cause) { if (current()) { setState(null); setError(friendlyError(cause)); } }
     finally { if (current()) setLoading(false); }
   }, [client, tournamentId]);
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    void reload();
+    const refreshVisible = () => {
+      if (document.visibilityState !== "hidden" && !writing.current) void reload();
+    };
+    document.addEventListener("visibilitychange", refreshVisible);
+    window.addEventListener("online", refreshVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshVisible);
+      window.removeEventListener("online", refreshVisible);
+    };
+  }, [reload]);
 
   const mutate = async (name: string, args: Record<string, unknown>, success: string, retry?:BaggingIntent) => {
     if (writing.current || !alive.current || loading || !state || journalBlocked
@@ -81,7 +105,7 @@ function MultiDayBaggingScope({ tournamentId,actorId }: { tournamentId: string;a
     const intent:BaggingIntent=retry??{actorId,flightId:tournamentId,requestId,name,args,snapshot:state,success};
     try {
       try {persistBaggingIntent(sessionStorage,intent);}
-      catch(cause){setJournalBlocked(true);throw cause;}
+      catch { setJournalStatus("blocked"); return; }
       setPending(intent);
       const result = await waitForManualPlayerResponse(client.rpc(name, { ...args, p_request_id: requestId }));
       if (!alive.current) return;
@@ -142,7 +166,9 @@ function MultiDayBaggingScope({ tournamentId,actorId }: { tournamentId: string;a
       <button type="button" onClick={() => void reload()} disabled={busy || loading}
         className="min-h-11 rounded-xl border border-white/15 px-4 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 disabled:opacity-50">Refresh</button>
     </div>
-    {error && <p role="alert" className="mt-3 rounded-xl border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-sm text-rose-100">{error}</p>}
+    {(journalStatus === "blocked" || error) && <p role="alert" className="mt-3 rounded-xl border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-sm text-rose-100">
+      {journalStatus === "blocked" ? "Cannot verify the saved bagging request. New mutations are blocked." : error}
+    </p>}
     {notice && <p role="status" className="mt-3 rounded-xl border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-sm text-emerald-100">{notice}</p>}
     {pending&&<div role="status"><p>A bagging request needs verification before another mutation.</p>
       <button type="button" disabled={busy} onClick={()=>void recover()}>Check saved request</button>
