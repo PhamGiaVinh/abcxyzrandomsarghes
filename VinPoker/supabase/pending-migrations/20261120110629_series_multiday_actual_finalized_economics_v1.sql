@@ -18,7 +18,7 @@ DECLARE
     SELECT * INTO STRICT v_funding
     FROM public.multi_day_payout_finalizations_v1 p
     WHERE p.event_id=v_event.event_id AND p.club_id=v_event.club_id AND p.final_tournament_id=v_event.id;
-    v_prize_pool := v_funding.direct_pool_vnd::numeric + v_funding.recorded_overlay_vnd::numeric;
+    v_prize_pool := v_funding.direct_pool_vnd::numeric + v_funding.transfer_pool_vnd::numeric + v_funding.recorded_overlay_vnd::numeric;
     v_overlay_amount := v_funding.recorded_overlay_vnd;
     v_overlay_availability := CASE WHEN v_overlay_amount=0 THEN 'explicit_zero' ELSE 'present' END;
   END IF;
@@ -42,6 +42,7 @@ BEGIN
     v_source_payload:=v_source_payload||pg_catalog.jsonb_build_object(
       'fundingRevision',v_funding.funding_revision,'payoutInputHash',v_funding.payout_input_hash,
       'qualificationRevision',v_funding.qualification_revision,'directPoolVnd',v_funding.direct_pool_vnd,
+      'transferPoolVnd',v_funding.transfer_pool_vnd,
       'recordedOverlayVnd',v_funding.recorded_overlay_vnd);
   END IF;
 $source$||source_marker);
