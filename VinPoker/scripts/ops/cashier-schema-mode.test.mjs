@@ -947,7 +947,7 @@ test('bank ambiguity executes only after its dedicated fixture stage,not the ini
 });
 
 
-test('prize-close receipt requires replay on both layouts', (t) => {
+test('prize-close receipt requires replay on both layouts and the TV transition', (t) => {
  const marker = "<<'FINAL_PRIZE_CLOSE_RECEIPT'\n";
  const offset = script.indexOf(marker);
  assert.ok(offset >= 0);
@@ -973,10 +973,11 @@ test('prize-close receipt requires replay on both layouts', (t) => {
   },
   tableCloseUi: { floorCleared: true, swingCleared: true, swingAlertCleared: true },
   clockUi: { started: true, paused: true, resumed: true },
+  tvUi: { liveVisible: true, finishedVisible: true },
   fnb: { guestOrder: true, guestPaidVisible: true, counterPaidVisible: true, paidOnce: true, stockDelta: -1, revenueDelta: 20000, cogsDelta: 5000 },
  };
- const grade = (replayUi) => {
-  writeFileSync(receiptPath, JSON.stringify({ ...receipt, replayUi }));
+ const grade = (replayUi, tvUi = receipt.tvUi) => {
+  writeFileSync(receiptPath, JSON.stringify({ ...receipt, replayUi, tvUi }));
   const result = spawnSync(process.execPath, ['--input-type=module', '-', receiptPath, sha], {
    input: validator, encoding: 'utf8',
   });
@@ -988,6 +989,9 @@ test('prize-close receipt requires replay on both layouts', (t) => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /ERR_ASSERTION/);
  }
+ const incompleteTv = grade({ desktop: true, mobile: true }, { liveVisible: true, finishedVisible: false });
+ assert.equal(incompleteTv.status, 1);
+ assert.match(incompleteTv.stderr, /ERR_ASSERTION/);
  const result = grade({ desktop: true, mobile: true });
  assert.equal(result.status, 0, result.stderr);
 });
