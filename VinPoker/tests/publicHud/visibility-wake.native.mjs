@@ -116,7 +116,7 @@ const closeFingerprintEvidence=await (async()=>{
  sql(`UPDATE public.tournaments SET status='completed' WHERE id='${tour}';`);
  const writeAcknowledgedMs=performance.now()-start;
  assert.equal(work(tour),0,'The tour writer must not create per-hand visibility work');
- assert.equal(parent(tour),null,'An equivalent status must not enqueue visibility work');
+ assert.equal(sql(`SELECT count(*) FROM tracker_analytics_v1.jobs WHERE kind='visibility' AND entity_id='${tour}';`),'0','An equivalent status must not enqueue visibility work');
  assert.equal(barrier(tour),0,'An equivalent status must keep HUD readable');
  await drain();
  const drainCompletedMs=performance.now()-start;
