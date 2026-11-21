@@ -31,6 +31,29 @@ BEGIN
     )$ddl$,previous_shape);
 END $migration$;
 
+-- Preserve the post-finalization funding fence. Its only new accepted movement
+-- is a debit derived from the verified prize payment of this transaction.
+DO $migration$
+DECLARE
+  target regprocedure:='private.multi_day_payout_source_fence_v1()'::regprocedure;
+  definition text:=replace(pg_get_functiondef(target),chr(13),'');
+  anchor text:=$old$ ELSIF TG_TABLE_NAME='cashier_buyin_movements' THEN$old$;
+BEGIN
+  IF (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid=target)
+      IS DISTINCT FROM '442f372d4edb76d720a21cbcd000266d'
+    OR length(definition)-length(replace(definition,anchor,''))<>length(anchor) THEN
+    RAISE EXCEPTION 'cashier_prize_drawer_source_fence_drift';
+  END IF;
+  EXECUTE replace(definition,anchor,anchor||$new$
+   IF NEW.purpose='prize_payout' AND EXISTS(
+     SELECT 1 FROM public.tournament_prize_payments p
+     JOIN public.cashier_till_shifts s ON s.id=NEW.shift_id AND s.club_id=p.club_id AND s.closed_at IS NULL
+     WHERE p.id=NEW.prize_payment_id AND p.club_id=NEW.club_id AND p.tournament_id=NEW.tournament_id
+       AND p.paid_by=NEW.actor_id AND p.prize_amount=NEW.amount AND p.method='cash' AND p.status='paid'
+       AND private.is_verified_multi_day_payment_v1(p)
+   ) THEN RETURN NEW; END IF;$new$);
+END $migration$;
+
 CREATE FUNCTION private.cashier_record_multiday_prize_drawer_outflow_v1()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
