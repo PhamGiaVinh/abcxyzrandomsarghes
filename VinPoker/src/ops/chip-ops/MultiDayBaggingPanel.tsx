@@ -89,9 +89,11 @@ function MultiDayBaggingScope({ tournamentId,actorId }: { tournamentId: string;a
     };
     document.addEventListener("visibilitychange", refreshVisible);
     window.addEventListener("online", refreshVisible);
+    window.addEventListener("focus", refreshVisible);
     return () => {
       document.removeEventListener("visibilitychange", refreshVisible);
       window.removeEventListener("online", refreshVisible);
+      window.removeEventListener("focus", refreshVisible);
     };
   }, [reload]);
 

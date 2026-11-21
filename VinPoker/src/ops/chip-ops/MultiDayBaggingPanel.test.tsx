@@ -239,6 +239,23 @@ describe("flight bagging UI", () => {
     expect(screen.queryByRole("button", { name: "Lock flight bagging" })).toBeNull();
   });
 
+  it("reads the latest seal when the dealer returns to a still-visible window", async () => {
+    h.rpc.mockResolvedValue({ data: { ...state, manager: false }, error: null });
+    const view = render(<MultiDayBaggingPanel tournamentId="flight-id" />);
+    await screen.findByText(/Day 1 · Bagging open/);
+    h.rpc.mockResolvedValue({ data: {
+      ...state, manager: false, status: "locked", dayVersion: 1,
+      rows: [{ ...state.rows[0], bagCode: "SEALED-A", bagTotal: 100000, bagRevision: 2, sealed: true, sealedVersion: 2 }],
+    }, error: null });
+    await act(async () => { window.dispatchEvent(new Event("focus")); });
+    expect(await screen.findByText(/Day 1 · Locked/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(h.rpc).toHaveBeenCalledTimes(2);
+    view.unmount();
+    window.dispatchEvent(new Event("focus"));
+    expect(h.rpc).toHaveBeenCalledTimes(2);
+  });
+
   it("replaces a stale dealer draft with the sealed bag when the tab becomes visible", async () => {
     h.rpc.mockResolvedValue({ data: { ...state, manager: false }, error: null });
     const view = render(<MultiDayBaggingPanel tournamentId="flight-id" />);
