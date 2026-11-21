@@ -219,6 +219,26 @@ describe('shared tournament read scheduling', () => {
       expect(starts).toEqual([0]);await vi.advanceTimersByTimeAsync(1);expect(starts).toEqual([0,1750]);
     }finally{detail.stop();metadata.stop();release();await Promise.resolve();random.mockRestore();vi.useRealTimers();}
   });
+  it('does not add a second delay when a late hint arrives during a slow read', async () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, 'random').mockReturnValue(.5);
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const read = vi.fn().mockImplementationOnce(() => held).mockResolvedValue(undefined);
+    const detail = registerPublicTournamentRead({}, 'late-hint', read);
+    try {
+      detail.request();
+      await vi.advanceTimersByTimeAsync(2000);
+      detail.request();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(read).toHaveBeenCalledTimes(1);
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(read).toHaveBeenCalledTimes(2);
+    } finally {
+      detail.stop(); release(); random.mockRestore(); vi.useRealTimers();
+    }
+  });
   it('does not charge an already eligible table a new interval after an unrelated metadata wave',async()=>{
     vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(.5);
     const base=Date.now(),starts:number[]=[];let release!:()=>void;

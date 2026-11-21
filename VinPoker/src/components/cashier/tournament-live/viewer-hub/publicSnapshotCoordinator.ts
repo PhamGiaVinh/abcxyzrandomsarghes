@@ -115,7 +115,14 @@ export function registerPublicTournamentRead(client: object, tournamentId: strin
       let next = Infinity;
       for (const slot of slots) {
         if (!slot.active || !slot.pending) continue;
-        slot.due ??= slot.first ? Date.now() : Math.max(Date.now(), (slot.lastStart ?? Date.now()) + slot.interval) + (jitter ?? 0);
+        const now = Date.now();
+        const spread = jitter ?? 0;
+        // An in-flight read already followed its dispatch spread. If its next
+        // interval and spread have elapsed, serve an owed refresh on completion.
+        slot.due ??= slot.first ? now : Math.max(
+          slot.running ? now : now + spread,
+          (slot.lastStart ?? now) + slot.interval + spread,
+        );
         if (!slot.running) next = Math.min(next, slot.due);
       }
       if (Number.isFinite(next)) timer = setTimeout(() => {
