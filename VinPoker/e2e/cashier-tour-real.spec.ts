@@ -2327,7 +2327,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   expect(response.ok,path.split('?')[0]).toBe(true);
   return response.json();
  };
- type Table={tournament_table_id:string;table_session_id:string;game_table_id:string;table_number:number;max_seats:number;session_revision:number;control_epoch:number;
+ type Table={tournament_table_id:string;table_session_id:string;game_table_id:string;table_number:number;max_seats:number;control_epoch:number;
   control_mode:string;seats:{entry_id:string;player_id:string;entry_no:number;chip_count:number;seat_number:number}[]};
  const roster=async()=>(await rpc(floorRosterRpc,{p_tournament_id:tour})) as Table[];
  const identity=(tables:Table[])=>tables.flatMap(table=>table.seats.map(seat=>[seat.entry_id,seat.chip_count] as const))
@@ -2663,7 +2663,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const tableIds:string[]=[];
   for(let index=5;index<=7;index++){
    const table=await rpc('floor_open_tournament_table_v3',{p_tournament_id:event.final_tournament_id,
-    p_game_table_id:'ac730000-0000-4000-8000-'+String(index).padStart(12,'0'),p_control_mode:'manual',p_request_id:crypto.randomUUID()});
+    p_game_table_id:'ac730000-0000-4000-8000-'+String(index).padStart(12,'0'),p_control_mode:'tracker',p_request_id:crypto.randomUUID()});
    expect(table.ok).toBe(true);
    tableIds.push(table.tournament_table_id);
   }
@@ -2704,12 +2704,6 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
    expect(attendance.outcome).toBe('checked_in');
    expect(await rpc('assign_dealer_to_table',{p_attendance_id:attendance.attendance_id,p_table_id:table.game_table_id,p_club_id:club,
     p_idempotency_key:crypto.randomUUID(),p_swing_due_at:new Date(Date.now()+15*60000).toISOString()})).toMatchObject({outcome:'ok'});
-   const currentTables=await rpc(floorRosterRpc,{p_tournament_id:finalTour}) as Table[];
-   const session=currentTables.find(row=>row.table_session_id===table.table_session_id);
-   if(!session)throw new Error('Final Day session missing from canonical Floor roster');
-   expect(await rpc('floor_request_table_control_mode_v4',{p_tournament_table_id:table.tournament_table_id,
-    p_table_session_id:table.table_session_id,p_control_mode:'tracker',p_expected_revision:session.session_revision,
-    p_expected_epoch:session.control_epoch,p_request_id:crypto.randomUUID()})).toMatchObject({ok:true});
   }
   const playable=await rpc(floorRosterRpc,{p_tournament_id:finalTour}) as Table[];
   expect(playable).toHaveLength(3);
