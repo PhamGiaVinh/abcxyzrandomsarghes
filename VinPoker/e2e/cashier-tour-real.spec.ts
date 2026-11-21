@@ -2294,6 +2294,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let lockedChips:number|null=null;
  let mobileBaggingLockRefreshed=false;
  let dealerBaggingUiRefreshed=false;
+ let dealerBaggingDiagnostics:Record<string,unknown>|null=null;
  let dealerBaggingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let dealerBaggingReadback:{assignedRows:number;locked:boolean}|null=null;
  let staffedTables=0;
@@ -2323,7 +2324,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,staffedTables,trackerCountRows,issuedPhysicalChips,
+  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,dealerBaggingDiagnostics,staffedTables,trackerCountRows,issuedPhysicalChips,
   bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,finalPayoutDrawerDenialsVerified,finalPayoutDrawerRaceVerified,finalPayoutDrawerLockVerified,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Drawer source is verified in the isolated TEST DB. Production and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
@@ -2625,6 +2626,17 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
    baseURL:process.env.PLAYWRIGHT_BASE_URL,viewport:{width:390,height:844},isMobile:true,hasTouch:true,locale:'vi-VN',
   });
   const dealerPhone=await dealerBaggingContext.newPage();
+  const dealerReads:{resource:string;status:number}[]=[];
+  let dealerPageErrors=0;
+  dealerPhone.on('pageerror',()=>dealerPageErrors++);
+  dealerPhone.on('response',reply=>{
+   const url=new URL(reply.url());
+   if(url.origin!==new URL(api).origin||dealerReads.length>=20)return;
+   const resource=url.pathname.split('/').at(-1)!;
+   if(['user','tournaments','get_tracker_hand_input_tables_v4','multi_day_bagging_state_v1'].includes(resource)){
+    dealerReads.push({resource,status:reply.status()});
+   }
+  });
   await dealerPhone.addInitScript(({key,session})=>localStorage.setItem(key,JSON.stringify(session)),{
    key:process.env.LOCAL_SUPABASE_STORAGE_KEY!,session:dealer!.session,
   });
@@ -2632,7 +2644,18 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
   const dealerRoute=new URLSearchParams({tournament:tour,table:dealerTable!.game_table_id});
   await dealerPhone.goto('/tracker/hand-input?'+dealerRoute);
   const dealerPanel=dealerPhone.getByRole('region',{name:'Flight bagging'});
-  await expect(dealerPanel.getByText(/Day 1 · Bagging open/)).toBeVisible();
+  try{await expect(dealerPanel.getByText(/Day 1 · Bagging open/)).toBeVisible();}
+  catch(error){
+   dealerBaggingDiagnostics={
+    reachedTracker:new URL(dealerPhone.url()).pathname==='/tracker/hand-input',
+    redirectedToAuth:new URL(dealerPhone.url()).pathname==='/auth',
+    dealerReads,dealerPageErrors,
+    panelMounted:await dealerPanel.count()>0,
+    noSession:await dealerPhone.getByText('Sign in before loading flight bags.',{exact:true}).isVisible(),
+    routeGated:await dealerPhone.getByText('Bảng nhập hand toàn màn hình đang thử nghiệm',{exact:true}).isVisible(),
+   };
+   throw error;
+  }
   await expect(dealerPanel.getByRole('textbox',{name:/^Bag code for /})).toHaveCount(assignedRows.length);
   await expect(dealerPanel.getByRole('button',{name:'Lock flight bagging',exact:true})).toHaveCount(0);
   await panel.getByRole('button',{name:'Lock flight bagging',exact:true}).click();
