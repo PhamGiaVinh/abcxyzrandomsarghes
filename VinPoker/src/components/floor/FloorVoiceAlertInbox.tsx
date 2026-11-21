@@ -42,20 +42,26 @@ function ScopedVoiceAlertInbox({ tournaments, onSelect, tournamentIds }: InboxPr
         return;
       }
       const generation = ++readGeneration;
-      const { data, error: readError } = await client
-        .from("tracker_floor_alerts")
-        .select("id,tournament_id,physical_table_id,hand_id,title,priority,status")
-        .in("tournament_id", tournamentIds.split(","))
-        .in("status", ["open", "acknowledged", "in_progress"])
-        .order("created_at", { ascending: true });
-      if (!active || generation !== readGeneration) return;
-      if (readError) {
+      try {
+        const { data, error: readError } = await client
+          .from("tracker_floor_alerts")
+          .select("id,tournament_id,physical_table_id,hand_id,title,priority,status")
+          .in("tournament_id", tournamentIds.split(","))
+          .in("status", ["open", "acknowledged", "in_progress"])
+          .order("created_at", { ascending: true });
+        if (!active || generation !== readGeneration) return;
+        if (readError) {
+          setAlerts([]);
+          setError(readError.message);
+          return;
+        }
+        setError(null);
+        setAlerts((data ?? []) as AlertRow[]);
+      } catch {
+        if (!active || generation !== readGeneration) return;
         setAlerts([]);
-        setError(readError.message);
-        return;
+        setError("Mất kết nối. Cảnh báo sẽ được tải lại khi kết nối trở lại.");
       }
-      setError(null);
-      setAlerts((data ?? []) as AlertRow[]);
     };
     void load();
     const timer = window.setInterval(() => {

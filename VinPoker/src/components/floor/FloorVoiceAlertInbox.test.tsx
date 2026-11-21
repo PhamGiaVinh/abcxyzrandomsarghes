@@ -63,6 +63,18 @@ describe("FloorVoiceAlertInbox", () => {
     expect(screen.queryByText("Sai action")).toBeNull();
   });
 
+  it("retires stale alerts when a read rejects and loads again after reconnect", async () => {
+    render(<FloorVoiceAlertInbox readScope="floor" tournaments={[{ id: "tour-1", name: "Giải TEST" }]} onSelect={vi.fn()} />);
+    await screen.findByText("Sai action");
+    query.order.mockRejectedValueOnce(new Error("offline"));
+    fireEvent(document, new Event("visibilitychange"));
+    expect(await screen.findByText(/Mất kết nối/)).toBeVisible();
+    expect(screen.queryByText("Sai action")).toBeNull();
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    expect(screen.getByText("Sai action")).toBeVisible();
+    expect(screen.queryByText(/Mất kết nối/)).toBeNull();
+  });
+
   it("clears the previous tournament immediately and ignores its late refresh", async () => {
     const select = vi.fn();
     const inbox = (id: string) => <FloorVoiceAlertInbox readScope="floor" tournaments={[{ id, name: id }]} onSelect={select} />;
