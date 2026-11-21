@@ -1590,6 +1590,15 @@ CLOSE_PRIZE_CANDIDATE_PATH
     { printf '%s\n' "SET vinpoker.isolated_manual_cards='current-http-showdown-only';"; cat "$test_root/manual-cards-dependencies.sql"; } |
       docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres
     docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <"$(cat "$test_root/close-prize-candidate-path")"
+    if [[ "$diagnostic_scope" == floor-consolidation ]]; then
+      for tracker_read_migration in \
+        20270128000076_tracker_hand_input_scoped_read_v1.sql \
+        20270128000214_tracker_input_canonical_table_number_v1.sql; do
+        docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+          <"$repo_root/supabase/migrations/$tracker_read_migration"
+      done
+      docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "NOTIFY pgrst,'reload schema';"
+    fi
   fi
   if [[ "$diagnostic_scope" == prize-replay ]]; then
     # The reviewed recovery catalog predates the verified payout boundary.
@@ -2323,7 +2332,7 @@ if(scope==='floor-consolidation'){
  const floor=read('cashier-http-consolidation-browser-http.json');
  assert.equal(floor.sha,sha);assert.equal(floor.phase,'passed');assert.equal(floor.qualification,false);
  assert.ok(floor.deferredCount>0);assert.equal(floor.handFinished,true);assert.deepEqual(floor.afterCounts,[9,9,9]);
- assert.equal(floor.sealedBags,27);assert.equal(floor.lockedChips,540000);assert.equal(floor.mobileBaggingLockRefreshed,true);assert.equal(floor.dealerBaggingUiRefreshed,true);assert.ok(floor.dealerBaggingReadback?.assignedRows>0);assert.equal(floor.dealerBaggingReadback?.locked,true);
+ assert.equal(floor.sealedBags,27);assert.equal(floor.lockedChips,540000);assert.equal(floor.mobileBaggingLockRefreshed,true);assert.equal(floor.dealerBaggingUiRefreshed,true);assert.equal(floor.dealerTrackerTableScoped,true);assert.ok(floor.dealerBaggingReadback?.assignedRows>0);assert.equal(floor.dealerBaggingReadback?.locked,true);
  assert.equal(floor.issuedPhysicalChips,540000);assert.equal(floor.bankReturned,true);
  assert.equal(floor.secondFlightBags,4);assert.equal(floor.finalSelectedBags,27);assert.equal(floor.finalQualified,23);
  assert.equal(floor.finalCarriedChips,460000);assert.equal(floor.finalSeated,23);

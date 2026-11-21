@@ -2294,6 +2294,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let lockedChips:number|null=null;
  let mobileBaggingLockRefreshed=false;
  let dealerBaggingUiRefreshed=false;
+ let dealerTrackerTableScoped=false;
  let dealerBaggingDiagnostics:Record<string,unknown>|null=null;
  let dealerBaggingContext:Awaited<ReturnType<typeof browser.newContext>>|undefined;
  let dealerBaggingReadback:{assignedRows:number;locked:boolean}|null=null;
@@ -2324,7 +2325,7 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
  let chipOpsScreen:Record<string,unknown>|null=null;
  let failedHttp:{path:string;status:number;code:string|null;reason:string|null}|null=null;
  const report=()=>writeFileSync(reportPath,JSON.stringify({phase,sha:process.env.LOCAL_OPERATIONS_SOURCE_SHA,
-  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,dealerBaggingDiagnostics,staffedTables,trackerCountRows,issuedPhysicalChips,
+  beforeCounts,afterCounts,deferredCount,handFinished,sealedBags,lockedChips,mobileBaggingLockRefreshed,dealerBaggingUiRefreshed,dealerBaggingReadback,dealerBaggingDiagnostics,dealerTrackerTableScoped,staffedTables,trackerCountRows,issuedPhysicalChips,
   bankReturned,secondFlightBags,firstFlightSeatingReview,secondFlightSeatingReview,recoveredPaidSeatings,finalSelectedBags,finalQualified,finalCarriedChips,finalSeated,finalClockStarted,finalTrackerTables,finalTrackerChips,finalShowdowns,finalSurvivors,finalClosedTables,finalDealerAssignmentsReleased,finalWinnerChips,finalLastTableClosed,finalRankingField,finalRankingReviewGroups,finalRankingReviewRecorded,finalOfficialRanks,finalCloseReconcileDelta,finalPayoutFunding,finalPayoutObligationsLocked,finalPayoutPaidRows,finalPayoutPaidVnd,finalPayoutDrawerDenialsVerified,finalPayoutDrawerRaceVerified,finalPayoutDrawerLockVerified,failedHttp,chipOpsScreen,qualification:false,productionChanged:false,
   limits:'Two isolated flights through Final Day seating, clock start and Tracker showdowns last-table closure and official Final Day ranks from sealed bags. Physical bank movements and browser bagging cover Flight A. Prize paid markers are recorded against TEST obligations. Drawer source is verified in the isolated TEST DB. Production and load qualification are outside this run.'},null,2));
  const post=async(path:string,body:Record<string,unknown>,token=owner)=>{
@@ -2485,6 +2486,17 @@ test('Floor consolidation renders the 27 paid seats over real Auth HTTP',async({
     p_idempotency_key:crypto.randomUUID(),p_swing_due_at:new Date(Date.now()+15*60000).toISOString()})).toMatchObject({outcome:'ok'});
   }
   const target=before.find(table=>table.control_mode==='tracker')!;
+  phase='assigned-dealer-tracker-table-read';report();
+  const trackerDealer=staff.find(actor=>actor.userId===assignedDealers.get(target.table_session_id));
+  expect(trackerDealer).toBeDefined();
+  const dealerTables=await rpc('get_tracker_hand_input_tables_v4',{p_tournament_id:tour},trackerDealer!.token);
+  expect(dealerTables.ok).toBe(true);
+  expect(dealerTables.tables).toHaveLength(1);
+  expect(dealerTables.tables[0]).toMatchObject({
+   table_id:target.game_table_id,tournament_table_id:target.tournament_table_id,
+   table_session_id:target.table_session_id,table_number:target.table_number,can_manual_cards:true,
+  });
+  dealerTrackerTableScoped=true;
   expect(target.seats.length).toBeGreaterThanOrEqual(2);
   expect(target.seats.length).toBeLessThan(9);
   const source=before.filter(table=>table.control_mode==='manual'&&table.seats.length>0).sort((a,b)=>a.seats.length-b.seats.length)[0];
