@@ -1691,6 +1691,12 @@ AUDIENCE_REALTIME_RECEIPT
         -c "SELECT encode(extensions.digest(convert_to(prosrc,'UTF8'),'sha256'),'hex') FROM pg_proc
           WHERE oid=to_regprocedure('public.chip_ops_bank_adjust(uuid,uuid,text,bigint,uuid,integer,text)');")"
       [[ "$bank_preimage" == f25830296202a562c681a6318790c2fdb3203badd812e6e5882a7444e3a19934 ]]
+      # The dump grants authenticated SELECT only. The fresh Supabase template
+      # adds default ACLs to recreated tables; restore this table's captured ACL.
+      docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'CHIP_ISSUANCE_CAPTURED_ACL'
+REVOKE ALL ON TABLE public.stack_template_issuance FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON TABLE public.stack_template_issuance TO authenticated;
+CHIP_ISSUANCE_CAPTURED_ACL
       for migration in \
         20270128000016_chip_color_up_serialized_integrity_v1.sql \
         20270128000069_chip_issuance_exact_intent_v1.sql \
