@@ -97,7 +97,6 @@ const waitState=async(application,kind)=>{for(let i=0;i<40;i++){if(sql(`SELECT E
  sql(`UPDATE tracker_analytics_v1.jobs SET available_at=clock_timestamp() WHERE kind='visibility' AND entity_id='${tour}';`);await drain();
 }
 // Cross the 200-hand metadata page boundary while closing a still-public tour.
-sql(readFileSync('supabase/pending-migrations/20261121125307_public_hud_refresh_public_status_fingerprint.sql','utf8'));
 const closeFingerprintEvidence=await (async()=>{
  const tour=ids(7),count=201;tours.push(tour);
  const hands=Array.from({length:count},(_,i)=>handId(7,i+1));
@@ -112,10 +111,13 @@ const closeFingerprintEvidence=await (async()=>{
   WHERE source_fingerprint=tracker_analytics_v1.hand_fingerprint(hand_id))::text
   FROM tracker_analytics_v1.hand_contributions WHERE tournament_id='${tour}';`);
  assert.equal(matches(),`${count}:${count}`,'Live hands must start with current fingerprints');
+ sql(readFileSync('supabase/pending-migrations/20261121132000_public_hud_equivalent_status_fingerprint.sql','utf8'));
  const start=performance.now();
  sql(`UPDATE public.tournaments SET status='completed' WHERE id='${tour}';`);
  const writeAcknowledgedMs=performance.now()-start;
  assert.equal(work(tour),0,'The tour writer must not create per-hand visibility work');
+ assert.equal(parent(tour),null,'An equivalent status must not enqueue visibility work');
+ assert.equal(barrier(tour),0,'An equivalent status must keep HUD readable');
  await drain();
  const drainCompletedMs=performance.now()-start;
  assert.equal(matches(),`${count}:${count}`,'Closing a public tour must leave all hand fingerprints current');
