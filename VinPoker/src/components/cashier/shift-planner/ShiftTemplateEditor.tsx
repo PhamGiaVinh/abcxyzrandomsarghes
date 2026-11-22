@@ -215,8 +215,8 @@ export default function ShiftTemplateEditor({ open, onOpenChange, clubId, refDat
           <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Thêm khung ca</div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <Input placeholder="Nhãn (vd 08–16)" value={label} onChange={(e) => setLabel(e.target.value)} className="h-9" />
-            <Input type="time" value={start} onChange={(e) => setStart(e.target.value)} className="h-9" />
-            <Input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="h-9" />
+            <Input type="time" aria-label="Giờ bắt đầu ca" value={start} onChange={(e) => setStart(e.target.value)} className="h-9" />
+            <Input type="time" aria-label="Giờ kết thúc ca" value={end} onChange={(e) => setEnd(e.target.value)} className="h-9" />
             <Input type="number" min={0} max={20} value={needCount} onChange={(e) => setNeedCount(Math.max(0, parseInt(e.target.value || "0", 10)))} className="h-9" placeholder="Số dealer" />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
