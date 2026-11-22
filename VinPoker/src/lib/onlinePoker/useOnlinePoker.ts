@@ -158,7 +158,7 @@ export function useTableHand(tableId: string): TableHandState {
   const uidRef=useRef<string|null>(null);
   const identityScope=useRef<object>({});
   const handMounted=useRef(false);
-  const handRead=useRef<{table:object;identity:object;controller:AbortController}|null>(null);
+  const handRead=useRef<{table:object;identity:object;controller:AbortController;refreshAfterJoin:boolean}|null>(null);
   useEffect(()=>{handMounted.current=true;return()=>{handMounted.current=false;handRead.current?.controller.abort();handRead.current=null;};},[]);
   const [hostUserId, setHostUserId] = useState<string | null>(null);
   const [hostOrigin,setHostOrigin]=useState<object|null>(null);
@@ -260,7 +260,7 @@ export function useTableHand(tableId: string): TableHandState {
     const issuedTable=tableScope.current;
     if(handRead.current?.table===issuedTable&&handRead.current.identity===issuedIdentity)return;
     handRead.current?.controller.abort();
-    const run={table:issuedTable,identity:issuedIdentity,controller:new AbortController()};handRead.current=run;
+    const run={table:issuedTable,identity:issuedIdentity,controller:new AbortController(),refreshAfterJoin:false};handRead.current=run;
     const current=()=>handMounted.current&&handRead.current===run&&tableScope.current===issuedTable&&identityScope.current===issuedIdentity;
     setLoading(true);
     void observeTrackerContextRead((async () => {
@@ -297,7 +297,14 @@ export function useTableHand(tableId: string): TableHandState {
       setError(null);
     })())
       .catch((e) => { if (current()) {setHandOrigin(issuedTable);setHand(null);setError(e instanceof Error ? e.message : 'load_failed');} })
-      .finally(() => { if(current())setLoading(false);if(handRead.current===run)handRead.current=null;run.controller.abort(); });
+      .finally(() => {
+        const stillCurrent = current();
+        if (handRead.current === run) handRead.current = null;
+        run.controller.abort();
+        if (!stillCurrent) return;
+        setLoading(false);
+        if (run.refreshAfterJoin) setTick((n) => n + 1);
+      });
   }, [tableId, tick, ingestView]);
 
   // Legal-action menu — its OWN effect, ONE edge fetch per (handId, stateVersion) while it
@@ -379,6 +386,8 @@ export function useTableHand(tableId: string): TableHandState {
   // (the table row carries host_user_id changes). Dark: no-op.
   useEffect(() => {
     if (!RUNTIME_LIVE) return;
+    let active = true;
+    const joinedTable = tableScope.current;
     const channel = supabase
       .channel(`op-table-${tableId}`)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -387,8 +396,21 @@ export function useTableHand(tableId: string): TableHandState {
       .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_seats', filter: `table_id=eq.${tableId}` }, () => setTick((n) => n + 1))
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'online_poker_tables', filter: `id=eq.${tableId}` }, () => setTick((n) => n + 1))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .subscribe((status) => {
+        // A hand may commit during the initial join or while the socket is offline.
+        // Read the current revision whenever this table joins or rejoins.
+        if (!active || tableScope.current !== joinedTable || status !== 'SUBSCRIBED') return;
+        const pending = handRead.current;
+        if (pending?.table === joinedTable && pending.identity === identityScope.current) {
+          pending.refreshAfterJoin = true;
+        } else {
+          setTick((n) => n + 1);
+        }
+      });
+    return () => {
+      active = false;
+      supabase.removeChannel(channel);
+    };
   }, [tableId]);
 
   // Polling fallback (live only): realtime postgres_changes can drop or lag, which would

@@ -52,3 +52,23 @@ for(const expectedActorId of [undefined,null,'','not-a-uuid'])it(`requires a val
   const r=await run(body);assert.equal(r.status,400);assert.equal(r.calls.length,0);assert.equal(r.gateCalls.length,0);
  }
 });
+
+it('routes a manual start through the shared deal function using the authenticated actor',async()=>{
+ const table='181a034d-c701-4e76-91d6-2a05e28ec6e1';
+ const hand='081a034d-c701-4e76-91d6-2a05e28ec6e1';
+ const user={auth:{getUser:async()=>({data:{user:{id:actor}},error:null})}};
+ const admin={rpc:async()=>({data:true,error:null})};
+ const calls=[];
+ const handler=loadCreateAction((_url,apiKey)=>apiKey==='ANON_TEST'?user:admin,[],undefined,async(...args)=>{
+  calls.push(args);
+  return calls.length===1?{ok:true,tableId:table,handId:hand,handNo:8,buttonSeat:1}:{ok:false,reason:'already_active'};
+ });
+ const start=()=>handler(new Request('http://local.invalid/action',{method:'POST',headers:{authorization:'Bearer LOCAL_TEST_ONLY','content-type':'application/json'},body:JSON.stringify({op:'start_hand',tableId:table,idempotencyKey:key,actorId:'FORGED_TEST_ACTOR'})}));
+ const started=await start();
+ assert.equal(started.status,200);
+ assert.deepEqual(await started.json(),{outcome:'ok',hand_id:hand,state_version:0});
+ assert.deepEqual(calls[0],[admin,table,actor]);
+ const alreadyActive=await start();
+ assert.equal(alreadyActive.status,200);
+ assert.deepEqual(await alreadyActive.json(),{outcome:'already_active'});
+});

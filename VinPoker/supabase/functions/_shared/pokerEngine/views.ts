@@ -19,6 +19,7 @@ export interface PublicSeat {
   stack: bigint;
   committed: bigint;
   totalCommitted: bigint;
+  deadAnte?: bigint;
   status: SeatStatus;
   hasActedThisRound: boolean;
   canRaise: boolean;
@@ -58,6 +59,7 @@ export function toPublicView(state: HandState): PublicHandState {
       stack: s.stack,
       committed: s.committed,
       totalCommitted: s.totalCommitted,
+      ...(s.deadAnte !== undefined ? { deadAnte: s.deadAnte } : {}),
       status: s.status,
       hasActedThisRound: s.hasActedThisRound,
       canRaise: s.canRaise,

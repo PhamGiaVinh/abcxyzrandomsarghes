@@ -17,6 +17,7 @@ export interface RunnerResult {
   dealt: number;
   skippedAlreadyActive: number;
   skippedNotEnough: number;
+  skippedWaitingForRound: number;
   errors: number;
   /** dry-run only: why open tables are/aren't eligible (no cards, ever) */
   diag?: {
@@ -36,7 +37,7 @@ export async function runTableRunner(
   const dryRun = !!opts.dryRun;
   const r: RunnerResult = {
     outcome: 'ok', dryRun, scanned: 0, dealt: 0,
-    skippedAlreadyActive: 0, skippedNotEnough: 0, errors: 0,
+    skippedAlreadyActive: 0, skippedNotEnough: 0, skippedWaitingForRound: 0, errors: 0,
   };
 
   const { data: enabled } = await admin.rpc('op_is_enabled');
@@ -65,6 +66,7 @@ export async function runTableRunner(
       if (res.ok) r.dealt++;
       else if (res.reason === 'already_active') r.skippedAlreadyActive++;
       else if (res.reason === 'not_enough_players') r.skippedNotEnough++;
+      else if (res.reason === 'waiting_for_round') r.skippedWaitingForRound++;
       else r.errors++;
     } catch {
       r.errors++; // table isolation: one failure must not abort the rest

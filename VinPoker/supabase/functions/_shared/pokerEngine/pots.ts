@@ -7,6 +7,8 @@
 import type { HandState, SeatState, SidePot } from './types.ts';
 import { seatsInClockwiseOrder } from './betting.ts';
 
+const liveContribution = (seat: SeatState) => seat.totalCommitted - (seat.deadAnte ?? 0n);
+
 /**
  * Build main + side pots from each seat's totalCommitted (across all streets).
  * Folded seats' chips stay in the pots (dead money) but folded seats are NEVER
@@ -14,9 +16,9 @@ import { seatsInClockwiseOrder } from './betting.ts';
  */
 export function computeSidePots(state: HandState): SidePot[] {
   const contributors = state.seats
-    .filter((s) => s.totalCommitted > 0n)
-    .map((s) => ({ seat: s.seat, amt: s.totalCommitted, folded: s.status === 'folded' }));
-  if (contributors.length === 0) return [];
+    .map((s) => ({ seat: s.seat, amt: liveContribution(s), folded: s.status === 'folded' }))
+    .filter((s) => s.amt > 0n);
+  const ante = state.seats.reduce((total, seat) => total + (seat.deadAnte ?? 0n), 0n);
 
   const levels = [...new Set(contributors.map((c) => c.amt))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
@@ -35,6 +37,17 @@ export function computeSidePots(state: HandState): SidePot[] {
     if (amount > 0n) pots.push({ amount, eligibleSeats: eligible });
     prev = L;
   }
+  if (ante > 0n) {
+    const eligibleSeats = state.seats
+      .filter(seat => seat.status === 'active' || seat.status === 'allin')
+      .map(seat => seat.seat);
+    if (pots.length) {
+      pots[0].amount += ante;
+      pots[0].eligibleSeats = eligibleSeats;
+    } else {
+      pots.push({ amount: ante, eligibleSeats });
+    }
+  }
   return pots;
 }
 
@@ -51,23 +64,23 @@ export function computeSidePots(state: HandState): SidePot[] {
  * tests/pokerEngine/sidePotContract.test.ts for the locked behaviour.)
  */
 export function refundUncalled(state: HandState): { seat: number; amount: bigint } | null {
-  const inPlay = state.seats.filter((s) => s.totalCommitted > 0n);
+  const inPlay = state.seats.filter((s) => liveContribution(s) > 0n);
   if (inPlay.length < 2) {
     // pathological: a single contributor — refund everything to them
     const only = inPlay[0];
-    if (!only || only.totalCommitted === 0n) return null;
-    const amt = only.totalCommitted;
+    if (!only) return null;
+    const amt = liveContribution(only);
     only.stack += amt;
     only.totalCommitted -= amt;
     state.pot -= amt;
     return { seat: only.seat, amount: amt };
   }
-  const sorted = [...inPlay].sort((a, b) => (a.totalCommitted < b.totalCommitted ? 1 : a.totalCommitted > b.totalCommitted ? -1 : 0));
+  const sorted = [...inPlay].sort((a, b) => (liveContribution(a) < liveContribution(b) ? 1 : liveContribution(a) > liveContribution(b) ? -1 : 0));
   const top = sorted[0];
-  const second = sorted[1].totalCommitted;
-  const topCount = state.seats.filter((s) => s.totalCommitted === top.totalCommitted).length;
-  if (topCount === 1 && top.totalCommitted > second) {
-    const excess = top.totalCommitted - second;
+  const second = liveContribution(sorted[1]);
+  const topAmount = liveContribution(top);
+  if (topAmount > second) {
+    const excess = topAmount - second;
     top.stack += excess;
     top.totalCommitted -= excess;
     state.pot -= excess;
