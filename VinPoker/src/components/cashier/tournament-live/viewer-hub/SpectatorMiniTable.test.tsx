@@ -18,3 +18,11 @@ describe('public mini table verified empty-state copy',()=>{
    expect(html).toContain(label);expect(html).not.toContain('Đang chờ ván bài');
   });
 });
+
+it('uses Cát khói for standard tables and keeps explicit tournament colors', () => {
+  expect(renderToStaticMarkup(<SpectatorMiniTable table={table} />)).toContain('data-cat-khoi="true"');
+  const custom = renderToStaticMarkup(<SpectatorMiniTable table={table}
+    appearance={{ feltColor: '#521b23', railColor: '#a68b4c', logoUrl: null }} />);
+  expect(custom).toContain('spectator-mini-surface');
+  expect(custom).not.toContain('data-cat-khoi');
+});

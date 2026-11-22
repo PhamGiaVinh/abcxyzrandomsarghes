@@ -3,10 +3,16 @@ import { DEFAULT_TABLE_APPEARANCE, tableAppearanceStyle, type TableAppearance } 
 import './tableSurface.css';
 
 /** The still artwork contains only light and material. All game data stays in the DOM. */
+export function usesCatKhoi(appearance = DEFAULT_TABLE_APPEARANCE) {
+  return appearance.feltColor.toLowerCase() === DEFAULT_TABLE_APPEARANCE.feltColor
+    && appearance.railColor.toLowerCase() === DEFAULT_TABLE_APPEARANCE.railColor;
+}
+
+/** The still artwork contains only light and material. All game data stays in the DOM. */
 export function TableSurface({ portrait, appearance }: { portrait: boolean; appearance?: TableAppearance }) {
   const id = useId().replace(/:/g, '');
   const defaultGreen = (appearance?.feltColor ?? DEFAULT_TABLE_APPEARANCE.feltColor).toLowerCase() === DEFAULT_TABLE_APPEARANCE.feltColor;
-  const smoke = defaultGreen && (appearance?.railColor ?? DEFAULT_TABLE_APPEARANCE.railColor).toLowerCase() === DEFAULT_TABLE_APPEARANCE.railColor;
+  const smoke = usesCatKhoi(appearance);
   return <div aria-hidden="true" className="tracker-table-surface" data-shape={portrait ? 'portrait' : 'landscape'}
     data-cat-khoi={smoke || undefined} data-default-green={defaultGreen || undefined} style={tableAppearanceStyle(appearance)}>
     {smoke ? null : portrait ? <div className="tracker-table-cloth" /> : <svg className="table-rail-art" viewBox="0 0 1200 560" preserveAspectRatio="none" focusable="false">

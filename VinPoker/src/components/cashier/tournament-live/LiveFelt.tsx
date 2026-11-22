@@ -672,7 +672,9 @@ export function LiveFelt({
   // the WHOLE thing down to fit (everything shrinks uniformly → never overlaps). Portrait is
   // untouched (it already fits, and stays the big-readable option). Wide screens (≥ design
   // width) also untouched. Operator/TV (viewerLayout off) never measure.
-  const LANDSCAPE_DESIGN_W = 560;
+  // The unified landscape CSS has a 410px minimum height. Match its actual
+  // aspect ratio before calculating the height of the clipping wrapper.
+  const LANDSCAPE_DESIGN_W = unified ? 780 : 560;
   const FIT_PAD = 26; // breathing room above/below for pods that straddle the rim
   const feltWrapRef = layout.ref;
   const [fit, setFit] = useState<{ scale: number; h: number } | null>(null);
@@ -691,7 +693,7 @@ export function LiveFelt({
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [viewerLayout, portrait, unified, motionAspect, feltWrapRef]);
+  }, [viewerLayout, portrait, unified, motionAspect, feltWrapRef, LANDSCAPE_DESIGN_W]);
 
   return (
     <div
