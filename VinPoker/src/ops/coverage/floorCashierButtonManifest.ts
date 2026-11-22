@@ -42,6 +42,8 @@ const navigationActions = [
   "floor.tables.toggle_search",
   "floor.tables.select_tournament",
   "floor.tables.open_roster",
+  "floor.tables.open_tracker_map",
+  "floor.tables.open_tracker_table",
   "floor.tables.open_v3_control_mode",
   "floor.tables.open_seat",
   "floor.tables.open_table_dialog",

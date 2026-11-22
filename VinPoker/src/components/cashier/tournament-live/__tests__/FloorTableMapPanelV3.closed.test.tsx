@@ -20,7 +20,7 @@ const v3 = { enabled: true, redrawSeatLockEnabled: true, fastBustEnabled: false,
   getSeatableEntries: state.entries, getRestorableEntries: state.restorable, getPendingTrackerMoves: state.moves, closeTournamentTable: state.close };
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => client }));
 vi.mock("@/lib/floorTableControlV3", () => ({ createFloorTableControlV3Client: () => v3 }));
-vi.mock("@/lib/featureFlags", () => ({ FEATURES: { floorRedrawSeatLockV1: true, floorTableControlV3: false } }));
+vi.mock("@/lib/featureFlags", () => ({ FEATURES: { floorRedrawSeatLockV1: true, floorTableControlV3: false, trackerHandInputConsole: true } }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: "floor" } }) }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { rpc: vi.fn() } }));
 vi.mock("../OpenTableDialog", () => ({ OpenTableDialog: ({ open }: { open: boolean }) => open ? <div role="dialog">Open fixture</div> : null }));
@@ -87,6 +87,20 @@ const table = (number: number) => ({ tournamentTableId: `table-${number}`, gameT
   tableNumber: number, tableName: `TEST table ${number}`, tableSessionId: `session-${number}`, sessionRevision: 1,
   controlEpoch: 1, controlMode: "manual", tournamentTableStatus: "active", sessionClosedAt: null,
   activeDealerAssignmentId: null, seats: [], seatLocks: [], maxSeats: 9 });
+
+it("opens the dealer map and links only tracker tables to their physical table setup", async () => {
+  state.roster.mockResolvedValue({ ok: true, data: [table(1), { ...table(99), controlMode: "tracker" }] });
+  render(<FloorTableMapPanelV3 tournament={tour("live")} actorId="floor" refreshTrigger={0} />);
+  expect(await screen.findByRole("link", { name: "Bản đồ bàn Live Tracker" }))
+    .toHaveAttribute("href", "/tracker/hand-input?tournament=tour");
+  fireEvent.click(screen.getByRole("button", { name: /Bàn 99/ }));
+  expect(await screen.findByRole("link", { name: "Vào Live Tracker" }))
+    .toHaveAttribute("href", "/tracker/hand-input?tournament=tour&table=asset-99");
+  fireEvent.keyDown(document.body, { key: "Escape" });
+  fireEvent.click(await screen.findByRole("button", { name: /Bàn 1\b/ }));
+  await screen.findByRole("dialog", { name: /Bàn 1\b/ });
+  expect(screen.queryByRole("link", { name: "Vào Live Tracker" })).toBeNull();
+});
 
 it.each(["missing_entry", "valid"] as const)("releases consecutive %s seats and opens empty-table close without secondary lists", async (integrityStatus) => {
   v3.fastBustEnabled = true;

@@ -1,5 +1,4 @@
 import { TableLogo, TableBlinds } from './TableIdentity';
-import { tableAppearanceStyle } from './tableAppearance';
 // PR-A — Tracker Racetrack Hand-Input UI: the felt + 9 physical seats + board + pot.
 // Presentational only; decides nothing about pot/winner/stack/legality.
 //
@@ -30,7 +29,9 @@ import { PokerCard, CardBack } from '@/components/cashier/tournament-live/PokerV
 import { ChipStack } from '@/components/cashier/tournament-live/ChipStack';
 import type { SeatVM, TrackerRacetrackProps } from './types';
 import { useTrackerCardStyle } from './TrackerCardStyle';
-import { TRACKER_TABLE_GEOMETRY, TRACKER_FELT_STYLE, trackerTableSizes, trackerBetPoint, useTrackerTableLayout } from './trackerTableLayout';
+import { TRACKER_TABLE_GEOMETRY, trackerTableSizes, trackerBetPoint, useTrackerTableLayout } from './trackerTableLayout';
+import { TableSurface } from './TableSurface';
+import { TablePot } from './TablePot';
 import { formatStack } from '@/components/cashier/tournament-live/handinput/format';
 
 // App number identity (AppDigits-first per tailwind.config) — matches the rest of the app.
@@ -169,8 +170,8 @@ function Seat({
   const seatLabel = t('liveHub.seat', 'Ghế {{n}}', { n: seat.seatNumber });
 
   if (unified) {
-    return <div data-tracker-seat={seat.seatNumber} data-seat-selected={isActing} data-seat-acting={isCurrentActor}
-      className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 ${seat.isFolded ? 'opacity-60' : ''}`}
+    return <div data-tracker-seat={seat.seatNumber} data-seat-selected={isActing} data-seat-acting={isCurrentActor} data-seat-folded={seat.isFolded}
+      className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
       style={{ left: `${anchor.left}%`, top: `${anchor.top}%` }}
       {...(onTap ? { role: 'button', tabIndex: 0, 'aria-label': `${seatLabel} · ${seat.name || t('liveHub.felt.empty', 'trống')}`, 'aria-pressed': isActing,
         onClick: onTap, onKeyDown: (event: KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onTap(); } } } : {})}>
@@ -182,12 +183,12 @@ function Seat({
             </div>
             <div className="absolute -top-2 left-0 flex gap-0.5"><PositionBadge position={seat.position} />{isDealerButton && <b className="rounded-full bg-amber-300 px-1 text-[8px] text-black">D</b>}</div>
           </div>
-          <div className="tracker-seat-cards"><HoleCards seat={seat} showFaces={showHoleCards} cardStyle={holeCardStyle} /></div>
+          <div className="tracker-seat-cards" data-revealed={!!showHoleCards && !seat.isMucked && !!seat.holeCards?.some(Boolean)}><HoleCards seat={seat} showFaces={showHoleCards} cardStyle={holeCardStyle} /></div>
           <div className="tracker-seat-plate" title={`${seat.name} · ${formatChips(seat.stack)} · ${toBB(seat.stack, bigBlind)} BB`}>
-            <div className="tracker-seat-name">{seat.name}</div>
+            <div className="tracker-seat-name"><span className="tracker-seat-number">{seat.seatNumber}</span>{seat.name}</div>
             <div className="tracker-seat-stack">{formatStack(seat.stack)}</div>
           </div>
-          <div className="mt-0.5 text-[8px] text-amber-100/80">{seat.isAllIn ? 'ALL-IN' : seat.isFolded ? 'FOLD' : `${toBB(seat.stack, bigBlind)} BB`}</div>
+          <div className="tracker-seat-line">{seat.isAllIn ? 'ALL-IN' : seat.isFolded ? 'FOLD' : seat.lastAction || (isCurrentActor ? t('liveHub.felt.toAct', 'Đến lượt') : bigBlind > 0 ? `${toBB(seat.stack, bigBlind)} BB` : '')}</div>
           {onAnalyticsTap && <button type="button" aria-label={t('tracker.analytics.openForPlayer', 'Mở phân tích vận hành của {{name}}', { name: seat.name })}
             className="absolute left-0 top-0 z-20 h-11 w-11 rounded-full focus-visible:ring-2 focus-visible:ring-amber-200"
             onClick={event => { event.stopPropagation(); onAnalyticsTap(); }} onKeyDown={event => event.stopPropagation()} />}
@@ -424,6 +425,7 @@ export function TrackerRacetrack({
   actingSeatNumber,
   dealerSeatNumber,
   boardCards,
+  belowBoard,
   pot,
   bigBlind,
   onSeatTap,
@@ -514,23 +516,30 @@ export function TrackerRacetrack({
     : undefined;
 
   return (
+    <>
     <div
       ref={layout.ref}
       data-tracker-table={unified ? (portrait ? 'portrait' : 'landscape') : undefined}
+      data-has-clock={unified && !!belowBoard ? true : undefined}
       className={unified ? 'tracker-unified relative mx-auto my-4 w-full rounded-[9999px]' : `relative w-full rounded-[9999px] min-h-[360px] ${rich ? (portrait ? 'overflow-visible' : 'overflow-hidden') : 'overflow-hidden aspect-[13/6]'}`}
-      style={unified ? { ...TRACKER_FELT_STYLE, ...tableAppearanceStyle(appearance), borderRadius: portrait ? '38% / 22%' : '28% / 42%', aspectRatio: sharedGeo.aspect, maxWidth: sharedGeo.maxW, containerType: 'inline-size' } : rich ? { ...RICH_FELT, aspectRatio: portraitFix ? PORTRAIT_FIX_ASPECT : geo.aspect, minHeight: portraitFix ? PORTRAIT_FIX_MIN_H : undefined, containerType: 'inline-size' } : FELT}
+      style={unified ? { aspectRatio: sharedGeo.aspect, maxWidth: sharedGeo.maxW, containerType: 'inline-size' } : rich ? { ...RICH_FELT, aspectRatio: portraitFix ? PORTRAIT_FIX_ASPECT : geo.aspect, minHeight: portraitFix ? PORTRAIT_FIX_MIN_H : undefined, containerType: 'inline-size' } : FELT}
     >
+      {unified && <TableSurface portrait={portrait} appearance={appearance} />}
       {/* Center: pot + board */}
       <div
-        className="absolute w-[320px] -translate-x-1/2 -translate-y-1/2 text-center"
-        style={{ left: '50%', top: `${centerTop}%`, ...(unified ? { width: sharedGeo.centerW } : {}) }}
+        className="tracker-felt-center absolute w-[320px] -translate-x-1/2 -translate-y-1/2 text-center"
+        style={{ left: '50%', top: `${centerTop}%`, ...(unified ? { width: sharedGeo.centerW, '--center-width': sharedGeo.centerW, '--center-top': sharedGeo.centerTop } : {}) } as CSSProperties}
       >
+        <div className="tracker-center-readout">
+        {unified ? <>
+          <TableLogo url={appearance?.logoUrl} />
+          <TablePot total={formatChips(pot)} layers={potBreakdown?.pots} formatAmount={formatChips} />
+        </> : <>
         <div
           className={`text-[10px] uppercase tracking-[0.16em] ${
             rich ? 'tracker-display text-[hsl(var(--poker-gold)/0.7)]' : 'text-white/40'
           }`}
         >
-          {unified && <TableLogo url={appearance?.logoUrl} />}
           {t('liveHub.felt.potTotal', 'Tổng Pot')}
         </div>
         <div
@@ -561,9 +570,9 @@ export function TrackerRacetrack({
             ))}
           </div>
         )}
-        {unified && <TableBlinds {...blinds} />}
-        <div data-testid="board-cards" className="mt-2.5 inline-flex justify-center gap-1.5">
-          {boardCards.map((card, i) =>
+        </>}
+        <div data-testid="board-cards" className="mx-auto mt-2.5 flex w-fit justify-center gap-1.5">
+          {(unified ? Array.from({ length: 5 }, (_, i) => boardCards[i]) : boardCards).map((card, i) =>
             rich || unified ? (
               <PokerCard key={i} card={card || null} size="md" style={unified ? sharedSizes.board : boardCardStyle} />
             ) : (
@@ -571,6 +580,9 @@ export function TrackerRacetrack({
             ),
           )}
         </div>
+        {unified && <div><TableBlinds {...blinds} /></div>}
+        </div>
+        {unified && belowBoard && <div className="tracker-board-clock">{belowBoard}</div>}
       </div>
 
       {/* Committed-chip pucks (behind seats). liveBetChips → chip-DISC stack (ChipStack);
@@ -698,5 +710,7 @@ export function TrackerRacetrack({
         </div>
       )}
     </div>
+    {!unified && belowBoard}
+    </>
   );
 }

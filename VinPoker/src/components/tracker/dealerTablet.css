@@ -61,7 +61,6 @@
 .dealer-voice-region .dealer-voice-proposal:has([role=timer]) { min-height:154px; padding-right:88px; }
 .dealer-voice-region .dealer-voice-proposal [role=timer] { position:absolute; right:12px; top:32px; padding:0; border:0; margin:0; }
 .dealer-voice-region .dealer-voice-proposal [role=timer] > div:last-child { display:none; }
-.dealer-voice-region .dealer-voice-proposal:has([role=timer])::after { content:'3 giây để chốt · Nói Báo sai để hủy'; display:block; margin-top:12px; font-size:10px; color:#afd9be; }
 .dealer-voice-region [data-compact=true] > div:first-child button:nth-child(2) { padding:0 8px; font-size:10px; }
 .dealer-voice-region [aria-label='Floor alerts'] { background:#101b16; border-radius:10px; }
 .dealer-voice-settings > div { margin-top:8px; }
