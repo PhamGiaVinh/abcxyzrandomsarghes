@@ -79,10 +79,10 @@ describe("desktop Swing authoritative read state", () => {
     fireEvent.click(screen.getByRole('button', { name: 'ĐỘI HÌNH / CHECK-IN' }));
     state.shifts = [{ id: 'late', club_id: 'club', tour_name: 'TEST 02:00', start_time: '02:00', end_time: '10:00' }];
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check-in' })); });
-    expect(vi.mocked(supabase.from).mock.calls.filter(([table]) => table === "dealer_shifts")).toHaveLength(2);
+    expect(vi.mocked(supabase.from).mock.calls.filter(([table]) => String(table) === "dealer_shifts")).toHaveLength(2);
     state.shifts = [{ ...state.shifts[0], tour_name: 'TEST updated' }];
     await act(async () => { fireEvent.focus(window); });
-    expect(vi.mocked(supabase.from).mock.calls.filter(([table]) => table === "dealer_shifts")).toHaveLength(3);
+    expect(vi.mocked(supabase.from).mock.calls.filter(([table]) => String(table) === "dealer_shifts")).toHaveLength(3);
     state.shifts = [];
   });
   afterEach(()=>vi.useRealTimers());
