@@ -168,7 +168,10 @@ BEGIN
  RETURN NEW;
 END $$;
 REVOKE ALL ON FUNCTION floor_private.commit_club_portrait_object() FROM PUBLIC,anon,authenticated;
-CREATE TRIGGER commit_club_portrait_object AFTER INSERT ON storage.objects
+-- Storage authorizes uploads using a trial INSERT which it rolls back. A deferred
+-- constraint fires at COMMIT of the real object only, once its final metadata exists.
+CREATE CONSTRAINT TRIGGER commit_club_portrait_object AFTER INSERT ON storage.objects
+ DEFERRABLE INITIALLY DEFERRED
  FOR EACH ROW WHEN (NEW.bucket_id='club-player-portraits') EXECUTE FUNCTION floor_private.commit_club_portrait_object();
 
 REVOKE ALL ON FUNCTION public.club_player_portrait_v1(jsonb,text,uuid,uuid) FROM PUBLIC,anon;

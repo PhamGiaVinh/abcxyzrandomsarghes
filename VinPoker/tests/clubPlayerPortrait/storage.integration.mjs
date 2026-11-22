@@ -33,7 +33,11 @@ await rpc("prepare",losing);
 await rpc("prepare");
 const object="/storage/v1/object/club-player-portraits/"+upload+".jpg";
 const result=await fetch(new URL(object,base),{method:"POST",headers:{...headers,"Content-Type":"image/jpeg","x-upsert":"false"},body:jpeg});
-assert.ok(result.ok,`real JPEG upload HTTP ${result.status}`);
+if (!result.ok) {
+ const detail=await result.text();
+ const safe=detail.match(/portrait_[a-z_]+|permission denied|does not exist|database error/i)?.[0] ?? "storage rejected";
+ throw new Error(`real JPEG upload HTTP ${result.status}: ${safe}`);
+}
 const receipt=await rpc("publish");
 assert.equal(receipt.version,upload);
 assert.equal(new URL(receipt.url).origin,base.origin);
