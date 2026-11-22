@@ -1,0 +1,134 @@
+name: Club portrait 1736 protected migration
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/club-portrait-1736-protected-apply.yml
+      - VinPoker/scripts/ops/club-portrait-1736-protected-apply*.mjs
+  workflow_dispatch:
+    inputs:
+      recovery_run_id:
+        description: Successful encrypted backup and isolated restore run
+        required: true
+        type: string
+      confirmation:
+        description: APPLY_CLUB_PORTRAIT_1736 followed by the exact source SHA
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  checks: read
+  pull-requests: read
+
+concurrency:
+  group: vinpoker-production-database-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_SHA: 8aa7fe30a4835827d89bdf5e0bf189563b69c908
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {path: runner}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ env.RELEASE_SHA }}', path: release}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Verify exact migration and atomic wrapper
+        working-directory: runner/VinPoker
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/release/VinPoker
+        run: |
+          node scripts/ops/club-portrait-1736-protected-apply.mjs verify-source
+          PORTRAIT_RELEASE_NATIVE=1 node --test scripts/ops/club-portrait-1736-protected-apply.test.mjs
+      - name: Verify protected dispatch and source checks
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONFIRM_CLUB_PORTRAIT_1736: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          test "$GITHUB_TRIGGERING_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          test "$CONFIRM_CLUB_PORTRAIT_1736" = "APPLY_CLUB_PORTRAIT_1736_$RELEASE_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/environments/dealer-swing-production-critical" |
+            jq -e '.protection_rules | any(.type == "required_reviewers" and (.reviewers | length > 0))' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/pulls/1736" |
+            jq -e --arg sha "$RELEASE_SHA" '.merged==true and .base.ref=="main" and .head.sha==$sha' >/dev/null
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45026344556")"
+          workflow="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/club-player-portrait-storage.yml" --jq .id)"
+          jq -e --arg sha "$RELEASE_SHA" --argjson workflow "$workflow" '.workflow_id==$workflow and .head_sha==$sha and .event=="pull_request" and .status=="completed" and .conclusion=="success"' <<<"$run" >/dev/null
+  apply:
+    if: github.event_name == 'workflow_dispatch'
+    needs: qualify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: dealer-swing-production-critical
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {path: runner}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ env.RELEASE_SHA }}', path: release}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Verify backup run and download only the restore receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$RECOVERY_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/pulls/1736" |
+            jq -e --arg sha "$RELEASE_SHA" '.merged==true and .base.ref=="main" and .head.sha==$sha' >/dev/null
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID")"
+          workflow="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/floor-v3-recovery-backup.yml" --jq .id)"
+          jq -e --argjson workflow "$workflow" --arg owner "$GITHUB_REPOSITORY_OWNER" '
+            .workflow_id==$workflow and .event=="workflow_dispatch" and .status=="completed" and
+            .conclusion=="success" and .head_branch=="main" and
+            .actor.login==$owner and .triggering_actor.login==$owner' <<<"$run" >/dev/null
+          artifact_list="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID/artifacts")"
+          jq -e --arg name "floor-v3-encrypted-database-recovery-$RECOVERY_RUN_ID" '
+            [.artifacts[]|select(.name==$name and .expired==false and .size_in_bytes>0)]
+             | length==1 and (.[0].digest | test("^sha256:[0-9a-f]{64}$"))' <<<"$artifact_list" >/dev/null
+          artifact="$(printf '%s' "$artifact_list" |
+            jq -ce --arg name "floor-v3-restore-verification-$RECOVERY_RUN_ID" '
+              [.artifacts[]|select(.name==$name and .expired==false and .size_in_bytes>0)] |
+              if length==1 then .[0] else error("restore artifact missing") end')"
+          id="$(jq -r .id <<<"$artifact")"
+          digest="$(jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))' <<<"$artifact")"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" >"$RUNNER_TEMP/portrait1736-recovery.zip"
+          test "$(sha256sum "$RUNNER_TEMP/portrait1736-recovery.zip" | cut -d ' ' -f1)" = "${digest#sha256:}"
+          test "$(unzip -Z1 "$RUNNER_TEMP/portrait1736-recovery.zip")" = recovery-verification.json
+          unzip -p "$RUNNER_TEMP/portrait1736-recovery.zip" recovery-verification.json >"$RUNNER_TEMP/portrait1736-recovery.json"
+          printf 'RECOVERY_BASE_SHA=%s\n' "$(jq -er '.head_sha | select(test("^[a-f0-9]{40}$"))' <<<"$run")" >>"$GITHUB_ENV"
+          printf 'RECOVERY_RECEIPT_PATH=%s/portrait1736-recovery.json\n' "$RUNNER_TEMP" >>"$GITHUB_ENV"
+      - name: Apply only Club portrait 1736 and verify receipt and definitions
+        working-directory: runner/VinPoker
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/release/VinPoker
+          SOURCE_CHECKOUT_SHA: ${{ env.RELEASE_SHA }}
+          INITIAL_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          CONFIRM_CLUB_PORTRAIT_1736: ${{ inputs.confirmation }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          PGHOST: aws-1-ap-southeast-2.pooler.supabase.com
+          PGPORT: '5432'
+          PGUSER: postgres.orlesggcjamwuknxwcpk
+          PGDATABASE: postgres
+          PGSSLMODE: require
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: node scripts/ops/club-portrait-1736-protected-apply.mjs apply
