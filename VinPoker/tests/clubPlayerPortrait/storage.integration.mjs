@@ -38,6 +38,8 @@ if (!result.ok) {
  const safe=detail.match(/portrait_[a-z_]+|permission denied|does not exist|database error/i)?.[0] ?? "storage rejected";
  throw new Error(`real JPEG upload HTTP ${result.status}: ${safe}`);
 }
+const linked=await rpc("read");
+assert.equal(linked.version,upload,"successful Storage commit links the portrait before a frontend receipt");
 const receipt=await rpc("publish");
 assert.equal(receipt.version,upload);
 assert.equal(new URL(receipt.url).origin,base.origin);

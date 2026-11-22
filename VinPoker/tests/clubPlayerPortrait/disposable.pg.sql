@@ -52,6 +52,10 @@ DO $$ BEGIN
   RAISE EXCEPTION 'unreserved upload'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
 END $$;
 SELECT club_player_portrait_v1(member_ctx(),'prepare',NULL,fixture_id(101));
+BEGIN;
+INSERT INTO storage.objects VALUES('club-player-portraits',fixture_id(101)||'.jpg',auth.uid(),NULL);
+ROLLBACK;
+SELECT assert_portrait(club_player_portrait_v1(member_ctx())->>'version' IS NULL,'trial upload was rolled back');
 INSERT INTO storage.objects VALUES('club-player-portraits',fixture_id(101)||'.jpg',auth.uid(),'{"mimetype":"image/jpeg","size":450}');
 SELECT assert_portrait(club_player_portrait_v1(member_ctx(),'publish',NULL,fixture_id(101))->>'version'=fixture_id(101)::text,'publish receipt');
 SELECT assert_portrait(club_player_portrait_v1(member_ctx(),'publish',NULL,fixture_id(101))->>'version'=fixture_id(101)::text,'retry lost response');
@@ -66,8 +70,9 @@ SELECT club_player_portrait_v1(member_ctx(),'prepare',fixture_id(101),fixture_id
 INSERT INTO storage.objects VALUES('club-player-portraits',fixture_id(103)||'.jpg',auth.uid(),'{"mimetype":"image/jpeg","size":450}');
 DO $$ BEGIN
  BEGIN INSERT INTO storage.objects VALUES('club-player-portraits',fixture_id(102)||'.jpg',auth.uid(),'{"mimetype":"image/jpeg","size":450}');
+  SET CONSTRAINTS ALL IMMEDIATE;
   RAISE EXCEPTION 'losing upload created public object';
- EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'portrait_changed' THEN RAISE; END IF; END;
+ EXCEPTION WHEN insufficient_privilege THEN NULL; WHEN raise_exception THEN IF SQLERRM<>'portrait_changed' THEN RAISE; END IF; END;
 END $$;
 SELECT club_player_portrait_v1(member_ctx(),'publish',fixture_id(101),fixture_id(103));
 DO $$ BEGIN

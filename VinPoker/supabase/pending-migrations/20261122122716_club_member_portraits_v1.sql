@@ -40,6 +40,8 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
   WHERE v.id=CASE WHEN p_name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[.]jpg$'
     THEN left(p_name,36)::uuid END
    AND v.actor_id=auth.uid() AND v.published_at IS NULL
+   AND v.replaces IS NOT DISTINCT FROM (SELECT live.id FROM floor_private.club_member_portrait_versions live
+    WHERE live.club_id=v.club_id AND live.member_id=v.member_id AND live.is_current)
    AND v.created_at > now()-interval '30 minutes' AND floor_private.club_portrait_staff(m.club_id,auth.uid()))
 $$;
 REVOKE ALL ON FUNCTION floor_private.club_portrait_staff(uuid,uuid),
@@ -168,6 +170,11 @@ BEGIN
  RETURN NEW;
 END $$;
 REVOKE ALL ON FUNCTION floor_private.commit_club_portrait_object() FROM PUBLIC,anon,authenticated;
+-- Authorize the real write when final JPEG metadata arrives. Storage may first
+-- issue a trial INSERT without metadata and roll it back before transferring bytes.
+CREATE TRIGGER publish_club_portrait_jpeg AFTER INSERT OR UPDATE ON storage.objects
+ FOR EACH ROW WHEN (NEW.bucket_id='club-player-portraits' AND NEW.metadata->>'mimetype'='image/jpeg'
+  AND NEW.metadata->>'size' IS NOT NULL) EXECUTE FUNCTION floor_private.commit_club_portrait_object();
 -- Storage authorizes uploads using a trial INSERT which it rolls back. A deferred
 -- constraint fires at COMMIT of the real object only, once its final metadata exists.
 CREATE CONSTRAINT TRIGGER commit_club_portrait_object AFTER INSERT ON storage.objects
