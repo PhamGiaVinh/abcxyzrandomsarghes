@@ -6,9 +6,10 @@ import './tableSurface.css';
 export function TableSurface({ portrait, appearance }: { portrait: boolean; appearance?: TableAppearance }) {
   const id = useId().replace(/:/g, '');
   const defaultGreen = (appearance?.feltColor ?? DEFAULT_TABLE_APPEARANCE.feltColor).toLowerCase() === DEFAULT_TABLE_APPEARANCE.feltColor;
+  const smoke = defaultGreen && (appearance?.railColor ?? DEFAULT_TABLE_APPEARANCE.railColor).toLowerCase() === DEFAULT_TABLE_APPEARANCE.railColor;
   return <div aria-hidden="true" className="tracker-table-surface" data-shape={portrait ? 'portrait' : 'landscape'}
-    data-default-green={defaultGreen || undefined} style={tableAppearanceStyle(appearance)}>
-    {portrait ? <div className="tracker-table-cloth" /> : <svg className="table-rail-art" viewBox="0 0 1200 560" preserveAspectRatio="none" focusable="false">
+    data-cat-khoi={smoke || undefined} data-default-green={defaultGreen || undefined} style={tableAppearanceStyle(appearance)}>
+    {smoke ? null : portrait ? <div className="tracker-table-cloth" /> : <svg className="table-rail-art" viewBox="0 0 1200 560" preserveAspectRatio="none" focusable="false">
       <defs>
         <linearGradient id={id + 'wood'} x1="0" y1="0" x2=".28" y2="1" gradientUnits="objectBoundingBox">
           <stop stopColor="#e1c4a6" /><stop offset=".12" stopColor="#9c785e" /><stop offset=".46" stopColor="#503e36" />
