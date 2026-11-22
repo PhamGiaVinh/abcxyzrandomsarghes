@@ -555,6 +555,8 @@ function ScopedFloorTableMapPanelV3({
   );
 
 
+  const trackerMapHref = `/tracker/hand-input?${new URLSearchParams({ tournament: tournament.id })}`;
+
   return (
     <Card className="space-y-4 p-3 sm:p-4" data-testid="floor-table-map-v3" aria-busy={loading}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -563,6 +565,11 @@ function ScopedFloorTableMapPanelV3({
           <p className="mt-1 text-xs text-muted-foreground">Mỗi bàn hiển thị một phiên đang hoạt động của giải này.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {FEATURES.trackerHandInputConsole && tables.some((table) => table.controlMode === "tracker") && (
+            <Button asChild size="sm" variant="outline" className="min-h-12">
+              <a href={trackerMapHref}><RadioTower className="mr-2 h-4 w-4" /> Bản đồ bàn Live Tracker</a>
+            </Button>
+          )}
           <Button data-ops-action="floor.tables.refresh" size="sm" variant="outline" className="min-h-12" disabled={loading || busy} onClick={() => void load()}><RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Làm mới</Button>
           <Button data-ops-action="floor.tables.open_table_dialog" size="sm" className="min-h-12" disabled={busy || tournamentEnded} onClick={() => setOpenTable(true)}><Plus className="mr-2 h-4 w-4" /> Mở bàn</Button>
           {FEATURES.floorRedrawSeatLockV1 && (
@@ -655,6 +662,13 @@ function ScopedFloorTableMapPanelV3({
                   {selectedTable.controlMode === "tracker" ? "Live Tracker" : "Manual Floor"}
                   <span className="text-muted-foreground">· Đổi chế độ</span>
                 </button>
+                {FEATURES.trackerHandInputConsole && selectedTable.controlMode === "tracker" && (
+                  <Button asChild className="min-h-12 w-full sm:w-fit">
+                    <a href={`${trackerMapHref}&${new URLSearchParams({ table: selectedTable.gameTableId })}`}>
+                      <RadioTower className="mr-2 h-4 w-4" /> Vào Live Tracker
+                    </a>
+                  </Button>
+                )}
                 <details className="w-fit text-left text-xs text-muted-foreground">
                   <summary className="min-h-12 cursor-pointer content-center rounded-md px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50">Thông tin phiên bàn</summary>
                   <p className="font-mono">Revision {selectedTable.sessionRevision} · epoch {selectedTable.controlEpoch}</p>
