@@ -143,6 +143,26 @@ describe("TrackerVoicePanel", () => {
     expect(screen.getByText("Shadow hợp lệ, không gọi server và chưa ghi action.")).toBeInTheDocument();
   });
 
+  it("discards a split Raise amount when the original player's turn has ended", async () => {
+    const provider = new MockRealtimeTranscriptionProvider();
+    const original = hookFixture();
+    const hookForNextActor = {
+      ...original, actorPlayer: { ...original.actorPlayer!, player_id: "player-b", seat_number: 4, display_name: "Player B" },
+    } as StandaloneHandInput;
+    const panel = (hook: StandaloneHandInput) => <TrackerVoicePanel hook={hook} providerOverride={provider} runtimeOverride={runtimeFixture} />;
+    const view = render(panel(original));
+    fireEvent.click(screen.getByRole("button", { name: "Cho phép microphone" }));
+    await screen.findByText("Microphone đã kết nối");
+    act(() => provider.emit("raise", { final: true, id: "generic-prefix" }));
+    await screen.findByText("Đã nhận lệnh Raise/Bet, đang chờ số chip.");
+    view.rerender(panel(hookForNextActor));
+    act(() => provider.emit("4 nghìn", { final: true, id: "late-amount" }));
+    expect(await screen.findByText("Lượt đã thay đổi. Hãy đọc lại cho ghế đang hành động.")).toBeInTheDocument();
+    expect(screen.queryByText(/Player B · raise/)).not.toBeInTheDocument();
+    act(() => provider.emit("seat four fold", { final: true, id: "new-turn" }));
+    expect(await screen.findByText("Player B · fold")).toBeInTheDocument();
+  });
+
   it("joins one VAD-split Raise prefix with the immediately following amount final", async () => {
     const provider = new MockRealtimeTranscriptionProvider();
     const snapshots: TrackerVoiceDiagnosticSnapshot[] = [];
@@ -174,10 +194,10 @@ describe("TrackerVoicePanel", () => {
 
     act(() => provider.emit("1 triệu 750 nghìn", { final: true, id: "raise-amount" }));
     expect(await screen.findByText("Player A · raise tới 1.750.000")).toBeInTheDocument();
-    expect(snapshots.some((snapshot) => (
+    await waitFor(() => expect(snapshots.some((snapshot) => (
       snapshot.finalTranscript === "seat three raise 1 triệu 750 nghìn"
       && snapshot.proposal?.ok
-    ))).toBe(true);
+    ))).toBe(true));
   });
 
   it("keeps an amount-only final fail-closed without an immediately preceding action prefix", async () => {
@@ -787,6 +807,34 @@ describe("TrackerVoicePanel", () => {
     await waitFor(() => expect(screen.getByText("Microphone đã kết nối")).toBeInTheDocument());
     view.unmount();
     expect(disconnect).toHaveBeenCalledOnce();
+  });
+
+  it("discards the old audio segment after a manual write and keeps listening for the next turn", async () => {
+    const generation = { current: 0 };
+    const hook = { ...hookFixture(), manualActionGenerationRef: generation };
+    const provider = new MockRealtimeTranscriptionProvider();
+    const connect = vi.spyOn(provider, "connect");
+    const validate = vi.fn(async () => validatedReceipt);
+    const props = { compact: true, providerOverride: provider, runtimeOverride: runtimeFixture, validateEventOverride: validate };
+    const { rerender } = render(<TrackerVoicePanel hook={hook} {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "Cho phép microphone" }));
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(1));
+    const oldSegment = connect.mock.calls[0][0];
+    act(() => provider.emit("seat three call", { final: true, id: "pending" }));
+    await screen.findByRole("button", { name: "Xác nhận action" });
+    const late = { providerEventId: "late", transcript: "call", isFinal: true, capturedAt: new Date().toISOString() };
+    generation.current++;
+    act(() => oldSegment.onTranscript(late));
+    rerender(<TrackerVoicePanel hook={{ ...hook, submitting: true }} {...props} />);
+    expect(screen.queryByRole("button", { name: "Xác nhận action" })).toBeNull();
+    expect(connect).toHaveBeenCalledTimes(1);
+    rerender(<TrackerVoicePanel hook={hook} {...props} />);
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(2));
+    act(() => oldSegment.onTranscript(late));
+    expect(validate).toHaveBeenCalledTimes(1);
+    act(() => provider.emit("seat three call", { final: true, id: "next" }));
+    await screen.findByRole("button", { name: "Xác nhận action" });
+    expect(validate).toHaveBeenCalledTimes(2);
   });
 
   it("pauses a capable provider without treating its final-transcript flush as a disconnect", async () => {

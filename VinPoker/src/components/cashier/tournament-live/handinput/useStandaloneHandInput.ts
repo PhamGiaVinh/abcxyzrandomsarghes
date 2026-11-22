@@ -62,7 +62,7 @@ import {
 import type { RailSeat } from "./SeatRail";
 import type { InputTableLoadState, InputTableSummary } from "./InputTableMap";
 import { resolveTournamentTableId, type TournamentTableIdentityRow } from "./tableIdentity";
-import { formatStack } from "./format";
+import { formatActionLabel } from "./format";
 import { friendlyValidationError } from "./validationMessages";
 import {
   buildNextHandNumberRequest,
@@ -156,20 +156,6 @@ const STREET_LABELS: Record<Street, string> = {
   river: "River",
   showdown: "Showdown",
 };
-
-function formatActionLabel(a: ActionRecord): string {
-  const type = a.action_type;
-  if (type === "fold") return "Fold";
-  if (type === "check") return "Check";
-  if (type === "call") return `Call ${formatStack(a.amount)}`;
-  if (type === "bet") return `Bet ${formatStack(a.amount)}`;
-  if (type === "raise") return `Raise ${formatStack(a.amount)}`;
-  if (type === "all_in") return `All-In ${formatStack(a.amount)}`;
-  if (type === "post_sb") return `SB ${formatStack(a.amount)}`;
-  if (type === "post_bb") return `BB ${formatStack(a.amount)}`;
-  if (type === "post_ante") return `Ante ${formatStack(a.amount)}`;
-  return `${type} ${formatStack(a.amount)}`;
-}
 
 const STREET_LABELS_EXPORT = STREET_LABELS;
 export { STREET_LABELS_EXPORT as STANDALONE_STREET_LABELS };
@@ -337,6 +323,9 @@ export function useStandaloneHandInput(tournamentId: string) {
   // them. The refs provide synchronous protection before React can re-render.
   const tableLoadGuardRef = useRef(createTableLoadGuard());
   const actionWriteGuardRef = useRef(createActionWriteGuard());
+  // A final mic transcript can arrive after a local manual write, before React
+  // has rendered the new actor. Mark the boundary when the writer acquires it.
+  const manualActionGenerationRef = useRef(0);
   const handSubmitGuardRef = useRef(createSingleFlightGuard());
   const finishOwnsSubmittingRef = useRef(false);
   const [pendingFinish, setPendingFinish] = useState<ManualFinishIntent | null>(null);
@@ -797,7 +786,7 @@ export function useStandaloneHandInput(tournamentId: string) {
 
   const markSync = useCallback((phase: SyncPhase, label?: string) => {
     setSyncPhase(phase);
-    if (label !== undefined || phase === "error") setSyncLabel(label ?? null);
+    if (label !== undefined || phase === "error" || phase === "uncertain") setSyncLabel(label ?? null);
   }, []);
 
   useEffect(() => {
@@ -1975,11 +1964,14 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.success("Hand started");
       markSync("sent", `Hand #${Number(handNumber)} đã bắt đầu`);
     } catch (e: any) {
-      toast.error(e.message || "Failed to start hand");
+      const blindHint = e?.message === "tracker_floor_blind_level_unavailable"
+        ? "Floor cần lưu cấu trúc blind và chọn level đang chơi. Sau đó tải lại bàn để mở hand."
+        : undefined;
+      toast.error(blindHint ?? (e.message || "Failed to start hand"));
       // Keep writes fenced until a fresh server read determines whether Start
       // committed. The uncertain status exposes the existing reload control;
       // error alone left pre-hand UI disabled with no recovery action.
-      markSync("uncertain");
+      markSync("uncertain", blindHint);
       if (orphanHand) setOrphanHand(null);
     } finally {
       startingRef.current = false;
@@ -2343,6 +2335,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       toast.warning("Dang ghi hanh dong truoc - vui long cho xong.");
       return false;
     }
+    if (!metadata) ++manualActionGenerationRef.current;
     const preSnapshot = { players, actions, currentStreet, nextActionOrder };
     const actionRecord: ActionRecord = {
       street: currentStreet,
@@ -2484,6 +2477,9 @@ export function useStandaloneHandInput(tournamentId: string) {
     if (
       proposal.actor.playerId !== engineActor?.player_id
       || proposal.actor.seatNumber !== engineActor?.seat_number
+      || proposal.expectedActionOrder !== nextActionOrder
+      || proposal.expectedStreet !== currentStreet
+      || proposal.expectedWorkflowState !== workflowState
     ) {
       toast.error(`Đang tới Ghế ${engineActor?.seat_number ?? "?"}. Hãy đọc lại action cho đúng Ghế.`);
       return false;
@@ -4093,6 +4089,7 @@ export function useStandaloneHandInput(tournamentId: string) {
     currentStreet,
     streetLabel: STREET_LABELS[currentStreet],
     actions,
+    manualActionGenerationRef,
     communityCards,
     setCommunityCards,
     usedCards,

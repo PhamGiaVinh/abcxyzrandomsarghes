@@ -8,12 +8,17 @@ export const TRACKER_TABLE_GEOMETRY = {
   portrait: { aspect: '5 / 8', seats: portraitSeats, centerTop: '48%', centerW: '76%', vSize: '0px', maxW: '560px' },
   landscape: { aspect: '1.9 / 1', seats: landscapeSeats, centerTop: '51%', centerW: '52%', vSize: '0px', maxW: '1200px' },
 };
-export const TRACKER_FELT_STYLE: CSSProperties = {
-  background: 'radial-gradient(ellipse at 50% 42%, transparent, #0009), var(--table-felt, #143d32)',
-  boxShadow: 'inset 0 0 0 7px #0a0d0c, inset 0 0 0 8px var(--table-rail, #a68b4c), inset 0 0 0 13px #111b17, inset 0 0 50px #0008, 0 12px 28px #0005',
-};
 export function trackerBetPoint(point: { l: number; t: number }, portrait: boolean) {
-  if (!portrait) return { l: point.l + (50 - point.l) * 0.3, t: point.t + (51 - point.t) * 0.3 };
+  // Keep the upper and lower bets in the gaps beside their owner's pod.
+  // A radial inset puts the stack directly on the player's name at iPad widths.
+  if (!portrait) {
+    if (point.t < 20) {
+      if (point.l === 50) return { l: 59, t: 28 };
+      return { l: point.l < 50 ? 34 : 66, t: 39 };
+    }
+    if (point.t > 80) return { l: point.l < 50 ? 23 : 77, t: 86 };
+    return { l: point.l < 50 ? 24 : 76, t: point.t < 50 ? 40 : 62 };
+  }
   if (point.t < 20) return { l: point.l === 50 ? 50 : point.l < 50 ? 33 : 67, t: point.l === 50 ? 24 : 27 };
   if (point.t < 50) return { l: point.l < 50 ? 32 : 68, t: 36 };
   if (point.t < 80) return { l: point.l < 50 ? 32 : 68, t: 65 };

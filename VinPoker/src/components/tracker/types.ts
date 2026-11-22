@@ -18,6 +18,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { PotBreakdown } from '@/lib/tracker-poker/potEngine';
+import type { ActorView } from '@/lib/tracker-poker/handFlow';
 
 export type TrackerAction = 'fold' | 'call' | 'check' | 'raise' | 'bet' | 'all_in';
 
@@ -37,6 +38,7 @@ export interface SeatVM {
   isEmpty?: boolean;
   isFolded?: boolean;
   isAllIn?: boolean;
+  lastAction?: string;
   // ─── RICH (optional; consumed only when TrackerRacetrackProps.rich) ──────────
   avatarUrl?: string | null; // player avatar; falls back to initials
   /** Operator-entered hole cards (display strings, e.g. '5♦'). Present only at
@@ -90,13 +92,16 @@ export interface TrackerRacetrackProps {
 export interface ForcedAmountPadProps {
   stack: number; // acting seat's chips behind
   committedThisStreet: number; // acting seat's chips already in this street
-  minTotal?: number; // SOFT min legal "raise to" hint (never hard-blocks)
+  minTotal?: number; // soft hint for previews; supplied by the engine in live operation
+  enforceMinimum?: boolean;
   onConfirm: (total: number) => void; // returns the TOTAL ("raise to")
   onCancel: () => void;
 }
 
 export interface ActionDockProps {
   actingSeat: SeatVM | null;
+  view?: ActorView | null;
+  disabled?: boolean;
   toCall: number; // chips the acting seat still needs to ADD to match
   bigBlind: number;
   onIntent: (intent: ActionIntent) => void;

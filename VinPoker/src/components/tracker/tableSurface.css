@@ -1,0 +1,28 @@
+.tracker-table-surface {
+  --surface-light: url('../../assets/tracker-table/landscape.webp');
+  --surface-mask: url('../../assets/tracker-table/landscape-mask.webp');
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 8px 9px #0008);
+}
+.tracker-table-surface[data-shape='portrait'] {
+  --surface-light: url('../../assets/tracker-table/portrait.webp');
+  --surface-mask: url('../../assets/tracker-table/portrait-mask.webp');
+}
+.tracker-table-surface::before, .tracker-table-cloth, .tracker-table-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.tracker-table-surface::before, .tracker-table-cloth {
+  -webkit-mask: var(--surface-mask) center / 100% 100% no-repeat;
+  mask: var(--surface-mask) center / 100% 100% no-repeat;
+}
+.tracker-table-surface::before { background-color: var(--table-rail); }
+.tracker-table-cloth {
+  background: radial-gradient(ellipse at 40% 23%, #c9ead715, transparent 65%),
+    linear-gradient(160deg, transparent, #00130c50), var(--table-felt);
+  mask-mode: luminance;
+}
+.tracker-table-surface::after { background: var(--surface-light) center / 100% 100% no-repeat; }

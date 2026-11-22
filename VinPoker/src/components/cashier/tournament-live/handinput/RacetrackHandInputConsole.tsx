@@ -16,6 +16,7 @@ import { useTournamentTableAppearance } from "@/components/tracker/useTournament
 // StandaloneHandInputConsole, so production is unchanged.
 
 import { ArrowLeft, Loader2 } from "lucide-react";
+import type { ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FEATURES } from "@/lib/featureFlags";
 import { displayCard, type Card } from "@/components/shared/CardSlotPicker";
@@ -41,7 +42,7 @@ import { OperatorActionLog } from "./OperatorActionLog";
 import { TrackerVoicePanelGate } from "@/components/tracker/voice/TrackerVoicePanelGate";
 import { DealerTabletCockpit } from "@/components/tracker/DealerTabletCockpit";
 import { useDealerTabletLandscape } from "@/hooks/useDealerTabletLandscape";
-import { formatStack } from "./format";
+import { formatActionLabel, formatStack } from "./format";
 import type { PlayerState, StandaloneHandInput } from "./useStandaloneHandInput";
 import {TableContextReadStatus} from './TableContextReadStatus';
 
@@ -109,7 +110,18 @@ export function RacetrackHandInputConsole({ hook }: { hook: StandaloneHandInput 
   // P2-5: include EMPTY physical seats so a DEAD button is visible on an empty seat
   // and the operator can select it after choosing "Đặt lại button". TrackerRacetrack renders `isEmpty` seats.
   const rich = FEATURES.trackerRacetrackRich;
-  const occupiedVMs = toSeatVMs(hook.players, hook.positionsBySeat, rich, hook.playerHoleCards, hook.muckedPlayerIds);
+  const latestActionByPlayer = new Map<string, (typeof hook.actions)[number]>();
+  if (hook.handId) {
+    for (const action of hook.actions) {
+      if (action.street !== hook.currentStreet) continue;
+      const previous = latestActionByPlayer.get(action.player_id);
+      if (!previous || action.action_order > previous.action_order) latestActionByPlayer.set(action.player_id, action);
+    }
+  }
+  const occupiedVMs = toSeatVMs(hook.players, hook.positionsBySeat, rich, hook.playerHoleCards, hook.muckedPlayerIds).map((seat) => {
+    const action = latestActionByPlayer.get(seat.playerId!);
+    return action?.seat_number === seat.seatNumber ? { ...seat, lastAction: formatActionLabel(action) } : seat;
+  });
   const occupiedNums = new Set(occupiedVMs.map((s) => s.seatNumber));
   const emptyVMs: SeatVM[] = Array.from({ length: hook.maxSeats }, (_, i) => i + 1)
     .filter((n) => !occupiedNums.has(n))
@@ -332,6 +344,8 @@ export function RacetrackHandInputConsole({ hook }: { hook: StandaloneHandInput 
           actingSeat={actorSeatVM}
           toCall={hook.actorViewData?.toCall ?? 0}
           bigBlind={bigBlind}
+          view={hook.actorViewData}
+          disabled={disabled || !hook.actorViewData}
           onIntent={onIntent}
           onUndo={hook.handleUndo}
         />
@@ -413,7 +427,7 @@ export function RacetrackHandInputConsole({ hook }: { hook: StandaloneHandInput 
   );
 
   // FELT — racetrack (PR-A)
-  const feltBlock =
+  const renderFelt = (clock: ReactNode) =>
     hook.players.length === 0 ? (
       <div className="rounded-2xl border border-border/40 bg-card/50 py-10 text-center text-sm text-muted-foreground">
         Bàn này chưa có người chơi đang hoạt động.
@@ -427,9 +441,7 @@ export function RacetrackHandInputConsole({ hook }: { hook: StandaloneHandInput 
         actingSeatNumber={hook.actorPlayer?.seat_number ?? null}
         dealerSeatNumber={hook.buttonSeat}
         boardCards={boardCards}
-        belowBoard={hook.showActionStep && hook.actorPlayer && !hook.isReadOnly && (
-          <ActionShotClock key={`${hook.handId}:${hook.currentStreet}:${hook.actorPlayer.seat_number}:${hook.actions.length}`} />
-        )}
+        belowBoard={clock}
         pot={hook.potSize}
         bigBlind={bigBlind}
         onSeatTap={disabled ? undefined : hook.handleSeatNumberTap}
@@ -530,7 +542,7 @@ export function RacetrackHandInputConsole({ hook }: { hook: StandaloneHandInput 
   // xl (not lg) so the wide 13/6 racetrack keeps a comfortable width. Flag OFF → the exact
   // single-column order below, byte-identical to before.
   if (FEATURES.trackerTabletLayout) {
-    return <DealerTabletCockpit key={hook.tournamentTableId ?? hook.tableId} hook={hook} header={headerBlock} orphan={orphanBlock} progress={progressBlock} felt={feltBlock} board={boardBlock} voice={voiceBlock} guided={guidedBlock} log={logBlock} />;
+    return <DealerTabletCockpit key={hook.tournamentTableId ?? hook.tableId} hook={hook} header={headerBlock} orphan={orphanBlock} progress={progressBlock} felt={renderFelt} board={null} voice={voiceBlock} guided={guidedBlock} log={logBlock} />;
   }
 
   return (
@@ -538,7 +550,9 @@ export function RacetrackHandInputConsole({ hook }: { hook: StandaloneHandInput 
       {headerBlock}
       {orphanBlock}
       {progressBlock}
-      {feltBlock}
+      {renderFelt(hook.showActionStep && hook.actorPlayer && !hook.isReadOnly && (
+        <ActionShotClock key={`${hook.handId}:${hook.currentStreet}:${hook.actorPlayer.seat_number}:${hook.actions.length}`} />
+      ))}
       {voiceBlock}
       {guidedBlock}
       {boardBlock}

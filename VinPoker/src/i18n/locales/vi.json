@@ -3172,7 +3172,7 @@
       "pot": "Pot",
       "main": "Main",
       "side": "Side {{i}}",
-      "toAct": "chờ",
+      "toAct": "Đến lượt",
       "bet": "Cược {{amount}}",
       "allIn": "ALL IN",
       "folded": "FOLDED",
