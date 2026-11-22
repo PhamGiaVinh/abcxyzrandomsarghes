@@ -149,6 +149,7 @@ export interface ActionRecord {
 
 const STREET_ORDER: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
 const LINEAGE_READ_UNAVAILABLE = "Không tải được trạng thái bàn hoặc lịch sử blind. Hãy tải lại bàn trước khi bắt đầu hand tiếp theo.";
+
 const STREET_LABELS: Record<Street, string> = {
   preflop: "Preflop",
   flop: "Flop",
@@ -178,6 +179,9 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 export function useStandaloneHandInput(tournamentId: string) {
+  const clubPortraitsEnabled = import.meta.env.VITE_CLUB_PLAYER_PORTRAITS === "true";
+  const rosterSnapshotRpc = clubPortraitsEnabled
+    ? "get_tracker_roster_with_portraits_v1" : "get_tracker_roster_snapshot_v2";
   const [tableId, setTableId] = useState("");
   const [tableName, setTableName] = useState("");
   const [handNumber, setHandNumber] = useState<number | "">("");
@@ -1020,7 +1024,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       clearIntent();
       // A replayed committed receipt may describe a stack that another writer
       // has since changed. Confirm current snapshot before applying it to UI.
-      const fresh = await Promise.resolve(supabase.rpc("get_tracker_roster_snapshot_v2" as any, {
+      const fresh = await Promise.resolve(supabase.rpc(rosterSnapshotRpc as any, {
         p_tournament_id: tournamentId, p_tournament_table_id: context.tournamentTableId,
         p_table_session_id: context.tableSessionId, p_expected_epoch: context.controlEpoch,
       })).then(value => value, error => ({ data: null, error }));
@@ -1032,6 +1036,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       if (fresh.error || current?.ok !== true || current.table_session_id !== context.tableSessionId
         || current.tournament_table_id !== context.tournamentTableId || current.control_epoch !== context.controlEpoch
         || typeof (res as any).seat_token !== "string" || currentSeat?.token !== (res as any).seat_token
+        || currentSeat?.seat?.entry_number !== seat.entry_number
         || currentSeat?.seat?.chip_count !== seat.chip_count || currentSeat?.seat?.player_id !== seat.player_id) {
         rosterTokensRef.current.delete(tokenKey);
         toast.info("Đã xác nhận lần lưu. Dữ liệu hiện tại cần tải lại; không ghi đè stack mới bằng receipt cũ.");
@@ -1052,7 +1057,7 @@ export function useStandaloneHandInput(tournamentId: string) {
           total_bet: 0,
           is_folded: false,
           is_all_in: false,
-          avatar_url: seat.avatar_url ?? null,
+          avatar_url: currentSeat.seat.avatar_url ?? null,
         };
         const exists = prev.some((p) => p.seat_number === seat.seat_number);
         const next = exists
@@ -1083,6 +1088,10 @@ export function useStandaloneHandInput(tournamentId: string) {
         return { ok: false };
       }
       if (!tableId) return { ok: false };
+      const generation = rosterGenerationRef.current;
+      const scope = rosterScopeRef.current;
+      const isCurrent = () => rosterMountedRef.current && generation === rosterGenerationRef.current
+        && scope === rosterScopeRef.current;
       const { data, error } = await supabase.rpc("set_tracker_seat_display" as any, {
         p_tournament_id: tournamentId,
         p_table_id: tableId,
@@ -1120,19 +1129,39 @@ export function useStandaloneHandInput(tournamentId: string) {
         return { ok: false, error: res?.error };
       }
       const seat = res.seat;
-      // Review fix: trust the RPC echo for avatar_url. The old `?? p.avatar_url`
-      // swallowed a CLEAR (RPC echoes null after deleting the avatar → fallback kept
-      // the stale url on the felt while the DB was already cleared).
-      setPlayers((prev) =>
-        prev.map((p) =>
-          p.seat_number === seat.seat_number
-            ? { ...p, display_name: seat.player_name || p.display_name, avatar_url: seat.avatar_url ?? null }
-            : p
-        )
-      );
+      if (!isCurrent()) return { ok: true, error: "stale_roster_context" };
+      if (clubPortraitsEnabled) {
+        // The writer returns the seat override only. The authorized reader also
+        // resolves the club portrait after a name edit or an explicit override removal.
+        const refreshNeeded = () => {
+          toast.info("Đã lưu thay đổi. Hãy tải lại bàn để xem tên và ảnh hiện tại.");
+          return { ok: true, error: "roster_refresh_required" };
+        };
+        if (!rosterContext?.tournamentTableId || !rosterContext.tableSessionId
+          || !Number.isInteger(rosterContext.controlEpoch)) return refreshNeeded();
+        const fresh = await Promise.resolve(supabase.rpc(rosterSnapshotRpc as any, {
+          p_tournament_id: tournamentId, p_tournament_table_id: rosterContext.tournamentTableId,
+          p_table_session_id: rosterContext.tableSessionId, p_expected_epoch: rosterContext.controlEpoch,
+        })).catch(() => ({ data: null, error: true }));
+        if (!isCurrent()) return { ok: true, error: "stale_roster_context" };
+        const snapshot = fresh.data as any;
+        const current = snapshot?.seats?.find((item: any) => item.seat_number === args.seatNumber)?.seat;
+        if (fresh.error || snapshot?.ok !== true || snapshot.table_session_id !== rosterContext.tableSessionId
+          || snapshot.tournament_table_id !== rosterContext.tournamentTableId || snapshot.control_epoch !== rosterContext.controlEpoch
+          || !current?.id || current.id !== seat?.id || current.seat_number !== args.seatNumber
+          || !current.player_id || !Number.isInteger(current.entry_number)) return refreshNeeded();
+        setPlayers(prev => prev.map(player => player.seat_number === current.seat_number
+          && player.player_id === current.player_id && player.entry_number === current.entry_number
+          ? { ...player, display_name: current.player_name || player.display_name, avatar_url: current.avatar_url ?? null }
+          : player));
+      } else {
+        setPlayers(prev => prev.map(player => player.seat_number === seat.seat_number
+          ? { ...player, display_name: seat.player_name || player.display_name, avatar_url: seat.avatar_url ?? null }
+          : player));
+      }
       return { ok: true };
     },
-    [tournamentId, tableId, isReadOnly, user]
+    [tournamentId, tableId, isReadOnly, user, rosterContext]
   );
 
   // ----- Table select -----------------------------------------------------
@@ -1202,7 +1231,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       let loadedSeats: any[] | null = null;
       let error: any = null;
       if (wantAvatar && loadedSessionId && tbl?.tournamentTableId && Number.isInteger(tbl.controlEpoch)) {
-        const r = await observeTrackerContextRead(supabase.rpc("get_tracker_roster_snapshot_v2" as any, {
+        const r = await observeTrackerContextRead(supabase.rpc(rosterSnapshotRpc as any, {
           p_tournament_id: tournamentId, p_tournament_table_id: tbl.tournamentTableId,
           p_table_session_id: loadedSessionId, p_expected_epoch: tbl.controlEpoch,
         }));

@@ -45,6 +45,7 @@ export function PlayerActionSheets({
   onOpenMove,
   onOpenReceipt,
   infoLive,
+  portraitEditor,
   bustControlMode,
   chipEditDisabledReason,
 }: {
@@ -68,6 +69,7 @@ export function PlayerActionSheets({
   onOpenReceipt: () => void;
   /** Marker bắt buộc: thông tin người chơi đến từ snapshot server đã xác minh. */
   infoLive: true;
+  portraitEditor?: React.ReactNode;
   bustControlMode: FloorTableControlMode | null;
   /** A Tracker table has an authoritative stack source outside Floor. */
   chipEditDisabledReason?: string | null;
@@ -203,6 +205,7 @@ export function PlayerActionSheets({
             </div>
             <SheetTitle className="mt-1.5 text-[16px] font-semibold text-[#f2ece6]">{s?.name}</SheetTitle>
           </SheetHeader>
+          {sheetOpen("info") && portraitEditor}
           {/* Chỉ dữ liệu THẬT từ target (tên/bàn·ghế/chip/lượt vào). SĐT/hạng/thưởng/mã thẻ không có
               trên floor → không hiện số giả. Phiếu → mở SeatReceiptDialog thật; Ghế → chuyển bàn/ghế. */}
           <div className="mt-3 space-y-1.5">
