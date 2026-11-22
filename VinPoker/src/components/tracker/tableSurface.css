@@ -21,8 +21,9 @@
 }
 .tracker-table-surface::before { background-color: var(--table-rail); }
 .tracker-table-cloth {
-  background: radial-gradient(ellipse at 40% 23%, #c9ead715, transparent 65%),
-    linear-gradient(160deg, transparent, #00130c50), var(--table-felt);
+  background: radial-gradient(ellipse at 43% 36%, #d1fac619 0%, transparent 66%),
+    radial-gradient(ellipse at center, transparent 40%, #00130c57 94%), var(--table-felt);
   mask-mode: luminance;
 }
+.tracker-table-surface[data-default-green] .tracker-table-cloth { background-color: #245736; }
 .tracker-table-surface::after { background: var(--surface-light) center / 100% 100% no-repeat; }

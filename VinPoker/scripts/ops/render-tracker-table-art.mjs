@@ -23,8 +23,8 @@ try {
       // brass piping and sunken speed cloth. Height moves the ellipse along
       // the projected vertical axis; the lower lip is visible in the foreground.
       const profile = [
-        { radius: .985, elevation: -.022, material: 'foot' },
-        { radius: .986, elevation: -.003, material: 'apron' },
+        { radius: .977, elevation: -.033, material: 'foot' },
+        { radius: .985, elevation: -.011, material: 'apron' },
         { radius: .980, elevation: .012, material: 'brass' },
         { radius: .974, elevation: .018, material: 'edge' },
         { radius: .968, elevation: .022, material: 'padding' },
@@ -58,10 +58,10 @@ try {
               // Transparent neutral texture keeps the club's chosen cloth hue.
               const weave = (((x + y) % 3) - 1) * 1.6;
               const innerLine = Math.abs(distance - .853) < 1.25 / Math.min(width, height);
-              const shading = 18 - 13 * v - 52 * (distance / .902) ** 3 + noise * 11 + weave;
-              const tone = innerLine ? 215 : Math.max(0, 55 + shading * 1.9);
+              const shading = 18 - 10 * v - 42 * (distance / .902) ** 3 + noise * 15 + weave;
+              const tone = innerLine ? 230 : Math.max(0, 60 + shading * 1.9);
               color = [tone, tone, tone];
-              alpha = 50;
+              alpha = innerLine ? 60 : 28;
               break;
             }
             case 'brass':
@@ -69,14 +69,22 @@ try {
               alpha = 188;
               break;
             case 'padding': {
-              const t = (ring.radius - distance) / .046;
-              const finish = 26 + (25 + light * 28) * Math.sin(t * Math.PI) + noise * 12;
-              color = [finish * .85, finish * .81, finish * .73];
+              const t = Math.min(1, Math.max(0, (ring.radius - distance) / .046));
+              const angle = Math.atan2(v, u);
+              // Directional grain follows the rounded rail. Small brass sights
+              // are baked into the wood and never cover a bet or touch target.
+              const grain = 3 * Math.sin(2500 * distance + 3 * Math.sin(angle * 17)) + noise * 9;
+              const crown = Math.sin(Math.PI * t);
+              const wood = 65 + 55 * light + 48 * crown + grain;
+              const sight = Math.abs(t - .48) * 7 +
+                Math.abs(Math.sin(angle * 15 + Math.PI / 2)) * 20 < 1;
+              color = sight ? [229, 202, 139] : [wood * 1.15, wood * .83, wood * .64];
+              alpha = 222;
               break;
             }
-            case 'apron': color = [38 * light, 43 * light, 40 * light]; break;
-            case 'edge': color = [92 * light, 89 * light, 78 * light]; break;
-            case 'bevel': color = [28 * light, 29 * light, 24 * light]; break;
+            case 'apron': color = [56 * light, 33 * light, 25 * light]; break;
+            case 'edge': color = [151 * light, 110 * light, 78 * light]; break;
+            case 'bevel': color = [57 * light, 40 * light, 27 * light]; break;
             default: color = [11, 15, 14];
           }
           const offset = (y * width + x) * 4;
