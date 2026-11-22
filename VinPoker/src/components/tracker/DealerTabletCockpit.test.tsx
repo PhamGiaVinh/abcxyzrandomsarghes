@@ -49,8 +49,14 @@ describe("Dealer tablet modes", () => {
     expect(screen.queryByText("Voice mounted")).toBeNull();
   });
   it("switches recording modes without hiding manual actions or replacing the turn clock", () => {
-    const turn = { ...hook, handStarted: true, showActionStep: true, engineActor: { seat_number: 4, player_id: "p4" },
-      playerName: () => "Test 4", handId: "hand", currentStreet: "flop" } as StandaloneHandInput;
+    const turn: StandaloneHandInput = {
+      ...hook, handStarted: true, showActionStep: true,
+      engineActor: {
+        seat_number: 4, player_id: "p4", toCall: 0, minRaiseTo: 200,
+        legal: { fold: true, check: true, call: false, bet: true, raise: false, allIn: true },
+      },
+      playerName: () => "Test 4", handId: "hand", currentStreet: "flop",
+    };
     render(<DealerTabletLayout {...props} hook={turn} trackerAllowed />);
     fireEvent.click(screen.getByRole("button", { name: "Tạm dừng" }));
     const paused = screen.getByRole("button", { name: "Tiếp tục" });
