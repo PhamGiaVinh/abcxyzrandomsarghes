@@ -545,17 +545,21 @@ export async function passRRotationPlanner(
       return result;
     }
 
+    const { tournamentInfo, rejectedTables } = await fetchTournamentInfo(admin, ctx.clubId, assignmentSnapshot);
+    for (const [tableId, error] of rejectedTables) result.errors.push({ scope: `table:${tableId}`, error });
+    const verifiedAssignments = assignmentSnapshot.filter(a => !rejectedTables.has(a.table_id));
+    if (verifiedAssignments.length === 0) {
+      result.solverDurationMs = Date.now() - started;
+      return result;
+    }
+
     // Use the same inventory as the commit guard before allocating scarce relief.
     // An unserviceable table must not consume a candidate that another table can use.
     const operationalTables = await getDealerOperationalTables(admin, ctx.clubId);
     const sessionByTable = new Map(operationalTables.map(table => [table.id, table.table_session_id]));
-    const serviceableAssignments = assignmentSnapshot.filter(assignment =>
+    const assignments = verifiedAssignments.filter(assignment =>
       sessionByTable.get(assignment.table_id) === assignment.table_session_id
     );
-    // Validate the whole serviceable snapshot before reconciliation, OT or rest-state writes.
-    const { tournamentInfo, rejectedTables } = await fetchTournamentInfo(admin, ctx.clubId, serviceableAssignments);
-    for (const [tableId, error] of rejectedTables) result.errors.push({ scope: `table:${tableId}`, error });
-    const assignments = serviceableAssignments.filter((a) => !rejectedTables.has(a.table_id));
     if (assignments.length === 0) {
       result.solverDurationMs = Date.now() - started;
       return result;
