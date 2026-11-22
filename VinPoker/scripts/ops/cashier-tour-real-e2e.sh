@@ -5,6 +5,10 @@ repo_root="$(pwd)"
 schema_dir="${SCHEMA_ARTIFACT_DIRECTORY:-}"
 schema_mode="${CASHIER_SCHEMA_MODE:-pre03}"
 realtime_mode="${LOCAL_OPERATIONS_REALTIME:-0}"
+if [[ "${LOCAL_DEALER_RECONNECT_PROBE:-0}" == 1 && "$realtime_mode" != 1 ]]; then
+  echo 'Dealer reconnect proof requires a real Realtime service.' >&2
+  exit 1
+fi
 clock_candidate_probe="${LOCAL_CLOCK_CANDIDATE_PROBE:-0}"
 operations_candidate_probe="${LOCAL_OPERATIONS_CANDIDATE_PROBE:-0}"
 reentry_transport_probe="${LOCAL_REENTRY_TRANSPORT_PROBE:-0}"
@@ -1380,6 +1384,7 @@ docker run --rm "${container_args[@]}" --network "container:$app_container" \
   --env LOCAL_OPERATIONS_EXACT_MOVE_ENABLED="$move_enabled" \
   --env LOCAL_OPERATIONS_ACTIVE_CHECKOUT_ENABLED="$active_checkout_enabled" \
   --env LOCAL_OPERATIONS_REPLACEMENT_ENABLED="$replacement_enabled" \
+  --env LOCAL_DEALER_RECONNECT_PROBE="${LOCAL_DEALER_RECONNECT_PROBE:-0}" \
   --env LOCAL_OPERATIONS_STAFF_SALARY_ENABLED="$staff_salary_enabled" \
   --env LOCAL_OPERATIONS_DEFERRED_MOVE_ENABLED="$deferred_move_enabled" \
   --env LOCAL_OPERATIONS_MANUAL_FINISH_ENABLED="$manual_finish_enabled" \

@@ -2,7 +2,12 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ user: { id: "actor-a" } as { id: string } | null, read: vi.fn(), callbacks: [] as Array<() => void> }));
+const state = vi.hoisted(() => ({
+  user: { id: "actor-a" } as { id: string } | null,
+  read: vi.fn(),
+  callbacks: [] as Array<() => void>,
+  statusCallbacks: [] as Array<(status: string) => void>,
+}));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: state.user }) }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   from: () => {
@@ -19,7 +24,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   channel: () => {
     const channel = {
       on: (_kind: string, _filter: unknown, callback: () => void) => { state.callbacks.push(callback); return channel; },
-      subscribe: () => channel,
+      subscribe: (callback: (status: string) => void) => { state.statusCallbacks.push(callback); return channel; },
     };
     return channel;
   },
@@ -43,6 +48,7 @@ describe("Dealer production read scope", () => {
     state.user = { id: "actor-a" };
     state.read.mockReset();
     state.callbacks = [];
+    state.statusCallbacks = [];
     state.read.mockImplementation((ids: string[]) => rows(ids[0]));
   });
 
@@ -207,6 +213,23 @@ describe("Dealer production read scope", () => {
     await act(async () => { for (let index = 0; index < 10; index += 1) state.callbacks[0](); });
     await waitFor(() => expect(hook.result.current.data[0]?.id).toBe("after-burst"));
     expect(state.read).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes missed Dealer changes on a resubscribe without waiting for the fallback poll", async () => {
+    const hook = renderHook(() => useCheckedInDealers(["club-a"]));
+    await waitFor(() => expect(state.read).toHaveBeenCalledOnce());
+    const connection = state.statusCallbacks[0];
+    vi.useFakeTimers();
+    await act(async () => { connection("SUBSCRIBED"); await vi.advanceTimersByTimeAsync(150); });
+    expect(state.read).toHaveBeenCalledOnce();
+    state.read.mockResolvedValue(rows("updated-assignment"));
+    await act(async () => {
+      connection("SUBSCRIBED");
+      state.callbacks[0]();
+      await vi.advanceTimersByTimeAsync(150);
+    });
+    expect(state.read).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.data[0]?.id).toBe("updated-assignment");
   });
 
   it("pauses fallback polling while hidden and refreshes once when visible again", async () => {
