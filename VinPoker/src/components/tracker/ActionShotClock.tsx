@@ -22,7 +22,7 @@ export function ActionShotClock({ playerLabel }: { playerLabel?: string }) {
   const [remaining, setRemaining] = useState(TURN_MS);
   const [swipes, setSwipes] = useState(readSwipeSettings);
   const gesture = useRef<{ id: number; x: number; y: number } | null>(null);
-  const moved = useRef(false);
+  const suppressPointerClick = useRef(false);
 
   function updateSwipe(direction: keyof SwipeSettings, seconds: number) {
     const next = { ...swipes, [direction]: seconds };
@@ -60,23 +60,33 @@ export function ActionShotClock({ playerLabel }: { playerLabel?: string }) {
         data-clock-face="" type="button"
         aria-label={deadline === null ? "Tiếp tục" : "Tạm dừng"}
         onClick={(event) => {
-          if (event.detail === 0 || !moved.current) togglePause();
+          if (event.detail !== 0 && suppressPointerClick.current) {
+            suppressPointerClick.current = false;
+            return;
+          }
+          togglePause();
         }}
         className="flex min-h-11 touch-pan-y select-none items-center gap-1 rounded-lg border border-amber-300/30 bg-black/40 px-2"
         onPointerDown={(event) => {
           if (!event.isPrimary || event.button !== 0) return;
-          moved.current = false;
+          suppressPointerClick.current = false;
           gesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
-        onPointerCancel={() => { gesture.current = null; moved.current = true; }}
+        onPointerCancel={() => { gesture.current = null; suppressPointerClick.current = true; }}
         onPointerUp={(event) => {
           const start = gesture.current;
-          gesture.current = null;
           if (!start || start.id !== event.pointerId) return;
+          gesture.current = null;
           const dx = event.clientX - start.x;
           const dy = event.clientY - start.y;
-          moved.current = Math.hypot(dx, dy) > 10;
+          const dragged = Math.hypot(dx, dy) > 10;
+          suppressPointerClick.current = dragged || event.pointerType === "touch";
+          if (!dragged && event.pointerType === "touch") {
+            // After a swipe, a touch browser can deliver pointerup without a compatibility click.
+            togglePause();
+            return;
+          }
           if (Math.abs(dx) < 36 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
           const duration = swipes[dx < 0 ? "left" : "right"] * 1000;
           setRemaining(duration);

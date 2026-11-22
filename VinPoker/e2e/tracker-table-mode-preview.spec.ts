@@ -87,3 +87,29 @@ for (const width of [320, 390, 680, 768, 1024]) {
     }
   });
 }
+
+test.describe('touch clock', () => {
+  test.use({ hasTouch: true, viewport: { width: 1024, height: 768 } });
+  test('a tap immediately after swiping pauses once, and reset starts thirty seconds', async ({ page, context, browserName }) => {
+    test.skip(browserName !== 'chromium', 'CDP provides the touch gesture for this regression.');
+    await page.goto('/__dev/tracker');
+    const face = page.getByRole('button', { name: 'Tạm dừng', exact: true });
+    await page.getByText('Cài đặt', { exact: true }).tap();
+    await page.getByLabel('Vuốt trái').selectOption('15');
+    await page.getByText('Cài đặt', { exact: true }).tap();
+    const rect = (await face.boundingBox())!;
+    const x = rect.x + rect.width - 8, y = rect.y + rect.height / 2;
+    const touch = await context.newCDPSession(page);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    for (const distance of [15, 30, 55]) {
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x - distance, y }] });
+    }
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await expect(page.getByRole('timer')).toHaveText('00:15');
+    await face.tap();
+    await expect(page.getByRole('button', { name: 'Tiếp tục', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Reset', exact: true }).tap();
+    await expect(page.getByRole('timer')).toHaveText('00:30');
+    await expect(face).toBeVisible();
+  });
+});
