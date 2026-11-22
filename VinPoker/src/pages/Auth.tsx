@@ -18,6 +18,7 @@ import { BackButton } from "@/components/BackButton";
 import { playSuccess, playError } from "@/lib/sound";
 import { DocumentRedirect } from "@/components/DocumentRedirect";
 import { safeOpsDocumentTarget } from "@/ops/auth/opsSharedSessionNavigation";
+import { safeSatelliteReturnTarget } from "@/lib/onlineSatelliteRoute";
 
 const Auth = () => {
   const { t } = useTranslation();
@@ -35,11 +36,15 @@ const Auth = () => {
     displayName: z.string().trim().min(1).max(60).optional(),
   });
 
-  const opsReturnTarget = safeOpsDocumentTarget(searchParams.get("next"));
+  const next = searchParams.get("next");
+  const satelliteReturnTarget = safeSatelliteReturnTarget(next);
+  const returnTarget = safeOpsDocumentTarget(next) ?? satelliteReturnTarget;
 
   if (loading) return <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
   if (user) {
-    return opsReturnTarget ? <DocumentRedirect to={opsReturnTarget} /> : <Navigate to="/account" replace />;
+    return returnTarget
+      ? <DocumentRedirect to={returnTarget} preserveCurrentLocation={!satelliteReturnTarget} />
+      : <Navigate to="/account" replace />;
   }
 
   const signIn = async () => {
@@ -55,8 +60,8 @@ const Auth = () => {
     }
     playSuccess();
     toast.success(t("auth.signedInOk"));
-    if (opsReturnTarget) {
-      window.location.assign(opsReturnTarget);
+    if (returnTarget) {
+      window.location.assign(returnTarget);
       return;
     }
     nav("/");
