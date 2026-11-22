@@ -566,7 +566,7 @@ function ScopedFloorTableMapPanelV3({
         </div>
         <div className="flex flex-wrap gap-2">
           {FEATURES.trackerHandInputConsole && tables.some((table) => table.controlMode === "tracker") && (
-            <Button asChild size="sm" variant="outline" className="min-h-12">
+            <Button asChild data-ops-action="floor.tables.open_tracker_map" size="sm" variant="outline" className="min-h-12">
               <a href={trackerMapHref}><RadioTower className="mr-2 h-4 w-4" /> Bản đồ bàn Live Tracker</a>
             </Button>
           )}
@@ -663,7 +663,7 @@ function ScopedFloorTableMapPanelV3({
                   <span className="text-muted-foreground">· Đổi chế độ</span>
                 </button>
                 {FEATURES.trackerHandInputConsole && selectedTable.controlMode === "tracker" && (
-                  <Button asChild className="min-h-12 w-full sm:w-fit">
+                  <Button asChild data-ops-action="floor.tables.open_tracker_table" className="min-h-12 w-full sm:w-fit">
                     <a href={`${trackerMapHref}&${new URLSearchParams({ table: selectedTable.gameTableId })}`}>
                       <RadioTower className="mr-2 h-4 w-4" /> Vào Live Tracker
                     </a>
