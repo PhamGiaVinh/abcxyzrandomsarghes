@@ -56,6 +56,8 @@ for (const width of [320, 390, 680, 768, 1024]) {
     for (const mode of ['Chỉ nhập tay', 'Mic + tay', 'Khán giả']) {
       await page.getByRole('button', { name: mode, exact: true }).click();
       const table = page.locator('[data-tracker-table]');
+      await expect(table.locator('[data-cat-khoi]')).toHaveCSS('background-image', /cat-khoi/);
+      await expect(table.locator('.tracker-seat-medallion').first()).toHaveCSS('border-top-color', 'rgb(206, 173, 120)');
       await expect(table.locator('[data-tracker-bet]')).toHaveCount(9);
       await expect(table.locator('[data-tracker-seat]')).toHaveCount(9);
       await expect(table.locator('[data-testid="board-cards"] [data-card-code]')).toHaveCount(5);
