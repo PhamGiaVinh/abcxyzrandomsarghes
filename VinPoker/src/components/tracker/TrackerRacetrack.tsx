@@ -562,8 +562,8 @@ export function TrackerRacetrack({
             ))}
           </div>
         )}
-        {unified && <TableBlinds {...blinds} />}
-        <div data-testid="board-cards" className="mt-2.5 inline-flex justify-center gap-1.5">
+        {unified && <div><TableBlinds {...blinds} /></div>}
+        <div data-testid="board-cards" className="mt-2.5 flex justify-center gap-1.5">
           {boardCards.map((card, i) =>
             rich || unified ? (
               <PokerCard key={i} card={card || null} size="md" style={unified ? sharedSizes.board : boardCardStyle} />
