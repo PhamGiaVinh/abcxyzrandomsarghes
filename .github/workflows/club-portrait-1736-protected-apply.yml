@@ -99,7 +99,11 @@ jobs:
             .workflow_id==$workflow and .event=="workflow_dispatch" and .status=="completed" and
             .conclusion=="success" and .head_branch=="main" and
             .actor.login==$owner and .triggering_actor.login==$owner' <<<"$run" >/dev/null
-          artifact="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID/artifacts" |
+          artifact_list="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID/artifacts")"
+          jq -e --arg name "floor-v3-encrypted-database-recovery-$RECOVERY_RUN_ID" '
+            [.artifacts[]|select(.name==$name and .expired==false and .size_in_bytes>0)]
+             | length==1 and (.[0].digest | test("^sha256:[0-9a-f]{64}$"))' <<<"$artifact_list" >/dev/null
+          artifact="$(printf '%s' "$artifact_list" |
             jq -ce --arg name "floor-v3-restore-verification-$RECOVERY_RUN_ID" '
               [.artifacts[]|select(.name==$name and .expired==false and .size_in_bytes>0)] |
               if length==1 then .[0] else error("restore artifact missing") end')"

@@ -45,6 +45,16 @@ test('native PG17 writes the candidate, exact ledger, ACLs, triggers and Storage
   query(readFileSync(resolve(releaseRoot,'tests/clubPlayerPortrait/club-fixture.sql'),'utf8'));
   const native={execute:query,json: sql=>JSON.parse(query(sql))};
   const reports=[];
+  // A failure inside the postcheck happens after the receipt INSERT. PostgreSQL
+  // must still roll back the new catalog, upload policy and ledger together.
+  const broken=atomic.replace("IF (\n  EXISTS (SELECT 1 FROM storage.buckets", "IF (false AND EXISTS (SELECT 1 FROM storage.buckets");
+  assert.notEqual(broken,atomic);
+  assert.throws(()=>applyPortrait(broken,native,m=>reports.push(m)),/receipt/);
+  assert.deepEqual(reports.splice(0),['CLUB_PORTRAIT_1736_STOP receipt=not-recorded']);
+  assert.equal(query(`SELECT (to_regclass('floor_private.club_portrait_storage_origin') IS NULL
+    AND to_regclass('floor_private.club_member_portrait_versions') IS NULL
+    AND NOT EXISTS(SELECT 1 FROM storage.buckets WHERE id='club-player-portraits')
+    AND NOT EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations))`),'t');
   applyPortrait(atomic,native,m=>reports.push(m));
   assert.deepEqual(reports,['CLUB_PORTRAIT_1736_COMMITTED_EXACT_AND_POSTCHECK_PASS']);
   assert.throws(()=>applyPortrait(atomic,native,()=>{}),/preflight/);
