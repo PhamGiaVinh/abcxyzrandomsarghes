@@ -17,7 +17,7 @@ function readSwipeSettings(): SwipeSettings {
   }
 }
 
-export function ActionShotClock() {
+export function ActionShotClock({ playerLabel }: { playerLabel?: string }) {
   const [deadline, setDeadline] = useState<number | null>(() => performance.now() + TURN_MS);
   const [remaining, setRemaining] = useState(TURN_MS);
   const [swipes, setSwipes] = useState(readSwipeSettings);
@@ -55,9 +55,9 @@ export function ActionShotClock() {
   };
 
   return (
-    <div className="mx-auto my-2 flex max-w-full flex-wrap items-start justify-center gap-2 px-2 font-sans">
+    <div className="action-shot-clock mx-auto my-2 flex max-w-full flex-wrap items-start justify-center gap-2 px-2 font-sans">
       <button
-        type="button"
+        data-clock-face="" type="button"
         aria-label={deadline === null ? "Tiếp tục" : "Tạm dừng"}
         onClick={(event) => {
           if (event.detail === 0 || !moved.current) togglePause();
@@ -83,12 +83,10 @@ export function ActionShotClock() {
           setDeadline(performance.now() + duration);
         }}
       >
-        <span aria-hidden="true" className="text-xs text-amber-200/70">‹</span>
         <span role="timer" aria-label="Thời gian hành động" className="min-w-12 font-mono font-bold tabular-nums text-amber-300">
           {display}
         </span>
-        <span aria-hidden="true" className="text-xs text-amber-200/70">›</span>
-        <span className="ml-1 text-xs text-white">{deadline === null ? "Tiếp tục" : "Tạm dừng"}</span>
+        <span className="timer-toggle-label">{deadline === null ? "Tiếp tục" : "Tạm dừng"}</span>
       </button>
       <button type="button" className={buttonClass} onClick={() => {
         setRemaining(TURN_MS);
@@ -113,6 +111,7 @@ export function ActionShotClock() {
           ))}
         </div>
       </details>
+      {playerLabel && <span className="timer-player" title={playerLabel}>{playerLabel}</span>}
       <span role="status" className="sr-only">{seconds === 0 ? "Hết giờ hành động" : ""}</span>
     </div>
   );

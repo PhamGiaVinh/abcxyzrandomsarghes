@@ -75,7 +75,7 @@ export function DealerTabletLayout({ hook, header, orphan, progress, felt, board
   const tracker = trackerAllowed && !normal;
   const turnKey = `${hook.handId}:${hook.currentStreet}:${hook.engineActor?.player_id}:${hook.actions.length}`;
   const clock = tracker && !hook.isReadOnly && hook.handStarted && hook.showActionStep && hook.engineActor && (
-    <ActionShotClock key={turnKey} />
+    <ActionShotClock key={turnKey} playerLabel={hook.playerName(hook.engineActor.player_id)} />
   );
   return <div className="dealer-cockpit">
     <header className="dealer-cockpit-header">{header}</header>

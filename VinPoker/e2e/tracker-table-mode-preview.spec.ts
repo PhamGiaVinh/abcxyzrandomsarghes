@@ -48,12 +48,12 @@ test('landscape iPad keeps the tappable shot clock between the board and the low
   await expect(felt.getByRole('button', { name: 'Tiếp tục', exact: true })).toBeVisible();
 });
 
-for (const width of [390, 680, 768]) {
+for (const width of [320, 390, 680, 768, 1024]) {
   test(`nine occupied seats, five cards and all nine chip stacks stay clear at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/__dev/tracker?allbets=1');
-    for (const mode of ['Chỉ nhập tay', 'Khán giả']) {
+    for (const mode of ['Chỉ nhập tay', 'Mic + tay', 'Khán giả']) {
       await page.getByRole('button', { name: mode, exact: true }).click();
       const table = page.locator('[data-tracker-table]');
       await expect(table.locator('[data-tracker-bet]')).toHaveCount(9);
@@ -71,6 +71,9 @@ for (const width of [390, 680, 768]) {
           return Math.min(x.right, y.right) - Math.max(x.left, y.left) > 2
             && Math.min(x.bottom, y.bottom) - Math.max(x.top, y.top) > 2;
         };
+        for (const [i, seat] of seats.entries()) for (const neighbor of seats.slice(i + 1)) {
+          if (hits(seat, neighbor)) conflicts.push(`seat ${seat.dataset.trackerSeat} / seat ${neighbor.dataset.trackerSeat}`);
+        }
         for (const chip of chips) for (const seat of seats) {
           if (hits(chip, seat)) conflicts.push(`bet ${chip.dataset.trackerBet} / seat ${seat.dataset.trackerSeat}`);
         }
