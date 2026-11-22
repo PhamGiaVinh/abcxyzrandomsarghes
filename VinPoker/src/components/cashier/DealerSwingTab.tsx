@@ -1530,6 +1530,13 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   }, [selectedTour, tours, tables, assignments, nowMs]);
 
   // This is a candidate read, not an eligibility decision. The RPC validates shifts.
+  useEffect(() => {
+    if (!checkinOpen) return;
+    void refetchTours();
+    const refreshOnFocus = () => void refetchTours();
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
+  }, [checkinOpen, refetchTours]);
   const checkinScope = useRef({ key: "" });
   const checkinScopeKey = [user?.id, activeClubId].join(":");
   if (checkinScope.current.key !== checkinScopeKey) {
@@ -1582,13 +1589,6 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   // One server intent for initial check-in and re-check-in; preserve unknown retries.
   const checkinKeys = useRef(new Map<string, string>());
   const [checkinShiftId, setCheckinShiftId] = useState("");
-  useEffect(() => {
-    if (!checkinOpen) return;
-    void refetchTours();
-    const refreshOnFocus = () => void refetchTours();
-    window.addEventListener("focus", refreshOnFocus);
-    return () => window.removeEventListener("focus", refreshOnFocus);
-  }, [checkinOpen, refetchTours]);
   useEffect(() => {
     checkinReadController.current?.abort();
     checkinReadController.current = null;
