@@ -20,6 +20,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { FEATURES } from "@/lib/featureFlags";
 import { displayCard, type Card } from "@/components/shared/CardSlotPicker";
 import { TrackerRacetrack } from "@/components/tracker/TrackerRacetrack";
+import { ActionShotClock } from "@/components/tracker/ActionShotClock";
 import { ActionDock } from "@/components/tracker/ActionDock";
 import type { ActionIntent, SeatVM } from "@/components/tracker/types";
 import { InputTableMap } from "./InputTableMap";
@@ -426,6 +427,9 @@ export function RacetrackHandInputConsole({ hook }: { hook: StandaloneHandInput 
         actingSeatNumber={hook.actorPlayer?.seat_number ?? null}
         dealerSeatNumber={hook.buttonSeat}
         boardCards={boardCards}
+        belowBoard={hook.showActionStep && hook.actorPlayer && !hook.isReadOnly && (
+          <ActionShotClock key={`${hook.handId}:${hook.currentStreet}:${hook.actorPlayer.seat_number}:${hook.actions.length}`} />
+        )}
         pot={hook.potSize}
         bigBlind={bigBlind}
         onSeatTap={disabled ? undefined : hook.handleSeatNumberTap}

@@ -424,6 +424,7 @@ export function TrackerRacetrack({
   actingSeatNumber,
   dealerSeatNumber,
   boardCards,
+  belowBoard,
   pot,
   bigBlind,
   onSeatTap,
@@ -571,6 +572,7 @@ export function TrackerRacetrack({
             ),
           )}
         </div>
+        {belowBoard}
       </div>
 
       {/* Committed-chip pucks (behind seats). liveBetChips → chip-DISC stack (ChipStack);
