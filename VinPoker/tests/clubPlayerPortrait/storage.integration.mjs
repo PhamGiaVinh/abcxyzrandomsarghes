@@ -22,12 +22,14 @@ execFileSync("psql",[database.href,"-X","-v","ON_ERROR_STOP=1","-c",`
  INSERT INTO public.club_cashiers VALUES('${club}','${session.user.id}');
  INSERT INTO public.club_members VALUES('${member}','${club}','Photo fixture',NULL);
 `],{stdio:["ignore","ignore","inherit"]});
-async function rpc(action) {
+async function rpc(action, id=upload) {
  const r=await fetch(new URL("/rest/v1/rpc/club_player_portrait_v1",base),{method:"POST",headers,body:JSON.stringify({
-  p_context:{kind:"member",club,member,expected_member:member},p_action:action,p_expected:null,p_upload:upload
+  p_context:{kind:"member",club,member,expected_member:member},p_action:action,p_expected:null,p_upload:id
  })});
  assert.ok(r.ok, `photo ${action} HTTP ${r.status}`);return r.json();
 }
+const losing=randomUUID();
+await rpc("prepare",losing);
 await rpc("prepare");
 const object="/storage/v1/object/club-player-portraits/"+upload+".jpg";
 const result=await fetch(new URL(object,base),{method:"POST",headers:{...headers,"Content-Type":"image/jpeg","x-upsert":"false"},body:jpeg});
@@ -39,6 +41,10 @@ const image=await fetch(receipt.url);
 assert.equal(image.status,200);
 assert.match(image.headers.get("Content-Type"),/image\/jpeg/);
 assert.deepEqual(Buffer.from(await image.arrayBuffer()),jpeg);
+const losingUpload=await fetch(new URL(object.replace(upload,losing),base), {method:"POST",headers:{...headers,"Content-Type":"image/jpeg"},body:jpeg});
+assert.ok(!losingUpload.ok,"stale upload must roll back");
+const orphan=await fetch(receipt.url.replace(upload,losing));
+assert.ok(!orphan.ok,"stale thumbnail must never be public");
 const retry=await rpc("publish");
 assert.equal(retry.version,upload);
 const list=await fetch(new URL("/storage/v1/object/list/club-player-portraits",base),{

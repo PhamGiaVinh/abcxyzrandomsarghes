@@ -10,6 +10,7 @@ CREATE TABLE floor_private.club_member_portrait_versions (
   member_id uuid NOT NULL REFERENCES public.club_members(id) ON DELETE CASCADE,
   actor_id uuid NOT NULL,
   replaces uuid,
+  capture_context jsonb NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   published_at timestamptz,
   is_current boolean NOT NULL DEFAULT false,
@@ -24,12 +25,12 @@ REVOKE ALL ON floor_private.club_member_portrait_versions FROM PUBLIC, anon, aut
 INSERT INTO storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 VALUES ('club-player-portraits','club-player-portraits',true,131072,ARRAY['image/jpeg']);
 
-CREATE FUNCTION floor_private.club_portrait_staff(p_club uuid)
+CREATE FUNCTION floor_private.club_portrait_staff(p_club uuid,p_actor uuid)
 RETURNS boolean LANGUAGE sql STABLE SET search_path='' AS $$
- SELECT auth.uid() IS NOT NULL AND
-  (EXISTS (SELECT 1 FROM public.club_floors WHERE club_id=p_club AND user_id=auth.uid())
-   OR EXISTS (SELECT 1 FROM public.club_cashiers WHERE club_id=p_club AND user_id=auth.uid())
-   OR EXISTS (SELECT 1 FROM public.clubs WHERE id=p_club AND owner_id=auth.uid()))
+ SELECT p_actor IS NOT NULL AND
+  (EXISTS (SELECT 1 FROM public.club_floors WHERE club_id=p_club AND user_id=p_actor)
+   OR EXISTS (SELECT 1 FROM public.club_cashiers WHERE club_id=p_club AND user_id=p_actor)
+   OR EXISTS (SELECT 1 FROM public.clubs WHERE id=p_club AND owner_id=p_actor))
 $$;
 
 CREATE FUNCTION floor_private.club_portrait_upload_allowed(p_name text)
@@ -39,9 +40,9 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
   WHERE v.id=CASE WHEN p_name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[.]jpg$'
     THEN left(p_name,36)::uuid END
    AND v.actor_id=auth.uid() AND v.published_at IS NULL
-   AND v.created_at > now()-interval '30 minutes' AND floor_private.club_portrait_staff(m.club_id))
+   AND v.created_at > now()-interval '30 minutes' AND floor_private.club_portrait_staff(m.club_id,auth.uid()))
 $$;
-REVOKE ALL ON FUNCTION floor_private.club_portrait_staff(uuid),
+REVOKE ALL ON FUNCTION floor_private.club_portrait_staff(uuid,uuid),
  floor_private.club_portrait_upload_allowed(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION floor_private.club_portrait_upload_allowed(text) TO authenticated;
 
@@ -81,21 +82,21 @@ BEGIN
  RETURN base || '/storage/v1/object/public/club-player-portraits/' || p_id::text || '.jpg';
 END $$;
 
-CREATE FUNCTION public.club_player_portrait_v1(p_context jsonb,p_action text DEFAULT 'read',
+CREATE FUNCTION floor_private.club_player_portrait_intent(p_actor uuid,p_context jsonb,p_action text DEFAULT 'read',
  p_expected uuid DEFAULT NULL,p_upload uuid DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE
  club uuid; member uuid; member_name text; current_id uuid;
  version floor_private.club_member_portrait_versions%ROWTYPE;
 BEGIN
- IF p_action IS NULL OR p_action NOT IN ('read','prepare','publish') OR auth.uid() IS NULL THEN
+ IF p_action IS NULL OR p_action NOT IN ('read','prepare','publish') OR p_actor IS NULL THEN
   RAISE EXCEPTION 'portrait_forbidden' USING ERRCODE='42501'; END IF;
  IF p_context->>'kind'='member' THEN
   club:=(p_context->>'club')::uuid; member:=(p_context->>'member')::uuid;
  ELSIF p_context->>'kind' IN ('seat','booking') THEN
   SELECT t.club_id INTO club FROM public.tournaments t WHERE t.id=(p_context->>'tour')::uuid;
  ELSE RAISE EXCEPTION 'portrait_unknown_context'; END IF;
- IF NOT coalesce(floor_private.club_portrait_staff(club),false) THEN
+ IF NOT coalesce(floor_private.club_portrait_staff(club,p_actor),false) THEN
   RAISE EXCEPTION 'portrait_forbidden' USING ERRCODE='42501'; END IF;
  IF p_context->>'kind'='seat' THEN
   SELECT floor_private.club_portrait_member(club,e.member_id,e.player_id) INTO member
@@ -122,7 +123,7 @@ BEGIN
   IF p_upload IS NULL THEN RAISE EXCEPTION 'portrait_upload_required'; END IF;
   PERFORM floor_private.club_portrait_url(p_upload);
   SELECT * INTO version FROM floor_private.club_member_portrait_versions WHERE id=p_upload;
-  IF FOUND AND (version.actor_id<>auth.uid() OR version.club_id<>club OR version.member_id<>member
+  IF FOUND AND (version.actor_id<>p_actor OR version.club_id<>club OR version.member_id<>member
       OR version.replaces IS DISTINCT FROM p_expected) THEN RAISE EXCEPTION 'portrait_upload_conflict'; END IF;
   IF current_id IS DISTINCT FROM p_upload THEN
    IF current_id IS DISTINCT FROM p_expected THEN RAISE EXCEPTION 'portrait_changed'; END IF;
@@ -130,25 +131,16 @@ BEGIN
     THEN RAISE EXCEPTION 'portrait_upload_expired'; END IF;
    IF p_action='prepare' THEN
     IF version.id IS NULL THEN
-     INSERT INTO floor_private.club_member_portrait_versions(id,club_id,member_id,actor_id,replaces)
-      VALUES(p_upload,club,member,auth.uid(),p_expected);
+     INSERT INTO floor_private.club_member_portrait_versions(id,club_id,member_id,actor_id,replaces,capture_context)
+      VALUES(p_upload,club,member,p_actor,p_expected,p_context);
     END IF;
    ELSE
     IF version.id IS NULL OR NOT EXISTS (SELECT 1 FROM storage.objects o WHERE o.bucket_id='club-player-portraits'
-     AND o.name=p_upload::text||'.jpg' AND o.owner_id=auth.uid()::text
+     AND o.name=p_upload::text||'.jpg' AND o.owner_id=p_actor::text
      AND o.metadata->>'mimetype'='image/jpeg' AND (o.metadata->>'size')::bigint BETWEEN 1 AND 131072)
      THEN RAISE EXCEPTION 'portrait_upload_missing'; END IF;
     UPDATE floor_private.club_member_portrait_versions SET is_current=false WHERE id=current_id;
     UPDATE floor_private.club_member_portrait_versions SET is_current=true,published_at=now() WHERE id=p_upload;
-    -- Only active seats bound to this member. Older hand_players rows are immutable snapshots.
-    UPDATE public.tournament_seats s SET avatar_url=floor_private.club_portrait_url(p_upload)
-    FROM public.tournament_entries e JOIN public.tournaments t ON t.id=e.tournament_id
-    WHERE t.club_id=club AND e.id=s.entry_id AND e.tournament_id=s.tournament_id AND e.player_id=s.player_id
-     AND e.entry_no=s.entry_number AND s.is_active
-     AND (e.member_id=member OR (e.member_id IS NULL AND EXISTS(SELECT 1 FROM public.club_members m
-         WHERE m.id=member AND m.player_user_id=e.player_id)
-         AND floor_private.club_portrait_member(club,NULL,e.player_id)=member))
-     AND (s.avatar_url IS NULL OR s.avatar_url LIKE '%/storage/v1/object/public/club-player-portraits/%');
     current_id:=p_upload;
    END IF;
   END IF;
@@ -156,6 +148,29 @@ BEGIN
  RETURN jsonb_build_object('member',member,'club',club,'name',member_name,'version',current_id,
   'url',floor_private.club_portrait_url(current_id));
 END $$;
+REVOKE ALL ON FUNCTION floor_private.club_player_portrait_intent(uuid,jsonb,text,uuid,uuid) FROM PUBLIC,anon,authenticated;
+CREATE FUNCTION public.club_player_portrait_v1(p_context jsonb,p_action text DEFAULT 'read',
+ p_expected uuid DEFAULT NULL,p_upload uuid DEFAULT NULL)
+RETURNS jsonb LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path='' AS $$
+ SELECT floor_private.club_player_portrait_intent(auth.uid(),p_context,p_action,p_expected,p_upload)
+$$;
+
+-- Link the immutable thumbnail in the same transaction in which Storage makes
+-- its metadata visible. Failed or superseded uploads never acquire a public object.
+CREATE FUNCTION floor_private.commit_club_portrait_object()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE v floor_private.club_member_portrait_versions%ROWTYPE;
+BEGIN
+ SELECT * INTO STRICT v FROM floor_private.club_member_portrait_versions
+  WHERE id=left(NEW.name,36)::uuid AND actor_id::text=NEW.owner_id;
+ IF NEW.name<>v.id::text||'.jpg' THEN RAISE EXCEPTION 'portrait_upload_conflict'; END IF;
+ PERFORM floor_private.club_player_portrait_intent(v.actor_id,v.capture_context,'publish',v.replaces,v.id);
+ RETURN NEW;
+END $$;
+REVOKE ALL ON FUNCTION floor_private.commit_club_portrait_object() FROM PUBLIC,anon,authenticated;
+CREATE TRIGGER commit_club_portrait_object AFTER INSERT ON storage.objects
+ FOR EACH ROW WHEN (NEW.bucket_id='club-player-portraits') EXECUTE FUNCTION floor_private.commit_club_portrait_object();
+
 REVOKE ALL ON FUNCTION public.club_player_portrait_v1(jsonb,text,uuid,uuid) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.club_player_portrait_v1(jsonb,text,uuid,uuid) TO authenticated;
 
@@ -169,33 +184,24 @@ RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
   AND v.member_id=floor_private.club_portrait_member(t.club_id,e.member_id,e.player_id)
  WHERE t.id=p_tour AND e.id=p_entry AND e.player_id=p_player AND e.entry_no=p_number
 $$;
-CREATE FUNCTION floor_private.seat_club_portrait()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+-- Read the photo after the existing scoped roster reader has authorized the exact
+-- table session. The token and every game field still come from the original reader.
+CREATE FUNCTION public.get_tracker_roster_with_portraits_v1(p_tournament_id uuid,p_tournament_table_id uuid,
+ p_table_session_id uuid,p_expected_epoch bigint)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE roster jsonb; seats jsonb;
 BEGIN
- IF NEW.is_active AND (nullif(NEW.avatar_url,'') IS NULL OR NEW.avatar_url LIKE '%/storage/v1/object/public/club-player-portraits/%') THEN
-  NEW.avatar_url:=floor_private.club_portrait_for_entry(NEW.tournament_id,NEW.entry_id,NEW.player_id,NEW.entry_number);
- END IF;
- RETURN NEW;
+ roster:=public.get_tracker_roster_snapshot_v2(p_tournament_id,p_tournament_table_id,p_table_session_id,p_expected_epoch);
+ IF roster->>'ok' IS DISTINCT FROM 'true' THEN RETURN roster; END IF;
+ SELECT jsonb_agg(CASE WHEN item->'seat'='null'::jsonb OR nullif(item#>>'{seat,avatar_url}','') IS NOT NULL THEN item
+  ELSE jsonb_set(item,'{seat,avatar_url}',coalesce(to_jsonb(floor_private.club_portrait_for_entry(p_tournament_id,
+   (item#>>'{seat,entry_id}')::uuid,(item#>>'{seat,player_id}')::uuid,(item#>>'{seat,entry_number}')::int)),'null'::jsonb)) END
+  ORDER BY n) INTO seats FROM jsonb_array_elements(roster->'seats') WITH ORDINALITY AS r(item,n);
+ RETURN jsonb_set(roster,'{seats}',coalesce(seats,'[]'::jsonb));
 END $$;
-CREATE TRIGGER seat_club_portrait BEFORE INSERT OR UPDATE OF entry_id,player_id,tournament_id,entry_number,is_active ON public.tournament_seats
- FOR EACH ROW EXECUTE FUNCTION floor_private.seat_club_portrait();
-
-CREATE FUNCTION floor_private.link_entry_club_portrait()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE photo text;
-BEGIN
- photo:=floor_private.club_portrait_for_entry(NEW.tournament_id,NEW.id,NEW.player_id,NEW.entry_no);
- UPDATE public.tournament_seats s SET avatar_url=photo
-  WHERE s.entry_id=NEW.id AND s.tournament_id=NEW.tournament_id AND s.player_id=NEW.player_id AND s.entry_number=NEW.entry_no
-   AND s.is_active AND s.avatar_url IS DISTINCT FROM photo
-   AND (s.avatar_url IS NULL OR s.avatar_url LIKE '%/storage/v1/object/public/club-player-portraits/%');
- RETURN NEW;
-END $$;
-CREATE TRIGGER linked_entry_club_portrait AFTER UPDATE OF member_id ON public.tournament_entries
- FOR EACH ROW WHEN (OLD.member_id IS DISTINCT FROM NEW.member_id) EXECUTE FUNCTION floor_private.link_entry_club_portrait();
 REVOKE ALL ON FUNCTION floor_private.club_portrait_for_entry(uuid,uuid,uuid,integer),
- floor_private.seat_club_portrait(),floor_private.link_entry_club_portrait() FROM PUBLIC,anon,authenticated;
-
+ public.get_tracker_roster_with_portraits_v1(uuid,uuid,uuid,bigint) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.get_tracker_roster_with_portraits_v1(uuid,uuid,uuid,bigint) TO authenticated;
 
 CREATE FUNCTION floor_private.snapshot_club_player_portrait()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$

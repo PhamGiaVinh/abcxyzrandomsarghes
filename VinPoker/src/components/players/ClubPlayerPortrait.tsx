@@ -95,7 +95,7 @@ function Editor({ client, target, name }: { client: Client; target: PortraitTarg
     event.target.value = "";
     if (!file || saving.current) return;
     const session = active.current;
-    saving.current = true; setBusy(true); setMessage(""); setAllowTableDisplay(false);
+    saving.current = true; setBusy(true); setMessage(""); setAllowTableDisplay(false); setDraft(null);
     try {
       const blob = await preparePortrait(file);
       if (active.current === session) setDraft({ blob, url: URL.createObjectURL(blob), id: crypto.randomUUID() });

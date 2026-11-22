@@ -149,6 +149,9 @@ export interface ActionRecord {
 
 const STREET_ORDER: Street[] = ["preflop", "flop", "turn", "river", "showdown"];
 const LINEAGE_READ_UNAVAILABLE = "Không tải được trạng thái bàn hoặc lịch sử blind. Hãy tải lại bàn trước khi bắt đầu hand tiếp theo.";
+const rosterSnapshotRpc = import.meta.env.VITE_CLUB_PLAYER_PORTRAITS === "true"
+  ? "get_tracker_roster_with_portraits_v1" : "get_tracker_roster_snapshot_v2";
+
 const STREET_LABELS: Record<Street, string> = {
   preflop: "Preflop",
   flop: "Flop",
@@ -1031,7 +1034,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       clearIntent();
       // A replayed committed receipt may describe a stack that another writer
       // has since changed. Confirm current snapshot before applying it to UI.
-      const fresh = await Promise.resolve(supabase.rpc("get_tracker_roster_snapshot_v2" as any, {
+      const fresh = await Promise.resolve(supabase.rpc(rosterSnapshotRpc as any, {
         p_tournament_id: tournamentId, p_tournament_table_id: context.tournamentTableId,
         p_table_session_id: context.tableSessionId, p_expected_epoch: context.controlEpoch,
       })).then(value => value, error => ({ data: null, error }));
@@ -1213,7 +1216,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       let loadedSeats: any[] | null = null;
       let error: any = null;
       if (wantAvatar && loadedSessionId && tbl?.tournamentTableId && Number.isInteger(tbl.controlEpoch)) {
-        const r = await observeTrackerContextRead(supabase.rpc("get_tracker_roster_snapshot_v2" as any, {
+        const r = await observeTrackerContextRead(supabase.rpc(rosterSnapshotRpc as any, {
           p_tournament_id: tournamentId, p_tournament_table_id: tbl.tournamentTableId,
           p_table_session_id: loadedSessionId, p_expected_epoch: tbl.controlEpoch,
         }));

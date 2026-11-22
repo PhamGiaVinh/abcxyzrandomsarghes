@@ -56,15 +56,19 @@ INSERT INTO storage.objects VALUES('club-player-portraits',fixture_id(101)||'.jp
 SELECT assert_portrait(club_player_portrait_v1(member_ctx(),'publish',NULL,fixture_id(101))->>'version'=fixture_id(101)::text,'publish receipt');
 SELECT assert_portrait(club_player_portrait_v1(member_ctx(),'publish',NULL,fixture_id(101))->>'version'=fixture_id(101)::text,'retry lost response');
 RESET ROLE;
-SELECT assert_portrait(count(*) FILTER (WHERE avatar_url LIKE '%'||fixture_id(101)||'.jpg')=2
- AND count(*) FILTER (WHERE avatar_url IS NULL AND tournament_id=fixture_id(43))=1,'current dealer roster correct by club') FROM tournament_seats;
+SELECT assert_portrait(public.get_tracker_roster_with_portraits_v1(fixture_id(42),fixture_id(71),fixture_id(82),1)#>>'{seats,0,seat,avatar_url}' LIKE '%'||fixture_id(101)||'.jpg','bound roster for tour 2');
 INSERT INTO tournament_hands SELECT fixture_id(i+70),fixture_id(i),fixture_id(71),fixture_id(i+40) FROM generate_series(41,43) i;
 INSERT INTO hand_players SELECT fixture_id(i+70),fixture_id(i),fixture_id(21),1,1,NULL FROM generate_series(41,43) i;
 SELECT assert_portrait(count(*) FILTER (WHERE avatar_url LIKE '%'||fixture_id(101)||'.jpg')=2 AND count(*) FILTER (WHERE tournament_id=fixture_id(43) AND avatar_url IS NULL)=1,'two tours reuse, other club isolated') FROM hand_players;
 SET ROLE authenticated;
 SELECT club_player_portrait_v1(member_ctx(),'prepare',fixture_id(101),fixture_id(102));
 SELECT club_player_portrait_v1(member_ctx(),'prepare',fixture_id(101),fixture_id(103));
-INSERT INTO storage.objects SELECT 'club-player-portraits',fixture_id(i)||'.jpg',auth.uid(),'{"mimetype":"image/jpeg","size":450}'::jsonb FROM generate_series(102,103) i;
+INSERT INTO storage.objects VALUES('club-player-portraits',fixture_id(103)||'.jpg',auth.uid(),'{"mimetype":"image/jpeg","size":450}');
+DO $$ BEGIN
+ BEGIN INSERT INTO storage.objects VALUES('club-player-portraits',fixture_id(102)||'.jpg',auth.uid(),'{"mimetype":"image/jpeg","size":450}');
+  RAISE EXCEPTION 'losing upload created public object';
+ EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'portrait_changed' THEN RAISE; END IF; END;
+END $$;
 SELECT club_player_portrait_v1(member_ctx(),'publish',fixture_id(101),fixture_id(103));
 DO $$ BEGIN
  BEGIN PERFORM club_player_portrait_v1(member_ctx(),'publish',fixture_id(101),fixture_id(102)); RAISE EXCEPTION 'stale overwrite';
@@ -80,11 +84,12 @@ INSERT INTO tournament_entries VALUES(fixture_id(54),fixture_id(44),fixture_id(1
  (fixture_id(55),fixture_id(44),NULL,fixture_id(24),1);
 INSERT INTO tournament_seats VALUES(fixture_id(64),fixture_id(44),fixture_id(71),fixture_id(84),1,true,fixture_id(54),fixture_id(23),1,NULL),
  (fixture_id(65),fixture_id(44),fixture_id(71),fixture_id(84),2,true,fixture_id(55),fixture_id(24),1,NULL);
-SELECT assert_portrait(avatar_url LIKE '%'||fixture_id(103)||'.jpg','returning player seated in new tour') FROM tournament_seats WHERE id=fixture_id(64);
+SELECT assert_portrait(public.get_tracker_roster_with_portraits_v1(fixture_id(44),fixture_id(71),fixture_id(84),1)#>>'{seats,0,seat,avatar_url}' LIKE '%'||fixture_id(103)||'.jpg','returning player seated in new tour');
 UPDATE tournament_entries SET member_id=fixture_id(11) WHERE id=fixture_id(55);
-SELECT assert_portrait(avatar_url LIKE '%'||fixture_id(103)||'.jpg','member linked after seating') FROM tournament_seats WHERE id=fixture_id(65);
+SELECT assert_portrait(public.get_tracker_roster_with_portraits_v1(fixture_id(44),fixture_id(71),fixture_id(84),1)#>>'{seats,1,seat,avatar_url}' LIKE '%'||fixture_id(103)||'.jpg','member linked after seating');
 UPDATE tournament_entries SET member_id=fixture_id(12) WHERE id=fixture_id(55);
-SELECT assert_portrait(avatar_url IS NULL,'mismatched member link clears inherited portrait') FROM tournament_seats WHERE id=fixture_id(65);
+SELECT assert_portrait(public.get_tracker_roster_with_portraits_v1(fixture_id(44),fixture_id(71),fixture_id(84),1)#>>'{seats,1,seat,avatar_url}' IS NULL,'mismatched link');
+SELECT assert_portrait(NOT EXISTS(SELECT 1 FROM storage.objects WHERE name=fixture_id(102)||'.jpg'),'losing object rolled back');
 UPDATE club_cashiers SET user_id=fixture_id(39) WHERE user_id=fixture_id(34);
 SET ROLE authenticated;
 DO $$ BEGIN

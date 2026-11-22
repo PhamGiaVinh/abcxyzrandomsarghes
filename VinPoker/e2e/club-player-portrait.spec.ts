@@ -50,6 +50,12 @@ for (const [label, device] of [["iPad", devices["iPad (gen 7) landscape"]], ["iP
       await page.getByRole("button",{name:"Chọn từ máy"}).tap();
       await (await picker).setFiles({name:"fixture.png",mimeType:"image/png",buffer:Buffer.from(bytes,"base64")});
       await expect(page.getByAltText("Ảnh của Người chơi TEST")).toBeVisible();
+      // A failed replacement must discard the earlier draft before consent can be given.
+      await page.locator('input:not([capture])[type=file]').setInputFiles({name:"bad.png",mimeType:"image/png",buffer:Buffer.from("broken")});
+      await expect(page.getByRole("status")).not.toBeEmpty();
+      await expect(page.getByRole("button",{name:"Lưu ảnh cho Người chơi TEST"})).toHaveCount(0);
+      await page.locator('input:not([capture])[type=file]').setInputFiles({name:"retry.png",mimeType:"image/png",buffer:Buffer.from(bytes,"base64")});
+      await expect(page.getByAltText("Ảnh của Người chơi TEST")).toBeVisible();
       expect(await page.evaluate(()=>(window as any).uploads.length)).toBe(0);
       const save=page.getByRole("button",{name:"Lưu ảnh cho Người chơi TEST"});
       await expect(save).toBeDisabled();
