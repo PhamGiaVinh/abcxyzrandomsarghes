@@ -119,3 +119,25 @@
   background: linear-gradient(150deg, var(--smoke-action, #383025), #211d19);
   color: #fff3dd;
 }
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards {
+  top: 0;
+  left: 50%;
+  gap: 2px;
+  transform: translate(-50%, calc(-100% - 3px));
+  transform-origin: bottom center;
+}
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] {
+  transform: translate(-50%, calc(-100% - 3px)) scale(.65);
+}
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > :nth-child(2),
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > div.flex > :nth-child(2) {
+  margin-left: 0;
+  transform: none;
+}
+
+.grid > :has(> .tracker-unified [data-cat-khoi]) {
+  min-width: 0;
+}
