@@ -1,3 +1,4 @@
+import { matchesDealerOperatingDay } from "@/lib/dealerOperatingDay";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
@@ -352,15 +353,19 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   // hide dealers currently dealing at another table, and dealers (available or
   // on-break) who haven't rested the club's min_inter_swing_rest_minutes yet.
   const restMinutesByClub = useMemo(() => buildRestMinutesByClub(swingConfigs ?? []), [swingConfigs]);
+  const operatingDayPool = useMemo(
+    () => freshPoolDealers.filter((dealer) => matchesDealerOperatingDay(dealer, nowMs)),
+    [freshPoolDealers, nowMs],
+  );
   const assignableDealers = useMemo(
-    () => freshPoolDealers.filter((d) =>
+    () => operatingDayPool.filter((d) =>
       isAssignableDealer(
         { current_state: d.current_state, last_released_at: d.last_released_at, clubId: d.dealers?.club_id ?? null },
         restMinutesByClub,
         nowMs,
       ),
     ),
-    [freshPoolDealers, restMinutesByClub, nowMs],
+    [operatingDayPool, restMinutesByClub, nowMs],
   );
   const { optimistic: checkedInCount, onCheckout: onOptCheckout } = useOptimisticDealerCount(rosterDealers.length);
   const { data: nextDealerMap, error: nextDealerError } = useNextDealerPredictions(filteredClubIds, assignments);
@@ -2440,7 +2445,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
             {FEATURES.dealerStaffingOptimizer && (isAdmin || isClubAdmin || isClubOwner || isFloor) && (
               <StaffingOptimizerCard
                 activeTables={summaryCounts.activeTables}
-                dealers={freshPoolDealers}
+                dealers={operatingDayPool}
                 assignments={assignments ?? []}
                 swingConfigs={swingConfigs ?? []}
                 nowMs={nowMs}
@@ -2449,7 +2454,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
               />
             )}
             {FEATURES.dealerFeatureTables && (isAdmin || isClubAdmin || isClubOwner || isFloor) && (
-              <FeatureTablePoolBox clubId={activeClubId} tables={tables ?? []} dealers={freshPoolDealers} />
+              <FeatureTablePoolBox clubId={activeClubId} tables={tables ?? []} dealers={operatingDayPool} />
             )}
             <Collapsible>
               <CollapsibleTrigger className="flex w-full items-center justify-between rounded-xl border border-border/60 bg-card/70 px-3 py-2.5 text-left text-sm font-medium text-foreground hover:bg-muted/60 [&[data-state=open]>svg]:rotate-180">
@@ -2660,7 +2665,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
             tableName={cpTable?.table_name ?? "Bàn"}
             slot0={cpSlots?.slot0 ?? null}
             currentTableAttendanceId={cpAssignment?.attendance_id ?? null}
-            dealers={freshPoolDealers}
+            dealers={operatingDayPool}
             assignedTableNameByAttendanceId={cpNameByAtt}
             restMinutes={Math.max(15, cpRestMinutes)}
             onChanged={() => { refetchAssignments(); refetchDealers(); refetchSchedule(); }}
@@ -3619,6 +3624,8 @@ function RosterPanel({
       const checkInTime = d.check_in_time ?? new Date().toISOString();
       if (a && repairTableIds.includes(a.table_id)) {
         map[d.id] = { status: "Cần kiểm tra phiên", tableName: a.game_tables?.table_name, checkInTime, timerStart: checkInTime };
+      } else if (!a && !matchesDealerOperatingDay(d, nowMs)) {
+        map[d.id] = { status: "Ca cần kiểm tra", checkInTime, timerStart: checkInTime };
       } else if (d.current_state === "pre_assigned") {
         map[d.id] = { status: "Đang chờ", tableName: (a as any)?.game_tables?.table_name, checkInTime, timerStart: checkInTime };
       } else if (a?.status === "assigned") {
@@ -3633,7 +3640,7 @@ function RosterPanel({
       }
     }
     return map;
-  }, [dealers, assignments, repairTableIds]);
+  }, [dealers, assignments, repairTableIds, nowMs]);
 
   // Live worked minutes: compute from assignment timestamps, not stale column.
   // Assigned → elapsed since assigned_at; others → stored value (last session).
@@ -3672,6 +3679,7 @@ function RosterPanel({
     { key: "Đang bàn", icon: Table2, color: "text-[hsl(var(--ds-active))]", dot: "bg-[hsl(var(--ds-active))]" },
     { key: "Đang chờ", icon: Clock, color: "text-[hsl(var(--ds-preassign))]", dot: "bg-[hsl(var(--ds-preassign))]" },
     { key: "Cần kiểm tra phiên", icon: Clock, color: "text-warning", dot: "bg-warning" },
+    { key: "Ca cần kiểm tra", icon: Clock, color: "text-warning", dot: "bg-warning" },
   ] as const;
 
   return (
