@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ session:{access_token:'synthetic-a'},candidateSignals:[] as AbortSignal[],candidateResolves:[] as Array<(value:unknown)=>void>,candidateHang:false, actorId: "actor", error: "503 TEST" as string | null, loading: false, dealerError:null as string|null, dealerLoading:false, configError: null as string | null, configLoading: false, tournamentError:false,tournamentLoading:false,tournamentRefetch:vi.fn(), configRefetch: vi.fn() }));
+const state = vi.hoisted(() => ({ session:{access_token:'synthetic-a'},candidateSignals:[] as AbortSignal[],candidateResolves:[] as Array<(value:unknown)=>void>,candidateHang:false, shifts:[] as Record<string, unknown>[], actorId: "actor", error: "503 TEST" as string | null, loading: false, dealerError:null as string|null, dealerLoading:false, configError: null as string | null, configLoading: false, tournamentError:false,tournamentLoading:false,tournamentRefetch:vi.fn(), configRefetch: vi.fn() }));
 const tableState=vi.hoisted(()=>({rows:[] as Record<string,unknown>[],assignments:[] as Record<string,unknown>[],scheduleRefetch:vi.fn()}));
 vi.mock("@/lib/featureFlags", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/featureFlags")>();
@@ -31,13 +31,13 @@ vi.mock("@/hooks/useLiveClock", () => ({ useLiveClock: () => 0 }));
 vi.mock("@/hooks/useSwingAnimation", () => ({ useSwingAnimation: () => ({}) }));
 vi.mock("@/hooks/useFocusNavigation", () => ({ useFocusNavigation: () => ({}) }));
 vi.mock("@/integrations/supabase/client", () => {
-  const from = (table:string) => {
+  const from = vi.fn((table:string) => {
   const query = { select: vi.fn(), eq: vi.fn(), in: vi.fn(), is:vi.fn(),range:vi.fn(),limit:vi.fn(),or:vi.fn(),abortSignal:vi.fn(), order: vi.fn(), maybeSingle: vi.fn(), then: vi.fn() };
   for (const key of ["select", "eq", "in", "order","is","range","limit","or","abortSignal"]) query[key as "select"].mockReturnValue(query);
   query.maybeSingle.mockResolvedValue({ data: null, error: null });
   query.abortSignal.mockImplementation((signal:AbortSignal)=>{if(table==='dealers'||table==='dealer_attendance')state.candidateSignals.push(signal);return query;});
-  query.then.mockImplementation((resolve) => {if(!state.candidateHang)resolve({ data: [],count:0, error: null });else state.candidateResolves.push(resolve);});
-  return query;};
+  query.then.mockImplementation((resolve) => {if(!state.candidateHang || table==='dealer_shifts')resolve({ data: table === "dealer_shifts" ? state.shifts : [],count:0, error: null });else state.candidateResolves.push(resolve);});
+  return query;});
   return { supabase: { from, rpc: vi.fn().mockResolvedValue({ data: null, error: null }), functions: { invoke: vi.fn() } } };
 });
 import SwingPanel from "./DealerSwingTab";
@@ -70,6 +70,20 @@ describe("desktop Swing authoritative read state", () => {
     expect(tableState.scheduleRefetch).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button',{name:'TEST accept canonical next receipt'}));
     expect(tableState.scheduleRefetch).toHaveBeenCalledOnce();
+  });
+  it("refreshes shifts created in another tab when Check-in opens and regains focus", async () => {
+    state.error = null;
+    state.shifts = [];
+    vi.mocked(supabase.from).mockClear();
+    await act(async () => { render(<SwingPanel clubIds={['club']} clubs={[{id:'club',name:'TEST'}]} />); });
+    fireEvent.click(screen.getByRole('button', { name: 'ĐỘI HÌNH / CHECK-IN' }));
+    state.shifts = [{ id: 'late', club_id: 'club', tour_name: 'TEST 02:00', start_time: '02:00', end_time: '10:00' }];
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check-in' })); });
+    expect(vi.mocked(supabase.from).mock.calls.filter(([table]) => table === "dealer_shifts")).toHaveLength(2);
+    state.shifts = [{ ...state.shifts[0], tour_name: 'TEST updated' }];
+    await act(async () => { fireEvent.focus(window); });
+    expect(vi.mocked(supabase.from).mock.calls.filter(([table]) => table === "dealer_shifts")).toHaveLength(3);
+    state.shifts = [];
   });
   afterEach(()=>vi.useRealTimers());
   it('shows suggestion failure with explicit retry instead of an endless loading label',async()=>{
