@@ -84,13 +84,10 @@ export function ActionShotClock() {
         {deadline === null ? "Tiếp tục" : "Tạm dừng"}
       </button>
       <button type="button" className={buttonClass} onClick={() => {
-        if (deadline === null) {
-          setRemaining((value) => value + TURN_MS);
-        } else {
-          setDeadline(Math.max(deadline, performance.now()) + TURN_MS);
-        }
+        setRemaining(TURN_MS);
+        setDeadline(performance.now() + TURN_MS);
       }}>
-        +30 giây
+        Reset
       </button>
       <details className="relative">
         <summary className={`${buttonClass} flex cursor-pointer list-none items-center`}>Cài đặt</summary>
