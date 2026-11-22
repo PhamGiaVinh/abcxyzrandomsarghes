@@ -64,11 +64,22 @@ RETURNS uuid LANGUAGE sql STABLE SET search_path='' AS $$
  SELECT CASE WHEN count(*)=1 THEN (array_agg(m.id))[1] END FROM public.club_members m
  WHERE m.club_id=p_club AND (m.id=p_member OR (p_member IS NULL AND m.player_user_id=p_player))
 $$;
+-- The release controller installs the verified public Storage origin for this instance.
+-- An unconfigured preview cannot accidentally serve images from production.
+CREATE TABLE floor_private.club_portrait_storage_origin (
+ singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+ origin text NOT NULL CHECK (origin ~ '^https://[a-z0-9]{20}[.]supabase[.]co$' OR origin ~ '^http://127[.]0[.]0[.]1:[0-9]{1,5}$')
+);
+ALTER TABLE floor_private.club_portrait_storage_origin ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON floor_private.club_portrait_storage_origin FROM PUBLIC,anon,authenticated;
 CREATE FUNCTION floor_private.club_portrait_url(p_id uuid)
-RETURNS text LANGUAGE sql STABLE STRICT SET search_path='' AS $$
- SELECT rtrim(coalesce(nullif(current_setting('app.supabase_url',true),''),'https://orlesggcjamwuknxwcpk.supabase.co'),'/')
-  || '/storage/v1/object/public/club-player-portraits/' || p_id::text || '.jpg'
-$$;
+RETURNS text LANGUAGE plpgsql STABLE STRICT SET search_path='' AS $$
+DECLARE base text;
+BEGIN
+ SELECT origin INTO base FROM floor_private.club_portrait_storage_origin WHERE singleton;
+ IF base IS NULL THEN RAISE EXCEPTION 'portrait_storage_unconfigured'; END IF;
+ RETURN base || '/storage/v1/object/public/club-player-portraits/' || p_id::text || '.jpg';
+END $$;
 
 CREATE FUNCTION public.club_player_portrait_v1(p_context jsonb,p_action text DEFAULT 'read',
  p_expected uuid DEFAULT NULL,p_upload uuid DEFAULT NULL)
@@ -109,6 +120,7 @@ BEGIN
   WHERE club_id=club AND member_id=member AND is_current;
  IF p_action<>'read' THEN
   IF p_upload IS NULL THEN RAISE EXCEPTION 'portrait_upload_required'; END IF;
+  PERFORM floor_private.club_portrait_url(p_upload);
   SELECT * INTO version FROM floor_private.club_member_portrait_versions WHERE id=p_upload;
   IF FOUND AND (version.actor_id<>auth.uid() OR version.club_id<>club OR version.member_id<>member
       OR version.replaces IS DISTINCT FROM p_expected) THEN RAISE EXCEPTION 'portrait_upload_conflict'; END IF;

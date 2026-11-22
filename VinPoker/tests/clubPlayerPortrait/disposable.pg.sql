@@ -20,6 +20,8 @@ GRANT INSERT,SELECT ON storage.objects TO authenticated;
 
 \ir ../../supabase/pending-migrations/20261122122716_club_member_portraits_v1.sql
 
+INSERT INTO floor_private.club_portrait_storage_origin(origin) VALUES ('http://127.0.0.1:54321');
+
 CREATE FUNCTION public.fixture_id(n int) RETURNS uuid LANGUAGE sql IMMUTABLE AS $$
  SELECT lpad(n::text,32,'0')::uuid
 $$;

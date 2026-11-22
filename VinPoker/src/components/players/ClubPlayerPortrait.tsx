@@ -52,6 +52,7 @@ function errorMessage(e: unknown) {
   if (message.includes("portrait_forbidden")) return "Bạn chưa có quyền cập nhật ảnh tại CLB này.";
   if (message.includes("portrait_changed") || message.includes("portrait_upload_conflict")) return "Hồ sơ hoặc ảnh đã thay đổi. Đóng rồi mở lại để xem ảnh mới.";
   if (message.includes("portrait_upload_expired")) return "Phiên lưu ảnh đã hết hạn. Hãy chọn lại ảnh.";
+  if (message.includes("portrait_storage_unconfigured")) return "CLB chưa bật nơi lưu ảnh.";
   if (message.includes("portrait_size")) return "Chọn ảnh có dung lượng tối đa 16 MB.";
   if (message.includes("portrait_format") || message.includes("decode")) return "Không đọc được ảnh. Hãy chọn ảnh JPEG, PNG hoặc WebP.";
   return "Chưa xác nhận được ảnh với máy chủ. Vui lòng thử lại.";

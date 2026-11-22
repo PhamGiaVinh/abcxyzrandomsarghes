@@ -32,10 +32,8 @@ jobs:
           api=$(jq -er '.API_URL | select(. == "http://127.0.0.1:54321")' "$RUNNER_TEMP/portrait-local.json")
           psql "$db" -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA floor_private' -f tests/clubPlayerPortrait/club-fixture.sql \
             -f supabase/pending-migrations/20261122122716_club_member_portraits_v1.sql
-          psql "$db" -X -v ON_ERROR_STOP=1 -c "ALTER DATABASE postgres SET app.supabase_url = '$api';" \
+          psql "$db" -X -v ON_ERROR_STOP=1 -c "INSERT INTO floor_private.club_portrait_storage_origin(origin) VALUES ('$api');" \
             -c "NOTIFY pgrst, 'reload schema';"
-          # Local REST connections must pick up the database-level endpoint for image URLs.
-          docker restart supabase_rest_portrait-stack >/dev/null
           for _ in {1..30}; do
             if curl --silent --fail -o /dev/null -H "apikey: $(jq -r .ANON_KEY "$RUNNER_TEMP/portrait-local.json")" "$api/rest/v1/"; then break; fi
             sleep 1
