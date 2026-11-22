@@ -17,6 +17,7 @@ import { tableAppearanceStyle, type TableAppearance } from '@/components/tracker
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTrackerCardStyle } from '@/components/tracker/TrackerCardStyle';
+import { PlayerSeatPlate, PlayerSeatPortrait } from '@/components/tracker/PlayerSeat';
 import { TRACKER_TABLE_GEOMETRY, trackerTableSizes, trackerBetPoint, useTrackerTableLayout } from '@/components/tracker/trackerTableLayout';
 import { TableSurface } from '@/components/tracker/TableSurface';
 import { TablePot } from '@/components/tracker/TablePot';
@@ -1029,12 +1030,31 @@ export function LiveFelt({
               }
             : {};
 
+          const stackAmount = viewerAmountsInBB ? (
+                      <div data-testid={`felt-stack-${seat.player_id}`} data-stack-target={displayedStack(seat)} className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
+                        <CountUpText value={displayedStack(seat)} format={formatViewerAmount} enabled={tableFx} />
+                      </div>
+                    ) : compactActive && formatBB(seat.chip_count) ? (
+                      <>
+                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
+                          <CountUpText value={displayedStack(seat)} format={(n) => formatBB(n) ?? formatStack(n)} enabled={tableFx} />
+                        </div>
+                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[8px] font-semibold leading-none text-white/60" style={subTextStyle}>
+                          <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="tracker-num mt-[1px] text-[10px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
+                        <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
+                      </div>
+                    );
           return (
             <div
               key={seat.player_id}
               data-tracker-seat={unified ? seat.seat_number : undefined}
               data-seat-selected={unified && isSelected}
               data-seat-acting={unified && isToAct}
+              data-seat-winner={unified && isWinner || undefined}
               data-seat-folded={unified ? !!seat.is_folded : undefined}
               className={`absolute z-10 ${seat.is_folded && !unified ? "opacity-50" : ""}${tableFx ? " transition-opacity duration-300 motion-reduce:transition-none" : ""}${interactiveCls}${selectedCls}`}
               style={posStyle}
@@ -1049,7 +1069,10 @@ export function LiveFelt({
                     ◀ {t("liveHub.felt.toAct", "chờ")}
                   </div>
                 )}
-                <div className={unified ? 'tracker-seat-avatar' : 'relative'}>
+                {unified ? <PlayerSeatPortrait name={seat.display_name} photo={seat.avatar_url} seat={seat.seat_number} style={avatarStyle}>
+                  <div className="tracker-seat-position">{isButtonSeat ? <b aria-label="Dealer">D</b> : seat.position && <span>{seat.position}</span>}</div>
+                </PlayerSeatPortrait> : (
+                <div className="relative">
                   <div
                     className={`grid ${viewerLayout ? "h-9 w-9 sm:h-10 sm:w-10" : "h-8 w-8 sm:h-9 sm:w-9"} place-items-center overflow-hidden rounded-full border-2 text-[9px] font-bold sm:text-[11px] ${
                       isWinner ? "tracker-win-glow border-[hsl(var(--poker-gold))]" : `${avatarBorder} ${avatarRing}`
@@ -1090,38 +1113,26 @@ export function LiveFelt({
                     </span>
                   )}
                 </div>
-                {viewerLayout || unified ? (
+                )}
+                {unified ? (
+                  <PlayerSeatPlate name={seat.display_name} seat={seat.seat_number} title={`${seat.display_name} · ${displayedStack(seat)}`}>
+                    {stackAmount}
+                  </PlayerSeatPlate>
+                ) : viewerLayout ? (
                   // V2: a CoinPoker-style "nameplate" capsule — name + stack grouped in one
                   // dark, neon-bordered pill so each seat reads as a tight unit.
                   // PR-A1 compact: the stack goes BB-FIRST (RPT pattern — meaningful at any
                   // level) with chips demoted to a smaller secondary line. formatBB null
                   // (no blind level) → chips render alone exactly as today: never a fake BB.
                   <div
-                    className={`mt-1 flex max-w-full flex-col items-center rounded-md px-1.5 py-[3px] leading-none${unified ? ' tracker-seat-plate' : ''}`}
+                    className={`mt-1 flex max-w-full flex-col items-center rounded-md px-1.5 py-[3px] leading-none`}
                     title={`${seat.display_name} · ${displayedStack(seat)}`}
-                    style={unified ? undefined : { background: "rgba(3,5,8,0.9)", border: "1px solid hsl(var(--primary) / 0.28)", boxShadow: "0 1px 3px rgba(0,0,0,0.6)" }}
+                    style={{ background: "rgba(3,5,8,0.9)", border: "1px solid hsl(var(--primary) / 0.28)", boxShadow: "0 1px 3px rgba(0,0,0,0.6)" }}
                   >
-                    <div className={`tracker-display max-w-full truncate text-[10px] font-semibold leading-tight text-white sm:text-[11px]${unified ? ' tracker-seat-name' : ''}`} style={unified ? undefined : nameTextStyle}>
-                      {unified && <span className="tracker-seat-number">{seat.seat_number}</span>}{seat.display_name}
+                    <div className={`tracker-display max-w-full truncate text-[10px] font-semibold leading-tight text-white sm:text-[11px]`} style={nameTextStyle}>
+                      {seat.display_name}
                     </div>
-                    {viewerAmountsInBB ? (
-                      <div data-testid={`felt-stack-${seat.player_id}`} data-stack-target={displayedStack(seat)} className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
-                        <CountUpText value={displayedStack(seat)} format={formatViewerAmount} enabled={tableFx} />
-                      </div>
-                    ) : compactActive && formatBB(seat.chip_count) ? (
-                      <>
-                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
-                          <CountUpText value={displayedStack(seat)} format={(n) => formatBB(n) ?? formatStack(n)} enabled={tableFx} />
-                        </div>
-                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[8px] font-semibold leading-none text-white/60" style={subTextStyle}>
-                          <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
-                        </div>
-                      </>
-                    ) : (
-                      <div className="tracker-num mt-[1px] text-[10px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
-                        <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
-                      </div>
-                    )}
+                    {stackAmount}
                   </div>
                 ) : (
                   <>

@@ -51,9 +51,9 @@ export function TrackerInputPreview() {
     setStage(value);
     setIntent(null);
   };
-  return <main className="tracker-display mx-auto min-h-screen w-full max-w-6xl space-y-3 bg-background px-3 py-4 text-foreground sm:px-5">
+  return <main className="tracker-table-preview mx-auto min-h-screen w-full max-w-6xl space-y-3 bg-background px-3 py-4 text-foreground sm:px-5">
     <TrackerVisualStyles />
-    <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-3">
+    <header className="preview-table-head">
       <div><div className="text-xs font-medium text-muted-foreground">Bàn mẫu · Dữ liệu mô phỏng</div>
         <h1 className="mt-1 text-xl font-bold">Bàn 09 <span className="font-normal text-muted-foreground">/ Hand #14</span></h1>
       </div>
@@ -62,20 +62,20 @@ export function TrackerInputPreview() {
           {STAGES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
       </label>
-    </header>
     <nav aria-label="Giao diện bàn mẫu" className="flex flex-wrap gap-2">
       {MODES.map((m) => <button key={m.id} type="button" aria-pressed={mode === m.id} className={modeButton}
         onClick={() => setMode(m.id)}>{m.label}</button>)}
     </nav>
+    </header>
     {mode === "spectator" ? <TrackerViewerCardProvider>
       <LiveFelt seats={hand.seats} lastActorId={hand.lastAction?.player_id ?? null} toActId={actor?.playerId}
         displayCards={hand.board} potSize={hand.breakdown.totalCommitted} potBreakdown={hand.breakdown}
         latestAction={hand.lastAction} multiTableUnresolved={false} handNumber={14} blinds={BLINDS} buttonSeat={9}
         formatBB={amountLabel} viewerBigBlind={BLINDS.bb} viewerAmountsInBB viewerLayout compact tableFx />
     </TrackerViewerCardProvider> : <TrackerInputCardProvider>
-      <TrackerRacetrack seats={hand.dealerSeats} actingSeatNumber={actor?.seatNumber ?? null} dealerSeatNumber={9}
+      <TrackerRacetrack seats={hand.dealerSeats} actingSeatNumber={actor?.seatNumber ?? null} engineToActSeatNumber={actor?.seatNumber} dealerSeatNumber={9}
         boardCards={hand.board} blinds={BLINDS} pot={hand.breakdown.totalCommitted} potBreakdown={hand.breakdown}
-        bigBlind={BLINDS.bb} rich betChips dealerFix feltV2 belowBoard={actor && <ActionShotClock key={stage} />} />
+        bigBlind={BLINDS.bb} rich betChips dealerFix feltV2 belowBoard={actor && <ActionShotClock key={stage} playerLabel={actor.name} />} />
       {mode === "voice" && actor && <PreviewVoice key={`voice-${stage}`} actor={actor} toCall={hand.toCall} onConfirm={() => setIntent({
         action: hand.toCall ? "call" : "check", seatNumber: actor.seatNumber, amount: (actor.committed ?? 0) + hand.toCall,
       })} />}

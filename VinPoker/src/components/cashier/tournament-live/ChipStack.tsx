@@ -58,7 +58,7 @@ export function ChipStack({
   const disc = allIn ? RED : GOLD;
   return (
     <div className="tracker-bet-pulse flex flex-col items-center" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,.55))" }}>
-      <div className="relative" style={{ width: w, aspectRatio: `1 / ${1 + (DISCS - 1) * STEP}` }}>
+      <div className="tracker-chip-column relative" data-all-in={allIn || undefined} style={{ width: w, aspectRatio: `1 / ${1 + (DISCS - 1) * STEP}` }}>
         {Array.from({ length: DISCS }).map((_, i) => (
           <span
             key={i}

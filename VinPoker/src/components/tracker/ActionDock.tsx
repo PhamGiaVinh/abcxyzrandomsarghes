@@ -31,10 +31,11 @@ function ActionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
+      data-action-key={hotkey}
       className="relative flex min-h-[56px] flex-col items-center justify-center gap-0.5 rounded-xl border-2 text-base font-bold text-[hsl(var(--foreground))] transition-transform active:scale-95 disabled:opacity-40 disabled:active:scale-100 max-lg:landscape:min-h-[46px]"
-      style={{ borderColor: color, background: filled ? `${color}24` : 'transparent' }}
+      style={{ borderColor: color, background: filled ? `linear-gradient(180deg, ${color}60, ${color}22)` : `linear-gradient(180deg, ${color}26, #212728)` }}
     >
-      <span className={`absolute right-2 top-1.5 text-[9px] opacity-50 ${NUM}`}>{hotkey}</span>
+      <span className={`action-hotkey absolute right-2 top-1.5 text-[9px] opacity-50 ${NUM}`}>{hotkey}</span>
       {label}
       {sub && <span className={`text-[11px] font-medium opacity-85 ${NUM}`}>{sub}</span>}
     </button>
@@ -108,7 +109,7 @@ export function ActionDock({ actingSeat, toCall, bigBlind, onIntent, onUndo, vie
   }
 
   return (
-    <div ref={dock} className="rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
+    <div ref={dock} className="tracker-action-dock rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3">
       {/* Actor block */}
       <div className="mb-2.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5">
@@ -185,7 +186,7 @@ export function ActionDock({ actingSeat, toCall, bigBlind, onIntent, onUndo, vie
       {/* Undo — hotkey hints are desktop-only clutter on a touch screen; Undo itself
           always stays reachable at a real touch-target size on every width. */}
       <div className="mt-2.5 flex items-center justify-between gap-2 text-[11px] text-[hsl(var(--muted-foreground))]">
-        <div className="hidden flex-wrap sm:flex">
+        <div className="tracker-keyboard-hints hidden flex-wrap sm:flex">
           <kbd className="rounded bg-[hsl(var(--secondary))] px-1.5 py-px">F</kbd>&nbsp;Bỏ{' '}
           <kbd className="rounded bg-[hsl(var(--secondary))] px-1.5 py-px">C</kbd>&nbsp;Theo{' '}
           <kbd className="rounded bg-[hsl(var(--secondary))] px-1.5 py-px">R</kbd>&nbsp;Tố{' '}

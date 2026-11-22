@@ -30,6 +30,7 @@ import { ChipStack } from '@/components/cashier/tournament-live/ChipStack';
 import type { SeatVM, TrackerRacetrackProps } from './types';
 import { useTrackerCardStyle } from './TrackerCardStyle';
 import { TRACKER_TABLE_GEOMETRY, trackerTableSizes, trackerBetPoint, useTrackerTableLayout } from './trackerTableLayout';
+import { PlayerSeatPlate, PlayerSeatPortrait } from './PlayerSeat';
 import { TableSurface } from './TableSurface';
 import { TablePot } from './TablePot';
 import { formatStack } from '@/components/cashier/tournament-live/handinput/format';
@@ -177,17 +178,13 @@ function Seat({
         onClick: onTap, onKeyDown: (event: KeyboardEvent) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onTap(); } } } : {})}>
       <div className="tracker-seat" style={podStyle}>
         {seat.isEmpty ? <div className="tracker-seat-plate flex min-h-11 items-center justify-center gap-1 border-dashed text-[10px]">{seatLabel}{isDealerButton && <b className="rounded-full bg-amber-300 px-1 text-black">D</b>}</div> : <>
-          <div className="tracker-seat-avatar">
-            <div className="grid place-items-center overflow-hidden rounded-full border border-amber-200/40 bg-[#0a1712] text-[10px] font-bold text-amber-100" style={avatarStyle}>
-              {seat.avatarUrl ? <img src={seat.avatarUrl} alt="" className="h-full w-full object-cover" /> : seat.name.slice(0, 2).toUpperCase()}
-            </div>
-            <div className="absolute -top-2 left-0 flex gap-0.5"><PositionBadge position={seat.position} />{isDealerButton && <b className="rounded-full bg-amber-300 px-1 text-[8px] text-black">D</b>}</div>
-          </div>
+          <PlayerSeatPortrait name={seat.name} photo={seat.avatarUrl} seat={seat.seatNumber} style={avatarStyle}>
+            <div className="tracker-seat-position"><PositionBadge position={isDealerButton ? undefined : seat.position} />{isDealerButton && <b aria-label="Dealer">D</b>}</div>
+          </PlayerSeatPortrait>
           <div className="tracker-seat-cards" data-revealed={!!showHoleCards && !seat.isMucked && !!seat.holeCards?.some(Boolean)}><HoleCards seat={seat} showFaces={showHoleCards} cardStyle={holeCardStyle} /></div>
-          <div className="tracker-seat-plate" title={`${seat.name} · ${formatChips(seat.stack)} · ${toBB(seat.stack, bigBlind)} BB`}>
-            <div className="tracker-seat-name"><span className="tracker-seat-number">{seat.seatNumber}</span>{seat.name}</div>
+          <PlayerSeatPlate seat={seat.seatNumber} name={seat.name} title={`${seat.name} · ${formatChips(seat.stack)} · ${toBB(seat.stack, bigBlind)} BB`}>
             <div className="tracker-seat-stack">{formatStack(seat.stack)}</div>
-          </div>
+          </PlayerSeatPlate>
           <div className="tracker-seat-line">{seat.isAllIn ? 'ALL-IN' : seat.isFolded ? 'FOLD' : seat.lastAction || (isCurrentActor ? t('liveHub.felt.toAct', 'Đến lượt') : bigBlind > 0 ? `${toBB(seat.stack, bigBlind)} BB` : '')}</div>
           {onAnalyticsTap && <button type="button" aria-label={t('tracker.analytics.openForPlayer', 'Mở phân tích vận hành của {{name}}', { name: seat.name })}
             className="absolute left-0 top-0 z-20 h-11 w-11 rounded-full focus-visible:ring-2 focus-visible:ring-amber-200"
