@@ -22,6 +22,7 @@ import {
   isCandidateSnapshotFailure,
 } from "../../_shared/pickNextDealer.ts";
 import { solveRotationPlan } from "../../_shared/rotationSolver.ts";
+import { getDealerOperationalTables } from "../../_shared/dealerOperationalTables.ts";
 import { SWING_POLICY } from "../../_shared/swingPolicy.ts";
 import {
   getFeatureTablePoolsByTable,
@@ -544,10 +545,21 @@ export async function passRRotationPlanner(
       return result;
     }
 
-    // Validate the whole snapshot before reconciliation, OT or rest-state writes.
     const { tournamentInfo, rejectedTables } = await fetchTournamentInfo(admin, ctx.clubId, assignmentSnapshot);
     for (const [tableId, error] of rejectedTables) result.errors.push({ scope: `table:${tableId}`, error });
-    const assignments = assignmentSnapshot.filter((a) => !rejectedTables.has(a.table_id));
+    const verifiedAssignments = assignmentSnapshot.filter(a => !rejectedTables.has(a.table_id));
+    if (verifiedAssignments.length === 0) {
+      result.solverDurationMs = Date.now() - started;
+      return result;
+    }
+
+    // Use the same inventory as the commit guard before allocating scarce relief.
+    // An unserviceable table must not consume a candidate that another table can use.
+    const operationalTables = await getDealerOperationalTables(admin, ctx.clubId);
+    const sessionByTable = new Map(operationalTables.map(table => [table.id, table.table_session_id]));
+    const assignments = verifiedAssignments.filter(assignment =>
+      sessionByTable.get(assignment.table_id) === assignment.table_session_id
+    );
     if (assignments.length === 0) {
       result.solverDurationMs = Date.now() - started;
       return result;
@@ -555,7 +567,7 @@ export async function passRRotationPlanner(
     const validTableIds = new Set(assignments.map((a) => a.table_id));
     const excludedAttendanceIds = new Set(ctx.cycleExcludedIds);
     for (const a of assignmentSnapshot) {
-      if (!rejectedTables.has(a.table_id)) continue;
+      if (sessionByTable.get(a.table_id) === a.table_session_id && !rejectedTables.has(a.table_id)) continue;
       excludedAttendanceIds.add(a.attendance_id);
       if (a.pre_assigned_attendance_id) excludedAttendanceIds.add(a.pre_assigned_attendance_id);
     }
