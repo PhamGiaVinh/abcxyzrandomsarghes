@@ -515,6 +515,7 @@ export function TrackerRacetrack({
     : undefined;
 
   return (
+    <>
     <div
       ref={layout.ref}
       data-tracker-table={unified ? (portrait ? 'portrait' : 'landscape') : undefined}
@@ -572,7 +573,6 @@ export function TrackerRacetrack({
             ),
           )}
         </div>
-        {belowBoard}
       </div>
 
       {/* Committed-chip pucks (behind seats). liveBetChips → chip-DISC stack (ChipStack);
@@ -700,5 +700,7 @@ export function TrackerRacetrack({
         </div>
       )}
     </div>
+    {belowBoard}
+    </>
   );
 }

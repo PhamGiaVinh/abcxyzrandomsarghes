@@ -22,6 +22,7 @@ export function ActionShotClock() {
   const [remaining, setRemaining] = useState(TURN_MS);
   const [swipes, setSwipes] = useState(readSwipeSettings);
   const gesture = useRef<{ id: number; x: number; y: number } | null>(null);
+  const moved = useRef(false);
 
   function updateSwipe(direction: keyof SwipeSettings, seconds: number) {
     const next = { ...swipes, [direction]: seconds };
@@ -43,23 +44,39 @@ export function ActionShotClock() {
   const display = [Math.floor(seconds / 60), seconds % 60]
     .map((value) => String(value).padStart(2, "0")).join(":");
   const buttonClass = "min-h-11 rounded-lg border border-white/25 bg-black/40 px-2 text-xs text-white focus-visible:ring-2 focus-visible:ring-amber-300";
+  const togglePause = () => {
+    const now = performance.now();
+    if (deadline === null) {
+      setDeadline(now + remaining);
+    } else {
+      setRemaining(Math.max(0, deadline - now));
+      setDeadline(null);
+    }
+  };
 
   return (
-    <div className="relative z-10 mt-1 flex items-center justify-center gap-1.5 font-sans">
-      <div
+    <div className="mx-auto my-2 flex max-w-full flex-wrap items-start justify-center gap-2 px-2 font-sans">
+      <button
+        type="button"
+        aria-label={deadline === null ? "Tiếp tục" : "Tạm dừng"}
+        onClick={(event) => {
+          if (event.detail === 0 || !moved.current) togglePause();
+        }}
         className="flex min-h-11 touch-pan-y select-none items-center gap-1 rounded-lg border border-amber-300/30 bg-black/40 px-2"
         onPointerDown={(event) => {
           if (!event.isPrimary || event.button !== 0) return;
+          moved.current = false;
           gesture.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
-        onPointerCancel={() => { gesture.current = null; }}
+        onPointerCancel={() => { gesture.current = null; moved.current = true; }}
         onPointerUp={(event) => {
           const start = gesture.current;
           gesture.current = null;
           if (!start || start.id !== event.pointerId) return;
           const dx = event.clientX - start.x;
           const dy = event.clientY - start.y;
+          moved.current = Math.hypot(dx, dy) > 10;
           if (Math.abs(dx) < 36 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
           const duration = swipes[dx < 0 ? "left" : "right"] * 1000;
           setRemaining(duration);
@@ -71,17 +88,7 @@ export function ActionShotClock() {
           {display}
         </span>
         <span aria-hidden="true" className="text-xs text-amber-200/70">›</span>
-      </div>
-      <button type="button" className={buttonClass} onClick={() => {
-        const now = performance.now();
-        if (deadline === null) {
-          setDeadline(now + remaining);
-        } else {
-          setRemaining(Math.max(0, deadline - now));
-          setDeadline(null);
-        }
-      }}>
-        {deadline === null ? "Tiếp tục" : "Tạm dừng"}
+        <span className="ml-1 text-xs text-white">{deadline === null ? "Tiếp tục" : "Tạm dừng"}</span>
       </button>
       <button type="button" className={buttonClass} onClick={() => {
         setRemaining(TURN_MS);
@@ -91,7 +98,7 @@ export function ActionShotClock() {
       </button>
       <details className="relative">
         <summary className={`${buttonClass} flex cursor-pointer list-none items-center`}>Cài đặt</summary>
-        <div className="absolute bottom-full right-0 mb-2 w-48 space-y-2 rounded-lg border border-white/25 bg-[#101b17] p-3 text-left text-xs text-white shadow-xl">
+        <div className="mt-2 w-44 max-w-full space-y-2 rounded-lg border border-white/25 bg-[#101b17] p-3 text-left text-xs text-white">
           {(["left", "right"] as const).map((direction) => (
             <label key={direction} className="flex items-center justify-between gap-2">
               {direction === "left" ? "Vuốt trái" : "Vuốt phải"}
