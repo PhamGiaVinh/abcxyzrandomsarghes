@@ -3,6 +3,7 @@ import { PokerCard, CardBack } from '../PokerVisuals';
 import { formatViewerBBOrUnavailable, formatViewerChipAndBB } from '@/lib/tracker-poker/viewerAmounts';
 import { formatStack } from '@/lib/format';
 import { TRACKER_TABLE_GEOMETRY } from '@/components/tracker/trackerTableLayout';
+import { TableSurface, usesCatKhoi } from '@/components/tracker/TableSurface';
 import { TableLogo, TableBlinds } from '@/components/tracker/TableIdentity';
 import { tableAppearanceStyle, type TableAppearance } from '@/components/tracker/tableAppearance';
 import type { PublicTableSnapshot } from './publicSnapshotTypes';
@@ -22,7 +23,7 @@ export function SpectatorMiniTable({ table, appearance, onPlayerSelect }: { tabl
     : table.trackerState === 'closed' ? 'Phiên bàn đã đóng'
     : null;
   return <div className="spectator-mini-table" style={tableAppearanceStyle(appearance)} data-hand-id={table.handId ?? undefined} data-tracker-state={table.trackerState}>
-    <div className="spectator-mini-surface" aria-hidden="true" />
+    {usesCatKhoi(appearance) ? <TableSurface portrait={false} appearance={appearance} /> : <div className="spectator-mini-surface" aria-hidden="true" />}
     <div className="spectator-mini-center">
       <TableLogo url={appearance?.logoUrl} />
       {stateLabel && <span className="spectator-mini-state">{stateLabel}</span>}
@@ -44,7 +45,7 @@ export function SpectatorMiniTable({ table, appearance, onPlayerSelect }: { tabl
         {onPlayerSelect && <button type="button" aria-label={`Thống kê ${player.name}`} onClick={() => onPlayerSelect(player.playerId)} className="absolute inset-0 z-10 min-h-11 min-w-11 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" />}
         <div className="spectator-mini-portrait">
           <div className="spectator-mini-avatar">{player.avatarUrl ? <img src={player.avatarUrl} alt="" /> : player.name.slice(0, 2).toUpperCase()}</div>
-          {showCards && <div className="spectator-mini-holes" aria-label={t('tableAppearance.playerCards', { name: player.name })}>
+          {showCards && <div className="spectator-mini-holes" data-revealed={player.holeCards.length > 0} aria-label={t('tableAppearance.playerCards', { name: player.name })}>
             {[0, 1].map(index => player.holeCards?.[index] ? <PokerCard key={index} card={player.holeCards[index]} size="xs" className="spectator-mini-hole-card" /> : table.trackerState === 'live' ? <CardBack key={index} size="xs" className="spectator-mini-hole-card" /> : null)}
           </div>}
           {button}

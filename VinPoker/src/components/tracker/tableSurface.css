@@ -129,15 +129,46 @@
 }
 
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] {
-  transform: translate(-50%, calc(-100% - 3px)) scale(.65);
+  top: -8px;
+  gap: 0;
+  transform: translate(-50%, 0) scale(.66);
+  transform-origin: top center;
 }
 
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > :nth-child(2),
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > div.flex > :nth-child(2) {
-  margin-left: 0;
-  transform: none;
+  margin-left: -18%;
+  transform: rotate(11deg);
 }
 
 .grid > :has(> .tracker-unified [data-cat-khoi]) {
   min-width: 0;
+}
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] [data-testid='card-back']:first-child,
+.spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes[data-revealed='false'] > :first-child {
+  transform: rotate(-11deg);
+}
+
+.spectator-mini-table > .tracker-table-surface[data-cat-khoi] {
+  inset: 10% 5%;
+}
+
+.spectator-mini-table:has([data-cat-khoi]) .spectator-mini-avatar {
+  border-color: #cead78;
+  background: #362d24;
+}
+
+.spectator-mini-table:has([data-cat-khoi]) .spectator-mini-plate {
+  border-color: #b89a6b;
+  background: #241e18;
+}
+
+.spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes[data-revealed='false'] {
+  gap: 0;
+}
+
+.spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes[data-revealed='false'] > :nth-child(2) {
+  margin-left: -18%;
+  transform: rotate(11deg);
 }
