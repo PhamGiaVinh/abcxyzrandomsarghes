@@ -27,3 +27,29 @@ describe('đối chiếu công Swing', () => {
     expect(await screen.findByText('Không có ca đã đóng cần đối chiếu trong kỳ này.')).toBeVisible();
   });
 });
+
+it("requires evidence before approving and refreshes the selected club's queue", async () => {
+  const row = {
+    id: '11111111-1111-4111-8111-111111111111', dealer_name: 'Dealer correction TEST', shift_date: '2026-11-03',
+    original_check_in: null, original_check_out: null,
+    proposed_check_in: '2026-11-03T03:00:00Z', proposed_check_out: '2026-11-03T05:00:00Z',
+    reason: 'Clock record', status: 'pending', decision_reason: null, can_decide: true,
+  };
+  rpc.mockReset()
+    .mockResolvedValueOnce({ data: [], error: null })
+    .mockResolvedValueOnce({ data: [row], error: null })
+    .mockResolvedValueOnce({ data: 'approved', error: null })
+    .mockResolvedValueOnce({ data: [{ ...row, status: 'approved', can_decide: false, decision_reason: 'Đã đối chiếu' }], error: null });
+  render(<DealerShiftReviewList club="club-a" {...range} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Đối chiếu công từ Swing' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Xem đề nghị sửa công' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Xem xét đề nghị' }));
+  const approve = screen.getByRole('button', { name: 'Duyệt', exact: true });
+  expect(approve).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Lý do quyết định'), { target: { value: 'Đã đối chiếu' } });
+  fireEvent.click(approve);
+  expect(await screen.findByText(/Lý do quyết định: Đã đối chiếu/)).toBeVisible();
+  expect(rpc).toHaveBeenCalledWith('decide_dealer_shift_payroll_correction_v1', {
+    p_club: 'club-a', p_correction: row.id, p_approve: true, p_reason: 'Đã đối chiếu',
+  });
+});
