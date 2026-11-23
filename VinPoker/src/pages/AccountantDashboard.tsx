@@ -154,6 +154,7 @@ export default function AccountantDashboard() {
             <DealerPayrollTab
               clubIds={[activeClub.id]}
               clubs={[{ id: activeClub.id, name: activeClub.name }]}
+              showShiftReviews
               hideApprovalActions={hideApprovalActions}
             />
           ) : (

@@ -148,9 +148,12 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
 
   const active = statement && !['voided', 'replaced'].includes(statement.state);
   return <div className="mt-3 space-y-2 border-t border-border pt-3">
-    {active && <p role="status" className="text-xs">Phiếu đã chốt: {formatVND(statement.net_amount_vnd)} · {statement.payment_id ? 'Đã ghi nhận chi' : 'Chưa chi'}</p>}
+    {active && <div role="status" className="space-y-1 text-xs"><p>Phiếu đã chốt: {formatVND(statement.net_amount_vnd)} · {statement.payment_id ? 'Đã ghi nhận chi' : 'Chưa chi'}</p>
+      <p>Đã chi: {formatVND(statement.payment_id ? statement.net_amount_vnd : 0)} · Còn phải trả: {formatVND(statement.payment_id ? 0 : statement.net_amount_vnd)}</p>
+      {statement.payment_id && <p className="break-all">Mã chứng từ: {statement.payment_id}</p>}
+    </div>}
     {active && statement.payment_id && canFinalize && !paymentPending && <Button size="sm" variant="outline" disabled={busy || !ready} onClick={() => { setNextPeriod(true); setConfirm(true); }}>Chốt kỳ PT tiếp theo</Button>}
-    {active && !statement.payment_id && statement.net_amount_vnd > 0 && !paymentPending && <Button size="sm" disabled={busy || !ready} onClick={() => setPayConfirm(true)}>Chi phiếu PT</Button>}
+    {active && !statement.payment_id && statement.net_amount_vnd > 0 && !paymentPending && <Button size="sm" disabled={busy || !ready} onClick={() => setPayConfirm(true)}>Phát lương và tất toán</Button>}
     {paymentPending && <Button size="sm" variant="outline" disabled={busy || !ready} onClick={() => void pay()}>Kiểm tra khoản chi PT đã lưu</Button>}
     {error && !confirm && !payConfirm && <p role="alert" className="text-xs text-destructive">{error}</p>}
     {!ready && <Button size="sm" variant="outline" disabled={busy} onClick={() => void refresh()}>Tải lại phiếu PT</Button>}
@@ -168,7 +171,7 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
     </Dialog>
     <Dialog open={payConfirm} onOpenChange={open => { if (!busy) setPayConfirm(open); }}>
       <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Chi phiếu PT cho {dealerName}</DialogTitle>
+        <DialogHeader><DialogTitle>Phát lương và tất toán cho {dealerName}</DialogTitle>
           <DialogDescription>Ghi nhận chi đúng {formatVND(statement?.net_amount_vnd ?? 0)} theo phiếu đã chốt. Không tính lại công hoặc bảng lương tháng.</DialogDescription></DialogHeader>
         <label className="space-y-1 text-sm">Phương thức chi<select aria-label="Phương thức chi PT" value={method} disabled={busy || !!paymentPending}
           onChange={event => setMethod(event.target.value as 'cash' | 'bank')} className="min-h-10 w-full rounded border border-border bg-background px-2">
@@ -178,7 +181,7 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
           onChange={event => setReference(event.target.value)} className="min-h-10 w-full rounded border border-border bg-background px-2" /></label>
         {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
         <DialogFooter><Button variant="outline" disabled={busy} onClick={() => setPayConfirm(false)}>Hủy</Button>
-          <Button disabled={busy || !ready} onClick={() => void pay()}>{busy ? 'Đang xác minh…' : paymentPending ? 'Kiểm tra khoản chi PT đã lưu' : 'Xác nhận chi phiếu PT'}</Button></DialogFooter>
+          <Button disabled={busy || !ready} onClick={() => void pay()}>{busy ? 'Đang xác minh…' : paymentPending ? 'Kiểm tra khoản chi PT đã lưu' : 'Xác nhận phát lương'}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   </div>;

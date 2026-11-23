@@ -10187,6 +10187,12 @@
       "filename": "20270128000348_manual_stale_shift_resolution.sql",
       "sha256": "c221fa3c3481dea710e9c94567bb683df4093eae4340cbd4f2e900f8d5ead370",
       "domain": "dealer-swing"
+    },
+    {
+      "version": "20270128000349",
+      "filename": "20270128000349_dealer_shift_payroll_review.sql",
+      "sha256": "29f2e3fb662cb8a75b69ea1fd7f5928469c2d3d3163ef54d5de675dd4e61ca35",
+      "domain": "dealer-swing"
     }
   ],
   "floorActiveAllowlist": [
