@@ -135,6 +135,17 @@
   transform-origin: top center;
 }
 
+/* Keep the white fan between the player's forehead and nameplate on compact tables. */
+[data-tracker-table='portrait']:has(> [data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] {
+  transform: translate(-50%, 0) scale(.42);
+}
+
+@container (max-width: 800px) {
+  [data-tracker-table='landscape']:has(> [data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] {
+    transform: translate(-50%, 0) scale(.5);
+  }
+}
+
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > :nth-child(2),
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > div.flex > :nth-child(2) {
   margin-left: -7%;
