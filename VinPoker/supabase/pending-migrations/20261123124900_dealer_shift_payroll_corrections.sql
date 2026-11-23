@@ -287,9 +287,13 @@ BEGIN
       AND settlement.club_id = NEW.club_id
       AND settlement.dealer_id = NEW.dealer_id
       AND correction.decided_at >= settlement.finalized_at
-      AND attendance.shift_date BETWEEN
-        (settlement.covered_from AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
-        AND ((settlement.covered_to - interval '1 microsecond') AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+      AND (
+        (attendance.check_in_time < settlement.covered_to AND attendance.check_out_time > settlement.covered_from)
+        OR (correction.original_check_in < settlement.covered_to AND correction.original_check_out > settlement.covered_from)
+        OR attendance.shift_date BETWEEN
+          (settlement.covered_from AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+          AND ((settlement.covered_to - interval '1 microsecond') AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+      )
   ) THEN
     RAISE EXCEPTION 'DEALER_PAYROLL_SNAPSHOT_STALE' USING ERRCODE = 'P0001';
   END IF;
@@ -347,7 +351,13 @@ BEGIN
     JOIN floor_private.dealer_shift_payroll_corrections correction ON correction.id = attendance.payroll_correction_id
     WHERE period.id = NEW.period_id AND period.club_id = NEW.club_id
       AND payroll.status <> 'excluded'
-      AND attendance.shift_date BETWEEN period.period_start AND period.period_end
+      AND (
+        (attendance.check_in_time < ((period.period_end + 1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND attendance.check_out_time > (period.period_start::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh'))
+        OR (correction.original_check_in < ((period.period_end + 1)::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh')
+          AND correction.original_check_out > (period.period_start::timestamp AT TIME ZONE 'Asia/Ho_Chi_Minh'))
+        OR attendance.shift_date BETWEEN period.period_start AND period.period_end
+      )
       AND (payroll.calculated_at IS NULL OR correction.decided_at >= payroll.calculated_at)
   ) THEN
     RAISE EXCEPTION 'DEALER_PAYROLL_SNAPSHOT_STALE' USING ERRCODE = 'P0001';
