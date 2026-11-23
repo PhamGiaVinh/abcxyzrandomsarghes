@@ -33,7 +33,7 @@ import {
   resolveVerifiedPayoutPresentation,
   selectVerifiedPotLayerPresentation,
 } from "@/lib/tracker-poker/replayBestFiveFocus";
-import { createReplayRunoutPresentation, replayRunoutFocusPhase, type ReplayRunoutPresentation } from "@/lib/tracker-poker/replayRunoutTimeline";
+import { createReplayRunoutPresentation, orderedShowdownPlayers, replayRunoutFocusPhase, type ReplayRunoutPresentation } from "@/lib/tracker-poker/replayRunoutTimeline";
 import { useTrackerRunoutSounds } from "@/lib/tracker-poker/useTrackerRunoutSounds";
 import { markPokerSoundGesture, playPokerLiveSound } from "@/lib/pokerLiveSound";
 import { deriveReplayTableMotionEvents, type TableMotionEvent } from "@/lib/tracker-poker/tableMotion";
@@ -79,6 +79,7 @@ function LiveFeltPreviewContent() {
 
   const [frame, setFrame] = useState<ReplayFrame>(frames[step]);
   const [runout, setRunout] = useState<ReplayRunoutPresentation | null>(null);
+  const [motionSpeed, setMotionSpeed] = useState(1);
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
@@ -144,6 +145,13 @@ function LiveFeltPreviewContent() {
         ...(params.get('stress') === '1' ? { display_name: `Nguyễn Hoàng Minh Anh · ${seat.seat_number}`, chip_count: 123456789012 } : {}),
         ...(params.has('allbets') ? { is_folded: false, current_bet: 1000000, display_committed_bet: 1000000 } : {}),
       }))}
+      revealOrder={play && runout && runout.phase !== "static" && frame.revealHoleCards
+        ? orderedShowdownPlayers(
+            frame.seats.filter(seat => !seat.is_folded && seat.hole_cards?.length === 2),
+            hand.actions,
+            hand.button_seat,
+          )
+        : undefined}
       lastActorId={frame.lastActorId}
       displayCards={frame.displayCards.map((card, index) => runout && index >= runout.visibleBoardCount ? "" : card)}
       potSize={frame.potSize}
@@ -166,6 +174,7 @@ function LiveFeltPreviewContent() {
       replayRunoutPhase={staticPayoutPresentation?.phase ?? null}
       replayRunoutPresentation={staticPayoutPresentation}
       dealSound={!muted}
+      motionSpeed={motionSpeed}
       motionEnabled={play && tableFx}
       motionHandKey={motionHandKey}
       motionEvents={motionEvents}
@@ -205,7 +214,7 @@ function LiveFeltPreviewContent() {
       {play && (
         <div className="mt-3">
           <ReplayScrubber hand={hand} onFrame={handleFrame} hud trackBets={viewerLayout && compact}
-            showdownPresentation={verifiedPresentation} onRunoutPresentation={setRunout}
+            showdownPresentation={verifiedPresentation} onRunoutPresentation={setRunout} onSpeedChange={setMotionSpeed}
             selectedPotIndex={selectedPotIndex} onSelectedPotIndexChange={setSelectedPotIndex}/>
           {params.get("autoplay") !== "0" && <AutoPlay speed={speed} />}
         </div>
