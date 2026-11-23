@@ -185,6 +185,19 @@ jobs:
               node "$trusted_selector" "$GITHUB_WORKSPACE" "$BASE_SHA" "$HEAD_SHA")"
           fi
           package=none
+          if [[ "$mode" == current-cashier1730 ]]; then
+            [[ "$EVENT_NAME" == pull_request && "$PR_NUMBER" == 1730 ]]
+            run=45003990642
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" |
+              jq -e '.workflow_id == 426651222 and .event == "workflow_dispatch"
+                and .head_sha == "7b2445793da84b691dd6658d59551276fb4f1e5f"
+                and .head_branch == "main" and .actor.login == "PhamGiaVinh"
+                and .run_attempt == 1 and .conclusion == "success"' >/dev/null
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/attempts/1/jobs" |
+              jq -e '[.jobs[] | select(.name == "apply" and .conclusion == "success")] | length == 1' >/dev/null
+            package=cashier1730
+            mode=current
+          fi
           if [[ "$mode" == current-source342 ]]; then
             package=source342
             mode=current

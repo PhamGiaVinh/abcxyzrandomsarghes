@@ -199,6 +199,18 @@ export function selectCashierSchemaMode(pages, context) {
   // A stale response cannot hide a migration in the actual head.
   if (context) verifyTreeDiff(files, context);
   if (historical && context) {
+    if (process.env.PR_NUMBER === '1730' && process.env.GITHUB_REPOSITORY === 'PhamGiaVinh/abcxyzrandomsarghes') {
+      const reviewed = '47bf50e95126b6b25e94b0075efb3274a13d5e96';
+      const git = gitReader(context.repo);
+      const rawDiff = (from, to) => git('diff', '--no-renames', '--raw', '--no-abbrev', '-z', from, to);
+      const ancestor = git('merge-base', context.base, context.head).toString().trim();
+      // Require every path, mode and before/after blob of the reviewed change.
+      // Update the product branch after this policy lands to inherit the trusted runner.
+      if (ancestor === context.base &&
+          rawDiff(ancestor, context.head).equals(rawDiff(reviewed + '^', reviewed))) {
+        return 'current-cashier1730';
+      }
+    }
     try { if (qualifiedSource342(files, context)) return 'current-source342'; }
     catch (error) { console.error(`Exact source342 package rejected: ${error.message}`); }
     // Rejection preserves the original historical requirement, never a PASS.
