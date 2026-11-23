@@ -4,6 +4,10 @@
   "project": "orlesggcjamwuknxwcpk",
   "frontends": [
     {
+      "referenceSha": "b9d47e11a7e2f7d25e7812f49cd32e0a76271dab",
+      "fingerprint": "a5b406370b30fc1e7fa9560d9291671452d1c7988c63c2e2d3ba910f2e6089f2"
+    },
+    {
       "referenceSha": "d5c82eeed7aca65b56df952f22c8aa66e210dca3",
       "fingerprint": "bde6064e640565a7ef1c49a71c08ada3871bb299232b529cea5ba2eee567e40d"
     },
