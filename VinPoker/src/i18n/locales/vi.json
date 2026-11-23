@@ -198,7 +198,7 @@
     "loadErrorHint": "Hệ thống sẽ tự động thử lại…",
     "offline": "Mất kết nối realtime — đang dùng chế độ dự phòng",
     "pairTitle": "Ghép nối màn hình TV",
-    "pairInstruction": "Trên máy điều hành, vào Floor → chọn giải → TV & màn hình. Nhập 6 số đang hiện ở đây vào ô Mã ghép, bấm Ghép TV rồi chọn giải để phát.",
+    "pairInstruction": "Trên máy điều hành, vào Floor → chọn giải → TV & màn hình (trên điện thoại, chọn Thêm). Nhập 6 số này vào ô Mã ghép nối, bấm Ghép nối rồi bấm Gán giải này bên cạnh tên TV.",
     "pairWaiting": "Đang chờ ghép nối…",
     "pairExpires": "Mã mới sau",
     "pairError": "Không thể kết nối máy chủ — đang thử lại…",

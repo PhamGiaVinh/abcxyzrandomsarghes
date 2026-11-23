@@ -198,7 +198,7 @@
     "loadErrorHint": "Retrying automatically…",
     "offline": "Realtime connection lost — using fallback polling",
     "pairTitle": "Pair this TV display",
-    "pairInstruction": "On the operator device, open Floor → select the tournament → TV & screens. Enter these six digits in Pairing code, pair the TV, then assign the tournament.",
+    "pairInstruction": "On the operator device, open Floor → select the tournament → TV & màn hình (Thêm on mobile). Enter these six digits in Pairing code, select Pair, then select Assign this next to the TV name.",
     "pairWaiting": "Waiting for pairing…",
     "pairExpires": "New code in",
     "pairError": "Cannot reach the server — retrying…",
