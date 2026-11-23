@@ -324,7 +324,8 @@ export function ReplayScrubber({
             {ante > 0 ? ` / ${formatStack(ante)}` : ""}
           </span>
           <span className="tracker-num font-bold text-success">
-            POT {amountForHud(current?.potSize ?? 0)}
+            <span className="sr-only">{t("liveHub.felt.pot", "Pot")}</span>
+            <span data-testid="replay-hud-pot-amount">{amountForHud(current?.potSize ?? 0)}</span>
           </span>
           {current?.showdownResult && (
             <span className={`rounded-md border px-1.5 py-1 text-[9px] font-black uppercase tracking-wider ${

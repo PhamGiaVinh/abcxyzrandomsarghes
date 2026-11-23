@@ -925,16 +925,7 @@ export function LiveFelt({
                 className="tracker-pot-pulse inline-flex flex-col items-center rounded-full bg-black/55 px-3.5 py-1"
                 style={{ border: "1px solid hsl(var(--poker-gold) / 0.42)" }}
               >
-                <div className={`tracker-display text-[8px] uppercase tracking-[0.22em]${viewerLayout ? " inline-flex items-center gap-1" : ""}`} style={{ color: "hsl(var(--poker-gold) / 0.78)" }}>
-                  {viewerLayout && (
-                    <span
-                      aria-hidden="true"
-                      className="inline-block h-2 w-2 shrink-0 rounded-full"
-                      style={{ background: "radial-gradient(circle at 35% 30%, #ffe7a8, #f5b340 60%, #9a6418 100%)", boxShadow: "0 0 0 1px rgba(0,0,0,.4)" }}
-                    />
-                  )}
-                  {t("liveHub.felt.pot", "Pot")}
-                </div>
+                <span className="sr-only">{t("liveHub.felt.pot", "Pot")}</span>
                 <div className="tracker-num text-lg font-bold leading-tight sm:text-xl" style={{ color: "hsl(var(--poker-gold))" }}>
                   {potUnavailable ? "—" : viewerAmountsInBB ? formatViewerChipAndBB(displayPot, viewerBigBlind ?? blinds?.bb ?? null) : formatStack(displayPot)}
                   {!viewerAmountsInBB && formatBB(potSize) && (
