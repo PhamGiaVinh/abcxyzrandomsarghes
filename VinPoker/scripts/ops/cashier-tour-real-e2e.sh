@@ -1606,6 +1606,23 @@ AUDIENCE_OWNED_PREFLIGHT
     install_current_start_schema
     install_current_finish_schema --before-audience
     install_current_action_schema before-audience
+    if [[ "${REQUIRED_SOURCE_PACKAGE:-none}" == cashier1730 ]]; then
+      prerequisite=supabase/migrations/20270128000145_multiday_verified_payment_boundary_v1.sql
+      candidate=supabase/pending-migrations/20261121055644_multiday_prize_cash_drawer_v1.sql
+      [[ "$(git -C "$repo_root" hash-object "$prerequisite")" == e8c827aa6f6c0937286674bbb539bd7c9146df45 ]]
+      [[ "$(git -C "$repo_root" hash-object "$candidate")" == b17840f432f1bd7cc4f95a3500276c1b38591db9 ]]
+      for migration in "$prerequisite" "$candidate"; do
+        docker exec -i "$db_container" psql -Xq -v ON_ERROR_STOP=1 -U postgres -d postgres <"$repo_root/$migration"
+      done
+      [[ "$(docker exec "$db_container" psql -XAt -U postgres -d postgres -c "SELECT EXISTS (
+        SELECT FROM pg_trigger WHERE tgrelid='public.tournament_prize_payments'::regclass
+        AND tgname='cashier_prize_drawer_outflow' AND tgenabled='O'
+        AND tgfoid='private.cashier_record_prize_drawer_outflow_v1()'::regprocedure
+      ) AND EXISTS (SELECT FROM pg_index WHERE indexrelid='public.cashier_movement_prize_payment_unique'::regclass
+        AND indisunique AND indisvalid)")" == t ]]
+      echo 'Cashier #1730 exact migration verified in isolated database before audience and browser suite.'
+      cashier1730_applied=1
+    fi
     current_schema_prepared=1
     if [[ "$audience_count" == 1000 ]]; then
       docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
@@ -1772,6 +1789,10 @@ SCHEMA_FROZEN_RECEIPT
   fi
 fi
 # Validate the fresh46-attendance fixture before the first browser handover.
+if [[ "${REQUIRED_SOURCE_PACKAGE:-none}" == cashier1730 && "${cashier1730_applied:-0}" != 1 ]]; then
+  echo 'Missing required Cashier #1730 migration check in isolated runtime' >&2
+  exit 1
+fi
 # Later checkout stages intentionally make those attendances ineligible.
 if [[ "$schema_mode" == current && "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
 if [[ "$diagnostic_scope" != none ]]; then
