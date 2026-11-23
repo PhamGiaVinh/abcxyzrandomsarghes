@@ -164,3 +164,16 @@ it('observes another operator paying the statement without a remount or manual r
   expect(state.rpc.mock.calls.some(([name])=>name==='pay_finalized_part_time_payroll_statement')).toBe(false);
  }finally{view.unmount();vi.useRealTimers();}
 });
+
+it('explains a stale payroll snapshot without presenting a paid receipt', async () => {
+  const frozen = receipt('55555555-5555-4555-8555-555555555555');
+  state.rpc.mockImplementation(async name => name === 'pay_finalized_part_time_payroll_statement'
+    ? { data: null, error: { message: 'DEALER_PAYROLL_SNAPSHOT_STALE' } }
+    : { data: frozen, error: null });
+  render(<PtStatementControl {...props()} canFinalize={false} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Phát lương và tất toán' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Xác nhận phát lương' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Giờ công đã đổi sau khi chốt');
+  expect(screen.getByText(/Phiếu đã chốt:/)).toHaveTextContent('Chưa chi');
+  expect(state.rpc.mock.calls.filter(([name]) => name === 'pay_finalized_part_time_payroll_statement')).toHaveLength(1);
+});
