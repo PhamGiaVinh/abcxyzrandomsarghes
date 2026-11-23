@@ -2345,6 +2345,18 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
         </AlertDialog>
 
         <StaleCleanupCard
+          key={activeClubId}
+          assignments={assignments ?? []}
+          onResolve={async (id, binding, reason, end, release) => {
+            if (!scopedCheckoutIds([id]) || !activeClubId) throw new Error("Chọn lại ca của CLB");
+            const { error } = await supabase.rpc("resolve_stale_dealer_shift_v1" as never, {
+              p_club: activeClubId, p_attendance: id, p_assignment: binding?.id ?? null,
+              p_version: binding?.version ?? null, p_reason: reason, p_end: end, p_release: release,
+            } as never);
+            if (error) throw new Error(error.message);
+            setStaleCleanupIds(ids => ids.filter(value => value !== id));
+            await Promise.all([refetchDealers(), refetchAssignments(), refetchSchedule()]);
+          }}
           dealers={dealers ?? []}
           reasons={cleanupReasons}
           attendanceIds={staleCleanupIds.length > 0 ? staleCleanupIds : staleCleanupCandidateIds}
@@ -3534,16 +3546,24 @@ function BreakDurationDialog({
 }
 
 function StaleCleanupCard({
-  dealers, reasons, attendanceIds,
+  dealers, reasons, attendanceIds, assignments, onResolve,
   processing,
   onRequestCleanup,
 }: {
+  assignments: DealerAssignment[];
+  onResolve: (id: string, binding: DealerAssignment | undefined, reason: string, end: string | null, release: string | null) => Promise<void>;
   dealers: DealerAttendance[];
   reasons: Record<string, string>;
   attendanceIds: string[];
   processing: string | null;
   onRequestCleanup: (ids: string[]) => void;
 }) {
+  const [review, setReview] = useState<{id: string; binding?: DealerAssignment} | null>(null);
+  const [reason, setReason] = useState("");
+  const [known, setKnown] = useState(false);
+  const [end, setEnd] = useState("");
+  const [release, setRelease] = useState("");
+  const [saving, setSaving] = useState(false);
   const hasCandidates = attendanceIds.length > 0;
 
   return (
@@ -3569,11 +3589,36 @@ function StaleCleanupCard({
                 const dealer = dealers.find((entry) => entry.id === id);
                 return <li key={id}>
                   <strong>{dealer?.dealers?.full_name || id}</strong> {dealer?.shift_date}
+                  <Button size="sm" variant="outline" disabled={saving || processing !== null} onClick={() => {
+                    setReview({id, binding: assignments.find(a => a.attendance_id === id && a.status === "assigned" && !a.released_at)});
+                    setReason(""); setKnown(false); setEnd(""); setRelease("");
+                  }}>Xử lý thủ công</Button>
                   {reasons[id] && <p className="text-xs text-muted-foreground">{reasons[id]}</p>}
                 </li>;
               })}
             </ul>
           )}
+          {review && <Dialog open onOpenChange={open => { if (!open && !saving) setReview(null); }}>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Xử lý ca của {dealers.find(d => d.id === review.id)?.dealers?.full_name}</DialogTitle>
+                <DialogDescription>{review.binding ? (review.binding.game_tables?.table_name ?? "Phân bàn cũ") + " · Kết thúc phân bàn này và đóng ca." : "Đóng ca chấm công của dealer."}</DialogDescription>
+              </DialogHeader>
+              <label><input type="checkbox" checked={known} onChange={e => setKnown(e.target.checked)} /> Có bằng chứng giờ ra</label>
+              {known ? <>
+                {review.binding && <label>Giờ rời bàn (giờ CLB)<Input type="datetime-local" value={release} onChange={e => setRelease(e.target.value)} /></label>}
+                <label>Giờ kết ca (giờ CLB)<Input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} /></label>
+              </> : <p>Đóng hành chính với giờ ra chưa xác định. Kế toán cần đối chiếu công.</p>}
+              <label>Lý do và căn cứ xử lý<Input value={reason} maxLength={1000} onChange={e => setReason(e.target.value)} /></label>
+              <Button disabled={saving || reason.trim().length < 3 || (known && (!end || (!!review.binding && !release)))} onClick={async () => {
+                setSaving(true);
+                try {
+                  await onResolve(review.id, review.binding, reason.trim(), known ? end + "+07:00" : null, known && review.binding ? release + "+07:00" : null);
+                  setReview(null); toast.success("Đã đóng ca và ghi lịch sử xử lý");
+                } catch (error) { toast.error(error instanceof Error ? error.message : "Không thể đóng ca"); }
+                finally { setSaving(false); }
+              }}>Xác nhận đóng ca</Button>
+            </DialogContent>
+          </Dialog>}
           <Button
             size="sm"
             variant="outline"
