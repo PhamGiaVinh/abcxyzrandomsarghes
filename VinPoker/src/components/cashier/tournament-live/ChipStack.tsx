@@ -10,55 +10,14 @@ import type { CSSProperties } from "react";
 
 const RED = "radial-gradient(circle at 35% 30%, #ff8a8a, #d33 55%, #7a1111 100%)";
 const GOLD = "radial-gradient(circle at 35% 30%, #ffe7a8, #f5b340 60%, #9a6418 100%)";
+const PURPLE = "radial-gradient(circle at 35% 30%, #dec4ff, #8651bf 58%, #45275e 100%)";
+const POT_COLORS = [GOLD, RED, PURPLE];
 const DISCS = 3;
 const STEP = 0.34; // each chip sits this fraction-of-a-diameter above the one below
-const CENTER_CHIPS = [
-  "radial-gradient(circle at 35% 28%, #fff2ae, #e5a22c 58%, #72400b 100%)",
-  "radial-gradient(circle at 35% 28%, #d5b8ff, #7c3fc7 58%, #311353 100%)",
-  "radial-gradient(circle at 35% 28%, #91f5bc, #15995b 58%, #073e25 100%)",
-  "radial-gradient(circle at 35% 28%, #ff9b9b, #cf3030 58%, #5d1010 100%)",
-  "radial-gradient(circle at 35% 28%, #d6d6da, #53545b 58%, #17181c 100%)",
-];
-
-/** Low, dense center-pot cluster inspired by televised poker tables. */
-export function CenterPotStack({ label, compact = false }: { label: string; compact?: boolean }) {
+function ChipColumn({ w, allIn = false, color }: { w: string; allIn?: boolean; color?: string }) {
+  const disc = color ?? (allIn ? RED : GOLD);
   return (
-    <div data-testid="felt-center-pot-stack" className="flex flex-col items-center gap-1">
-      <div className="flex h-6 items-end justify-center gap-[2px]" aria-hidden="true">
-        {CENTER_CHIPS.map((background, column) => (
-          <span key={column} className="relative block w-3" style={{ height: `${14 + (column % 3) * 3}px` }}>
-            {Array.from({ length: compact ? 2 : 3 }).map((_, chip) => (
-              <span
-                key={chip}
-                className="absolute left-0 h-[7px] w-3 rounded-full border border-black/45"
-                style={{ bottom: `${chip * 5}px`, background, boxShadow: "0 1px 2px rgba(0,0,0,.55), inset 0 1px rgba(255,255,255,.22)" }}
-              />
-            ))}
-          </span>
-        ))}
-      </div>
-      <div className="tracker-num whitespace-nowrap rounded-md border border-[hsl(var(--poker-gold)/0.58)] bg-black/75 px-3 py-1.5 text-base font-black leading-none text-[hsl(var(--poker-gold))] shadow-[0_4px_14px_rgba(0,0,0,.5)] sm:text-lg">
-        {label}
-      </div>
-    </div>
-  );
-}
-
-export function ChipStack({
-  label,
-  allIn = false,
-  sizeStyle,
-}: {
-  label: string;
-  allIn?: boolean;
-  sizeStyle?: CSSProperties;
-}) {
-  const w = (sizeStyle?.width as string) ?? "14px";
-  const fontSize = (sizeStyle?.fontSize as string) ?? "8px";
-  const disc = allIn ? RED : GOLD;
-  return (
-    <div className="tracker-bet-pulse flex flex-col items-center" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,.55))" }}>
-      <div className="tracker-chip-column relative" data-all-in={allIn || undefined} style={{ width: w, aspectRatio: `1 / ${1 + (DISCS - 1) * STEP}` }}>
+      <span className="tracker-chip-column relative" data-all-in={allIn || undefined} style={{ width: w, aspectRatio: `1 / ${1 + (DISCS - 1) * STEP}` }}>
         {Array.from({ length: DISCS }).map((_, i) => (
           <span
             key={i}
@@ -74,7 +33,37 @@ export function ChipStack({
             }}
           />
         ))}
-      </div>
+      </span>
+  );
+}
+
+export function AwardChips({ column }: { column: number }) {
+  return <ChipColumn w="11px" color={POT_COLORS[column]} />;
+}
+
+export function PotChips({ compact = false }: { compact?: boolean }) {
+  return <span aria-hidden="true" className="inline-flex items-end gap-[2px]">{POT_COLORS.map(color => <ChipColumn key={color} color={color} w={compact ? "9px" : "12px"} />)}</span>;
+}
+
+export function CenterPotStack({ label, compact = false }: { label: string; compact?: boolean }) {
+  return <div data-testid="felt-center-pot-stack" className="flex flex-col items-center"><PotChips compact={compact} /><strong className="tracker-pot-total">{label}</strong></div>;
+}
+
+export function ChipStack({
+  label,
+  allIn = false,
+  sizeStyle,
+}: {
+  label: string;
+  allIn?: boolean;
+  sizeStyle?: CSSProperties;
+}) {
+  const w = (sizeStyle?.width as string) ?? "14px";
+  const fontSize = (sizeStyle?.fontSize as string) ?? "8px";
+
+  return (
+    <div className="tracker-bet-pulse flex flex-col items-center" style={{ filter: "drop-shadow(0 2px 4px rgba(0,0,0,.55))" }}>
+      <ChipColumn w={w} allIn={allIn} />
       <div
         className="tracker-num mt-0.5 whitespace-nowrap font-bold leading-none"
         style={

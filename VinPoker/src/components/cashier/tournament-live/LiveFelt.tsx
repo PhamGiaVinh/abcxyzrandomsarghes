@@ -23,7 +23,7 @@ import { TableSurface } from '@/components/tracker/TableSurface';
 import { TablePot } from '@/components/tracker/TablePot';
 import { useTranslation } from "react-i18next";
 import { PokerCard, CardBack } from "./PokerVisuals";
-import { CenterPotStack, ChipStack } from "./ChipStack";
+import { AwardChips, CenterPotStack, ChipStack } from "./ChipStack";
 import { FeltStatusBar } from "./FeltStatusBar";
 import { TableMotionLayer } from "./TableMotionLayer";
 import { useCountUp } from "@/hooks/useCountUp";
@@ -362,6 +362,7 @@ export interface LiveFeltProps {
   motionHandKey?: string | null;
   motionSpeed?: number;
   motionEnabled?: boolean;
+  dealSound?: boolean;
   /** Static historical hand: never invent card backs for cards not public in the payload. */
   hideUnrecordedHoleCards?: boolean;
 }
@@ -406,6 +407,7 @@ export function LiveFelt({
   motionHandKey = null,
   motionSpeed = 1,
   motionEnabled = false,
+  dealSound = false,
   hideUnrecordedHoleCards = false,
 }: LiveFeltProps) {
   const { t } = useTranslation();
@@ -617,9 +619,9 @@ export function LiveFelt({
   const activePotWinnerIds = new Set(
     activePotAwardsComplete ? activePotLayer?.winnerPlayerIds ?? [] : [],
   );
-  const visibleSettlementPotLayers = settlementPayoutSequenceActive && showdownPresentation
-    ? settlementPayoutPhase === "pot_award" || settlementPayoutPhase === "static"
-      ? showdownPresentation.potLayers.slice(Math.max(0, activePotLayerIndex), Math.max(0, activePotLayerIndex) + 1)
+  const visibleSettlementPotLayers = settlementPayoutSequenceActive && showdownPresentation && settlementPayoutPhase !== "static"
+    ? settlementPayoutPhase === "pot_award"
+      ? showdownPresentation.potLayers.slice(Math.max(0, activePotLayerIndex) + (awardArrived ? 1 : 0))
       : showdownPresentation.potLayers
     : [];
   const settlementPotPoint = (visibleIndex: number, total: number): Pt => {
@@ -816,7 +818,7 @@ export function LiveFelt({
           {!unified && potSize > 0 && compactActive && portrait && !hideBaseCenterPot && (
             <div data-testid="felt-total-pot" className="relative mb-2 flex flex-col items-center">
               {viewerLayout ? (
-                <CenterPotStack compact label={`${t("liveHub.felt.pot", "POT").toUpperCase()} ${formatGameplayAmount(displayPot)}`} />
+                <CenterPotStack compact label={`${formatGameplayAmount(displayPot)}`} />
               ) : (
                 <div className="tracker-pot-pulse inline-flex flex-col items-center rounded-full bg-black/70 px-4 py-1.5 shadow-[0_0_18px_hsl(var(--viewer-neon)_/_0.16)]" style={{ border: "1px solid hsl(var(--poker-gold) / 0.58)" }}>
                   <div className="tracker-display text-[8px] font-black uppercase tracking-[0.22em]" style={{ color: "hsl(var(--poker-gold) / 0.82)" }}>{t("liveHub.felt.totalPot", "Total Pot")}</div>
@@ -838,7 +840,7 @@ export function LiveFelt({
           <div data-testid="board-cards" className={`flex items-center justify-center ${viewerLayout && portrait ? "gap-1" : "gap-1.5"}`}>
             {(unified ? Array.from({ length: 5 }, (_, i) => displayCards[i]) : displayCards).map((card, i) => {
               if (!card) {
-                if (unified) return <div key={`board-slot-${i}`} aria-hidden="true" className="tracker-board-slot" style={boardStyle} />;
+                if (unified) return null;
                 // Preserve the five-card board footprint during the viewer-only
                 // all-in runout without rendering a card back or exposing a card.
                 if (viewerLayout && replayRunoutPhase) {
@@ -916,7 +918,7 @@ export function LiveFelt({
               className={`mt-2.5 flex flex-col items-center${viewerLayout ? " relative" : ""}`}
             >
               {viewerLayout ? (
-                <CenterPotStack label={`${t("liveHub.felt.pot", "POT").toUpperCase()} ${potUnavailable ? "—" : viewerAmountsInBB ? formatViewerChipAndBB(displayPot, viewerBigBlind ?? blinds?.bb ?? null) : formatGameplayAmount(displayPot)}`} />
+                <CenterPotStack label={`${potUnavailable ? "—" : viewerAmountsInBB ? formatViewerChipAndBB(displayPot, viewerBigBlind ?? blinds?.bb ?? null) : formatGameplayAmount(displayPot)}`} />
               ) : <div
                 className="tracker-pot-pulse inline-flex flex-col items-center rounded-full bg-black/55 px-3.5 py-1"
                 style={{ border: "1px solid hsl(var(--poker-gold) / 0.42)" }}
@@ -958,7 +960,7 @@ export function LiveFelt({
                           : "border-[hsl(var(--poker-gold)/0.4)] text-[hsl(var(--poker-gold))]"
                       }`}
                     >
-                      {i === 0 ? t("liveHub.felt.main", "Main") : t("liveHub.felt.side", "Side {{i}}", { i })} {formatGameplayAmount(pot.amount)}
+                      {i === 0 ? "" : t("liveHub.felt.side", "Side {{i}}", { i })} {formatGameplayAmount(pot.amount)}
                       <span className="ml-1 font-normal opacity-60">({pot.eligible_player_ids.length})</span>
                     </span>
                   ))}
@@ -1195,6 +1197,7 @@ export function LiveFelt({
                 {!seat.is_folded && (!hideUnrecordedHoleCards || (seat.hole_cards && seat.hole_cards.length === 2)) && (unified || !compactActive || (seat.hole_cards && seat.hole_cards.length === 2)) && (
                 <div
                   data-testid="seat-holecards"
+                  data-all-in={seat.is_all_in || undefined}
                   data-revealed={!!seat.hole_cards && seat.hole_cards.length === 2}
                   className={`mt-0.5 flex justify-center gap-0.5${unified ? ' tracker-seat-cards' : ''}`}
                 >
@@ -1219,7 +1222,12 @@ export function LiveFelt({
                       );
                     })
                   ) : (
-                    [0, 1].map((ci) => <CardBack key={ci} size="xs" muted={seat.is_folded} style={holeStyle} />)
+                    [0, 1].map(ci => {
+                      const deal = motionEvents.find(event => event.kind === "deal_hole" && event.handId === motionHandKey);
+                      const index = deal?.kind === "deal_hole" ? deal.seatNumbers.indexOf(seat.seat_number) : -1;
+                      const delay = deal?.kind === "deal_hole" && index >= 0 ? ((ci * deal.seatNumbers.length + index) * 200 + 260) / motionSpeed : 0;
+                      return <CardBack key={ci} size="xs" style={{ ...holeStyle, "--deal-arrival": delay + "ms" } as CSSProperties} />;
+                    })
                   )}
                 </div>
                 )}
@@ -1255,13 +1263,13 @@ export function LiveFelt({
                 className={`absolute -translate-x-1/2${portrait ? " -translate-y-1/2" : ""}`}
                 style={{ left: "50%", top: `${settlementPotPoint(0, 1).t}%`, marginTop: settlementPotMarginTop }}
               >
-                <CenterPotStack compact label={`${t("liveHub.felt.pot", "POT").toUpperCase()} ${formatGameplayAmount(displayPot)}`} />
+                <CenterPotStack compact label={`${formatGameplayAmount(displayPot)}`} />
               </div>
             )}
 
-            {(settlementPayoutPhase === "pot_collect" ? [] : visibleSettlementPotLayers).map((pot, visibleIndex) => {
-              const point = settlementPotPoint(visibleIndex, visibleSettlementPotLayers.length);
-              const isAwardingPot = settlementPayoutPhase === "pot_award" && visibleIndex === 0;
+            {(settlementPayoutPhase === "pot_collect" ? [] : visibleSettlementPotLayers.slice(0, 2)).map((pot, visibleIndex) => {
+              const point = settlementPotPoint(visibleIndex, Math.min(2, visibleSettlementPotLayers.length));
+              const isAwardingPot = settlementPayoutPhase === "pot_award" && !awardArrived && visibleIndex === 0;
               return (
                 <div
                   key={pot.potId}
@@ -1273,11 +1281,11 @@ export function LiveFelt({
                   style={{ left: `${point.l}%`, top: `${point.t}%`, marginTop: settlementPotMarginTop }}
                 >
                   <CenterPotStack compact
-                    label={`${pot.kind === "main" ? t("liveHub.felt.main", "Main") : t("liveHub.felt.side", "Side {{i}}", { i: activePotLayerIndex })} ${formatGameplayAmount(pot.amount)}`}
+                    label={formatGameplayAmount(visibleIndex === 0 ? pot.amount : visibleSettlementPotLayers.slice(1).reduce((sum, layer) => sum + layer.amount, 0))}
                   />
                   {isAwardingPot && activePotAwardsComplete && activePotAwardRows.flatMap(({ allocation, seat }, allocationIndex) => {
                     const slot = ((seat.seat_number - 1) % 9) + 1;
-                    const target = stackPt(seatMap[slot] || seatMap[1]);
+                    const target = seatMap[slot] || seatMap[1];
                     return [0, 1, 2].map((chip) => (
                       <span
                         key={`${pot.potId}-${allocation.playerId}-${chip}`}
@@ -1290,7 +1298,7 @@ export function LiveFelt({
                           "--sp-dy": `${(target.t - point.t) / motionAspect}cqi`,
                           animationDelay: `${allocationIndex * 55 + chip * 22}ms`,
                         } as CSSProperties}
-                      />
+                      ><AwardChips column={chip} /></span>
                     ));
                   })}
                 </div>
@@ -1304,16 +1312,11 @@ export function LiveFelt({
         {settlementPotResultActive && activePotAwardsComplete && activePotLayer && (
           <section
             data-testid="felt-settlement-award-announcement"
-            className={portrait ? "sr-only" : "tracker-settlement-award-announcement pointer-events-none absolute z-[25] -translate-x-1/2 -translate-y-1/2"}
+            className="sr-only"
             style={{ left: "50%", top: `${Math.max(13, potCenterT - (portrait ? 19 : 17))}%` }}
             role="status"
             aria-live="polite"
           >
-            <div className="tracker-settlement-award-title">
-              {activePotLayer.kind === "main"
-                ? t("liveHub.felt.mainPot", "Main Pot")
-                : t("liveHub.felt.sidePot", "Side Pot")}
-            </div>
             <div className="tracker-settlement-award-recipients">
               {activePotAwardRows.map(({ allocation, winner }) => {
                 const awardBB = formatBB(allocation.amount);
@@ -1441,6 +1444,7 @@ export function LiveFelt({
 
         <TableMotionLayer
           enabled={motionEnabled && viewerLayout}
+          dealSound={dealSound}
           handKey={motionHandKey}
           events={motionEvents}
           seatPositions={seatMap}
@@ -1475,7 +1479,7 @@ export function LiveFelt({
           toActName={
             toActId ? seats.find((s) => s.player_id === toActId)?.display_name ?? null : null
           }
-          potSize={displayPot}
+          potSize={settlementPotResultActive ? visibleSettlementPotLayers.reduce((sum, layer) => sum + layer.amount, 0) : displayPot}
           formatBB={formatBB}
           viewerAmountsInBB={viewerAmountsInBB}
           runout={runout}

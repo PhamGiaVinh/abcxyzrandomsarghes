@@ -83,7 +83,8 @@
   font-weight: 700;
 }
 
-:is(.tracker-unified, .spectator-mini-table):has([data-cat-khoi]) [data-testid='card-back'] {
+:is(.tracker-unified, .spectator-mini-table):has([data-cat-khoi]) [data-testid='card-back'],
+[data-tracker-history] [data-testid='card-back'] {
   --poker-card-bg-soft: #ffffff;
   --poker-card-bg: #f7f6f2;
   --poker-card-bg-deep: #eae8e2;
@@ -120,35 +121,38 @@
   color: #fff3dd;
 }
 
-.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards {
-  top: 0;
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed] {
+  top: calc(var(--tracker-avatar-size) * .18);
   left: 50%;
+  margin-top: 0;
   gap: 2px;
-  transform: translate(-50%, calc(-100% - 3px));
-  transform-origin: bottom center;
-}
-
-.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] {
-  top: clamp(10px, 2.2cqi, 20px);
-  gap: 0;
-  transform: translate(-50%, 0) scale(.66);
+  transform: translateX(-50%) scale(.8);
   transform-origin: top center;
 }
 
-/* Keep the white fan between the player's forehead and nameplate on compact tables. */
-[data-tracker-table='portrait']:has(> [data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] {
-  transform: translate(-50%, 0) scale(.42);
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] {
+  --fan-height: calc(var(--tracker-avatar-size) * .65);
+  top: calc(var(--tracker-avatar-size) - var(--fan-height) - 2px);
+  height: var(--fan-height);
+  align-items: flex-start;
+  overflow: clip;
+  padding: 3px 6px 0;
+  gap: 0;
+  transform: translateX(-50%);
 }
 
-@container (max-width: 800px) {
-  [data-tracker-table='landscape']:has(> [data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] {
-    transform: translate(-50%, 0) scale(.5);
-  }
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='true'][data-all-in] {
+  top: calc(var(--tracker-avatar-size) * .12);
+  transform: translateX(-50%) scale(.88);
+}
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-plate {
+  margin-top: -2px;
 }
 
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > :nth-child(2),
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > div.flex > :nth-child(2) {
-  margin-left: -7%;
+  margin-left: -18%;
   transform: translateY(2px) rotate(9deg);
 }
 
@@ -182,6 +186,21 @@
 }
 
 .spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes[data-revealed='false'] > :nth-child(2) {
-  margin-left: -7%;
+  margin-left: -18%;
   transform: translateY(2px) rotate(9deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  [data-tracker-table]:has([data-motion-kind="deal_hole"]) [data-testid="seat-holecards"] [data-testid="card-back"] {
+    animation: tracker-seat-deal-arrival 1ms step-end var(--deal-arrival) backwards;
+  }
+  @keyframes tracker-seat-deal-arrival {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+}
+
+@container (max-width: 340px) {
+  [data-tracker-table='portrait']:has(> [data-cat-khoi]) .tracker-seat-plate { margin-top: -5px; }
+  [data-tracker-table='portrait']:has(> [data-cat-khoi]) .tracker-seat-cards[data-revealed='true'] { transform: translateX(-50%) scale(.68); }
 }

@@ -779,7 +779,7 @@ function TournamentLiveViewContent({
         if (spectator && nextInProgress) nextPot = liveDisplay.potSize;
       }
 
-      if (spectator && !nextInProgress && currentState !== "last_completed") {
+      if (spectator && !nextInProgress && (currentState !== "last_completed" || observedLiveHandRef.current === hand.id)) {
         const { data: settlementData, error: settlementError } = await supabase.rpc(
           "get_public_tournament_settlement" as never,
           { p_hand_id: hand.id } as never,
@@ -1109,7 +1109,7 @@ function TournamentLiveViewContent({
         playPokerLiveSound("fold_muck", { bypassStoredMute: true, profile: "tracker" }); // card-muck swoosh instead of the legacy beep
       } else {
         playPokerLiveSound(last.action_type as PokerLiveSound, { bypassStoredMute: true, profile: "tracker" });
-        if (FEATURES.liveTableFx && CHIP_ACTIONS.has(last.action_type)) {
+        if (FEATURES.liveTableFx && !last.action_type.startsWith("post_") && CHIP_ACTIONS.has(last.action_type)) {
           playPokerLiveSound("chip", { bypassStoredMute: true, profile: "tracker" }); // crisp chip clink layered over the bet mp3
         }
       }
@@ -1242,7 +1242,7 @@ function TournamentLiveViewContent({
       const playbackState = replayFxPlaybackStateRef.current;
       if (!playbackState.soundMuted) {
         if (fx.action) playPokerLiveSound(fx.action, { bypassStoredMute: true, profile: "tracker" });
-        if (fx.chipClink) playPokerLiveSound("chip", { bypassStoredMute: true, profile: "tracker" });
+        if (fx.chipClink && !fx.action?.startsWith("post_")) playPokerLiveSound("chip", { bypassStoredMute: true, profile: "tracker" });
       }
       // Chip-push is visual + viewer-only (spectator); a monotonic seq keeps the
       // nonce unique even when the same hand is replayed twice.
@@ -1411,7 +1411,7 @@ function TournamentLiveViewContent({
     if (mode === "live" && handInProgress && handId) observedLiveHandRef.current = handId;
   }, [handId, handInProgress, mode]);
 
-  const livePayoutKey = tableDisplayState === "live" && liveShowdownPresentation?.enabled && liveCompletedHand?.hand_id === handId && !handInProgress
+  const livePayoutKey = (tableDisplayState === "live" || tableDisplayState === "last_completed") && liveShowdownPresentation?.enabled && liveCompletedHand?.hand_id === handId && !handInProgress
     ? 'live:' + handId : null;
   useEffect(() => {
     if (mode !== "live" || !spectator || !livePayoutKey || !liveShowdownPresentation?.enabled) {
@@ -1763,13 +1763,15 @@ function TournamentLiveViewContent({
   useEffect(() => {
     if (!FEATURES.liveTableMotionV2 || !spectator || mode !== "live" || !handInProgress || !handId) return;
     const previous = previousLiveHandRef.current;
+    if (previous === handId || activeSeatsToRender.length < 2) return;
     previousLiveHandRef.current = handId;
-    if (previous === null || previous === handId) return;
-    const seatNumbers = activeSeatsToRender.map((seat) => seat.seat_number);
+    if (previous === null && actions.some(action => !["post_ante", "post_sb", "post_bb"].includes(action.action_type))) return;
+    const order = (seat: number) => (seat - buttonSeat + 8) % 9;
+    const seatNumbers = activeSeatsToRender.map(seat => seat.seat_number).sort((a, b) => order(a) - order(b));
     if (seatNumbers.length >= 2) {
       enqueueTableMotion([{ id: `live:${handId}:deal`, handId, kind: "deal_hole", seatNumbers }]);
     }
-  }, [activeSeatsToRender, enqueueTableMotion, handId, mode, spectator, handInProgress]);
+  }, [actions, buttonSeat, activeSeatsToRender, enqueueTableMotion, handId, mode, spectator, handInProgress]);
 
   // Lazy table names for the selector — read-only RPC already used by other tracker panels.
   const tableIdsKey = tableIds.join(",");
@@ -2211,7 +2213,7 @@ function TournamentLiveViewContent({
               viewerLayout={spectator && FEATURES.liveViewerFeltV2}
               viewerAmountsInBB={spectator}
               viewerBigBlind={isReplay ? replayBigBlind : bigBlind}
-              tableFx={spectator && FEATURES.liveTableFx && (isReplay || tableDisplayState !== "last_completed")}
+              tableFx={spectator && FEATURES.liveTableFx && (isReplay || tableDisplayState !== "last_completed" || Boolean(livePayoutForHand))}
               chipPush={spectator && FEATURES.liveTableFx && tableDisplayState !== "last_completed" ? chipPush : null}
               potUnavailable={!isReplay && tableDisplayState === "last_completed" && handPotMissing}
               compact={compactFelt}
@@ -2220,6 +2222,7 @@ function TournamentLiveViewContent({
               runout={!isReplay && tableDisplayState === "live" && liveRunout}
               collectCommittedChips={tableDisplayState !== "last_completed" && collectCommittedChips}
               revealOrder={revealOrder}
+              dealSound={!soundMuted}
               motionEnabled={spectator && FEATURES.liveTableMotionV2 && (isReplay || tableDisplayState !== "last_completed")}
               motionEvents={tableDisplayState === "last_completed" && !isReplay ? [] : tableMotionEvents}
               motionSpeed={isReplay ? (spectator && FEATURES.liveReplayHud ? replayMotionSpeed : 2) : 1}

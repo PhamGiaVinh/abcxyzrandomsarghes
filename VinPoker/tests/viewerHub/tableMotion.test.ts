@@ -42,8 +42,9 @@ describe("deriveReplayTableMotionEvents", () => {
       },
       potAwards: [{ potIndex: 0, amount: 2_000, winnerPlayerIds: ["A", "B"] }],
     });
+    expect(deriveReplayTableMotionEvents({ handId: "h8", previous: null, current: previous }).map(event => event.kind)).toEqual(["deal_hole"]);
     expect(deriveReplayTableMotionEvents({ handId: "h8", previous, current }).map((event) => event.kind))
-      .toEqual(["deal_hole", "board_reveal", "fold_muck", "showdown_reveal", "pot_award"]);
+      .toEqual(["board_reveal", "fold_muck", "showdown_reveal", "pot_award"]);
   });
 
   it("emits nothing for backward scrub or multi-frame fast-forward", () => {

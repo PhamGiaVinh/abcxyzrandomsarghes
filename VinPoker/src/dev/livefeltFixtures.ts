@@ -7,6 +7,7 @@
 import type { ReplayHand, ReplayHandAction, ReplayHandPlayer } from "@/lib/tracker-poker/replayEngine";
 
 export type LiveFeltFixtureName =
+  | "verified-bba-jj"
   | "verified-sidepots"
   | "verified-fold"
   | "fold-walk"
@@ -303,6 +304,24 @@ function verifiedSidepots(): ReplayHand {
     },
   };
 }
+function verifiedBbaJacks(): ReplayHand {
+  const base = bestFiveQuads();
+  return { ...base, hand_id: "fixture-bba-jj", button_seat: 1, small_blind: 100, ante: 200,
+    players: base.players.map(p => ({ ...p, starting_stack: p.player_id === "tom" ? 10000 : 10200, ending_stack: p.player_id === "tom" ? 20200 : 0 })),
+    actions: [
+      { player_id: "tom", action_type: "post_sb", action_amount: 100 },
+      { player_id: "phil", action_type: "post_ante", action_amount: 200 },
+      { player_id: "phil", action_type: "post_bb", action_amount: 200 },
+      { player_id: "tom", action_type: "all_in", action_amount: 9900 },
+      { player_id: "phil", action_type: "call", action_amount: 9800 },
+    ].map((a, i) => ({ ...a, street: "preflop", action_order: i + 1 })),
+    publicSettlement: { ...base.publicSettlement!, refunds: [],
+      players: [{ playerId: "tom", potAward: 20200, refund: 0, netDelta: 10200 }, { playerId: "phil", potAward: 0, refund: 0, netDelta: -10200 }],
+      pots: [{ potId: "main-0", kind: "main", amount: 20200, winnerIds: ["tom"], allocations: [{ potId: "main-0", winnerId: "tom", amount: 20200 }] }],
+    },
+  };
+}
+
 function verifiedFold(): ReplayHand {
   const base = bestFiveQuads();
   return { ...base, hand_id: "fixture-verified-fold", community_cards: ["Kh", "Jc", "Qh"],
@@ -324,6 +343,7 @@ function verifiedFold(): ReplayHand {
 
 export function buildFixtureHand(name: LiveFeltFixtureName, seats: number): ReplayHand {
   switch (name) {
+    case "verified-bba-jj": return verifiedBbaJacks();
     case "verified-sidepots": return verifiedSidepots();
     case "verified-fold": return verifiedFold();
     case "fold-walk":

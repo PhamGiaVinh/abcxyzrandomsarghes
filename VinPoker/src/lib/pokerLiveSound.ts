@@ -1,6 +1,7 @@
 import { FEATURES } from "@/lib/featureFlags";
 
 export type PokerLiveSound =
+  | "deal_one"
   | "deal"
   | "fold"
   | "check"
@@ -42,6 +43,10 @@ const MP3_BY_KIND: Partial<Record<PokerLiveSound, string>> = {
 // resolution is byte-identical to MP3_BY_KIND above. bet/call/raise/all_in are
 // deliberately absent (they keep poker-bet.mp3 — owner decision).
 const TRACKER_MP3_BY_KIND: Partial<Record<PokerLiveSound, string>> = {
+  deal_one: "/sounds/tracker/deal-one.mp3",
+  post_sb: "/sounds/tracker/post-chip.mp3",
+  post_bb: "/sounds/tracker/post-chip.mp3",
+  post_ante: "/sounds/tracker/post-chip.mp3",
   check: "/sounds/tracker/check.mp3",
   fold: "/sounds/tracker/fold.mp3",
   fold_muck: "/sounds/tracker/fold.mp3",
@@ -109,7 +114,7 @@ function canPlay(kind: PokerLiveSound, bypassStoredMute = false) {
   const now = Date.now();
   // Throttle is PER-KIND (Map keyed by kind), so deal_flop / deal_turn / deal_river
   // never throttle each other — a turn dealt <180ms after the flop still sounds.
-  const throttleMs = kind.startsWith("deal") ? 150 : 70;
+  const throttleMs = kind === "deal_one" ? 0 : kind.startsWith("deal") ? 150 : 70;
   if (now - (lastPlayedAt.get(kind) ?? 0) < throttleMs) return false;
   lastPlayedAt.set(kind, now);
   return true;
@@ -138,6 +143,7 @@ export function pokerSoundVolumeFor(kind: PokerLiveSound, profile: PokerLiveSoun
   if (profile !== "tracker") return kind === "deal" ? 0.32 : 0.4;
   switch (kind) {
     case "deal": return 0.7;
+    case "deal_one": return 0.9;
     case "call": return 0.34;
     case "bet": return 0.36;
     case "raise": return 0.4;
@@ -206,6 +212,7 @@ function playTrackerBuffer(kind: PokerLiveSound, src: string, ctx: AudioContext)
     trackerSources.add(source);
     source.onended = () => { trackerSources.delete(source); source.disconnect(); gain.disconnect(); };
     source.start();
+    if (kind === "all_in") playSynthOnContext(ctx, kind);
   }).catch(() => {
     if (generation === trackerSoundGeneration && !document.hidden && Date.now() - requestedAt <= 750 && ctx.state === "running" && SYNTH_FALLBACK_KINDS.has(kind)) {
       playSynthOnContext(ctx, kind);

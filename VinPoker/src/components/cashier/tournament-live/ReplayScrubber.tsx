@@ -194,7 +194,7 @@ export function ReplayScrubber({
           ));
         }
         setStep((currentStep) => Math.min(lastIndex, currentStep + 1));
-      }, 1000 / speed);
+      }, (step === 0 ? Math.max(1000, hand.players.length * 400 + 600) : 1000) / speed);
       return () => window.clearTimeout(timer);
     }
 
@@ -212,7 +212,7 @@ export function ReplayScrubber({
       if (nextPresentation.phase === "static") setIsPlaying(false);
     }, replayRunoutPhaseDuration(runoutPresentation.phase, speed));
     return () => window.clearTimeout(timer);
-  }, [hasCinematicAllInRunout, hasVerifiedPayoutSequence, isPlaying, lastIndex, publishRunoutPresentation, runoutKey, runoutPresentation, speed, step, verifiedPotLayerCount]);
+  }, [hand.players.length, hasCinematicAllInRunout, hasVerifiedPayoutSequence, isPlaying, lastIndex, publishRunoutPresentation, runoutKey, runoutPresentation, speed, step, verifiedPotLayerCount]);
 
   const pauseTo = (nextStep: number) => {
     if (hud) stopTrackerPokerSounds();
@@ -238,8 +238,9 @@ export function ReplayScrubber({
       setIsPlaying(playing => !playing);
       return;
     }
+    if (!isPlaying && step === 0) setFrameSource("playback");
     if (step >= lastIndex) {
-      setFrameSource("jump");
+      setFrameSource("playback");
       publishRunoutPresentation(null);
       setStep(0);
       setIsPlaying(true);
@@ -479,7 +480,7 @@ export function ReplayScrubber({
                   }}
                   className={`min-h-11 shrink-0 rounded-xl border px-3 text-[10px] font-black uppercase tracking-wider ${(runoutPresentation?.potAwardIndex ?? selectedPotIndex) === potIndex ? "border-[hsl(var(--poker-gold)/.68)] bg-[hsl(var(--poker-gold)/.12)] text-[hsl(var(--poker-gold))]" : "border-border text-muted-foreground"}`}
                 >
-                  {pot.kind === "main" ? t("liveHub.felt.mainPot", "Main Pot") : t("liveHub.felt.sidePot", "Side Pot")} · {amountForHud(pot.amount)}
+                  {amountForHud(pot.amount)}
                 </button>
               ))}
             </div>

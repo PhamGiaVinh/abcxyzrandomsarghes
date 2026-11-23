@@ -59,7 +59,7 @@ export function HandFeedCard({ item, rpt = false, tableName, onViewHand, onShare
     const created = new Date(item.createdAt);
     const validDate = Number.isFinite(created.getTime());
     return (
-      <article data-testid="viewer-rpt-hand-card" className="overflow-hidden rounded-[18px] border border-[hsl(var(--viewer-neon)_/_0.3)] bg-card/80 shadow-[0_18px_46px_hsl(var(--background)_/_0.34)]">
+      <article data-tracker-history data-testid="viewer-rpt-hand-card" className="overflow-hidden rounded-[18px] border border-[hsl(var(--viewer-neon)_/_0.3)] bg-card/80 shadow-[0_18px_46px_hsl(var(--background)_/_0.34)]">
         <div className="h-0.5 bg-gradient-to-r from-[hsl(var(--viewer-neon))] via-[hsl(var(--viewer-neon)_/_0.34)] to-transparent" />
         <div className="space-y-3 p-3.5 sm:p-4">
           <header className="flex flex-wrap items-center gap-1.5">
@@ -191,7 +191,7 @@ export function HandFeedCard({ item, rpt = false, tableName, onViewHand, onShare
   }
 
   return (
-    <div className="rounded-2xl border border-border/60 bg-card/80 p-3 shadow-[0_0_18px_rgba(0,0,0,0.25)]">
+    <div data-tracker-history className="rounded-2xl border border-border/60 bg-card/80 p-3 shadow-[0_0_18px_rgba(0,0,0,0.25)]">
       {/* header: tags + hand # */}
       <div className="mb-2 flex flex-wrap items-center gap-1.5">
         {item.tags.map((tag) => {
