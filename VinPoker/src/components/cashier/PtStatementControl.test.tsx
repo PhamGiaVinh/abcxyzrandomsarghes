@@ -22,11 +22,13 @@ describe('cashier pays the finalized PT statement', () => {
       return { data: { ...frozen, payment_id: paid }, error: null };
     });
     render(<PtStatementControl {...props()} canFinalize={false} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Chi phiếu PT' }));
-    const confirmPay = screen.getByRole('button', { name: 'Xác nhận chi phiếu PT' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Phát lương và tất toán' }));
+    const confirmPay = screen.getByRole('button', { name: 'Xác nhận phát lương' });
     fireEvent.click(confirmPay); fireEvent.click(confirmPay);
     expect(await screen.findByText(/Phiếu đã chốt:/)).toHaveTextContent('Đã ghi nhận chi');
     expect(state.rpc.mock.calls.filter(([name]) => name === 'pay_finalized_part_time_payroll_statement')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent(/Còn phải trả: 0/);
+    expect(screen.getByRole('status')).toHaveTextContent('77777777-7777-4777-8777-777777777777');
     expect(state.rpc.mock.calls.some(([name]) => name === 'pay_part_time_balance')).toBe(false);
     expect(screen.queryByRole('button', { name: 'Chốt kỳ PT tiếp theo' })).not.toBeInTheDocument();
   });
@@ -40,8 +42,8 @@ describe('cashier pays the finalized PT statement', () => {
       return { data: { ...frozen, payment_id: paid ? id : null }, error: null };
     });
     const view = render(<PtStatementControl {...props()} canFinalize={false} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Chi phiếu PT' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận chi phiếu PT' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Phát lương và tất toán' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận phát lương' }));
     await screen.findByText(/Chưa xác minh được khoản chi/);
     view.unmount(); unavailable = false;
     render(<PtStatementControl {...props()} canFinalize={false} />);
