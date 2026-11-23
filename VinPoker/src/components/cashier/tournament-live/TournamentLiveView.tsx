@@ -2034,7 +2034,8 @@ function TournamentLiveViewContent({
           )}
           {headerPotSize != null && (
             <span className="flex items-center gap-1">
-              <Coins className="w-3.5 h-3.5 text-emerald-400" /> Pot:{" "}
+              <Coins className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+              <span className="sr-only">{t("liveHub.felt.pot", "Pot")}</span>
               <strong className="text-emerald-400 text-sm">{spectator ? formatViewerChipAndBB(tableDisplayState === "last_completed" && handPotMissing ? null : headerPotSize, isReplay ? replayBigBlind : bigBlind) : formatStack(headerPotSize)}</strong>
               {!spectator && headerPotSize > 0 && headerFormatBB(headerPotSize) && (
                 <span className="text-[10px] text-muted-foreground">({headerFormatBB(headerPotSize)})</span>
