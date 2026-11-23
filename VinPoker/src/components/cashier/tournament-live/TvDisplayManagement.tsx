@@ -176,7 +176,7 @@ export function TvDisplayManagement({ tournamentId, tournamentName, clubId, tour
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 [&_button]:min-h-11 [&_button]:min-w-11 [&_input]:min-h-11">
       {/* Pair a new TV */}
       <Card className="p-4 space-y-3">
         <div className="flex items-center gap-2 text-sm font-semibold">
