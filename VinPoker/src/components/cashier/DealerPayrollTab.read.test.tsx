@@ -105,10 +105,12 @@ describe('payroll saved-state availability',()=>{
     state.rpc.mockResolvedValueOnce({id:'adjustment'});
     render(<DealerPayrollTab clubIds={['club']} clubs={[{id:'club',name:'TEST'}]}/>);
     fireEvent.click(await screen.findByTitle('Điều chỉnh'));
-    fireEvent.change(screen.getByPlaceholderText('VD: 500000'),{target:{value:'1000'}});
+    fireEvent.change(screen.getByPlaceholderText('VD: 500000'),{target:{value:'100.000'}});
+    expect(screen.getByRole('button',{name:'Thêm'})).toBeDisabled();
     fireEvent.change(screen.getByPlaceholderText('Nhập lý do điều chỉnh'),{target:{value:'LOCAL TEST evidence'}});
     const reads=state.saved.mock.calls.length;
     fireEvent.click(screen.getByRole('button',{name:'Thêm'}));
+    expect(state.rpc).toHaveBeenCalledWith('saved','BONUS',100000,'LOCAL TEST evidence','actor');
     await waitFor(()=>expect(state.success).toHaveBeenCalledWith('Đã thêm điều chỉnh'));
     expect(state.saved.mock.calls.length).toBeGreaterThan(reads);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
