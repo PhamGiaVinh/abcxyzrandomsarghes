@@ -26,7 +26,6 @@ import {
   type PotBreakdown,
 } from "@/lib/tracker-poker/potEngine";
 import { nextToAct } from "@/lib/tracker-poker/handFlow";
-import { showdownRevealOrder } from "@/lib/tracker-poker/trackerEngine";
 import {
   LiveFelt,
   formatStack,
@@ -59,6 +58,8 @@ import {
   createReplayRunoutPresentation,
   nextReplayRunoutPresentation,
   replayRunoutPhaseDuration,
+  orderedShowdownPlayers,
+  showdownRevealDelay,
   type ReplayRunoutPresentation,
 } from "@/lib/tracker-poker/replayRunoutTimeline";
 import { deriveLiveHandDisplay,deriveLiveStreet } from "@/lib/tracker-poker/liveDisplay";
@@ -1413,6 +1414,27 @@ function TournamentLiveViewContent({
 
   const livePayoutKey = (tableDisplayState === "live" || tableDisplayState === "last_completed") && liveShowdownPresentation?.enabled && liveCompletedHand?.hand_id === handId && !handInProgress
     ? 'live:' + handId : null;
+  const revealOrder = useMemo(() => {
+    if (!spectator || !FEATURES.trackerShowdownRevealOrder) return undefined;
+    if (mode === "replay") {
+      if (!selectedReplayHand || replayFrameSource !== "playback" || !selectedReplayFrame?.revealHoleCards) return undefined;
+      return orderedShowdownPlayers(
+        selectedReplayFrame.seats.filter(seat => !seat.is_folded && seat.hole_cards?.length === 2),
+        selectedReplayHand.actions,
+        selectedReplayHand.button_seat,
+      );
+    }
+    if (!handId || observedLiveHandRef.current !== handId) return undefined;
+    const completed = livePayoutKey && liveCompletedHand?.hand_id === handId;
+    const shownSeats = completed && liveCompletedFrame ? liveCompletedFrame.seats : seats;
+    return orderedShowdownPlayers(
+      shownSeats.filter(seat => !seat.is_folded && seat.hole_cards?.length === 2),
+      completed && liveCompletedHand ? liveCompletedHand.actions : actions,
+      buttonSeat,
+    );
+  }, [actions, buttonSeat, handId, liveCompletedFrame, liveCompletedHand, livePayoutKey, mode,
+    replayFrameSource, seats, selectedReplayFrame, selectedReplayHand, spectator]);
+
   useEffect(() => {
     if (mode !== "live" || !spectator || !livePayoutKey || !liveShowdownPresentation?.enabled) {
       setLivePayout(null);
@@ -1429,14 +1451,19 @@ function TournamentLiveViewContent({
     setLivePayout(createReplayRunoutPresentation(livePayoutKey, observed && !reduced ? "pot_collect" : "static", observed && !reduced ? null : 0));
   }, [handInProgress, livePayoutKey, liveShowdownPresentation, mode, spectator]);
   const livePayoutForHand = livePayoutKey && livePayout?.key === livePayoutKey ? livePayout : null;
+  const liveRevealCount = revealOrder?.length ?? 0;
   const livePotCount = liveShowdownPresentation?.enabled ? liveShowdownPresentation.potLayers.length : 0;
   useEffect(() => {
     if (mode !== "live" || !livePayoutForHand || !livePotCount) return;
     const next = nextReplayRunoutPresentation(livePayoutForHand, livePotCount);
     if (!next) return;
-    const timer = window.setTimeout(() => setLivePayout(next), replayRunoutPhaseDuration(livePayoutForHand.phase, 1));
+    const duration = replayRunoutPhaseDuration(livePayoutForHand.phase, 1);
+    const revealHold = livePayoutForHand.phase === "pot_collect" && liveRevealCount > 1
+      ? showdownRevealDelay(liveRevealCount - 1, 1) + 360
+      : 0;
+    const timer = window.setTimeout(() => setLivePayout(next), Math.max(duration, revealHold));
     return () => window.clearTimeout(timer);
-  }, [livePayoutForHand, livePotCount, mode]);
+  }, [livePayoutForHand, livePotCount, liveRevealCount, mode]);
   useTrackerRunoutSounds(
     livePayoutForHand, mode === "live" && spectator && FEATURES.liveTableFx, soundMuted,
     Boolean(liveShowdownPresentation?.winners.some(winner => winner.bestFive.length === 5)),
@@ -1526,59 +1553,6 @@ function TournamentLiveViewContent({
     }
     return liveHandBlinds;
   }, [mode, selectedReplayHand, replayBigBlind, liveHandBlinds]);
-
-  // trackerShowdownRevealOrder (spectator): the player_ids in the order they should
-  // table their cards at showdown — last aggressor on the final betting street first,
-  // else first-to-act from the SB, then clockwise (pure showdownRevealOrder). Only the
-  // showing players (hole cards revealed, non-folded). Constant for the hand, so it
-  // drives the felt's staggered flip whenever the reveal frame renders. undefined
-  // when the flag is off / ≤1 shown → simultaneous reveal (byte-identical).
-  const showRevealOrder = spectator && FEATURES.trackerShowdownRevealOrder;
-  const revealOrder = useMemo<string[] | undefined>(() => {
-    if (!showRevealOrder) return undefined;
-    const STREET_IDX: Record<string, number> = { preflop: 0, flop: 1, turn: 2, river: 3, showdown: 4 };
-    const AGGR = new Set(["bet", "raise", "all_in"]);
-    let shown: { player_id: string; seat_number: number }[];
-    let acts: { street: string; seat_number: number; action_type: string; action_order: number }[];
-    let btn: number;
-    if (mode === "replay") {
-      if (!selectedReplayHand) return undefined;
-      const seatOfPid = new Map((selectedReplayHand.players || []).map((p) => [p.player_id, p.seat_number]));
-      shown = (selectedReplayHand.players || [])
-        .filter((p) => p.hole_cards && p.hole_cards.length === 2)
-        .map((p) => ({ player_id: p.player_id, seat_number: p.seat_number }));
-      acts = (selectedReplayHand.actions || []).map((a) => ({
-        street: a.street,
-        seat_number: seatOfPid.get(a.player_id) ?? 0,
-        action_type: a.action_type,
-        action_order: a.action_order,
-      }));
-      btn = selectedReplayHand.button_seat;
-    } else {
-      shown = seats
-        .filter((s) => s.hole_cards && s.hole_cards.length === 2 && !s.is_folded)
-        .map((s) => ({ player_id: s.player_id, seat_number: s.seat_number }));
-      acts = actions.map((a) => ({
-        street: a.street,
-        seat_number: a.seat_number,
-        action_type: a.action_type,
-        action_order: a.action_order,
-      }));
-      btn = buttonSeat;
-    }
-    if (shown.length <= 1) return undefined;
-    const maxStreet = acts.reduce((m, a) => Math.max(m, STREET_IDX[a.street] ?? 0), 0);
-    const shownSeats = new Set(shown.map((s) => s.seat_number));
-    const lastAggr = [...acts]
-      .filter((a) => (STREET_IDX[a.street] ?? 0) === maxStreet && AGGR.has(a.action_type))
-      .sort((a, b) => a.action_order - b.action_order)
-      .pop();
-    const finalAggressorSeat = lastAggr && shownSeats.has(lastAggr.seat_number) ? lastAggr.seat_number : null;
-    const seatToPid = new Map(shown.map((s) => [s.seat_number, s.player_id]));
-    return showdownRevealOrder({ shownSeatNumbers: shown.map((s) => s.seat_number), buttonSeat: btn, finalAggressorSeat })
-      .map((sn) => seatToPid.get(sn))
-      .filter((x): x is string => !!x);
-  }, [showRevealOrder, mode, selectedReplayHand, seats, actions, buttonSeat]);
 
   // The most recent actor gets the spotlight ring on the felt.
   const latestAction = actions.length > 0 ? actions[actions.length - 1] : null;
