@@ -882,14 +882,21 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftRevi
       toast.error("Vui lòng lưu bảng lương trước khi thêm điều chỉnh");
       return;
     }
-    const amount = parseInt(adjAmount, 10);
-    if (isNaN(amount) || amount <= 0) {
+    const amountText = adjAmount.trim();
+    const amount = /^(?:[0-9]+|[0-9]{1,3}(?:\.[0-9]{3})+)$/.test(amountText)
+      ? Number(amountText.replaceAll(".", "")) : NaN;
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
       toast.error("Số tiền không hợp lệ");
+      return;
+    }
+    const reason = adjReason.trim();
+    if (!reason) {
+      toast.error("Nhập lý do điều chỉnh");
       return;
     }
     setAdjSaving(true);
     try {
-      await addPayrollAdjustment(record.id, adjType, amount, adjReason || adjType, user.id);
+      await addPayrollAdjustment(record.id, adjType, amount, reason, user.id);
       if (!current()) return;
       toast.success("Đã thêm điều chỉnh");
       setAdjDialogOpen(false);
@@ -1945,7 +1952,7 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftRevi
             <div>
               <Label className="text-xs text-muted-foreground">Số tiền (VND)</Label>
               <Input
-                type="number"
+                inputMode="numeric"
                 value={adjAmount}
                 onChange={(e) => setAdjAmount(e.target.value)}
                 placeholder="VD: 500000"
@@ -1957,14 +1964,14 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftRevi
               <Input
                 value={adjReason}
                 onChange={(e) => setAdjReason(e.target.value)}
-                placeholder={ADJ_TYPE_LABELS[adjType]}
+                placeholder="Nhập lý do điều chỉnh"
                 className="bg-card border-border text-white"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAdjDialogOpen(false)}>Huỷ</Button>
-            <Button className="bg-success hover:bg-success text-white" onClick={handleAddAdjustment} disabled={adjSaving || !adjAmount}>
+            <Button className="bg-success hover:bg-success text-white" onClick={handleAddAdjustment} disabled={adjSaving || !adjAmount || !adjReason.trim()}>
               {adjSaving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Plus className="w-4 h-4 mr-1" />}
               Thêm
             </Button>
