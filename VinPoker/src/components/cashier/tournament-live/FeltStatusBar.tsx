@@ -61,12 +61,7 @@ export function FeltStatusBar({ blinds, toActName, potSize, formatBB, viewerAmou
       )}
       {potSize > 0 && (
         <span className="flex shrink-0 items-center gap-1">
-          <span
-            className="rounded-sm px-1 py-px text-[8px] font-bold uppercase tracking-wide text-black"
-            style={{ background: "hsl(var(--poker-gold))" }}
-          >
-            {t("liveHub.felt.pot", "Pot")}
-          </span>
+          <span className="sr-only">{t("liveHub.felt.pot", "Pot")}</span>
           <span className="tracker-num font-bold" style={{ color: "hsl(var(--poker-gold))" }}>
             {viewerAmountsInBB ? formatViewerChipAndBB(potSize, blinds?.bb ?? null) : formatStack(potSize)}
           </span>

@@ -35,7 +35,7 @@ export function trackerTableSizes(portrait: boolean) {
   return {
     board: { width: board, height: 'auto', aspectRatio: '5 / 7' } as CSSProperties,
     hole: { width: hole, height: 'auto', aspectRatio: '5 / 7' } as CSSProperties,
-    pod: { width: portrait ? 'clamp(66px,21cqi,98px)' : 'clamp(90px,13.8cqi,154px)' } as CSSProperties,
+    pod: { '--tracker-avatar-size': avatar, width: portrait ? 'clamp(66px,21cqi,98px)' : 'clamp(90px,13.8cqi,154px)' } as CSSProperties,
     avatar: { width: avatar, height: avatar } as CSSProperties,
   };
 }

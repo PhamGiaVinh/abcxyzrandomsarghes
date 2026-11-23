@@ -59,8 +59,7 @@ for (const width of [390, 1440]) {
     await expect.poll(() => page.evaluate(() => (window as unknown as { trackerAudioStarts: { src: string }[] }).trackerAudioStarts.filter(sound => sound.src.includes("pot-award-2531.mp3")).length)).toBe(2);
     await page.waitForTimeout(3_200);
     await expect(side).toBeVisible();
-    await expect(page.locator('[data-testid^="felt-settlement-pot-"]')).toHaveCount(1);
-    await expect(page.locator('[data-testid^="felt-settlement-pot-"]')).not.toContainText("{{");
+    await expect(page.locator('[data-testid^="felt-settlement-pot-"]')).toHaveCount(0);
     await page.screenshot({ path: `shots/award-side-${width}.png`, fullPage: true });
     const stack = await page.getByTestId("felt-stack-phil").boundingBox();
     const label = await side.boundingBox();

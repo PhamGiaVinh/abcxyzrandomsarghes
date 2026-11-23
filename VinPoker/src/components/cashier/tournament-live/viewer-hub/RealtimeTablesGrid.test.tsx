@@ -32,10 +32,10 @@ describe("simultaneous public tables", () => {
     rerender(<RealtimeTablesGrid {...props} tables={[{ ...tables[0], board: ["AS", "KH", "2C", "TD"], pot: 1500,
       latestAction: { ...tables[0].latestAction!, actionType: "bet", amount: 500 } }, tables[1], tables[2], tables[3]]} />);
     expect(table2.getByText("TD")).toBeInTheDocument();
-    expect(table2.getByText("POT 1.5k (7,5 BB)")).toBeInTheDocument();
+    expect(table2.getByText("1.5k (7,5 BB)")).toBeInTheDocument();
     expect(table2.getByText(/bet 2.5 BB/)).toBeInTheDocument();
     expect(table5.queryByText("TD")).not.toBeInTheDocument();
-    expect(table5.getByText("POT 1k (5 BB)")).toBeInTheDocument();
+    expect(table5.getByText("1k (5 BB)")).toBeInTheDocument();
     table2.getByRole("button", { name: "Lịch sử" }).click();
     expect(props.onHistory).toHaveBeenCalledWith("2");
     expect(props.onVisibleTableIds).toHaveBeenCalledWith(["2", "5", "7", "9"]);
@@ -54,7 +54,7 @@ it("shows four simultaneous actions without opening a table and restores folded 
   for (let i = 0; i < 4; i++) {
     const article = screen.getByRole("article", { name: 'Bàn ' + (i + 1) });
     expect(article.querySelector('[data-action="' + actions[i] + '"]')).not.toBeNull();
-    expect(within(article).getByText(`POT ${1 + i * 0.2}k (${5 + i} BB)`)).toBeInTheDocument();
+    expect(within(article).getByText(`${1 + i * 0.2}k (${5 + i} BB)`)).toBeInTheDocument();
     expect(within(article).queryAllByTestId('card-back')).toHaveLength(i === 0 ? 0 : 2);
     expect(article.querySelector('.spectator-mini-avatar')).not.toBeNull();
   }
@@ -72,7 +72,7 @@ it("renders a completed hand as a static historical snapshot with raw-chip fallb
   render(<RealtimeTablesGrid catalog={[{ tableId: table.tableId, name: table.name, playerCount: 1, searchPlayers: [] }]} tables={[table]} onVisibleTableIds={vi.fn()} onView={vi.fn()} onHistory={vi.fn()} />);
   const article = screen.getByRole("article", { name: "Bàn completed" });
   expect(within(article).queryByText("Ván gần nhất")).not.toBeInTheDocument();
-  expect(within(article).getByText("POT 300 (— BB)")).toBeInTheDocument();
+  expect(within(article).getByText("300 (— BB)")).toBeInTheDocument();
   expect(within(article).getByText("0 · — BB")).toBeInTheDocument();
   expect(within(article).queryAllByTestId("card-back")).toHaveLength(0);
 });

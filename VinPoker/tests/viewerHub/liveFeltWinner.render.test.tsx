@@ -130,11 +130,14 @@ describe("LiveFelt verified best-five focus", () => {
           checkBoard();
           expect(view.queryByTestId('felt-settlement-collect-center')).toBeNull();
           const pots=view.container.querySelectorAll('[data-testid^="felt-settlement-pot-"]');
-          expect(pots).toHaveLength(1);
+          expect(pots).toHaveLength(phase === "static" ? 0 : Math.min(2, 3 - index));
+          if (phase === "pot_award") {
           expect(pots[0]).toHaveAttribute('data-testid',`felt-settlement-pot-${index===0?'main':'side'}-0`);
           expect(pots[0].className.includes('-translate-y-1/2')).toBe(portrait);
           expect((pots[0] as HTMLElement).style.marginTop).toBe(portrait?'16px':'24px');
-          if(phase==='pot_award')act(()=>vi.advanceTimersByTime(420));
+          act(()=>vi.advanceTimersByTime(420));
+          expect(view.container.querySelectorAll('[data-testid^="felt-settlement-pot-"]')).toHaveLength(Math.min(2, 2-index));
+          }
           const credited=phase==='static'?6000:(index+1)*2000;
           expect(view.getByTestId('felt-stack-tom')).toHaveAttribute('data-stack-target',String(1000+credited));
           const total=Array.from(view.container.querySelectorAll('[data-testid^="felt-stack-"]'))
@@ -144,7 +147,7 @@ describe("LiveFelt verified best-five focus", () => {
       }
     }finally{cleanup();vi.useRealTimers();vi.unstubAllGlobals();}
   });
-  it.each(['pot_collect','static'] as const)('keeps the landscape %s pot below its anchor rather than lifting it across the board',phase=>{
+  it.each(['pot_collect','pot_award'] as const)('keeps the landscape %s pot below its anchor rather than lifting it across the board',phase=>{
     vi.stubGlobal('ResizeObserver',class {observe(){} unobserve(){} disconnect(){}});
     try {
     const view=render(<LiveFelt {...baseProps} viewerLayout tableFx portrait={false}
@@ -349,7 +352,7 @@ describe("LiveFelt verified best-five focus", () => {
     expect((mainAward.match(/tracker-win-glow/g) ?? []).length).toBe(1);
     expect(mainAward).toContain('data-testid="felt-settlement-award-announcement"');
     expect(mainAward).toContain('data-testid="felt-settlement-award-recipient-tom"');
-    expect(mainAward).toContain("Main Pot");
+    expect(mainAward).not.toContain(">Pot</div>");
     expect(mainAward).toContain("Tom Dwan");
     expect(mainAward).toContain("+20k (100 BB)");
     expect(mainAward).toContain(showdownPresentation.winners[0].rankingText);
@@ -390,7 +393,7 @@ describe("LiveFelt verified best-five focus", () => {
     expect((sideAward.match(/tracker-win-glow/g) ?? []).length).toBe(1);
     expect(sideAward).toContain('data-testid="felt-settlement-award-recipient-side"');
     expect(sideAward).not.toContain('data-testid="felt-settlement-award-recipient-tom"');
-    expect(sideAward).toContain("Side Pot");
+    expect(sideAward).not.toContain("Side 1");
     expect(sideAward).toContain("Side winner");
     expect(sideAward).toContain("+8k (40 BB)");
     expect(sideAward).toContain("Pair of Jacks - Ace-Q king kickers");

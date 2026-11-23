@@ -46,3 +46,5 @@ avoid reusing cached earlier clips. Earlier assets are retained for rollback.
 Automated validation checks decoded content and browser playback. Listening quality,
 absence of background speech, and actual iPhone speaker output require owner UAT;
 they are not established by these measurements.
+
+Kenney Casino Audio (CC0), https://kenney.nl/assets/casino-audio. deal-one.mp3 is a trimmed card-slide-1.ogg. post-chip.mp3 is chip-lay-1.ogg.

@@ -27,7 +27,7 @@ export function SpectatorMiniTable({ table, appearance, onPlayerSelect }: { tabl
     <div className="spectator-mini-center">
       <TableLogo url={appearance?.logoUrl} />
       {stateLabel && <span className="spectator-mini-state">{stateLabel}</span>}
-      <span className="spectator-mini-pot tracker-num">{table.pot == null ? (stateLabel ?? 'POT —') : `POT ${formatViewerChipAndBB(table.pot, table.bigBlind)}`}</span>
+      <span className="spectator-mini-pot tracker-num">{table.pot == null ? (stateLabel ?? '—') : formatViewerChipAndBB(table.pot, table.bigBlind)}</span>
       {!!table.board?.length && <span className="spectator-mini-board">{table.board.map((card, index) => <PokerCard key={`${index}:${card}`} card={card} size="sm" className="spectator-mini-card" />)}</span>}
       <TableBlinds level={table.levelNumber} sb={table.smallBlind} bb={table.bigBlind} ante={table.ante} />
       {table.latestAction && table.trackerState === 'live' && <span className="spectator-mini-action">{latestActor?.name ?? t('tableAppearance.player')} · {table.latestAction.actionType.split('_').join(' ')}{table.latestAction.amount != null && table.latestAction.amount > 0 ? ` ${amount(table.latestAction.amount)}` : ''}</span>}

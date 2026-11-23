@@ -35,12 +35,13 @@ import {
 } from "@/lib/tracker-poker/replayBestFiveFocus";
 import { createReplayRunoutPresentation, replayRunoutFocusPhase, type ReplayRunoutPresentation } from "@/lib/tracker-poker/replayRunoutTimeline";
 import { useTrackerRunoutSounds } from "@/lib/tracker-poker/useTrackerRunoutSounds";
-import { markPokerSoundGesture } from "@/lib/pokerLiveSound";
+import { markPokerSoundGesture, playPokerLiveSound } from "@/lib/pokerLiveSound";
+import { deriveReplayTableMotionEvents, type TableMotionEvent } from "@/lib/tracker-poker/tableMotion";
 import { deriveReplayPlaybackFx } from "@/lib/tracker-poker/replayFx";
 import { buildFixtureHand, type LiveFeltFixtureName } from "./livefeltFixtures";
 
 const FIXTURES: LiveFeltFixtureName[] = [
-  "verified-sidepots", "verified-fold",
+  "verified-sidepots", "verified-fold", "verified-bba-jj",
   "fold-walk",
   "showdown",
   "allin-sidepots",
@@ -88,7 +89,10 @@ function LiveFeltPreviewContent() {
   // cap) can be exercised at high speed.
   const [chipPush, setChipPush] = useState<{ seatNumber: number; nonce: number; kind?: string } | null>(null);
   const prevFxRef = useRef<{ index: number | null; board: number }>({ index: null, board: 0 });
-  const handleFrame = (f: ReplayFrame) => {
+  const previousFrame = useRef<ReplayFrame | null>(null);
+  const [motionEvents, setMotionEvents] = useState<TableMotionEvent[]>([]);
+  const motionHandKey = hand.hand_id ?? fixture;
+  const handleFrame = (f: ReplayFrame, source: string) => {
     const boardN = f.displayCards.filter(Boolean).length;
     const fx = deriveReplayPlaybackFx({
       prevIndex: prevFxRef.current.index,
@@ -100,12 +104,19 @@ function LiveFeltPreviewContent() {
     });
     prevFxRef.current = { index: f.index, board: boardN };
     if (fx.chipPush && f.latestAction) setChipPush({ seatNumber: f.latestAction.seat_number, nonce: f.index, kind: f.latestAction.action_type });
+    const payoutOwnsFinalFrame = f.index === frames.length - 1 && hand.publicSettlement?.status === "verified";
+    const events = source === "playback" && !payoutOwnsFinalFrame ? deriveReplayTableMotionEvents({ handId: motionHandKey, previous: previousFrame.current, current: f }) : [];
+    if (!mutedRef.current) {
+      if (source === "playback" && fx.action && (fx.action === "all_in" || fx.action.startsWith("post_"))) playPokerLiveSound(fx.action, { bypassStoredMute: true, profile: "tracker" });
+    }
+    if (events.length) setMotionEvents(events);
+    previousFrame.current = f;
     setFrame(f);
   };
 
   const bb = detectBigBlind(hand);
   const formatBB = (n: number): string | null => formatViewerBB(n, bb);
-  const blinds = bb > 0 ? { sb: bb / 2, bb, ante: 0 } : null;
+  const blinds = bb > 0 ? { sb: hand.small_blind ?? bb / 2, bb, ante: hand.ante ?? 0 } : null;
   const verifiedPresentation = useMemo(() => resolveVerifiedPayoutPresentation({
     handId: hand.hand_id ?? `fixture-${fixture}-${hand.hand_number}`,
     frame,
@@ -154,6 +165,10 @@ function LiveFeltPreviewContent() {
       bestFiveFocusPhase={replayRunoutFocusPhase(staticPayoutPresentation?.phase ?? null)}
       replayRunoutPhase={staticPayoutPresentation?.phase ?? null}
       replayRunoutPresentation={staticPayoutPresentation}
+      dealSound={!muted}
+      motionEnabled={play && tableFx}
+      motionHandKey={motionHandKey}
+      motionEvents={motionEvents}
       chipPush={chipPush}
       blinds={blinds}
     />

@@ -21,7 +21,7 @@ async function measure(page: Page) {
       const holeCards = cards ? [...cards.querySelectorAll('[data-card-code], :scope > div:not(:has([data-card-code]))')] : [];
       const isFan = cards?.getAttribute('data-revealed') === 'false';
       holeCards.forEach((card, ci) => {
-        if (!isFan && avatar && hits(rect(card), rect(avatar))) overlaps.push(`card/avatar/${pod.getAttribute('data-tracker-seat')}/${ci}`);
+        if (!isFan && avatar && (!hits(rect(card), rect(avatar)) || rect(card).top < rect(avatar).top)) overlaps.push(`card/outside-avatar/${pod.getAttribute('data-tracker-seat')}/${ci}`);
         holeCards.slice(ci + 1).forEach(other => {
           if (!isFan && hits(rect(card), rect(other))) overlaps.push(`card/card/${pod.getAttribute('data-tracker-seat')}`);
         });
