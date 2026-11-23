@@ -10175,6 +10175,12 @@
       "filename": "20270128000346_public_hud_equivalent_status_fingerprint.sql",
       "sha256": "af996d72c2c30a2394dca2e1125caa0b0810000e4a89b304f0310e4fde235a0a",
       "domain": "public-hud"
+    },
+    {
+      "version": "20270128000347",
+      "filename": "20270128000347_dealer_relief_stale_outgoing_v1.sql",
+      "sha256": "ed22e037fb62f5a4b7671058d16a8eb8c282c5478cdbd88f5f097f15ff645b86",
+      "domain": "dealer-swing"
     }
   ],
   "floorActiveAllowlist": [
