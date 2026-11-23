@@ -148,6 +148,7 @@ export function ReplayScrubber({
     && frames[lastIndex]?.revealHoleCards === true
     && frames[lastIndex]?.displayCards.filter(Boolean).length === 5
     && sortedActions.some((action) => action.action_type === "all_in");
+  const shownPlayers = frames[lastIndex]?.seats.filter(seat => !seat.is_folded && seat.hole_cards?.length === 2).length ?? 0;
   const verifiedPotLayerCount = hasVerifiedPayoutSequence ? (terminalPresentation?.potLayers.length ?? 0) : 0;
   const publishRunoutPresentation = useCallback((presentation: ReplayRunoutPresentation | null) => {
     setRunoutPresentation(presentation);
@@ -210,9 +211,9 @@ export function ReplayScrubber({
     const timer = window.setTimeout(() => {
       publishRunoutPresentation(nextPresentation);
       if (nextPresentation.phase === "static") setIsPlaying(false);
-    }, replayRunoutPhaseDuration(runoutPresentation.phase, speed));
+    }, replayRunoutPhaseDuration(runoutPresentation.phase, speed, shownPlayers));
     return () => window.clearTimeout(timer);
-  }, [hand.players.length, hasCinematicAllInRunout, hasVerifiedPayoutSequence, isPlaying, lastIndex, publishRunoutPresentation, runoutKey, runoutPresentation, speed, step, verifiedPotLayerCount]);
+  }, [hand.players.length, hasCinematicAllInRunout, hasVerifiedPayoutSequence, isPlaying, lastIndex, publishRunoutPresentation, runoutKey, runoutPresentation, shownPlayers, speed, step, verifiedPotLayerCount]);
 
   const pauseTo = (nextStep: number) => {
     if (hud) stopTrackerPokerSounds();

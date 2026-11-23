@@ -34,7 +34,7 @@ import {
   type BestFiveFocus,
   type VerifiedShowdownPresentation,
 } from "@/lib/tracker-poker/replayBestFiveFocus";
-import { POT_AWARD_TRAVEL_MS, isReplaySettlementPayoutPhase, type ReplayRunoutPhase, type ReplayRunoutPresentation } from "@/lib/tracker-poker/replayRunoutTimeline";
+import { POT_AWARD_TRAVEL_MS, isReplaySettlementPayoutPhase, showdownRevealDelay, type ReplayRunoutPhase, type ReplayRunoutPresentation } from "@/lib/tracker-poker/replayRunoutTimeline";
 import { shouldCollectCommittedChips } from "@/lib/tracker-poker/livePotCollection";
 import { formatViewerChipAndBB } from "@/lib/tracker-poker/viewerAmounts";
 
@@ -347,16 +347,8 @@ export interface LiveFeltProps {
    * state only: all amounts and recipients come from `showdownPresentation`.
    */
   replayRunoutPresentation?: ReplayRunoutPresentation | null;
-  /**
-   * trackerShowdownRevealOrder (viewer) — ADDITIVE; absent → simultaneous reveal
-   * (byte-identical). player_ids in the order they should table their cards at
-   * showdown; each revealed seat's hole-card flip is delayed by its index ×
-   * `revealStaggerMs`, so the cards appear in sequence ~0.5s apart.
-   */
+  /** Players whose already-public cards are revealed one seat at a time. */
   revealOrder?: string[];
-  /** Per-step delay for the staggered showdown reveal (ms). Default 500 when
-   * `revealOrder` is set. */
-  revealStaggerMs?: number;
   /** VinPoker-native display events. No event may decide cards, pot or winners. */
   motionEvents?: TableMotionEvent[];
   motionHandKey?: string | null;
@@ -402,7 +394,6 @@ export function LiveFelt({
   replayRunoutPhase = null,
   replayRunoutPresentation = null,
   revealOrder,
-  revealStaggerMs = 500,
   motionEvents = [],
   motionHandKey = null,
   motionSpeed = 1,
@@ -507,14 +498,25 @@ export function LiveFelt({
   const formatViewerAmount = (amount: number): string => formatBB(amount) ?? "— BB";
   const formatGameplayAmount = viewerAmountsInBB ? formatViewerAmount : formatStack;
 
-  // trackerShowdownRevealOrder: this seat's flip delay = its place in the reveal
-  // order × the per-step stagger. Not in `revealOrder` (or prop absent) → undefined
-  // → no delay (simultaneous, byte-identical). Index 0 → 0ms (starts immediately).
-  const revealDelayStyle = (playerId: string): CSSProperties | undefined => {
-    if (!revealOrder) return undefined;
-    const i = revealOrder.indexOf(playerId);
-    return i > 0 ? { animationDelay: `${i * revealStaggerMs}ms` } : undefined;
-  };
+  const revealKey = revealOrder?.length ? JSON.stringify([motionHandKey, handNumber, revealOrder]) : null;
+  const revealCount = revealOrder?.length ?? 0;
+  const [revealProgress, setRevealProgress] = useState<{ key: string; count: number } | null>(null);
+  useEffect(() => {
+    if (!revealKey) {
+      setRevealProgress(null);
+      return;
+    }
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setRevealProgress({ key: revealKey, count: revealCount });
+      return;
+    }
+    const timers = Array.from({ length: revealCount }, (_, index) =>
+      window.setTimeout(() => setRevealProgress(current => current?.key === revealKey && current.count > index
+        ? current : { key: revealKey, count: index + 1 }), showdownRevealDelay(index, motionSpeed)),
+    );
+    return () => timers.forEach(timer => window.clearTimeout(timer));
+  }, [motionSpeed, revealCount, revealKey]);
+  const revealedCount = revealProgress && revealProgress.key === revealKey ? revealProgress.count : 0;
 
   // Viewer Felt V2 — cards size with the FELT's own width (cqi resolves to the
   // container-type set on the oval below) so they never overlap on mobile. Inline
@@ -971,6 +973,8 @@ export function LiveFelt({
         </div>
 
         {seats.map((seat) => {
+          const revealIndex = revealOrder?.indexOf(seat.player_id) ?? -1;
+          const holeCards = revealIndex < 0 || revealIndex < revealedCount ? seat.hole_cards : undefined;
           const slot = ((seat.seat_number - 1) % 9) + 1;
           const pos = seatMap[slot] || seatMap[1];
           const posStyle: CSSProperties = { left: `${pos.l}%`, top: `${pos.t}%`, transform: "translate(-50%, -50%)" };
@@ -1198,16 +1202,11 @@ export function LiveFelt({
                 <div
                   data-testid="seat-holecards"
                   data-all-in={seat.is_all_in || undefined}
-                  data-revealed={!!seat.hole_cards && seat.hole_cards.length === 2}
+                  data-revealed={holeCards?.length === 2}
                   className={`mt-0.5 flex justify-center gap-0.5${unified ? ' tracker-seat-cards' : ''}`}
                 >
-                  {seat.hole_cards && seat.hole_cards.length === 2 ? (
-                    // trackerShowdownRevealOrder: stagger the flip by this seat's place
-                    // in the reveal order (index * revealStaggerMs added to the existing
-                    // tracker-card-reveal pop). revealOrder absent → delay undefined →
-                    // today's simultaneous reveal (byte-identical). Reduced-motion kills
-                    // the animation entirely (CSS), so the delay is moot for a11y.
-                    seat.hole_cards.map((card, ci) => {
+                  {holeCards?.length === 2 ? (
+                    holeCards.map((card, ci) => {
                       const focusClass = cardFocusClass(card, bestFiveFocus?.holeCardCodesByPlayerId.get(seat.player_id));
                       const viewerClass = viewerLayout ? "drop-shadow-[0_2px_5px_rgba(0,0,0,0.65)]" : "";
                       return (
@@ -1217,7 +1216,7 @@ export function LiveFelt({
                           size="xs"
                           className={[viewerClass, focusClass].filter(Boolean).join(" ") || undefined}
                           muted={seat.is_folded}
-                          style={{ ...holeStyle, ...revealDelayStyle(seat.player_id) }}
+                          style={holeStyle}
                         />
                       );
                     })
