@@ -626,6 +626,12 @@ export function LiveFelt({
       ? showdownPresentation.potLayers.slice(Math.max(0, activePotLayerIndex) + (awardArrived ? 1 : 0))
       : showdownPresentation.potLayers
     : [];
+  const visibleMainPot = visibleSettlementPotLayers.find(pot => pot.kind === "main");
+  const visibleSidePots = visibleSettlementPotLayers.filter(pot => pot.kind === "side");
+  const settlementClusters = [
+    ...(visibleMainPot ? [{ pot: visibleMainPot, amount: visibleMainPot.amount }] : []),
+    ...(visibleSidePots.length > 0 ? [{ pot: visibleSidePots[0], amount: visibleSidePots.reduce((sum, pot) => sum + pot.amount, 0) }] : []),
+  ];
   const settlementPotPoint = (visibleIndex: number, total: number): Pt => {
     const horizontalOffset = (visibleIndex - (total - 1) / 2) * 13;
     return {
@@ -689,7 +695,7 @@ export function LiveFelt({
     const measure = () => {
       const w = el.clientWidth;
       if (!w || w >= LANDSCAPE_DESIGN_W) { setFit(null); return; }
-      const scale = w / LANDSCAPE_DESIGN_W;
+      const scale = (unified ? Math.max(1, w - 24) : w) / LANDSCAPE_DESIGN_W;
       const designH = LANDSCAPE_DESIGN_W / motionAspect;
       setFit({ scale, h: Math.round(designH * scale) + FIT_PAD * 2 });
     };
@@ -1257,9 +1263,9 @@ export function LiveFelt({
               </div>
             )}
 
-            {(settlementPayoutPhase === "pot_collect" ? [] : visibleSettlementPotLayers.slice(0, 2)).map((pot, visibleIndex) => {
-              const point = settlementPotPoint(visibleIndex, Math.min(2, visibleSettlementPotLayers.length));
-              const isAwardingPot = settlementPayoutPhase === "pot_award" && !awardArrived && visibleIndex === 0;
+            {(settlementPayoutPhase === "pot_collect" ? [] : settlementClusters).map(({ pot, amount }, visibleIndex) => {
+              const point = settlementPotPoint(visibleIndex, settlementClusters.length);
+              const isAwardingPot = settlementPayoutPhase === "pot_award" && !awardArrived && pot.potId === activePotLayer?.potId;
               return (
                 <div
                   key={pot.potId}
@@ -1271,7 +1277,7 @@ export function LiveFelt({
                   style={{ left: `${point.l}%`, top: `${point.t}%`, marginTop: settlementPotMarginTop }}
                 >
                   <CenterPotStack compact
-                    label={formatGameplayAmount(visibleIndex === 0 ? pot.amount : visibleSettlementPotLayers.slice(1).reduce((sum, layer) => sum + layer.amount, 0))}
+                    label={formatGameplayAmount(amount)}
                   />
                   {isAwardingPot && activePotAwardsComplete && activePotAwardRows.flatMap(({ allocation, seat }, allocationIndex) => {
                     const slot = ((seat.seat_number - 1) % 9) + 1;

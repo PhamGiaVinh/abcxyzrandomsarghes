@@ -3,13 +3,18 @@ import {afterEach,expect,it,vi} from 'vitest';
 import {TournamentLiveView} from './TournamentLiveView';
 
 const publicClock={is_running:false,remaining_seconds:null,current_level:null,small_blind:null,big_blind:null,big_blind_ante:null};
+const { tableRead } = vi.hoisted(() => ({ tableRead: vi.fn() }));
 const {rpc,hand,target,auth,signals,liveSignals,events,statuses}=vi.hoisted(()=>({
  statuses:[] as ((status:string)=>void)[],
  liveSignals:[] as AbortSignal[],events:[] as ((event?:unknown)=>void)[],signals:[] as AbortSignal[],rpc:vi.fn(),auth:{user:null,isStaffOps:false,isClubAdmin:false},
  target:{handId:'hand',tableId:'table',handNumber:32},
  hand:{hand_id:'hand',hand_number:32,button_seat:2,community_cards:['2c','3d','7s','9c','Kc'],big_blind:200,small_blind:100,ante:0,players:[],actions:[]},
 }));
-vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:(...args:unknown[])=>{const result=Promise.resolve(rpc(...args));return Object.assign(result,{abortSignal:(signal:AbortSignal)=>{(args[0]==='get_public_tournament_table_hand_v2'?signals:liveSignals).push(signal);return result;}});},channel:()=>{const c={on:(...args:unknown[])=>{const callback=args.at(-1);if(typeof callback==='function')events.push(callback as ()=>void);return c;},subscribe:(callback:(status:string)=>void)=>{statuses.push(callback);return c;}};return c},removeChannel:vi.fn()}}));
+vi.mock('@/integrations/supabase/client',()=>({supabase:{from:(table: string) => {
+  const request = Promise.resolve(tableRead(table));
+  const query = Object.assign(request, { select: () => query, eq: () => query, order: () => query, limit: () => query, abortSignal: () => query });
+  return query;
+},rpc:(...args:unknown[])=>{const result=Promise.resolve(rpc(...args));return Object.assign(result,{abortSignal:(signal:AbortSignal)=>{(args[0]==='get_public_tournament_table_hand_v2'?signals:liveSignals).push(signal);return result;}});},channel:()=>{const c={on:(...args:unknown[])=>{const callback=args.at(-1);if(typeof callback==='function')events.push(callback as ()=>void);return c;},subscribe:(callback:(status:string)=>void)=>{statuses.push(callback);return c;}};return c},removeChannel:vi.fn()}}));
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>auth}));
 vi.mock('@/lib/publicTableTransport',()=>({readPublicTableRequest:async(_url:string,_key:string,tour:string,table:string,signal:AbortSignal,_send:typeof fetch,mode?:string)=>{
  liveSignals.push(signal);
@@ -88,6 +93,60 @@ it('rejects malformed public clock fields without displaying a fabricated stoppe
  expect(await screen.findByText('Không xác minh được đồng hồ giải công khai.')).toBeInTheDocument();
  expect(rpc.mock.calls.some(([name])=>name==='get_tournament_clock')).toBe(false);
  expect(screen.queryByText('00:00')).not.toBeInTheDocument();
+});
+
+it('removes the previous hand and clock as soon as the viewer switches tournaments', async () => {
+  let finishNext!: (result: unknown) => void;
+  const next = new Promise(resolve => { finishNext = resolve; });
+  rpc.mockImplementation(async (name: string, args: { p_tournament_id: string }) => {
+    const tournamentId = args.p_tournament_id;
+    if (name === 'get_public_tournament_table_live_or_last_hand_v2') {
+      if (tournamentId === 'next') return next;
+      return { error: null, data: { access: 'public', state: 'live', tableId: 'table', tableSessionId: 'session', hand: {
+        id: 'live-hand', tournamentId, tableId: 'table', tableSessionId: 'session', handNumber: 38,
+        status: 'in_progress', buttonSeat: 2, board: [], pot: 0, players: [], actions: [],
+      } } };
+    }
+    return { error: null, data: name === 'get_public_tournament_clock_summary'
+      ? [{ ...publicClock, tournament_id: tournamentId, players_remaining: 0, average_stack: 0,
+          remaining_seconds: 720, current_level: 19, small_blind: 1750, big_blind: 3500, big_blind_ante: 450 }]
+      : null };
+  });
+
+  const view = render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table" />);
+  expect(await screen.findByText(/Lv\.19/)).toBeInTheDocument();
+  view.rerender(<TournamentLiveView tournamentId="next" spectator selectedTableIdOverride="other-table" />);
+  expect(screen.queryByText(/Lv\.19/)).not.toBeInTheDocument();
+  expect(screen.queryByText('Hand #38')).not.toBeInTheDocument();
+  await act(async () => finishNext({ error: null, data: {
+    access: 'public', state: 'waiting', tableId: 'other-table', tableSessionId: 'next-session', hand: null,
+  } }));
+  expect(screen.queryByText('Hand #38')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('rendered-felt')).not.toBeInTheDocument();
+});
+
+it('reports a failed hand action read and recovers when a genuinely empty list is returned', async () => {
+  const counts = { total_entries: 0, re_entries: 0, remaining: 0, seated: 0, waiting: 0, busted: 0,
+    anomaly_entries: 0, anomaly_seats: 0, live_entry_stack: 0, seated_stack: 0, waiting_stack: 0 };
+  const participation = { tournament_id: 'tour', average_stack: 0, counts, seats: [], entries: [] };
+  rpc.mockImplementation((name: string) => ({ error: null, data: name.startsWith('get_tournament_participation') ? participation : null }));
+  let failActions = true;
+  tableRead.mockImplementation((table: string) => {
+    if (table === 'hand_actions' && failActions) return { error: { message: 'Network unavailable' }, data: null };
+    if (table === 'tournament_hands') return { error: null, data: [{ id: 'fresh-hand', hand_number: 51, table_id: 'table',
+      status: 'in_progress', button_seat: 1, community_cards: [], pot_size: 0 }] };
+    return { error: null, data: [] };
+  });
+  try {
+    render(<TournamentLiveView tournamentId="tour" selectedTableIdOverride="table" />);
+    expect(await screen.findByText('Chưa tải được hành động của ván này.')).toBeInTheDocument();
+    expect(screen.queryByText('Hand #51')).not.toBeInTheDocument();
+    failActions = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Thử lại' }));
+    expect(await screen.findByText('Hand #51')).toBeInTheDocument();
+  } finally {
+    tableRead.mockReset();
+  }
 });
 
 it('shows a recoverable initial read failure when the transport rejects',async()=>{

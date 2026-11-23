@@ -179,9 +179,16 @@
   background: #241e18;
 }
 
+.spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes {
+  bottom: 0;
+}
+
 .spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes[data-revealed='false'] {
-  top: clamp(10px, 2.2cqi, 16px);
-  bottom: auto;
+  --mini-card-width: clamp(20px, 4.9cqi, 36px);
+  height: calc(var(--mini-card-width) * 1.03);
+  align-items: flex-start;
+  padding: 2px 5px 0;
+  overflow: clip;
   gap: 0;
 }
 

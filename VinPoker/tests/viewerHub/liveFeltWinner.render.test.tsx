@@ -130,13 +130,13 @@ describe("LiveFelt verified best-five focus", () => {
           checkBoard();
           expect(view.queryByTestId('felt-settlement-collect-center')).toBeNull();
           const pots=view.container.querySelectorAll('[data-testid^="felt-settlement-pot-"]');
-          expect(pots).toHaveLength(phase === "static" ? 0 : Math.min(2, 3 - index));
+          expect(pots).toHaveLength(phase === "static" ? 0 : index === 0 ? 2 : 1);
           if (phase === "pot_award") {
           expect(pots[0]).toHaveAttribute('data-testid',`felt-settlement-pot-${index===0?'main':'side'}-0`);
           expect(pots[0].className.includes('-translate-y-1/2')).toBe(portrait);
           expect((pots[0] as HTMLElement).style.marginTop).toBe(portrait?'16px':'24px');
           act(()=>vi.advanceTimersByTime(420));
-          expect(view.container.querySelectorAll('[data-testid^="felt-settlement-pot-"]')).toHaveLength(Math.min(2, 2-index));
+          expect(view.container.querySelectorAll('[data-testid^="felt-settlement-pot-"]')).toHaveLength(index < 2 ? 1 : 0);
           }
           const credited=phase==='static'?6000:(index+1)*2000;
           expect(view.getByTestId('felt-stack-tom')).toHaveAttribute('data-stack-target',String(1000+credited));
