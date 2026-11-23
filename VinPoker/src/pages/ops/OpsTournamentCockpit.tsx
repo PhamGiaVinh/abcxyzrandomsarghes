@@ -27,6 +27,8 @@ import type { TournamentLeaderboardPlayer } from "@/types/tournament";
 import type { FloorTournamentSection } from "@/ops/floor/floorTournamentSections";
 import { useTournamentOps } from "@/ops/workspace/TournamentOpsProvider";
 import { MultiDayFloorEventWorkspace } from "@/components/floor/MultiDayFloorEventWorkspace";
+import { TvDisplayManagement } from "@/components/cashier/tournament-live/TvDisplayManagement";
+import { createTvDisplayAdmin } from "@/lib/tv/displayAdminService";
 import { TvBrandingEditorWorkspace } from "@/components/cashier/tournament-live/TvBrandingEditorWorkspace";
 import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { FloorPayoutResults } from "@/components/ops/shared/FloorPayoutResults";
@@ -59,6 +61,7 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
   const { id } = useParams();
   const tournamentOps = useTournamentOps();
   const supabase = useSupabaseClient();
+  const tvAdmin = useMemo(() => createTvDisplayAdmin(supabase), [supabase]);
   const { user, session, loading: authLoading } = useOpsAuth();
   const untypedFloorRpc = useMemo(
     () => supabase.rpc.bind(supabase) as unknown as (
@@ -646,11 +649,11 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
             <Monitor className="h-7 w-7 text-sky-300" />
             <div className="mt-3 text-[17px] font-semibold text-[#f2ece6]">TV & màn hình công khai</div>
             <div className="mt-1 text-[13px] leading-5 text-[#9b8e97]">
-              Mở màn hình đồng hồ của giải ở tab riêng. Ops không truyền phiên đăng nhập hoặc secret sang đường dẫn TV.
+              Mở đồng hồ của giải trên TV, hoặc ghép TV bên dưới để điều khiển từ Floor.
             </div>
             {id && (
               <div className="mt-4">
-                <TvBrandingEditorWorkspace tournamentId={id} actorId={user?.id} sessionEpoch={sessionReadEpoch(session)} />
+                <TvBrandingEditorWorkspace liveData={d} tournamentId={id} actorId={user?.id} sessionEpoch={sessionReadEpoch(session)} />
               </div>
             )}
             <a
@@ -665,7 +668,7 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
           </div>
           <div className="ios-card p-5">
             <div className="text-[15px] font-semibold text-[#f2ece6]">Ghép màn hình mới</div>
-            <div className="mt-1 text-[12px] leading-5 text-[#9b8e97]">Dùng mã ghép trên màn hình đích; không nhập token vào URL.</div>
+            <div className="mt-1 text-[12px] leading-5 text-[#9b8e97]">Trên TV, mở vinpoker.vercel.app/tv/pair. Trên máy điều hành, nhập 6 số đang hiện trên TV vào ô mã ghép bên dưới rồi chọn giải cần phát.</div>
             <a
               data-ops-action="floor.screens.open_pairing"
               href="/tv/pair"
@@ -673,9 +676,14 @@ export default function OpsTournamentCockpit({ section }: { section: FloorTourna
               rel="noreferrer"
               className="ios-press ios-fill mt-4 flex min-h-11 w-full items-center justify-center rounded-2xl px-4 text-[14px] font-semibold text-[#f2ece6]"
             >
-              Mở màn ghép TV
+              Mở trang hiện mã trên TV
             </a>
           </div>
+          {user && !authLoading && <TvDisplayManagement
+            key={JSON.stringify([user.id, sessionReadEpoch(session), tournamentOps.snapshot.clubId, id])}
+            clubId={tournamentOps.snapshot.clubId} tournamentId={id} tournamentName={d.tournamentName}
+            client={supabase} admin={tvAdmin}
+          />}
         </div>
       )}
 

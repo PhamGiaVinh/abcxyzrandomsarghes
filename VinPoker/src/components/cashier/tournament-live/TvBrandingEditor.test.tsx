@@ -51,6 +51,7 @@ vi.mock("@/lib/featureFlags", () => ({ FEATURES: { tvLayoutEditorV1: true } }));
 vi.mock("@/components/ProofUploader", () => ({ ProofUploadWorkspace: () => <div>Image upload</div> }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
+vi.mock("@/hooks/useTournamentTvData", () => ({ useTournamentTvData: () => ({ state: "loading", data: null }) }));
 import { TvBrandingEditor, TvBrandingEditorWorkspace } from "./TvBrandingEditor";
 import { toast } from "sonner";
 
@@ -62,7 +63,7 @@ describe("TvBrandingEditor publish boundary", () => {
     render(<TvBrandingEditorWorkspace tournamentId="flight-1" actorId="test-owner" sessionEpoch={0}
       assetPreviewUrl={url=>url?'http://127.0.0.1:54329/local-logo.png':null}/>);
     fireEvent.click(screen.getByRole('button',{name:'Edit TV layout'}));
-    const clock=await screen.findByLabelText('VinPoker tournament clock');
+    const clock=await screen.findByLabelText('Bảng thông số giải đấu');
     await waitFor(()=>expect(Array.from(clock.querySelectorAll('img')).some(img=>img.getAttribute('src')==='http://127.0.0.1:54329/local-logo.png')).toBe(true));
     await act(async()=>fireEvent.click(screen.getByRole('button',{name:'Publish TV layout'})));
     expect(rpc).toHaveBeenCalledWith('save_tv_tournament_layout_v1',expect.objectContaining({p_logo_url:'https://canonical.test/logo.png'}));
@@ -80,10 +81,10 @@ describe("TvBrandingEditor publish boundary", () => {
     render(<TvBrandingEditor tournamentId="flight-1" />);
     fireEvent.click(await screen.findByRole("button", { name: /Edit TV layout/i }));
 
-    const clock = await screen.findByLabelText("VinPoker tournament clock");
-    expect(clock).toHaveClass("vpc-root", "vpc-editor-preview");
-    expect(screen.getByText("MAIN EVENT · DAY 1")).toBeVisible();
-    expect(screen.getByText("Current Level")).toBeVisible();
+    const clock = await screen.findByLabelText("Bảng thông số giải đấu");
+    expect(clock).toHaveClass("tv-broadcast");
+    expect(screen.getByText("VinPoker Weekly Deepstack")).toBeVisible();
+    expect(screen.getByText("Players Left / Entries")).toBeVisible();
     expect(screen.queryByText("BLINDS · LEVEL · PAYOUTS")).toBeNull();
   });
 
@@ -137,7 +138,7 @@ describe("TvBrandingEditor publish boundary", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Edit TV layout/i }));
     const legacyText = await screen.findByText("Legacy TV label");
     expect(legacyText).toBeVisible();
-    expect(document.querySelector<HTMLElement>("[data-tv-branding-canvas]")?.style.containerType).toBe("inline-size");
+    expect(document.querySelector("[data-tv-branding-canvas]")?.parentElement).toHaveClass("tv-broadcast-preview");
     expect((legacyText as HTMLDivElement).style.overflow).toBe("hidden");
     expect((legacyText as HTMLDivElement).style.whiteSpace).toBe("nowrap");
     expect((legacyText as HTMLDivElement).style.textOverflow).toBe("ellipsis");
