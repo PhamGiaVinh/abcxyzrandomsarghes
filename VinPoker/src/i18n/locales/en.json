@@ -198,7 +198,7 @@
     "loadErrorHint": "Retrying automatically…",
     "offline": "Realtime connection lost — using fallback polling",
     "pairTitle": "Pair this TV display",
-    "pairInstruction": "Enter this code in the VinPoker dashboard (Tournament Live → TV Displays) to assign a tournament to this TV",
+    "pairInstruction": "On the operator device, open Floor → select the tournament → TV & screens. Enter these six digits in Pairing code, pair the TV, then assign the tournament.",
     "pairWaiting": "Waiting for pairing…",
     "pairExpires": "New code in",
     "pairError": "Cannot reach the server — retrying…",
@@ -2091,6 +2091,7 @@
     },
     "selectTournament": "Select tournament",
     "tvDisplays": {
+      "otherTournament": "Showing another tournament",
       "tab": "TV Displays",
       "pairTitle": "Pair a new TV",
       "pairHint": "Open /tv/pair on the TV to get a 6-digit code, then enter it here to assign the TV to this club.",
