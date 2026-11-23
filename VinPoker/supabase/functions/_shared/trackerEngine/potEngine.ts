@@ -13,6 +13,7 @@ export interface PotContributor {
   player_id: string;
   /** Chips committed across ALL streets. */
   total_bet: number;
+  big_blind_ante?: number;
   is_folded: boolean;
 }
 
@@ -77,6 +78,13 @@ export function computePotBreakdown(contributors: PotContributor[]): PotBreakdow
 
   const totalCommitted = active.reduce((s, c) => s + c.total_bet, 0);
 
+  // A big-blind ante belongs to the main pot. Only live wagers can be uncalled.
+  let ante = 0;
+  for (const player of active) {
+    const paid = Math.min(player.total_bet, sanitizeChips(player.big_blind_ante));
+    player.total_bet -= paid;
+    ante += paid;
+  }
   const sorted = [...active].sort((a, b) => b.total_bet - a.total_bet);
   const top = sorted[0];
   const second = sorted[1]?.total_bet ?? 0;
@@ -116,6 +124,12 @@ export function computePotBreakdown(contributors: PotContributor[]): PotBreakdow
     prev = level;
   }
 
+  if (ante > 0) {
+    const eligible = active.filter(player => !player.is_folded).map(player => player.player_id);
+    if (pots[0] && sameMembers(pots[0].eligible_player_ids, eligible)) pots[0].amount += ante;
+    else pots.unshift({ amount: ante, eligible_player_ids: eligible });
+  }
+
   return {
     pots,
     sidePots: pots.slice(1),
@@ -127,7 +141,8 @@ export function computePotBreakdown(contributors: PotContributor[]): PotBreakdow
 }
 
 export function contributionsFromActions(
-  actions: { player_id: string; action_type: string; action_amount: number | null }[]
+  actions: { player_id: string; action_type: string; action_amount: number | null }[],
+  bigBlindAntePlayerId?: string,
 ): PotContributor[] {
   const byPlayer = new Map<string, PotContributor>();
   for (const a of actions) {
@@ -138,6 +153,9 @@ export function contributionsFromActions(
     }
     if ((CONTRIBUTING_ACTION_TYPES as readonly string[]).includes(a.action_type)) {
       c.total_bet += sanitizeChips(a.action_amount);
+    }
+    if (a.action_type === "post_ante" && a.player_id === bigBlindAntePlayerId) {
+      c.big_blind_ante = (c.big_blind_ante ?? 0) + sanitizeChips(a.action_amount);
     }
     if (a.action_type === "fold") c.is_folded = true;
   }
