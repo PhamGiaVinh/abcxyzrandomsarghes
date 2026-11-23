@@ -96,6 +96,8 @@ BEGIN
   IF NOT FOUND OR correction.proposed_by = actor THEN
     RAISE EXCEPTION 'PAYROLL_CORRECTION_FORBIDDEN' USING ERRCODE = '42501';
   END IF;
+  -- Serialize decisions with ledger writes before locking attendance.
+  PERFORM pg_advisory_xact_lock(hashtextextended('dealer_payroll_corrections:' || p_club::text, 0));
   -- Match the proposal writer: lock the attendance before the correction.
   PERFORM 1 FROM public.dealer_attendance WHERE id = correction.attendance_id FOR UPDATE;
   SELECT c.* INTO STRICT correction FROM floor_private.dealer_shift_payroll_corrections c
@@ -271,6 +273,7 @@ CREATE FUNCTION floor_private.guard_dealer_pt_payment_correction_revision()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $$
 BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended('dealer_payroll_corrections:' || NEW.club_id::text, 0));
   IF NEW.statement_id IS NULL THEN
     RETURN NEW;
   END IF;
@@ -333,6 +336,8 @@ BEGIN
       RETURN NEW;
     END IF;
   END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('dealer_payroll_corrections:' || NEW.club_id::text, 0));
 
   IF EXISTS (
     SELECT 1

@@ -36,6 +36,7 @@ DECLARE
   first_date date := (NEW.covered_from AT TIME ZONE 'Asia/Ho_Chi_Minh')::date;
   final_date date := ((NEW.covered_to - interval '1 microsecond') AT TIME ZONE 'Asia/Ho_Chi_Minh')::date;
 BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended('dealer_payroll_corrections:' || NEW.club_id::text, 0));
   IF NEW.covered_from IS NULL OR NEW.covered_to IS NULL OR NEW.covered_to <= NEW.covered_from THEN
     RAISE EXCEPTION 'PT_PAYROLL_INVALID_COVERAGE' USING ERRCODE = '22023';
   END IF;
