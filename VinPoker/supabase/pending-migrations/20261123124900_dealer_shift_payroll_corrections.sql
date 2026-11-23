@@ -134,4 +134,42 @@ REVOKE ALL ON FUNCTION public.propose_dealer_shift_payroll_correction_v1(uuid,uu
 GRANT EXECUTE ON FUNCTION public.propose_dealer_shift_payroll_correction_v1(uuid,uuid,timestamptz,timestamptz,timestamptz,text),
   public.decide_dealer_shift_payroll_correction_v1(uuid,uuid,boolean,text) TO authenticated;
 
+CREATE FUNCTION public.list_dealer_shift_payroll_corrections_v1(p_club uuid, p_from date, p_to date)
+RETURNS TABLE(
+  id uuid, attendance_id uuid, dealer_name text, shift_date date,
+  original_check_in timestamptz, original_check_out timestamptz,
+  proposed_check_in timestamptz, proposed_check_out timestamptz,
+  reason text, status text, decision_reason text, can_decide boolean
+)
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  actor uuid := auth.uid();
+  is_owner boolean;
+BEGIN
+  SELECT EXISTS(SELECT 1 FROM public.clubs WHERE clubs.id = p_club AND owner_id = actor)
+  INTO is_owner;
+  IF NOT is_owner AND NOT EXISTS (
+    SELECT 1 FROM public.club_accountants WHERE club_id = p_club AND user_id = actor
+  ) THEN
+    RAISE EXCEPTION 'PAYROLL_CORRECTION_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+  IF p_from IS NULL OR p_to IS NULL OR p_to < p_from OR p_to - p_from > 31 THEN
+    RAISE EXCEPTION 'PAYROLL_CORRECTION_INVALID' USING ERRCODE = '22023';
+  END IF;
+  RETURN QUERY
+  SELECT c.id, c.attendance_id, d.full_name::text, a.shift_date,
+    c.original_check_in, c.original_check_out, c.proposed_check_in, c.proposed_check_out,
+    c.reason, c.status, c.decision_reason, is_owner AND c.status = 'pending' AND c.proposed_by <> actor
+  FROM floor_private.dealer_shift_payroll_corrections c
+  JOIN public.dealer_attendance a ON a.id = c.attendance_id
+  JOIN public.dealers d ON d.id = a.dealer_id AND d.club_id = c.club_id
+  WHERE c.club_id = p_club AND a.shift_date BETWEEN p_from AND p_to
+  ORDER BY (c.status = 'pending') DESC, c.proposed_at DESC, c.id;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.list_dealer_shift_payroll_corrections_v1(uuid,date,date) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.list_dealer_shift_payroll_corrections_v1(uuid,date,date) TO authenticated;
+
 COMMIT;
