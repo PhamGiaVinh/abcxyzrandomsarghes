@@ -17,7 +17,10 @@ import { tableAppearanceStyle, type TableAppearance } from '@/components/tracker
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTrackerCardStyle } from '@/components/tracker/TrackerCardStyle';
-import { TRACKER_TABLE_GEOMETRY, TRACKER_FELT_STYLE, trackerTableSizes, trackerBetPoint, useTrackerTableLayout } from '@/components/tracker/trackerTableLayout';
+import { PlayerSeatPlate, PlayerSeatPortrait } from '@/components/tracker/PlayerSeat';
+import { TRACKER_TABLE_GEOMETRY, trackerTableSizes, trackerBetPoint, useTrackerTableLayout } from '@/components/tracker/trackerTableLayout';
+import { TableSurface } from '@/components/tracker/TableSurface';
+import { TablePot } from '@/components/tracker/TablePot';
 import { useTranslation } from "react-i18next";
 import { PokerCard, CardBack } from "./PokerVisuals";
 import { CenterPotStack, ChipStack } from "./ChipStack";
@@ -669,7 +672,9 @@ export function LiveFelt({
   // the WHOLE thing down to fit (everything shrinks uniformly → never overlaps). Portrait is
   // untouched (it already fits, and stays the big-readable option). Wide screens (≥ design
   // width) also untouched. Operator/TV (viewerLayout off) never measure.
-  const LANDSCAPE_DESIGN_W = 560;
+  // The unified landscape CSS has a 410px minimum height. Match its actual
+  // aspect ratio before calculating the height of the clipping wrapper.
+  const LANDSCAPE_DESIGN_W = unified ? 780 : 560;
   const FIT_PAD = 26; // breathing room above/below for pods that straddle the rim
   const feltWrapRef = layout.ref;
   const [fit, setFit] = useState<{ scale: number; h: number } | null>(null);
@@ -688,7 +693,7 @@ export function LiveFelt({
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [viewerLayout, portrait, unified, motionAspect, feltWrapRef]);
+  }, [viewerLayout, portrait, unified, motionAspect, feltWrapRef, LANDSCAPE_DESIGN_W]);
 
   return (
     <div
@@ -743,27 +748,27 @@ export function LiveFelt({
               }
         }
       >
-        <div
+        {unified ? <TableSurface portrait={portrait} appearance={appearance} /> : <div
           aria-hidden="true"
           className="absolute inset-0"
           style={{
             ...tableAppearanceStyle(appearance),
-            borderRadius: unified ? (portrait ? '38% / 22%' : '28% / 42%') : '9999px',
+            borderRadius: '9999px',
             // viewerLayout (V2) → RPT-style BLACK felt + a thin neon-green rim hint.
             // `neon` (old viewerNeon-only path) keeps the green felt; default =
             // burgundy operator/TV felt.
-            background: unified ? TRACKER_FELT_STYLE.background : viewerLayout
+            background: viewerLayout
               ? "radial-gradient(80% 72% at 50% 40%, #16181d 0%, #090b0f 58%, #020304 100%)"
               : neon
               ? "radial-gradient(62% 60% at 50% 38%, hsl(158 30% 13%) 0%, hsl(158 30% 13%) 50%, hsl(210 13% 5%) 100%)"
               : "radial-gradient(62% 60% at 50% 38%, hsl(var(--poker-felt)) 0%, hsl(var(--poker-felt)) 50%, hsl(var(--poker-felt-dark)) 100%)",
-            boxShadow: unified ? TRACKER_FELT_STYLE.boxShadow : viewerLayout
+            boxShadow: viewerLayout
               ? "inset 0 0 0 1.5px hsl(var(--primary) / 0.24), inset 0 18px 48px rgba(255,255,255,0.025), inset 0 0 82px rgba(0,0,0,0.74), 0 18px 48px rgba(0,0,0,0.56), 0 0 28px hsl(var(--primary) / 0.07)"
               : neon
               ? "inset 0 0 0 5px hsl(var(--primary) / 0.4), inset 0 0 0 7px hsl(210 13% 5% / 0.85), inset 0 0 0 8px hsl(var(--primary) / 0.55), inset 0 0 70px rgba(0,0,0,0.55), 0 22px 55px rgba(0,0,0,0.45), 0 0 36px hsl(var(--primary) / 0.12)"
               : "inset 0 0 0 5px hsl(var(--poker-gold) / 0.5), inset 0 0 0 7px hsl(var(--poker-felt-dark) / 0.85), inset 0 0 0 8px hsl(var(--poker-gold) / 0.7), inset 0 0 70px rgba(0,0,0,0.5), 0 22px 55px rgba(0,0,0,0.42)",
           }}
-        />
+        />}
         <div
           aria-hidden="true"
           className="absolute inset-0"
@@ -808,7 +813,7 @@ export function LiveFelt({
               V
             </div>
           )}
-          {potSize > 0 && compactActive && portrait && !hideBaseCenterPot && (
+          {!unified && potSize > 0 && compactActive && portrait && !hideBaseCenterPot && (
             <div data-testid="felt-total-pot" className="relative mb-2 flex flex-col items-center">
               {viewerLayout ? (
                 <CenterPotStack compact label={`${t("liveHub.felt.pot", "POT").toUpperCase()} ${formatGameplayAmount(displayPot)}`} />
@@ -820,13 +825,20 @@ export function LiveFelt({
               )}
             </div>
           )}
-          {unified && <><TableLogo url={appearance?.logoUrl} /><TableBlinds {...blinds} /></>}
+          {unified && <>
+            <TableLogo url={appearance?.logoUrl} />
+            {(potSize > 0 || potUnavailable) && !hideBaseCenterPot && <div data-testid="felt-total-pot" className="mb-1.5">
+              <TablePot total={potUnavailable ? '—' : viewerAmountsInBB ? formatViewerChipAndBB(displayPot, viewerBigBlind ?? blinds?.bb ?? null) : formatGameplayAmount(displayPot)}
+                layers={potUnavailable ? undefined : potBreakdown?.pots} formatAmount={formatGameplayAmount} />
+            </div>}
+          </>}
           {/* Board — revealed cards face up. VIEWER: undealt slots render NOTHING (the
               face-down placeholders sat in front of the top-center seats, covering their
               pods/stacks/bet chips preflop). Operator/TV keep the V-logo backs → byte-identical. */}
           <div data-testid="board-cards" className={`flex items-center justify-center ${viewerLayout && portrait ? "gap-1" : "gap-1.5"}`}>
-            {displayCards.map((card, i) => {
+            {(unified ? Array.from({ length: 5 }, (_, i) => displayCards[i]) : displayCards).map((card, i) => {
               if (!card) {
+                if (unified) return <div key={`board-slot-${i}`} aria-hidden="true" className="tracker-board-slot" style={boardStyle} />;
                 // Preserve the five-card board footprint during the viewer-only
                 // all-in runout without rendering a card back or exposing a card.
                 if (viewerLayout && replayRunoutPhase) {
@@ -872,6 +884,7 @@ export function LiveFelt({
               );
             })}
           </div>
+          {unified && <TableBlinds {...blinds} />}
           {showdownRankingVisible && (
             <div
               data-testid="felt-showdown-ranking"
@@ -897,7 +910,7 @@ export function LiveFelt({
           )}
           {/* Compact portrait: the pot lives in the STATUS BAR below (RPT pattern) — the
               short felt keeps only the board centered, so 9-max pods never collide. */}
-          {potSize > 0 && !(compactActive && portrait) && !hideBaseCenterPot && (
+          {!unified && potSize > 0 && !(compactActive && portrait) && !hideBaseCenterPot && (
             <div
               {...(viewerLayout ? { "data-testid": "felt-total-pot" } : {})}
               className={`mt-2.5 flex flex-col items-center${viewerLayout ? " relative" : ""}`}
@@ -1019,13 +1032,33 @@ export function LiveFelt({
               }
             : {};
 
+          const stackAmount = viewerAmountsInBB ? (
+                      <div data-testid={`felt-stack-${seat.player_id}`} data-stack-target={displayedStack(seat)} className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
+                        <CountUpText value={displayedStack(seat)} format={formatViewerAmount} enabled={tableFx} />
+                      </div>
+                    ) : compactActive && formatBB(seat.chip_count) ? (
+                      <>
+                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
+                          <CountUpText value={displayedStack(seat)} format={(n) => formatBB(n) ?? formatStack(n)} enabled={tableFx} />
+                        </div>
+                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[8px] font-semibold leading-none text-white/60" style={subTextStyle}>
+                          <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="tracker-num mt-[1px] text-[10px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
+                        <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
+                      </div>
+                    );
           return (
             <div
               key={seat.player_id}
               data-tracker-seat={unified ? seat.seat_number : undefined}
               data-seat-selected={unified && isSelected}
               data-seat-acting={unified && isToAct}
-              className={`absolute z-10 ${seat.is_folded ? "opacity-50" : ""}${tableFx ? " transition-opacity duration-300 motion-reduce:transition-none" : ""}${interactiveCls}${selectedCls}`}
+              data-seat-winner={unified && isWinner || undefined}
+              data-seat-folded={unified ? !!seat.is_folded : undefined}
+              className={`absolute z-10 ${seat.is_folded && !unified ? "opacity-50" : ""}${tableFx ? " transition-opacity duration-300 motion-reduce:transition-none" : ""}${interactiveCls}${selectedCls}`}
               style={posStyle}
               {...interactiveProps}
             >
@@ -1038,7 +1071,10 @@ export function LiveFelt({
                     ◀ {t("liveHub.felt.toAct", "chờ")}
                   </div>
                 )}
-                <div className={unified ? 'tracker-seat-avatar' : 'relative'}>
+                {unified ? <PlayerSeatPortrait name={seat.display_name} photo={seat.avatar_url} seat={seat.seat_number} style={avatarStyle}>
+                  <div className="tracker-seat-position">{isButtonSeat ? <b aria-label="Dealer">D</b> : seat.position && <span>{seat.position}</span>}</div>
+                </PlayerSeatPortrait> : (
+                <div className="relative">
                   <div
                     className={`grid ${viewerLayout ? "h-9 w-9 sm:h-10 sm:w-10" : "h-8 w-8 sm:h-9 sm:w-9"} place-items-center overflow-hidden rounded-full border-2 text-[9px] font-bold sm:text-[11px] ${
                       isWinner ? "tracker-win-glow border-[hsl(var(--poker-gold))]" : `${avatarBorder} ${avatarRing}`
@@ -1079,38 +1115,26 @@ export function LiveFelt({
                     </span>
                   )}
                 </div>
-                {viewerLayout || unified ? (
+                )}
+                {unified ? (
+                  <PlayerSeatPlate name={seat.display_name} seat={seat.seat_number} title={`${seat.display_name} · ${displayedStack(seat)}`}>
+                    {stackAmount}
+                  </PlayerSeatPlate>
+                ) : viewerLayout ? (
                   // V2: a CoinPoker-style "nameplate" capsule — name + stack grouped in one
                   // dark, neon-bordered pill so each seat reads as a tight unit.
                   // PR-A1 compact: the stack goes BB-FIRST (RPT pattern — meaningful at any
                   // level) with chips demoted to a smaller secondary line. formatBB null
                   // (no blind level) → chips render alone exactly as today: never a fake BB.
                   <div
-                    className={`mt-1 flex max-w-full flex-col items-center rounded-md px-1.5 py-[3px] leading-none${unified ? ' tracker-seat-plate' : ''}`}
+                    className={`mt-1 flex max-w-full flex-col items-center rounded-md px-1.5 py-[3px] leading-none`}
                     title={`${seat.display_name} · ${displayedStack(seat)}`}
-                    style={unified ? undefined : { background: "rgba(3,5,8,0.9)", border: "1px solid hsl(var(--primary) / 0.28)", boxShadow: "0 1px 3px rgba(0,0,0,0.6)" }}
+                    style={{ background: "rgba(3,5,8,0.9)", border: "1px solid hsl(var(--primary) / 0.28)", boxShadow: "0 1px 3px rgba(0,0,0,0.6)" }}
                   >
-                    <div className={`tracker-display max-w-full truncate text-[10px] font-semibold leading-tight text-white sm:text-[11px]${unified ? ' tracker-seat-name' : ''}`} style={unified ? undefined : nameTextStyle}>
+                    <div className={`tracker-display max-w-full truncate text-[10px] font-semibold leading-tight text-white sm:text-[11px]`} style={nameTextStyle}>
                       {seat.display_name}
                     </div>
-                    {viewerAmountsInBB ? (
-                      <div data-testid={`felt-stack-${seat.player_id}`} data-stack-target={displayedStack(seat)} className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
-                        <CountUpText value={displayedStack(seat)} format={formatViewerAmount} enabled={tableFx} />
-                      </div>
-                    ) : compactActive && formatBB(seat.chip_count) ? (
-                      <>
-                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
-                          <CountUpText value={displayedStack(seat)} format={(n) => formatBB(n) ?? formatStack(n)} enabled={tableFx} />
-                        </div>
-                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[8px] font-semibold leading-none text-white/60" style={subTextStyle}>
-                          <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
-                        </div>
-                      </>
-                    ) : (
-                      <div className="tracker-num mt-[1px] text-[10px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
-                        <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
-                      </div>
-                    )}
+                    {stackAmount}
                   </div>
                 ) : (
                   <>
@@ -1149,7 +1173,7 @@ export function LiveFelt({
                       ? ` · ${formatGameplayAmount(seat.total_committed)}` : ''}
                   </div>
                 )}
-                {seat.is_folded && <div className="mt-0.5 text-[8px] text-zinc-300" style={nameShadow}>{t("liveHub.felt.folded", "FOLDED")}</div>}
+                {seat.is_folded && <div className={unified ? "tracker-seat-line" : "mt-0.5 text-[8px] text-zinc-300"} style={unified ? undefined : nameShadow}>{t("liveHub.felt.folded", "FOLDED")}</div>}
                 {!seat.is_folded && !seat.is_all_in && seat.last_action && (
                   <div className="mt-0.5 max-w-full truncate text-[8px] text-amber-300/90" style={nameShadow}>
                     {viewerAmountsInBB && seat.last_action_type && seat.last_action_amount != null
@@ -1171,6 +1195,7 @@ export function LiveFelt({
                 {!seat.is_folded && (!hideUnrecordedHoleCards || (seat.hole_cards && seat.hole_cards.length === 2)) && (unified || !compactActive || (seat.hole_cards && seat.hole_cards.length === 2)) && (
                 <div
                   data-testid="seat-holecards"
+                  data-revealed={!!seat.hole_cards && seat.hole_cards.length === 2}
                   className={`mt-0.5 flex justify-center gap-0.5${unified ? ' tracker-seat-cards' : ''}`}
                 >
                   {seat.hole_cards && seat.hole_cards.length === 2 ? (

@@ -1,0 +1,41 @@
+name: Club portrait Storage acceptance
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/club-player-portrait-storage.yml"
+      - "VinPoker/tests/clubPlayerPortrait/**"
+      - "VinPoker/supabase/pending-migrations/20261122122716_club_member_portraits_v1.sql"
+permissions:
+  contents: read
+jobs:
+  local-storage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.101.0
+          github-token: ${{ github.token }}
+      - name: Start disposable Supabase on the runner
+        run: |
+          mkdir "$RUNNER_TEMP/portrait-stack"
+          cd "$RUNNER_TEMP/portrait-stack"
+          supabase init
+          supabase start --exclude analytics,edge-runtime,imgproxy,inbucket,meta,realtime,studio,vector > "$RUNNER_TEMP/portrait-start.log" 2>&1
+          umask 077
+          supabase status -o json > "$RUNNER_TEMP/portrait-local.json"
+      - name: Verify thumbnail upload and receipt on the real Storage service
+        working-directory: VinPoker
+        run: |
+          db=$(jq -er '.DB_URL | select(startswith("postgresql://postgres:postgres@127.0.0.1:"))' "$RUNNER_TEMP/portrait-local.json")
+          api=$(jq -er '.API_URL | select(. == "http://127.0.0.1:54321")' "$RUNNER_TEMP/portrait-local.json")
+          psql "$db" -X -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA floor_private' -f tests/clubPlayerPortrait/club-fixture.sql \
+            -f supabase/pending-migrations/20261122122716_club_member_portraits_v1.sql
+          psql "$db" -X -v ON_ERROR_STOP=1 -c "INSERT INTO floor_private.club_portrait_storage_origin(origin) VALUES ('$api');" \
+            -c "NOTIFY pgrst, 'reload schema';"
+          for _ in {1..30}; do
+            if curl --silent --fail -o /dev/null -H "apikey: $(jq -r .ANON_KEY "$RUNNER_TEMP/portrait-local.json")" "$api/rest/v1/"; then break; fi
+            sleep 1
+          done
+          node tests/clubPlayerPortrait/storage.integration.mjs "$RUNNER_TEMP/portrait-local.json"

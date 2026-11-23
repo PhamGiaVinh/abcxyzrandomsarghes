@@ -99,6 +99,57 @@ async function prepareUndo(reply:(body:Record<string,unknown>)=>unknown,record=t
 const undoReceipt=(body:Record<string,unknown>,duplicate=false)=>({status:'success',data:{ok:true,duplicate,operation:'undo_open_hand',
  hand_id:body.hand_id,undone_action_id:body.expected_action_id,source_revision:Number(body.expected_source_revision)+1}});
 describe("actual roster hook intent", () => {
+ it("preserves the club portrait across dealer stack, name and avatar override edits", async () => {
+  vi.stubEnv("VITE_CLUB_PLAYER_PORTRAITS", "true");
+  try {
+   const person = { id: "seat", entry_id: "entry", player_id: "player", entry_number: 1,
+    seat_number: 1, chip_count: 20000, player_name: "TEST" };
+   let effective: string | null = "club-image.jpg";
+   let unavailable = false;
+   mock.rpc.mockImplementation(async (name: string, args: any) => {
+    if (name === "get_tracker_hand_input_tables_v4") return { data: { ok: true, tables }, error: null };
+    if (name === "get_tracker_roster_with_portraits_v1") {
+     if (unavailable) return { data: null, error: { message: "unavailable" } };
+     const roster = snapshot(args);
+     Object.assign(roster.data.seats[0], { token: "confirmed", seat: { ...person, avatar_url: effective } });
+     return roster;
+    }
+    if (name === "set_tracker_table_roster_seat_v2") return { data: { ok: true, seat_token: "confirmed",
+     tournament_table_id: args.p_tournament_table_id, table_session_id: args.p_table_session_id,
+     control_epoch: args.p_expected_epoch, seat: { ...person, avatar_url: null } }, error: null };
+    if (name === "set_tracker_seat_display") {
+     person.player_name = args.p_player_name;
+     if (args.p_touch_avatar) effective = args.p_avatar_url ?? "club-image.jpg";
+     return { data: { ok: true, seat: { id: person.id, seat_number: 1,
+      player_name: person.player_name, avatar_url: args.p_avatar_url ?? null } }, error: null };
+    }
+    return { data: name === "get_next_hand_number" ? 1 : { ok: true, locks: [] }, error: null };
+   });
+   const h = renderHook(() => useStandaloneHandInput("tour"), { wrapper });
+   await waitFor(() => expect(h.result.current.availableTables).toHaveLength(2));
+   await act(async () => { await h.result.current.handleTableChange("a"); });
+   await act(async () => { expect(await h.result.current.handleSetRosterSeat({
+    seatNumber: 1, playerName: "TEST", existingPlayerId: "player", chipCount: 20000,
+   })).toEqual({ ok: true }); });
+   expect(h.result.current.players[0].avatar_url).toBe("club-image.jpg");
+   for (const [touchAvatar, avatarUrl, expected] of [
+    [false, null, "club-image.jpg"], [true, "seat-image.jpg", "seat-image.jpg"], [true, null, "club-image.jpg"],
+   ] as const) {
+    await act(async () => { expect(await h.result.current.handleSetSeatDisplay({
+     seatNumber: 1, playerName: "TEST 2", touchAvatar, avatarUrl,
+    })).toEqual({ ok: true }); });
+    expect(h.result.current.players[0]).toMatchObject({ avatar_url: expected, display_name: "TEST 2", current_stack: 20000 });
+   }
+   unavailable = true;
+   await act(async () => { expect(await h.result.current.handleSetSeatDisplay({
+    seatNumber: 1, playerName: "TEST 3",
+   })).toEqual({ ok: true, error: "roster_refresh_required" }); });
+   expect(mock.rpc.mock.calls.filter(([name]) => name === "set_tracker_seat_display")).toHaveLength(4);
+  } finally {
+   vi.unstubAllEnvs();
+  }
+ });
+
  it('cancels only the exact confirmed journal and retains it across a lost response',async()=>{
   const h=await prepareUndo(()=>null);await act(async()=>h.result.current.handleUndo());
   const saved=sessionStorage.getItem('tracker-undo:tour:current-hand')!,pending=JSON.parse(saved);

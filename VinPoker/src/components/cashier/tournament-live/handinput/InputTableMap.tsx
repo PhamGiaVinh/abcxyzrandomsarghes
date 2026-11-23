@@ -117,9 +117,7 @@ export function InputTableMap({
   return (
     <div className="space-y-2">
       {loadError && <div role="alert" className="text-sm text-destructive">{loadError}</div>}
-      <div className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest px-0.5">
-        Chọn bàn để nhập hand
-      </div>
+      <h2 className="px-0.5 text-lg font-semibold text-foreground">Bản đồ bàn Live Tracker</h2>
       {selectionNotice && <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{selectionNotice}</div>}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
         {tables.map((tbl) => {
@@ -133,7 +131,7 @@ export function InputTableMap({
               type="button"
               aria-pressed={isActive}
               onClick={() => onSelect(tbl.id)}
-              className={`rounded-xl border bg-card/60 p-2.5 text-center transition-colors ${
+              className={`min-h-28 rounded-xl border bg-card/60 p-3 text-center transition-colors ${
                 isActive
                   ? "border-amber-400/70 shadow-[0_0_12px_rgba(245,179,64,0.25)]"
                   : "border-border/50 hover:border-emerald-500/40"
@@ -162,6 +160,9 @@ export function InputTableMap({
                   {tbl.lockAgeMin != null ? ` · ${tbl.lockAgeMin} phút` : ""}
                 </div>
               )}
+              <div className="mt-2 text-xs font-semibold text-primary">
+                {tbl.lockedByOther ? "Xem bàn" : tbl.hasLiveHand ? "Tiếp tục hand" : "Thiết lập bàn"}
+              </div>
             </button>
           );
         })}
