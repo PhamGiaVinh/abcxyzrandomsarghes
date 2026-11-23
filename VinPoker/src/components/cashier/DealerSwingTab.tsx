@@ -481,6 +481,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   const [batchCheckoutConfirmOpen, setBatchCheckoutConfirmOpen] = useState(false);
   const [batchCheckoutWarnings, setBatchCheckoutWarnings] = useState<string[]>([]);
   const [batchCheckoutPending, setBatchCheckoutPending] = useState<string[]>([]);
+  const [cleanupReasons, setCleanupReasons] = useState<Record<string, string>>({});
   const [staleCleanupIds, setStaleCleanupIds] = useState<string[]>([]);
   const [staleCleanupConfirmOpen, setStaleCleanupConfirmOpen] = useState(false);
 
@@ -489,6 +490,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
     setBatchCheckoutConfirmOpen(false);
     setBatchCheckoutWarnings([]);
     setBatchCheckoutPending([]);
+    setCleanupReasons({});
     setStaleCleanupIds([]);
     setStaleCleanupConfirmOpen(false);
     setCheckoutOpen(false);
@@ -2002,7 +2004,19 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
       }
       const summary = summarizeDealerCheckoutBatch(data, scopedIds.length);
       if (summary.successCount > 0) toast.success(`Đã dọn ${summary.successCount}/${scopedIds.length} ca; không tính lại lương/OT`);
-      if (summary.failureMessage) toast.warning(`Giữ lại để kiểm tra: ${summary.failureMessage}`);
+      const reasons: Record<string, string> = {};
+      for (const row of summary.results) {
+        if (!row.attendance_id || row.success) continue;
+        if (row.code === "ACTIVE_ASSIGNMENT" || row.error === "Active dealer assignment must be released before cleanup") {
+          reasons[row.attendance_id] = "Còn phân bàn đang mở. Kiểm tra bàn và xác nhận thời điểm rời bàn.";
+        } else if (row.code === "NO_END_EVIDENCE" || row.error === "No valid historical end-of-work evidence was found") {
+          reasons[row.attendance_id] = "Thiếu bằng chứng kết ca. Đối chiếu chấm công để xác nhận giờ ra.";
+        } else {
+          reasons[row.attendance_id] = row.error || "Chưa xác minh được kết quả dọn ca.";
+        }
+      }
+      setCleanupReasons(reasons);
+      if (summary.failureMessage) toast.warning("Xem lý do giữ lại bên cạnh tên dealer.");
       setStaleCleanupIds(unresolvedCheckoutAttendanceIds(summary.results, scopedIds));
       onOptCheckout(summary.successCount);
       setTimeout(refetchDealers, 50);
@@ -2331,6 +2345,8 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
         </AlertDialog>
 
         <StaleCleanupCard
+          dealers={dealers ?? []}
+          reasons={cleanupReasons}
           attendanceIds={staleCleanupIds.length > 0 ? staleCleanupIds : staleCleanupCandidateIds}
           processing={processing}
           onRequestCleanup={(ids) => {
@@ -3518,10 +3534,12 @@ function BreakDurationDialog({
 }
 
 function StaleCleanupCard({
-  attendanceIds,
+  dealers, reasons, attendanceIds,
   processing,
   onRequestCleanup,
 }: {
+  dealers: DealerAttendance[];
+  reasons: Record<string, string>;
   attendanceIds: string[];
   processing: string | null;
   onRequestCleanup: (ids: string[]) => void;
@@ -3545,6 +3563,17 @@ function StaleCleanupCard({
               ? "Ca quá 24 giờ hoặc thiếu giờ vào không được tính vào pool sẵn sàng. Máy chủ sẽ kiểm tra bằng chứng kết thúc, giữ nguyên lương/OT và để riêng ca không đủ bằng chứng."
               : "Nút này luôn sẵn để dọn ca cũ sau khi dữ liệu check-in được tải lại."}
           </p>
+          {hasCandidates && (
+            <ul className="mt-2 space-y-1 text-sm">
+              {attendanceIds.map((id) => {
+                const dealer = dealers.find((entry) => entry.id === id);
+                return <li key={id}>
+                  <strong>{dealer?.dealers?.full_name || id}</strong> {dealer?.shift_date}
+                  {reasons[id] && <p className="text-xs text-muted-foreground">{reasons[id]}</p>}
+                </li>;
+              })}
+            </ul>
+          )}
           <Button
             size="sm"
             variant="outline"
