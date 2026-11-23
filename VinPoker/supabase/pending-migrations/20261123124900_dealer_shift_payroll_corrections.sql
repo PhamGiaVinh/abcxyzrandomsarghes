@@ -172,4 +172,31 @@ $$;
 REVOKE ALL ON FUNCTION public.list_dealer_shift_payroll_corrections_v1(uuid,date,date) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.list_dealer_shift_payroll_corrections_v1(uuid,date,date) TO authenticated;
 
+CREATE FUNCTION public.get_dealer_shift_payroll_correction_context_v1(p_club uuid, p_attendance uuid)
+RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  context jsonb;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.club_accountants
+    WHERE club_id = p_club AND user_id = auth.uid()) THEN
+    RAISE EXCEPTION 'PAYROLL_CORRECTION_FORBIDDEN' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT jsonb_build_object('updated_at', a.updated_at,
+    'check_in', a.check_in_time, 'check_out', a.check_out_time)
+  INTO context
+  FROM public.dealer_attendance a
+  JOIN public.dealers d ON d.id = a.dealer_id
+  WHERE a.id = p_attendance AND d.club_id = p_club AND a.status = 'checked_out';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'PAYROLL_CORRECTION_STALE' USING ERRCODE = 'P0001';
+  END IF;
+  RETURN context;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_dealer_shift_payroll_correction_context_v1(uuid,uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_dealer_shift_payroll_correction_context_v1(uuid,uuid) TO authenticated;
+
 COMMIT;
