@@ -132,4 +132,27 @@ $$;
 REVOKE ALL ON FUNCTION public.pay_finalized_dealer_monthly_statement_v1(uuid,uuid,text,text,text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.pay_finalized_dealer_monthly_statement_v1(uuid,uuid,text,text,text) TO authenticated;
 
+CREATE FUNCTION floor_private.guard_paid_individual_monthly_statement()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.state IN ('voided', 'replaced') AND NEW.state IS DISTINCT FROM OLD.state
+    AND EXISTS (
+      SELECT 1
+      FROM floor_private.dealer_monthly_individual_payments payment
+      WHERE payment.statement_id = OLD.id
+    )
+  THEN
+    RAISE EXCEPTION 'DEALER_PAYROLL_PAID_STATEMENT_IMMUTABLE' USING ERRCODE = 'P0001';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION floor_private.guard_paid_individual_monthly_statement() FROM PUBLIC, anon, authenticated;
+
+CREATE TRIGGER dealer_monthly_paid_statement_rejects_void_or_replace
+BEFORE UPDATE OF state ON public.dealer_payroll_statements
+FOR EACH ROW EXECUTE FUNCTION floor_private.guard_paid_individual_monthly_statement();
+
 COMMIT;
