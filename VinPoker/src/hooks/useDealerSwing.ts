@@ -167,12 +167,14 @@ interface UseRealtimeQueryOptions<T> {
   clubIds: string[];
   pollFallbackMs?: number;
   backoffPolling?: boolean;
+  separateTableChannels?: boolean;
 }
 
 function useRealtimeQuery<T>(
   options: UseRealtimeQueryOptions<T>
 ): { data: T[]; loading: boolean; error: string | null; refetch: () => void } {
   const { queryFn, realtimeTables, clubIds, pollFallbackMs = 60_000, backoffPolling = false } = options;
+  const separateTableChannels = options.separateTableChannels ?? false;
   const { user } = useAuth();
   const actorId = user?.id ?? null;
 
@@ -292,30 +294,23 @@ function useRealtimeQuery<T>(
     }
 
     const ids = selectedClubs.join("+");
-    const tables = selectedTables.join("+");
-    const channel = supabase.channel(`swing:${tables}:${ids}:${instanceId}:${++subscriptionGeneration.current}`);
-
-    for (const table of selectedTables) {
-      channel.on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table,
-        },
-        () => {
-          invalidate();
+    // An unavailable metadata binding must not interrupt the attendance feed.
+    const groups = separateTableChannels ? selectedTables.map(table => [table]) : [selectedTables];
+    const channels = groups.map(group => {
+      const channel = supabase.channel(`swing:${group.join("+")}:${ids}:${instanceId}:${++subscriptionGeneration.current}`);
+      for (const table of group) {
+        channel.on("postgres_changes", { event: "*", schema: "public", table }, invalidate);
+      }
+      channel.subscribe(status => {
+        if (status === "SUBSCRIBED") {
+          console.debug("[useRealtimeQuery] Realtime connected:", group);
+          // Catch writes between the initial read and joining the roster feed.
+          if (separateTableChannels) invalidate();
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("[useRealtimeQuery] Realtime error, falling back to poll", group);
         }
-      );
-    }
-
-    channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") {
-        console.debug("[useRealtimeQuery] Realtime connected:", selectedTables);
-      }
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        console.warn("[useRealtimeQuery] Realtime error, falling back to poll");
-      }
+      });
+      return channel;
     });
 
     const onResume = () => { if (canRefresh()) invalidate(); };
@@ -329,13 +324,13 @@ function useRealtimeQuery<T>(
     return () => {
       active = false;
       generationRef.current += 1;
-      supabase.removeChannel(channel);
+      for (const channel of channels) supabase.removeChannel(channel);
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onResume);
       window.removeEventListener("online", onResume);
       if (invalidationTimer !== undefined) window.clearTimeout(invalidationTimer);
     };
-  }, [actorId, clubsKey, tablesKey, instanceId, pollFallbackMs, backoffPolling, refetch]);
+  }, [actorId, clubsKey, tablesKey, instanceId, pollFallbackMs, backoffPolling, separateTableChannels, refetch]);
 
   const currentSnapshot = snapshotScope === scope;
   return {
@@ -369,6 +364,7 @@ export function useCheckedInDealers(clubIds: string[]) {
         .is("dealers.deleted_at", null)
         .order("check_in_time", { ascending: true }),
     realtimeTables: ["dealer_attendance", "dealer_shifts", "dealers"],
+    separateTableChannels: true,
     clubIds,
   });
 
