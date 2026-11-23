@@ -134,7 +134,10 @@ test('forced landscape on a phone contains all seat pods and keeps face-down car
     const avatar = element.parentElement!.querySelector('.tracker-seat-medallion')!.getBoundingClientRect();
     const a = first.getBoundingClientRect();
     const b = second.getBoundingClientRect();
-    return a.right > b.left && Math.min(a.bottom, b.bottom) > avatar.top
+    return getComputedStyle(first).getPropertyValue('--poker-card-bg-soft').trim() === '#ffffff'
+      && Math.min(a.top, b.top) > avatar.top + avatar.height * .13
+      && Math.min(a.top, b.top) < avatar.bottom
+      && a.right > b.left
       && getComputedStyle(first).transform !== getComputedStyle(second).transform;
   })).toBe(true);
 });
