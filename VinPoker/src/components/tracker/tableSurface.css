@@ -83,13 +83,13 @@
   font-weight: 700;
 }
 
-.tracker-unified:has([data-cat-khoi]) [data-testid='card-back'] {
-  --poker-card-bg-soft: #e5e4e0;
-  --poker-card-bg: #c6c6c3;
-  --poker-card-bg-deep: #a4a5a3;
+:is(.tracker-unified, .spectator-mini-table):has([data-cat-khoi]) [data-testid='card-back'] {
+  --poker-card-bg-soft: #ffffff;
+  --poker-card-bg: #f7f6f2;
+  --poker-card-bg-deep: #eae8e2;
   --poker-card-line: #515351;
-  --poker-card-medallion: #b0b1ad;
-  --poker-card-border: #686a67;
+  --poker-card-medallion: #dddad2;
+  --poker-card-border: #77746c;
 }
 
 .tracker-unified:has([data-cat-khoi]) .action-shot-clock :is([data-clock-face], button, summary) {
@@ -129,7 +129,7 @@
 }
 
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] {
-  top: -8px;
+  top: clamp(10px, 2.2cqi, 20px);
   gap: 0;
   transform: translate(-50%, 0) scale(.66);
   transform-origin: top center;
@@ -137,8 +137,8 @@
 
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > :nth-child(2),
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > div.flex > :nth-child(2) {
-  margin-left: -18%;
-  transform: rotate(11deg);
+  margin-left: -7%;
+  transform: translateY(2px) rotate(9deg);
 }
 
 .grid > :has(> .tracker-unified [data-cat-khoi]) {
@@ -147,7 +147,7 @@
 
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] [data-testid='card-back']:first-child,
 .spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes[data-revealed='false'] > :first-child {
-  transform: rotate(-11deg);
+  transform: rotate(-9deg);
 }
 
 .spectator-mini-table > .tracker-table-surface[data-cat-khoi] {
@@ -165,10 +165,12 @@
 }
 
 .spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes[data-revealed='false'] {
+  top: clamp(10px, 2.2cqi, 16px);
+  bottom: auto;
   gap: 0;
 }
 
 .spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes[data-revealed='false'] > :nth-child(2) {
-  margin-left: -18%;
-  transform: rotate(11deg);
+  margin-left: -7%;
+  transform: translateY(2px) rotate(9deg);
 }
