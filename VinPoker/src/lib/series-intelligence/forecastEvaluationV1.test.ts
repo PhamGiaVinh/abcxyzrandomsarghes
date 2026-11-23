@@ -9,6 +9,7 @@ import {
 } from "./decisionPacketV1";
 import {
   classifyForecastEvaluationLifecycleV1,
+  evaluateDecisionEventStateV1,
   evaluateForecastActualV1,
 } from "./forecastEvaluationV1";
 import type {
@@ -335,4 +336,37 @@ describe("D2D-A forecast evaluation kernel", () => {
     expect(result).toMatchObject({ kind: "blocked" });
     expect(JSON.stringify(result)).not.toContain("100");
   });
+});
+
+it("uses only the server's selected revision and the matching prospective snapshot", async () => {
+  const frozen = await packet();
+  const revision = await actual();
+  const state = {
+    version: "series-decision-event-state-v1",
+    event: { clubId: CLUB, eventId: EVENT, status: "completed", targetEventTs: frozen.packet.targetEventTs },
+    decisionPackets: [{ ...frozen.packet, packetId: PACKET, packetState: "frozen", frozenAt: frozen.frozenAt }],
+    actualTruth: { state: "current", chosenRevision: revision },
+    scoring: { candidatePacketId: PACKET, candidateActualRevisionId: REVISION, targetMetric: "entries", eligibility: "eligible", blockReasons: [] },
+    dataQuality: { legacyActualCacheAvailable: false, d2aRevisionAvailable: true, unresolvedMismatch: false, missingFields: [], unsupportedDerivationWarnings: [] },
+  } as const;
+  const snapshot = forecast({ asOfTs: frozen.packet.sourceCutoff, pointEstimate: 95 });
+  await expect(evaluateDecisionEventStateV1(state, snapshot)).resolves.toMatchObject({
+    kind: "evaluation", absoluteError: "5", actualRevisionId: REVISION,
+  });
+  await expect(evaluateDecisionEventStateV1(state, { ...snapshot, eventId: "other-event" })).resolves.toMatchObject({ kind: "blocked" });
+  await expect(evaluateDecisionEventStateV1({
+    ...state, decisionPackets: [{ ...state.decisionPackets[0], frozenAt: state.event.targetEventTs }],
+  }, snapshot)).resolves.toMatchObject({ kind: "blocked" });
+  const precise = {
+    ...state,
+    event: { ...state.event, targetEventTs: "2026-11-21T02:00:00.000005+07:00" },
+    decisionPackets: [{ ...state.decisionPackets[0], asOfTs: "2026-11-20T19:00:00.000003Z",
+      frozenAt: "2026-11-20T19:00:00.000004Z" }],
+    actualTruth: { ...state.actualTruth, chosenRevision: { ...revision, sourceTimestamp: "2026-11-20T19:00:00.000006Z" } },
+  };
+  const preciseForecast = { ...snapshot, asOfTs: "2026-11-20T19:00:00.000001Z", forecastIssuedAt: "2026-11-20T19:00:00.000002Z" };
+  await expect(evaluateDecisionEventStateV1(precise, preciseForecast)).resolves.toMatchObject({ kind: "evaluation" });
+  await expect(evaluateDecisionEventStateV1(precise, {
+    ...preciseForecast, asOfTs: "2026-11-20T19:00:00.000003Z",
+  })).resolves.toMatchObject({ kind: "blocked", blockReasons: ["outcome_precedes_forecast"] });
 });

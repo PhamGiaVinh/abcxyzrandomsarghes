@@ -13,9 +13,9 @@ import { DecisionRoomV1 } from "@/components/series-intelligence/DecisionRoomV1"
  */
 export default function SeriesDecisionLogAdmin() {
   const nav = useNavigate();
-  const { isAdmin, isClubAdmin, isClubOwner, loading } = useAuth();
+  const { isAdmin, isClubAdmin, isClubOwner, loading, rolesLoading } = useAuth();
 
-  if (loading) return null;
+  if (loading || rolesLoading) return null;
   if (!FEATURES.seriesDecisionLog) return <Navigate to="/" replace />;
   if (!(isClubAdmin || isClubOwner || isAdmin)) return <Navigate to="/" replace />;
 
