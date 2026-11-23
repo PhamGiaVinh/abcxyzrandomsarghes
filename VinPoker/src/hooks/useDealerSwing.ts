@@ -39,6 +39,8 @@ export interface DealerAttendance {
   id: string;
   dealer_id: string;
   shift_date: string;
+  duplicate_active_attendance?: boolean;
+  dealer_shifts?: { club_id: string; start_time: string; end_time: string; closed_at: string | null; archived_at: string | null } | null;
   status: string;
   check_in_time: string | null;
   check_out_time: string | null;
@@ -57,6 +59,7 @@ export interface DealerAttendance {
     telegram_username?: string;
     tier: "A" | "B" | "C";
     club_id: string;
+    status?: string;
   };
 }
 
@@ -352,7 +355,8 @@ export function useCheckedInDealers(clubIds: string[]) {
           `id, dealer_id, shift_date, status, check_in_time, check_out_time,
            overtime_minutes, current_state, worked_minutes_since_last_break,
            priority_break_flag, last_released_at,
-           dealers!inner(full_name, telegram_username, tier, club_id)`
+           dealers!inner(full_name, telegram_username, tier, club_id, status),
+           dealer_shifts!dealer_attendance_shift_id_fkey(club_id, start_time, end_time, closed_at, archived_at)`
         )
         .eq("status", "checked_in")
         .in("dealers.club_id", clubIds)
@@ -364,7 +368,7 @@ export function useCheckedInDealers(clubIds: string[]) {
         // frontend list is filtered; the scheduler already excludes them.
         .is("dealers.deleted_at", null)
         .order("check_in_time", { ascending: true }),
-    realtimeTables: ["dealer_attendance"],
+    realtimeTables: ["dealer_attendance", "dealer_shifts", "dealers"],
     clubIds,
   });
 
@@ -375,8 +379,11 @@ export function useCheckedInDealers(clubIds: string[]) {
     const map = new Map<string, DealerAttendance>();
     for (const d of result.data) {
       const existing = map.get(d.dealer_id);
-      if (!existing || d.check_in_time! > existing.check_in_time!) {
+      if (!existing) {
         map.set(d.dealer_id, d);
+      } else {
+        const latest = (d.check_in_time ?? "") > (existing.check_in_time ?? "") ? d : existing;
+        map.set(d.dealer_id, { ...latest, duplicate_active_attendance: true });
       }
     }
     return Array.from(map.values());

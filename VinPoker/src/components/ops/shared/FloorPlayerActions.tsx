@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MovePlayerDialog } from "@/components/cashier/tournament-live/MovePlayerDialog";
 import { toast } from "sonner";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
+import { ClubPlayerPortrait } from "@/components/players/ClubPlayerPortrait";
 import { PlayerActionSheets } from "@/components/ops/shared/PlayerActionSheets";
 import { SeatReceiptDialog } from "@/components/tournament/seat/SeatReceiptDialog";
 import type { SeatReceiptData } from "@/components/tournament/seat/SeatReceipt";
@@ -277,6 +278,10 @@ export function FloorPlayerActions({
         moveTargets={[]}
         onOpenMove={openMove}
         onOpenReceipt={openReceipt}
+        portraitEditor={real && tournamentId && actorId ? <ClubPlayerPortrait
+          key={JSON.stringify([actorId, tournamentId, real.seat_id, real.player_id])} client={supabase}
+          target={{ kind: "seat", tour: tournamentId, seat: real.seat_id, player: real.player_id }}
+          name={real.player_name || "người chơi"} /> : undefined}
         infoLive
         bustControlMode={bustTable?.floor_control_mode ?? null}
         chipEditDisabledReason={chipEditDisabledReason}

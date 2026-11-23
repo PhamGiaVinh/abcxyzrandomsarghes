@@ -4,6 +4,38 @@
   "project": "orlesggcjamwuknxwcpk",
   "frontends": [
     {
+      "referenceSha": "2500f5a106f56ccc5f1da50fa3de6a3753b9b62e",
+      "fingerprint": "32c66ba6da5d818173464483f4da07358c3ea15fbfb532caf24dc65806e0668e"
+    },
+    {
+      "referenceSha": "f6625a8530b24299ba23057fbce1b9c8fe968082",
+      "fingerprint": "8403d5ab22ae8780a000f20b39f8d4e0f86709b34d37e4653edfdb827ea7c935"
+    },
+    {
+      "referenceSha": "0b55c6aa382da2843bbd33150b4b202a676f29de",
+      "fingerprint": "27630161f5eccb9814a3130d72827de8ff322095891e53635ab8ec3d242a26ca"
+    },
+    {
+      "referenceSha": "64b9850049ecb40fb5beb2c31005350c02db8403",
+      "fingerprint": "f0fa4d9407a873f5c5c2634d9f9ee9345eb40ed0fd1a3910cf65578768bc7e22"
+    },
+    {
+      "referenceSha": "71b770d68de79a0780bbec3e1674104bd9ef0ffb",
+      "fingerprint": "961082d61114c87614e32f48a79d825d3ceba219a4fa28df367790350e4853ff"
+    },
+    {
+      "referenceSha": "db537810bf70721ba08002b4335a32028bfff108",
+      "fingerprint": "00e39101d33f9bc5d3755ffb51489d8763b892c2ea864ad155f43c41a2b882d9"
+    },
+    {
+      "referenceSha": "384fb15789e6729eb292ea3cffeda261d938f9a8",
+      "fingerprint": "261437331d4d2235e24deaf45f1aea3fc6dbac98b7cf598a6059aa7ea9e52d92"
+    },
+    {
+      "referenceSha": "ab9365478d1ce7b4a22bd805d1231cfeeb9f1bf5",
+      "fingerprint": "59da2af7a7c8c12bb231e761fb2e8d78d63b211aaf9d2efd847c07e728f63d9b"
+    },
+    {
       "referenceSha": "dcb1fa435d7821686c22d5def281b7a5c5d398db",
       "fingerprint": "be7d008801a66969318ef559dcf851d582b5c59f508033f07db86b8d24fc54d7"
     },

@@ -1,3 +1,4 @@
+import { matchesDealerOperatingDay } from "@/lib/dealerOperatingDay";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
@@ -128,18 +129,27 @@ const dealerMassOpenRpc = <T,>(name: string, args: Record<string, unknown>) => (
 function useTours(clubIds: string[]) {
   const [data, setData] = useState<Tour[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
   const genRef = useRef(0);
   const clubIdsKey = useMemo(() => [...clubIds].sort().join(","), [clubIds]);
   const load = useCallback(async () => {
     const gen = ++genRef.current;
-    if (!clubIds.length) { if (gen === genRef.current) setData([]); return; }
+    setError(false);
+    if (!clubIds.length) { setData([]); setLoading(false); return; }
     setLoading(true);
-    const { data: d } = await supabase.from("dealer_shifts").select("*").in("club_id", clubIds).order("start_time");
-    if (gen !== genRef.current) return;
-    setData(d ?? []); setLoading(false);
+    try {
+      const { data: d, error: readError } = await supabase.from("dealer_shifts").select("*").in("club_id", clubIds).order("start_time");
+      if (gen !== genRef.current) return;
+      if (readError) { setError(true); return; }
+      setData(d ?? []);
+    } catch {
+      if (gen === genRef.current) setError(true);
+    } finally {
+      if (gen === genRef.current) setLoading(false);
+    }
   }, [clubIdsKey]);
   useEffect(() => { load(); }, [load]);
-  return { data, loading, refetch: load };
+  return { data, loading, error, refetch: load };
 }
 
 /** Numeric part of a table name ("Bàn 15" → 15) for 1→100 ordering. */
@@ -323,7 +333,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   const breakPolicies = useBreakPolicies(filteredClubIds);
   const { data: specialDates, refetch: refetchSpecialDates } = useSpecialDates(filteredClubIds);
   const auditLogs = useAuditLogs(filteredClubIds, 15);
-  const { data: tours, refetch: refetchTours } = useTours(filteredClubIds);
+  const { data: tours, loading: toursLoading, error: toursError, refetch: refetchTours } = useTours(filteredClubIds);
   const restingAttendanceIds = useMemo(() => {
     const set = new Set<string>();
     for (const entry of breakPool ?? []) {
@@ -343,15 +353,19 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   // hide dealers currently dealing at another table, and dealers (available or
   // on-break) who haven't rested the club's min_inter_swing_rest_minutes yet.
   const restMinutesByClub = useMemo(() => buildRestMinutesByClub(swingConfigs ?? []), [swingConfigs]);
+  const operatingDayPool = useMemo(
+    () => freshPoolDealers.filter((dealer) => matchesDealerOperatingDay(dealer, nowMs)),
+    [freshPoolDealers, nowMs],
+  );
   const assignableDealers = useMemo(
-    () => freshPoolDealers.filter((d) =>
+    () => operatingDayPool.filter((d) =>
       isAssignableDealer(
         { current_state: d.current_state, last_released_at: d.last_released_at, clubId: d.dealers?.club_id ?? null },
         restMinutesByClub,
         nowMs,
       ),
     ),
-    [freshPoolDealers, restMinutesByClub, nowMs],
+    [operatingDayPool, restMinutesByClub, nowMs],
   );
   const { optimistic: checkedInCount, onCheckout: onOptCheckout } = useOptimisticDealerCount(rosterDealers.length);
   const { data: nextDealerMap, error: nextDealerError } = useNextDealerPredictions(filteredClubIds, assignments);
@@ -498,6 +512,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
 
   // Create tour state
   const [createTourOpen, setCreateTourOpen] = useState(false);
+  const [createCheckinShift, setCreateCheckinShift] = useState(false);
   const [newTourName, setNewTourName] = useState("");
   const [newTourStartTime, setNewTourStartTime] = useState("");
   const [newTourEndTime, setNewTourEndTime] = useState("");
@@ -1520,6 +1535,13 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
   }, [selectedTour, tours, tables, assignments, nowMs]);
 
   // This is a candidate read, not an eligibility decision. The RPC validates shifts.
+  useEffect(() => {
+    if (!checkinOpen) return;
+    void refetchTours();
+    const refreshOnFocus = () => void refetchTours();
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
+  }, [checkinOpen, refetchTours]);
   const checkinScope = useRef({ key: "" });
   const checkinScopeKey = [user?.id, activeClubId].join(":");
   if (checkinScope.current.key !== checkinScopeKey) {
@@ -2423,7 +2445,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
             {FEATURES.dealerStaffingOptimizer && (isAdmin || isClubAdmin || isClubOwner || isFloor) && (
               <StaffingOptimizerCard
                 activeTables={summaryCounts.activeTables}
-                dealers={freshPoolDealers}
+                dealers={operatingDayPool}
                 assignments={assignments ?? []}
                 swingConfigs={swingConfigs ?? []}
                 nowMs={nowMs}
@@ -2432,7 +2454,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
               />
             )}
             {FEATURES.dealerFeatureTables && (isAdmin || isClubAdmin || isClubOwner || isFloor) && (
-              <FeatureTablePoolBox clubId={activeClubId} tables={tables ?? []} dealers={freshPoolDealers} />
+              <FeatureTablePoolBox clubId={activeClubId} tables={tables ?? []} dealers={operatingDayPool} />
             )}
             <Collapsible>
               <CollapsibleTrigger className="flex w-full items-center justify-between rounded-xl border border-border/60 bg-card/70 px-3 py-2.5 text-left text-sm font-medium text-foreground hover:bg-muted/60 [&[data-state=open]>svg]:rotate-180">
@@ -2443,6 +2465,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
                 <RosterPanel
                   dealers={rosterDealers}
                   assignments={assignments ?? []}
+                  repairTableIds={(tables ?? []).filter(table => table.availability_status === "repair_required").map(table => table.id)}
                   swingConfigs={swingConfigs ?? []}
                   processing={processing}
                   totalDealers={allDealersLoading || allDealersError ? null : allDealers.filter(d => d.status === 'active').length}
@@ -2642,7 +2665,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
             tableName={cpTable?.table_name ?? "Bàn"}
             slot0={cpSlots?.slot0 ?? null}
             currentTableAttendanceId={cpAssignment?.attendance_id ?? null}
-            dealers={freshPoolDealers}
+            dealers={operatingDayPool}
             assignedTableNameByAttendanceId={cpNameByAtt}
             restMinutes={Math.max(15, cpRestMinutes)}
             onChanged={() => { refetchAssignments(); refetchDealers(); refetchSchedule(); }}
@@ -2733,7 +2756,7 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
             </section>
           )}
           {!activeClubId ? <p role="alert">Chọn một CLB trước khi check-in.</p> : (
-            <Select value={checkinShiftId} onValueChange={setCheckinShiftId}>
+            <Select value={checkinShiftId} onValueChange={setCheckinShiftId} disabled={toursLoading || toursError}>
               <SelectTrigger aria-label="Ca check-in"><SelectValue placeholder="Chọn ca làm việc" /></SelectTrigger>
               <SelectContent>{eligibleCheckinShifts.map((shift) => (
                 <SelectItem key={shift.id} value={shift.id}>{shift.tour_name} · {shift.start_time}–{shift.end_time}</SelectItem>
@@ -2742,11 +2765,25 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
               ))}</SelectContent>
             </Select>
           )}
+          {checkinOpen && toursLoading && <p role="status">Đang tải ca làm việc…</p>}
+          {checkinOpen && toursError && <div role="alert" className="flex items-center gap-2">
+            <span>Chưa tải được ca làm việc.</span>
+            <Button size="sm" variant="outline" onClick={() => void refetchTours()}>Tải lại ca</Button>
+          </div>}
+          {activeClubId && <Button type="button" variant="outline" size="sm" disabled={!!processing}
+            onClick={() => {
+              setNewTourName("");
+              setNewTourStartTime("");
+              setNewTourEndTime("");
+              setCreateCheckinShift(true);
+              setCreateTourOpen(true);
+            }}>Thêm ca làm việc</Button>}
+          {activeClubId && !toursError && <Button type="button" variant="ghost" size="sm" disabled={toursLoading || !!processing} onClick={() => void refetchTours()}>Tải lại ca</Button>}
           <DealerCheckinCandidateList candidates={checkinDealers} selectedIds={checkinDealerIds}
             onSelection={setCheckinDealerIds} loading={checkinCandidatesLoading}
             error={checkinCandidatesError} busy={!!processing} onRetry={loadCheckinDealers} />
           <DialogFooter>
-            <Button onClick={doCheckin} disabled={checkinCandidatesLoading || !!checkinCandidatesError || !activeClubId || !checkinShiftId || !checkinDealerIds.length || processing === "checkin"}>
+            <Button onClick={doCheckin} disabled={toursLoading || toursError || checkinCandidatesLoading || !!checkinCandidatesError || !activeClubId || !checkinShiftId || !checkinDealerIds.length || processing === "checkin"}>
               {processing === "checkin" ? <Loader2 className="w-3 h-3 animate-spin" />
                 : recoverableCheckinShiftIds.includes(checkinShiftId) ? "Đối chiếu yêu cầu cũ" : `Check-in (${checkinDealerIds.length})`}
             </Button>
@@ -3112,12 +3149,15 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
       />
 
       {/* Create Tour Dialog */}
-      <Dialog open={createTourOpen} onOpenChange={setCreateTourOpen}>
+      <Dialog open={createTourOpen} onOpenChange={(open) => {
+        setCreateTourOpen(open);
+        if (!open) setCreateCheckinShift(false);
+      }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Tạo tour mới</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{createCheckinShift ? "Thêm ca làm việc" : "Tạo tour mới"}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label className="text-xs">Tên tour</Label>
+              <Label className="text-xs">{createCheckinShift ? "Tên ca" : "Tên tour"}</Label>
               <Input value={newTourName} onChange={(e) => setNewTourName(e.target.value)} placeholder="VD: Tour Sáng" autoFocus
                 onKeyDown={(e) => { if (e.key === "Enter" && newTourName.trim()) (e.currentTarget.closest('[role="dialog"]')?.querySelector('[data-create-tour]') as HTMLButtonElement | null)?.click(); }} />
             </div>
@@ -3133,11 +3173,12 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateTourOpen(false)}>Huỷ</Button>
-            <Button data-create-tour disabled={!newTourName.trim() || processing === "create_tour"}
+            <Button variant="outline" onClick={() => { setCreateTourOpen(false); setCreateCheckinShift(false); }}>Huỷ</Button>
+            <Button data-create-tour disabled={!newTourName.trim() || processing === "create_tour" || (createCheckinShift && (!newTourStartTime || !newTourEndTime || newTourStartTime === newTourEndTime))}
               onClick={async () => {
+                const scope = checkinScope.current;
                 setProcessing("create_tour");
-                const clubId = clubFilter ?? filteredClubIds[0];
+                const clubId = createCheckinShift ? activeClubId : clubFilter ?? filteredClubIds[0];
                 if (!clubId || !newTourName.trim()) { setProcessing(null); return; }
                 // Quick create: name only. Auto-fill times if left blank
                 // (start = now, end = +8h clamped to 23:59) — dealer_shifts
@@ -3158,19 +3199,21 @@ function SwingPanelSession({ clubIds, clubs, onOpenPayroll }: SwingPanelProps) {
                 }).select("id").single();
                 setProcessing(null);
                 if (error) { toast.error(error.message); return; }
-                toast.success(`Đã tạo tour "${newTourName.trim()}". Bấm chip tour để lọc bàn vào tour.`);
+                toast.success(createCheckinShift ? `Đã thêm ca "${newTourName.trim()}"` : `Đã tạo tour "${newTourName.trim()}". Bấm chip tour để lọc bàn vào tour.`);
                 setCreateTourOpen(false);
                 setNewTourName("");
                 setNewTourStartTime("");
                 setNewTourEndTime("");
                 await refetchTours();
+                if (createCheckinShift && created?.id && checkinScope.current === scope) setCheckinShiftId(created.id);
+                setCreateCheckinShift(false);
                 // NOTE: do NOT auto-select the new tour — selecting it would
                 // filter the battle map to that (empty) tour and hide the other
                 // tables, which looks like "tables disappeared". Stay on the
                 // current view; the operator taps the chip when ready.
                 void created;
               }}>
-              {processing === "create_tour" ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Plus className="w-3.5 h-3.5 mr-1" />Tạo tour</>}
+              {processing === "create_tour" ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Plus className="w-3.5 h-3.5 mr-1" />{createCheckinShift ? "Thêm ca" : "Tạo tour"}</>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3524,12 +3567,13 @@ function StaleCleanupCard({
 }
 
 function RosterPanel({
-  dealers, assignments, swingConfigs, processing, totalDealers, checkedInCount,
+  dealers, assignments, repairTableIds, swingConfigs, processing, totalDealers, checkedInCount,
   checkedOutDealers, onSendToBreak, onCheckinOpen, onCheckoutOpen,
   onBatchCheckout, onReCheckin, breakPolicies, onMealBreak, mealBreakAvailability,
 }: {
   dealers: DealerAttendance[];
   assignments: DealerAssignment[];
+  repairTableIds: string[];
   swingConfigs: SwingConfig[];
   processing: string | null;
   totalDealers: number | null;
@@ -3578,7 +3622,11 @@ function RosterPanel({
         ? assignments.find((a) => a.pre_assigned_attendance_id === d.id && a.status === "assigned")
         : assignments.find((a) => a.attendance_id === d.id);
       const checkInTime = d.check_in_time ?? new Date().toISOString();
-      if (d.current_state === "pre_assigned") {
+      if (a && repairTableIds.includes(a.table_id)) {
+        map[d.id] = { status: "Cần kiểm tra phiên", tableName: a.game_tables?.table_name, checkInTime, timerStart: checkInTime };
+      } else if (!a && !matchesDealerOperatingDay(d, nowMs)) {
+        map[d.id] = { status: "Ca cần kiểm tra", checkInTime, timerStart: checkInTime };
+      } else if (d.current_state === "pre_assigned") {
         map[d.id] = { status: "Đang chờ", tableName: (a as any)?.game_tables?.table_name, checkInTime, timerStart: checkInTime };
       } else if (a?.status === "assigned") {
         map[d.id] = { status: "Đang bàn", tableName: (a as any).game_tables?.table_name, checkInTime, timerStart: a.assigned_at };
@@ -3592,7 +3640,7 @@ function RosterPanel({
       }
     }
     return map;
-  }, [dealers, assignments]);
+  }, [dealers, assignments, repairTableIds, nowMs]);
 
   // Live worked minutes: compute from assignment timestamps, not stale column.
   // Assigned → elapsed since assigned_at; others → stored value (last session).
@@ -3630,6 +3678,8 @@ function RosterPanel({
     { key: "Sẵn sàng", icon: Users, color: "text-success", dot: "bg-success" },
     { key: "Đang bàn", icon: Table2, color: "text-[hsl(var(--ds-active))]", dot: "bg-[hsl(var(--ds-active))]" },
     { key: "Đang chờ", icon: Clock, color: "text-[hsl(var(--ds-preassign))]", dot: "bg-[hsl(var(--ds-preassign))]" },
+    { key: "Cần kiểm tra phiên", icon: Clock, color: "text-warning", dot: "bg-warning" },
+    { key: "Ca cần kiểm tra", icon: Clock, color: "text-warning", dot: "bg-warning" },
   ] as const;
 
   return (
@@ -3714,7 +3764,8 @@ function RosterPanel({
 
                     // Detect OT for this dealer
                     const assignment = assignments.find((a) => a.attendance_id === d.id);
-                    const isOt = !!assignment?.overtime_started_at && !assignment?.swing_processed_at;
+                    const needsSessionRepair = sec.key === "Cần kiểm tra phiên";
+                    const isOt = !needsSessionRepair && !!assignment?.overtime_started_at && !assignment?.swing_processed_at;
                     const preAssignStatusLabel = getPreAssignStatusLabel(assignment?.pre_assign_status ?? "none");
 
                     return (
@@ -3764,7 +3815,7 @@ function RosterPanel({
                         )}
 
                         {/* Fatigue dot — computed live from assignment timestamps */}
-                        <FatigueDot workedMinutes={liveWorkedMin[d.id] ?? 0} priorityBreakFlag={d.priority_break_flag ?? false} />
+                        {!needsSessionRepair && <FatigueDot workedMinutes={liveWorkedMin[d.id] ?? 0} priorityBreakFlag={d.priority_break_flag ?? false} />}
 
                         {/* Timer */}
                         {info && sec.key === "Đang bàn" && (
@@ -3777,10 +3828,10 @@ function RosterPanel({
                         )}
 
                         {/* Priority break indicator — chỉ hiển thị cho dealer đang làm việc */}
-                        <PriorityBreakIndicator
+                        {!needsSessionRepair && <PriorityBreakIndicator
                           priorityBreakFlag={d.priority_break_flag}
                           workedMinutesSinceLastBreak={liveWorkedMin[d.id] ?? 0}
-                        />
+                        />}
 
                         {/* Action: break / meal break / end break */}
                         <div className="flex-shrink-0 flex gap-1">

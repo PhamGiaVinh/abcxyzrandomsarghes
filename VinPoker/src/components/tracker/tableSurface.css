@@ -1,0 +1,176 @@
+.tracker-table-surface {
+  --surface-light: url('../../assets/tracker-table/landscape.webp');
+  --surface-mask: url('../../assets/tracker-table/landscape-mask.webp');
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  filter: drop-shadow(0 8px 9px #0008);
+}
+.tracker-table-surface[data-shape='portrait'] {
+  --surface-light: url('../../assets/tracker-table/portrait.webp');
+  --surface-mask: url('../../assets/tracker-table/portrait-mask.webp');
+}
+.tracker-table-surface::before, .tracker-table-cloth, .tracker-table-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.tracker-table-surface::before, .tracker-table-cloth {
+  -webkit-mask: var(--surface-mask) center / 100% 100% no-repeat;
+  mask: var(--surface-mask) center / 100% 100% no-repeat;
+}
+.tracker-table-surface::before { background-color: var(--table-rail); }
+.tracker-table-cloth {
+  background: radial-gradient(ellipse at 43% 36%, #d1fac619 0%, transparent 66%),
+    radial-gradient(ellipse at center, transparent 40%, #00130c57 94%), var(--table-felt);
+  mask-mode: luminance;
+}
+.tracker-table-surface[data-default-green] .tracker-table-cloth { background-color: #245736; }
+.tracker-table-surface::after { background: var(--surface-light) center / 100% 100% no-repeat; }
+
+.tracker-table-surface[data-shape='landscape'] { inset: 4% 1.5% 4.5%; filter: drop-shadow(0 8px 6px #070908b5); }
+.tracker-table-surface[data-shape='landscape']::before,
+.tracker-table-surface[data-shape='landscape']::after { content: none; }
+.tracker-table-surface[data-shape='landscape'][data-default-green] { --table-felt: #245d40; }
+.table-rail-art { display: block; width: 100%; height: 100%; overflow: visible; }
+
+/* Cát khói is the artwork for tables using the standard Tracker colors. */
+.tracker-table-surface[data-cat-khoi] {
+  background: url('../../assets/tracker-table/cat-khoi.svg') center / 100% 100% no-repeat;
+  filter: drop-shadow(0 6px 6px #0b0a09bd);
+}
+
+.tracker-table-surface[data-cat-khoi]::before,
+.tracker-table-surface[data-cat-khoi]::after {
+  content: none;
+}
+
+.tracker-unified:has([data-cat-khoi]) {
+  --smoke-gold: linear-gradient(113deg, #9c7543, #e6cf99 26%, #b58e54 56%, #e2c68b 84%, #8a6945);
+  --smoke-cut: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(100% - 7px), calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 7px);
+}
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-medallion {
+  border-color: #cead78;
+  background: radial-gradient(at 35% 20%, #51453a, #211d19 78%);
+  color: #f9eacb;
+}
+
+.tracker-unified:has([data-cat-khoi]) :is(.tracker-seat-plate, .tracker-pot-total) {
+  border-color: transparent;
+  border-radius: 0;
+  color: #fff1d9;
+  background: linear-gradient(150deg, #302a23, #191714 62%, #211d19) padding-box,
+    var(--smoke-gold) border-box;
+  clip-path: var(--smoke-cut);
+}
+
+.tracker-unified:has([data-cat-khoi]) [data-seat-acting='true'] .tracker-seat-plate {
+  background: linear-gradient(#322819, #322819) padding-box, var(--smoke-gold) border-box;
+}
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-plate :is(.tracker-num, .tracker-seat-stack) {
+  color: #ffeace;
+}
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-line {
+  background: #302921;
+  color: #ffecd2;
+}
+
+.tracker-unified:has([data-cat-khoi]) :is(.table-center-blinds, .tracker-board-clock .timer-player) {
+  color: #241b15;
+  font-weight: 700;
+}
+
+:is(.tracker-unified, .spectator-mini-table):has([data-cat-khoi]) [data-testid='card-back'] {
+  --poker-card-bg-soft: #ffffff;
+  --poker-card-bg: #f7f6f2;
+  --poker-card-bg-deep: #eae8e2;
+  --poker-card-line: #515351;
+  --poker-card-medallion: #dddad2;
+  --poker-card-border: #77746c;
+}
+
+.tracker-unified:has([data-cat-khoi]) .action-shot-clock :is([data-clock-face], button, summary) {
+  border-color: #a78b5c;
+  background-color: #231f1a;
+  color: #f4e6cd;
+}
+
+.dealer-cockpit:has([data-cat-khoi]) .dealer-control-region [data-action-key='F'] {
+  --smoke-action: #623230;
+}
+
+.dealer-cockpit:has([data-cat-khoi]) .dealer-control-region [data-action-key='C'] {
+  --smoke-action: #304f3c;
+}
+
+.dealer-cockpit:has([data-cat-khoi]) .dealer-control-region [data-action-key='R'] {
+  --smoke-action: #2c4a60;
+}
+
+.dealer-cockpit:has([data-cat-khoi]) .dealer-control-region [data-action-key='A'] {
+  --smoke-action: #713630;
+}
+
+.dealer-cockpit:has([data-cat-khoi]) .dealer-control-region [data-action-key]:enabled {
+  border-color: #b69a68;
+  background: linear-gradient(150deg, var(--smoke-action, #383025), #211d19);
+  color: #fff3dd;
+}
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards {
+  top: 0;
+  left: 50%;
+  gap: 2px;
+  transform: translate(-50%, calc(-100% - 3px));
+  transform-origin: bottom center;
+}
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] {
+  top: clamp(10px, 2.2cqi, 20px);
+  gap: 0;
+  transform: translate(-50%, 0) scale(.66);
+  transform-origin: top center;
+}
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > :nth-child(2),
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] > div.flex > :nth-child(2) {
+  margin-left: -7%;
+  transform: translateY(2px) rotate(9deg);
+}
+
+.grid > :has(> .tracker-unified [data-cat-khoi]) {
+  min-width: 0;
+}
+
+.tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed='false'] [data-testid='card-back']:first-child,
+.spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes[data-revealed='false'] > :first-child {
+  transform: rotate(-9deg);
+}
+
+.spectator-mini-table > .tracker-table-surface[data-cat-khoi] {
+  inset: 10% 5%;
+}
+
+.spectator-mini-table:has([data-cat-khoi]) .spectator-mini-avatar {
+  border-color: #cead78;
+  background: #362d24;
+}
+
+.spectator-mini-table:has([data-cat-khoi]) .spectator-mini-plate {
+  border-color: #b89a6b;
+  background: #241e18;
+}
+
+.spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes[data-revealed='false'] {
+  top: clamp(10px, 2.2cqi, 16px);
+  bottom: auto;
+  gap: 0;
+}
+
+.spectator-mini-table:has([data-cat-khoi]) .spectator-mini-holes[data-revealed='false'] > :nth-child(2) {
+  margin-left: -7%;
+  transform: translateY(2px) rotate(9deg);
+}

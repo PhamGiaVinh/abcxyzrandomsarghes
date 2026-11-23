@@ -19,10 +19,11 @@ async function measure(page: Page) {
       if (plate && cards && hits(rect(plate), rect(cards))) overlaps.push(`cards/name/${pod.getAttribute('data-tracker-seat')}`);
       const avatar = pod.querySelector('.tracker-seat-avatar > div');
       const holeCards = cards ? [...cards.querySelectorAll('[data-card-code], :scope > div:not(:has([data-card-code]))')] : [];
+      const isFan = cards?.getAttribute('data-revealed') === 'false';
       holeCards.forEach((card, ci) => {
-        if (avatar && hits(rect(card), rect(avatar))) overlaps.push(`card/avatar/${pod.getAttribute('data-tracker-seat')}/${ci}`);
+        if (!isFan && avatar && hits(rect(card), rect(avatar))) overlaps.push(`card/avatar/${pod.getAttribute('data-tracker-seat')}/${ci}`);
         holeCards.slice(ci + 1).forEach(other => {
-          if (hits(rect(card), rect(other))) overlaps.push(`card/card/${pod.getAttribute('data-tracker-seat')}`);
+          if (!isFan && hits(rect(card), rect(other))) overlaps.push(`card/card/${pod.getAttribute('data-tracker-seat')}`);
         });
       });
     });
@@ -108,4 +109,35 @@ test('nine committed stacks do not cover the board', async ({ page }) => {
       await page.screenshot({ path: `shots/tracker-allbets-${url.includes('livefelt') ? 'viewer' : 'input'}-${width}.png`, fullPage: true });
     }
   }
+});
+
+test('forced landscape on a phone contains all seat pods and keeps face-down cards fanned on avatars', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/__dev/livefelt?fixture=showdown&seats=9&orientation=landscape');
+  const table = page.locator('[data-tracker-table="landscape"]');
+  await expect(table.locator('[data-cat-khoi]')).toBeVisible();
+  const layout = await table.evaluate(element => {
+    const viewport = element.parentElement!.getBoundingClientRect();
+    const contained = [...element.querySelectorAll('[data-tracker-seat]')].every(seat => {
+      const rect = seat.getBoundingClientRect();
+      return rect.left >= viewport.left - 1 && rect.right <= viewport.right + 1
+        && rect.top >= viewport.top - 1 && rect.bottom <= viewport.bottom + 1;
+    });
+    return { contained, scrolls: document.documentElement.scrollWidth > innerWidth + 1 };
+  });
+  expect(layout).toEqual({ contained: true, scrolls: false });
+  await page.goto('/__dev/livefelt?fixture=showdown&seats=9&step=0');
+  const fan = page.locator('.tracker-seat-cards[data-revealed="false"]').filter({ has: page.getByTestId('card-back') }).first();
+  await expect(fan.locator('[data-testid="card-back"]')).toHaveCount(2);
+  expect(await fan.evaluate(element => {
+    const [first, second] = [...element.querySelectorAll('[data-testid="card-back"]')];
+    const avatar = element.parentElement!.querySelector('.tracker-seat-medallion')!.getBoundingClientRect();
+    const a = first.getBoundingClientRect();
+    const b = second.getBoundingClientRect();
+    return getComputedStyle(first).getPropertyValue('--poker-card-bg-soft').trim() === '#ffffff'
+      && Math.min(a.top, b.top) > avatar.top + avatar.height * .13
+      && Math.min(a.top, b.top) < avatar.bottom
+      && a.right > b.left
+      && getComputedStyle(first).transform !== getComputedStyle(second).transform;
+  })).toBe(true);
 });

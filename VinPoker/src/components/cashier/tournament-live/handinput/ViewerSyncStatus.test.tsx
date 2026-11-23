@@ -1,5 +1,5 @@
-import {cleanup,render,screen} from '@testing-library/react';
-import {afterEach,describe,expect,it} from 'vitest';
+import {cleanup,fireEvent,render,screen} from '@testing-library/react';
+import {afterEach,describe,expect,it,vi} from 'vitest';
 import {ViewerSyncStatus} from './ViewerSyncStatus';
 afterEach(cleanup);
 describe('operator sync rejection status',()=>{
@@ -24,6 +24,14 @@ describe('operator sync rejection status',()=>{
  });
  it('focuses an uncertain result that blocks further actions',()=>{
   render(<ViewerSyncStatus phase="uncertain" lastLabel={null}/>);expect(screen.getByRole('alert')).toHaveFocus();
+ });
+ it('keeps the missing blind instructions and lets the dealer reload the table', () => {
+  const reload = vi.fn();
+  const reason = 'Floor cần lưu cấu trúc blind và chọn level đang chơi.';
+  render(<ViewerSyncStatus phase="uncertain" lastLabel={reason} onReload={reload} />);
+  expect(screen.getByRole('alert')).toHaveTextContent(reason);
+  fireEvent.click(screen.getByRole('button', {name: 'Tải lại'}));
+  expect(reload).toHaveBeenCalledTimes(1);
  });
  it('does not repeatedly steal focus when an unchanged error rerenders',()=>{
   const content=<><button>Inspect TEST</button><ViewerSyncStatus phase="error" lastLabel="Giữ nguyên request ID."/></>;
