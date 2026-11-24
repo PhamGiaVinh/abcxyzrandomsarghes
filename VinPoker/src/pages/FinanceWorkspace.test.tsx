@@ -36,3 +36,13 @@ it("keeps a legacy cashier deep link open without redirecting to the role defaul
 it("waits for role loading before choosing a destination",()=>{
  auth.loading=true;mount();expect(screen.queryByText("Home page")).toBeNull();
 });
+
+it("shows exactly three main destinations to the owner",()=>{
+ auth.isClubOwner=true;mount();
+ const navigation=screen.getByRole("navigation",{name:"Quầy & Tài chính"});
+ expect(navigation.querySelectorAll("a")).toHaveLength(3);
+ expect(navigation.textContent).toContain("Quầy");
+ expect(navigation.textContent).toContain("Đối soát");
+ expect(navigation.textContent).toContain("Báo cáo");
+ expect(screen.getByText("Tra cứu chi tiết").closest("details")).not.toHaveAttribute("open");
+});
