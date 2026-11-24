@@ -166,6 +166,8 @@
     "exitToMain": "Main app"
   },
   "tv": {
+    "levelSoundOn": "Sound on",
+    "levelSoundOff": "Enable sound",
     "level": "Level",
     "blinds": "Blinds",
     "ante": "Ante",

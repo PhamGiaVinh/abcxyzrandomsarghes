@@ -26,3 +26,16 @@ it('counts actual paying positions rather than filling gaps or duplicating rows'
  render(<TvBroadcastBoard data={{...data,prizes:[{position:1,amount:1000000},{position:3,amount:500000},{position:3,amount:500000}]}}/>);
  expect(screen.getByRole('heading',{name:'Places Paid'}).nextElementSibling).toHaveTextContent('2');
 });
+
+it('tracks the server level duration, freezes while paused and resets for a new level',()=>{
+ const level={...data.currentLevel!,durationMinutes:1};
+ const {rerender}=render(<TvBroadcastBoardView data={{...data,currentLevel:level,remainingSeconds:60}}/>);
+ expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow','100');
+ rerender(<TvBroadcastBoardView data={{...data,currentLevel:level,remainingSeconds:30,isRunning:false}}/>);
+ expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow','50');
+ expect(screen.getByRole('progressbar')).toHaveAttribute('data-running','false');
+ rerender(<TvBroadcastBoardView data={{...data,currentLevel:level,remainingSeconds:0}}/>);
+ expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow','0');
+ rerender(<TvBroadcastBoardView data={{...data,currentLevel:{...level,levelNumber:20,durationMinutes:20},remainingSeconds:1200}}/>);
+ expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow','100');
+});
