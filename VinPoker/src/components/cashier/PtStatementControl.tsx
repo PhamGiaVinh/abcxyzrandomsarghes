@@ -15,6 +15,17 @@ import { ptStatementReceiptSchema as Receipt, loadPtStatementPayment, retainPtSt
 type Props = { clubId: string; dealerId: string; dealerName: string; onFinalized: () => void; canFinalize?: boolean };
 type Rpc = (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
 
+function payrollHoldMessage(cause: unknown) {
+  if (!cause || typeof cause !== "object" || !("message" in cause)) return null;
+  if (cause.message === "DEALER_PAYROLL_UNRESOLVED_WORK") {
+    return "Phiếu đang giữ vì còn ca chưa rõ giờ. Mở Đối chiếu công từ Swing trong màn lương.";
+  }
+  if (cause.message === "DEALER_PAYROLL_SNAPSHOT_STALE") {
+    return "Giờ công đã đổi sau khi chốt. Cần đối chiếu và chốt lại phiếu trước khi chi.";
+  }
+  return null;
+}
+
 export function PtStatementControl(props: Props) {
   const { user, session } = useAuth();
   if (!user) return null;
@@ -116,11 +127,11 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
       setStatement(row); setConfirm(false); onFinalized();
     } catch (cause) {
       const code = typeof cause === 'object' && cause !== null && 'message' in cause ? cause.message : null;
-      if (alive.current) setError(code === 'PT_LEGACY_MONTHLY_OVERLAP_REQUIRES_REVIEW'
+      if (alive.current) setError(payrollHoldMessage(cause) ?? (code === 'PT_LEGACY_MONTHLY_OVERLAP_REQUIRES_REVIEW'
         ? 'Khoảng công này đã nằm trong bảng lương tháng. Cần đối soát bảng lương cũ trước khi chốt PT để tránh trả trùng.'
         : code === 'PT_FINALIZED_STATEMENT_PENDING_PAYMENT'
           ? 'Dealer đã có phiếu PT chốt chưa chi. Cần kiểm tra phiếu hiện có trước khi chốt thêm.'
-          : 'Chưa xác nhận chốt thành công. Mã yêu cầu được giữ lại; thử lại sẽ kiểm tra đúng yêu cầu này.');
+          : 'Chưa xác nhận chốt thành công. Mã yêu cầu được giữ lại; thử lại sẽ kiểm tra đúng yêu cầu này.'));
     } finally {
       inFlight.current = false;
       if (alive.current) setBusy(false);
@@ -139,8 +150,8 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
       if (!alive.current) return;
       clearPtStatementPayment(sessionStorage, intent);
       setStatement(paid); setPaymentPending(null); setPayConfirm(false); onFinalized();
-    } catch {
-      if (alive.current) setError('Chưa xác minh được khoản chi. Giữ nguyên yêu cầu và đối chiếu trước khi chi thêm.');
+    } catch (cause) {
+      if (alive.current) setError(payrollHoldMessage(cause) ?? 'Chưa xác minh được khoản chi. Giữ nguyên yêu cầu và đối chiếu trước khi chi thêm.');
     } finally {
       inFlight.current = false; if (alive.current) setBusy(false);
     }

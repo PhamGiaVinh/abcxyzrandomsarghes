@@ -64,6 +64,7 @@ describe('payroll saved-state availability',()=>{
     render(<DealerPayrollTab clubIds={['club','other']} clubs={[{id:'club',name:'TEST A'},{id:'other',name:'TEST B'}]}/>);
     fireEvent.click(await screen.findByTitle('Điều chỉnh'));
     fireEvent.change(screen.getByPlaceholderText('VD: 500000'),{target:{value:'1000'}});
+    fireEvent.change(screen.getByPlaceholderText('Nhập lý do điều chỉnh'),{target:{value:'LOCAL TEST evidence'}});
     fireEvent.click(screen.getByRole('button',{name:'Thêm'}));
     fireEvent.click(screen.getByRole('button',{name:'Huỷ'}));
     Object.defineProperty(HTMLElement.prototype,'scrollIntoView',{configurable:true,value:vi.fn()});
@@ -79,6 +80,7 @@ describe('payroll saved-state availability',()=>{
       }
       fireEvent.click(await screen.findByTitle('Điều chỉnh'));
       fireEvent.change(screen.getByPlaceholderText('VD: 500000'),{target:{value:'2000'}});
+      fireEvent.change(screen.getByPlaceholderText('Nhập lý do điều chỉnh'),{target:{value:'LOCAL TEST evidence'}});
       expect(screen.getByRole('button',{name:'Thêm'})).toBeEnabled();
       await act(async()=>finish({id:'old-adjustment'}));
       expect(state.success).not.toHaveBeenCalled();
@@ -103,9 +105,12 @@ describe('payroll saved-state availability',()=>{
     state.rpc.mockResolvedValueOnce({id:'adjustment'});
     render(<DealerPayrollTab clubIds={['club']} clubs={[{id:'club',name:'TEST'}]}/>);
     fireEvent.click(await screen.findByTitle('Điều chỉnh'));
-    fireEvent.change(screen.getByPlaceholderText('VD: 500000'),{target:{value:'1000'}});
+    fireEvent.change(screen.getByPlaceholderText('VD: 500000'),{target:{value:'100.000'}});
+    expect(screen.getByRole('button',{name:'Thêm'})).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText('Nhập lý do điều chỉnh'),{target:{value:'LOCAL TEST evidence'}});
     const reads=state.saved.mock.calls.length;
     fireEvent.click(screen.getByRole('button',{name:'Thêm'}));
+    expect(state.rpc).toHaveBeenCalledWith('saved','BONUS',100000,'LOCAL TEST evidence','actor');
     await waitFor(()=>expect(state.success).toHaveBeenCalledWith('Đã thêm điều chỉnh'));
     expect(state.saved.mock.calls.length).toBeGreaterThan(reads);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -117,8 +122,9 @@ describe('payroll saved-state availability',()=>{
     const props={clubIds:['club'],clubs:[{id:'club',name:'TEST'}]};const view=render(<DealerPayrollTab {...props}/>);
     fireEvent.click(await screen.findByTitle('Điều chỉnh'));
     fireEvent.change(screen.getByPlaceholderText('VD: 500000'),{target:{value:'1000'}});
+    fireEvent.change(screen.getByPlaceholderText('Nhập lý do điều chỉnh'),{target:{value:'LOCAL TEST evidence'}});
     fireEvent.click(screen.getByRole('button',{name:'Thêm'}));
-    expect(state.rpc).toHaveBeenCalledWith('saved','BONUS',1000,'BONUS','actor');
+    expect(state.rpc).toHaveBeenCalledWith('saved','BONUS',1000,'LOCAL TEST evidence','actor');
     if(kind==='session')state.session={access_token:'TEST payroll replacement session'};else state.actor='second';
     view.rerender(<DealerPayrollTab {...props}/>);
     fireEvent.click(await screen.findByTitle('Điều chỉnh'));
@@ -313,9 +319,10 @@ it('pauses monthly polling while an adjustment dialog contains operator input',a
  try{
   await act(async()=>vi.advanceTimersByTimeAsync(1));fireEvent.click(screen.getByTitle('Điều chỉnh'));
   fireEvent.change(screen.getByPlaceholderText('VD: 500000'),{target:{value:'17000'}});
+  fireEvent.change(screen.getByPlaceholderText('Nhập lý do điều chỉnh'),{target:{value:'LOCAL TEST evidence'}});
   await act(async()=>vi.advanceTimersByTimeAsync(10000));expect(state.fetch).toHaveBeenCalledTimes(1);
   expect(screen.getByRole('dialog',{name:'Thêm điều chỉnh'})).toBeInTheDocument();
-  expect(screen.getByPlaceholderText('VD: 500000')).toHaveValue(17000);expect(state.save).not.toHaveBeenCalled();
+  expect(screen.getByPlaceholderText('VD: 500000')).toHaveValue('17000');expect(state.save).not.toHaveBeenCalled();
  }finally{view.unmount();vi.useRealTimers();}
 });
 it.each([
