@@ -119,6 +119,36 @@ rule. Verify both cohorts and chip conservation after rollback.
   ```
 - Native fixtures model Auth/HTTP and use an admin SQL transport. Their schema-only
   export is **not** production owner/effective-ACL parity or hosted Edge proof.
-- Fresh restore-verified backup, final owner GO, production release, live write
-  acceptance and real Safari audio remain outstanding. The protected release
-  orchestrator and its tests must pass before that GO is requested.
+- Owner approved PR1779 head `b08c3ed5f`, the exact migrations350/351,
+  six consumers and runtime source `3c6e2080a`. Backup/restore run45395561876
+  passed; its snapshot is2026-11-24T12:40:43.550654Z (one-hour expiry still applies).
+- Release45398872397 installed350 and verified all six consumers and production
+  frontend `dpl_82HDWYftyohMueomepk9Adw2N954`. Activation351 exited13 before
+  any351 database call: dynamic importing the consumer module while awaiting
+  the release entry module caused a top-level-await dependency deadlock.
+- The runner repair uses a static validator import. A subprocess regression
+  reproduces exit13 on the old runner and passes through exactly one atomic351
+  writer on the repaired runner, with SQL/process transports isolated locally.
+
+## Activation-only recovery after run45398872397
+
+This is a **new protected run** and needs owner approval for that run before
+dispatch. The runtime revision, migration contents and business scope are unchanged.
+Do not rerun the original deployment steps or advance Edge versions again.
+
+1. Use the corrected runner after required checks. Keep the same confirmation
+   and set `resume_consumer_run_id=45398872397`. Supply a currently valid,
+   successfully restore-verified backup run; never extend its one-hour TTL.
+2. The workflow checks the original failed run's owner, main SHA, workflow and
+   successful350/consumer steps. It downloads only the retained consumer metadata,
+   pins its artifact SHA256
+   `9abf1caf4d51221d3086847dfad44ae20dc208be79c323fd358e656e77d817bd`,
+   then rechecks live Edge IDs/versions/JWT, exact frontend source/deployment/alias
+   and app shells. Any drift stops before activation.
+3. The original350 apply and all deployment steps are skipped. Existing activation
+   guards still require the exact350 ledger receipt, unmodified function preimages,
+   pending351, fresh backup and original protected owner/connection context.
+4. Apply only exact351 and verify its receipt, function hashes and preserved
+   privileges. On any unknown outcome, inspect the ledger first; do not retry.
+5. Live write acceptance and real Safari audio remain outstanding. Read-only
+   production replay/layout smoke testing does not prove a new-rule hand settled.
