@@ -2076,6 +2076,7 @@
     "detailsUnavailable": "Không tải đủ thông tin deal hoặc lịch sử hồ sơ. Dữ liệu chưa được xác minh; hãy thử lại."
   },
   "financeRead": {
+    "missingEventStart": "Có giải đã phát sinh tiền nhưng thiếu ngày bắt đầu. Hãy xác minh ngày tổ chức của giải để xác định kỳ báo cáo.",
     "forbidden": "Bạn chưa có quyền xem báo cáo tài chính của CLB này.",
     "missingBackend": "Máy chủ chưa có phiên bản báo cáo cần thiết. Không thể xác minh số liệu.",
     "invalid": "Dữ liệu báo cáo không đầy đủ hoặc không hợp lệ. Không thể xác minh số liệu.",
