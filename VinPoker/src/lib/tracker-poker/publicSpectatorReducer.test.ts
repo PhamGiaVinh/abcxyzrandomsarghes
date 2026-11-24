@@ -64,6 +64,7 @@ it('keeps dead BB ante in the main layer and does not guess a missing ante rule'
   expect(historical.potLayers).toEqual([600]);
   expect(historical).toMatchObject({players:[{stack:1400},{stack:600}]});
   expect(project({...completed,actions:undefined})).toMatchObject({pot:600,potLayers:null,players:[{stack:1400},{stack:600}]});
+  expect(project({...completed,bigBlindAnteOnly:false})).toMatchObject({pot:600,potLayers:null,players:[{stack:1400},{stack:600}]});
 });
 
 it("publishes each seat's last confirmed action and fold state without changing chip totals", () => {

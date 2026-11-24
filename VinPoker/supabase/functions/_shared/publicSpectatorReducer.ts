@@ -65,7 +65,9 @@ function reduceLiveTable(value: unknown): unknown {
     : computePotBreakdown(runtime.players.map(player => ({ ...player,
       big_blind_ante: table.bigBlindAnteOnly === true ? antes.get(player.player_id) ?? 0 : 0,
     }))).pots.map(pot => pot.amount);
-  if (table.trackerState === 'last_completed') return { ...table, potLayers };
+  if (table.trackerState === 'last_completed') return { ...table,
+    potLayers: potLayers?.reduce((sum, amount) => sum + amount, 0) === table.pot ? potLayers : null,
+  };
   return { ...table, pot: runtime.players.reduce((total, p) => total + p.total_bet, 0),
     potLayers,
     players: players.map((p) => ({ ...p, stack: byIdentity.get(key(p))?.stack ?? null, isFolded: byIdentity.get(key(p))?.is_folded ?? false, isAllIn: byIdentity.get(key(p))?.is_all_in ?? false, lastAction: lastActions.get(key(p)) ?? null })) };
