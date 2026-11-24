@@ -3,6 +3,7 @@ import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { FEATURES } from "@/lib/featureFlags";
 import { cn } from "@/lib/utils";
+import "./FinanceWorkspace.css";
 
 /** Shared navigation only; each existing page retains its own data and access guards. */
 export default function FinanceWorkspace() {
@@ -19,8 +20,8 @@ export default function FinanceWorkspace() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
+    <div className="finance-workspace min-w-0 space-y-5 font-sans">
+      <div className="space-y-2.5">
         {landing ? (
           <h1 className="font-display text-2xl text-primary">Quầy &amp; Tài chính</h1>
         ) : (
@@ -28,7 +29,7 @@ export default function FinanceWorkspace() {
             Quầy &amp; Tài chính
           </NavLink>
         )}
-        <nav aria-label="Quầy & Tài chính" className={cn("flex flex-wrap gap-2", landing && "grid sm:grid-cols-3")}>
+        <nav aria-label="Quầy & Tài chính" className={cn("flex gap-1 rounded-xl border border-border/60 bg-muted/30 p-1", landing && "grid sm:grid-cols-3")}>
           {(isCashier || isClubOwner || isAdmin) && (
             <FinanceLink to="/cashier" label="Quầy" landing={landing}>
               Ca thu ngân, buy-in, hoàn tiền và trả thưởng.
@@ -46,6 +47,7 @@ export default function FinanceWorkspace() {
           )}
         </nav>
       </div>
+      <Outlet />
       {(isClubOwner || isAdmin || isClubAdmin) && (
         <details className="rounded-lg border border-border px-3 py-2 text-sm">
           <summary className="cursor-pointer text-muted-foreground">Tra cứu chi tiết</summary>
@@ -55,7 +57,6 @@ export default function FinanceWorkspace() {
           </div>
         </details>
       )}
-      <Outlet />
     </div>
   );
 }
@@ -65,8 +66,8 @@ function FinanceLink({ to, label, landing, children }: {
 }) {
   return (
     <NavLink to={to} className={({ isActive }) => cn(
-      "rounded-lg border px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      isActive ? "border-primary/50 bg-primary/10 text-primary" : "border-border bg-card text-foreground hover:border-primary/50",
+      "min-h-11 flex-1 rounded-lg px-3 py-2.5 text-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      isActive ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-card/50",
       landing && "p-4",
     )}>
       <span className="font-medium">{label}</span>
