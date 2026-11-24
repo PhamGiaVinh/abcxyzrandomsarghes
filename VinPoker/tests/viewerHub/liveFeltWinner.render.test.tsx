@@ -448,7 +448,7 @@ describe("LiveFelt verified best-five focus", () => {
     act(() => vi.advanceTimersByTime(420));
     expect(target()).toBe(25_000);
     expect(tooltip()).toBe("Tom Dwan · 25000");
-    expect(view.getByTestId("felt-settlement-award-label-tom").textContent).toBe("+60 BB");
+    expect(view.getByTestId("felt-settlement-award-label-tom").textContent).toBe("WIN +60 BB");
     view.rerender(felt("static", 0));
     expect(target()).toBe(25_000);
     expect(view.queryByTestId("felt-settlement-award-label-phil")).toBeNull();
