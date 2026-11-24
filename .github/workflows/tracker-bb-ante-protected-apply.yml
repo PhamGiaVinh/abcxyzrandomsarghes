@@ -11,6 +11,11 @@ on:
         description: APPLY_TRACKER_BBA_350_351_3c6e2080a0afd2f611693ff13b280d368df886a3
         required: true
         type: string
+      resume_consumer_run_id:
+        description: Optional activation-only recovery; only verified run45398872397 is accepted
+        required: false
+        default: ''
+        type: string
 
 permissions: {actions: read, contents: read, checks: read, pull-requests: read, deployments: write}
 concurrency: {group: vinpoker-production-database-release, cancel-in-progress: false}
@@ -33,12 +38,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           CONFIRM_TRACKER_BBA: ${{ inputs.confirmation }}
+          RESUME_CONSUMER_RUN_ID: ${{ inputs.resume_consumer_run_id }}
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = PhamGiaVinh/abcxyzrandomsarghes
           test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
           test "$GITHUB_TRIGGERING_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
           test "$CONFIRM_TRACKER_BBA" = "APPLY_TRACKER_BBA_350_351_$RELEASE_SHA"
+          test -z "$RESUME_CONSUMER_RUN_ID" || test "$RESUME_CONSUMER_RUN_ID" = 45398872397
           gh api "repos/$GITHUB_REPOSITORY/environments/dealer-swing-production-critical" |
             jq -e '.protection_rules | any(.type=="required_reviewers" and (.reviewers|length>0))' >/dev/null
           pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/1779")"
@@ -112,6 +119,7 @@ jobs:
             printf 'CONSUMER_RECEIPT_PATH=%s/tracker-bba-consumers.json\n' "$RUNNER_TEMP"
           } >>"$GITHUB_ENV"
       - name: Read-only consumer credential and deployed-version preflight before any apply
+        if: inputs.resume_consumer_run_id == ''
         working-directory: runner/VinPoker
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -119,15 +127,46 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: node scripts/ops/tracker-bb-ante-consumers.mjs preflight
       - name: Install exact dormant350 writer and verify metadata
+        if: inputs.resume_consumer_run_id == ''
         working-directory: runner/VinPoker
         run: node scripts/ops/tracker-bb-ante-release.mjs apply350
       - name: Deploy only six reviewed Edge consumers and exact production frontend
+        if: inputs.resume_consumer_run_id == ''
         working-directory: runner/VinPoker
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASEACCESSTOKEN }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: node scripts/ops/tracker-bb-ante-consumers.mjs deploy
+      - name: Recover exact failed run consumer evidence without redeploying
+        if: inputs.resume_consumer_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESUME_CONSUMER_RUN_ID: ${{ inputs.resume_consumer_run_id }}
+        run: |
+          set -euo pipefail
+          test "$RESUME_CONSUMER_RUN_ID" = 45398872397
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RESUME_CONSUMER_RUN_ID")"
+          workflow="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/tracker-bb-ante-protected-apply.yml" --jq .id)"
+          jq -e --argjson workflow "$workflow" --arg owner "$GITHUB_REPOSITORY_OWNER" '.workflow_id==$workflow and .event=="workflow_dispatch" and .status=="completed" and .conclusion=="failure" and .head_branch=="main" and .head_sha=="a6a113d389b8852acb7db491b96ede984bb7dbb6" and .actor.login==$owner and .triggering_actor.login==$owner' <<<"$run" >/dev/null
+          jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RESUME_CONSUMER_RUN_ID/jobs")"
+          for name in 'Install exact dormant350 writer and verify metadata' 'Deploy only six reviewed Edge consumers and exact production frontend'; do
+            jq -e --arg name "$name" '[.jobs[]|select(.name=="release")|.steps[]|select(.name==$name)]|length==1 and .[0].conclusion=="success"' <<<"$jobs" >/dev/null
+          done
+          artifact="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RESUME_CONSUMER_RUN_ID/artifacts" | jq -ce '[.artifacts[]|select(.name=="tracker-bba-consumer-receipt-45398872397" and .expired==false)]|if length==1 then .[0] else error("consumer evidence missing") end')"
+          test "$(jq -er .digest <<<"$artifact")" = sha256:9abf1caf4d51221d3086847dfad44ae20dc208be79c323fd358e656e77d817bd
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$(jq -er .id <<<"$artifact")/zip" >"$RUNNER_TEMP/tracker-bba-consumers.zip"
+          test "$(sha256sum "$RUNNER_TEMP/tracker-bba-consumers.zip"|cut -d ' ' -f1)" = 9abf1caf4d51221d3086847dfad44ae20dc208be79c323fd358e656e77d817bd
+          test "$(unzip -Z1 "$RUNNER_TEMP/tracker-bba-consumers.zip")" = tracker-bba-consumers.json
+          unzip -p "$RUNNER_TEMP/tracker-bba-consumers.zip" tracker-bba-consumers.json >"$CONSUMER_RECEIPT_PATH"
+      - name: Reverify existing consumer versions and alias before activation-only recovery
+        if: inputs.resume_consumer_run_id != ''
+        working-directory: runner/VinPoker
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASEACCESSTOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/ops/tracker-bb-ante-consumers.mjs verify-deployed
       - name: Activate351 only after deployed consumer verification
         working-directory: runner/VinPoker
         run: node scripts/ops/tracker-bb-ante-release.mjs activate351

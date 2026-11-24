@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { buildAtomicMigrationQuery, canonicalSqlText } from './ops-1359-release-gate.mjs';
 import { psqlEnvironment, receiptSql, validateContext } from './floor-37-47-protected-apply.mjs';
+import { validateConsumerReceipt } from './tracker-bb-ante-consumers.mjs';
 
 // Reviewed consumer/SQL revision; the runner can be added in a later commit.
 export const releaseSha = '3c6e2080a0afd2f611693ff13b280d368df886a3';
@@ -125,7 +126,6 @@ async function main() {
     // The protected workflow must record successful deployment of every consumer
     // from this revision before it may activate new-cohort chip rules.
     const consumers = JSON.parse(readFileSync(env.CONSUMER_RECEIPT_PATH, 'utf8'));
-    const { validateConsumerReceipt } = await import('./tracker-bb-ante-consumers.mjs');
     validateConsumerReceipt(consumers);
     assert.equal(consumers.sourceSha, releaseSha);
     assert.equal(consumers.frontend.projectId, 'prj_wLBZF7nG5O2bffM9Qu1v2rgMuMwk');
