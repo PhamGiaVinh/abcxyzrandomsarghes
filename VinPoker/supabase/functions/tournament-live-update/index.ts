@@ -305,6 +305,18 @@ Deno.serve(async (req) => {
       return validationError("ACTOR_MISMATCH", "Tài khoản đã đổi; không áp intent của tài khoản trước.");
     }
     switch (action) {
+      case "post_blinds_v1": {
+        if (body.expected_actor_id !== user.id || typeof body.hand_id !== "string"
+          || typeof body.request_id !== "string") {
+          return validationError("INVALID_BLIND_INTENT", "Yêu cầu đặt blind không hợp lệ. Hãy tải lại bàn.");
+        }
+        result = await supabase.rpc("post_tracker_blinds_v1", {
+          p_tournament_id: tournament_id,
+          p_hand_id: body.hand_id,
+          p_request_id: body.request_id,
+        });
+        break;
+      }
       case "record_manual_hand_v1":
       case "get_manual_finish_receipt_v1":
       case "cancel_manual_finish_v1": {
@@ -1243,6 +1255,12 @@ Deno.serve(async (req) => {
         code: "tracker_correction_pending" }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (result.error) throw result.error;
+    if (action === "post_blinds_v1" && (result.data?.status !== "success"
+      || result.data.hand_id !== body.hand_id || result.data.big_blind_ante_only !== true)) {
+      return new Response(JSON.stringify({ error: "blind_receipt_unconfirmed", code: "blind_receipt_unconfirmed" }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     if (action === "undo_last_action_v1") {
       const proof = result.data;
       if (proof?.ok === false && typeof proof.error === "string") {

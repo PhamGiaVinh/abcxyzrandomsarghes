@@ -45,7 +45,7 @@ BEGIN
   VALUES(gen_random_uuid(),tour,sb,1,table_id,1,1000,true,'active'),
         (gen_random_uuid(),tour,bb,1,table_id,2,1000,true,'active');
 
-  ASSERT NOT has_function_privilege('anon', 'public.post_tracker_blinds_v1(uuid,uuid)', 'EXECUTE');
+  ASSERT NOT has_function_privilege('anon', 'public.post_tracker_blinds_v1(uuid,uuid,uuid)', 'EXECUTE');
   ASSERT NOT has_table_privilege('authenticated', 'floor_private.tracker_blind_receipts350', 'INSERT');
   FOR case_index IN 1..4 LOOP
     bb_stack := (ARRAY[1000,300,100,0])[case_index];
@@ -63,7 +63,7 @@ BEGIN
     PERFORM set_config('request.jwt.claim.sub', outsider::text, true);
     PERFORM set_config('role', 'authenticated', true);
     BEGIN
-      PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid());
+      PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid(), tour);
       RAISE EXCEPTION 'outsider unexpectedly posted blinds';
     EXCEPTION WHEN raise_exception THEN
       ASSERT SQLERRM = 'actor_not_allowed', SQLERRM;
@@ -73,8 +73,14 @@ BEGIN
 
     PERFORM set_config('request.jwt.claim.sub', actor::text, true);
     PERFORM set_config('role', 'authenticated', true);
-    answer := public.post_tracker_blinds_v1(hand, gen_random_uuid());
-    repeated := public.post_tracker_blinds_v1(hand, gen_random_uuid());
+    BEGIN
+      PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid(), gen_random_uuid());
+      RAISE EXCEPTION 'wrong tournament unexpectedly posted blinds';
+    EXCEPTION WHEN raise_exception THEN
+      ASSERT SQLERRM = 'tracker_blinds_hand_missing', SQLERRM;
+    END;
+    answer := public.post_tracker_blinds_v1(hand, gen_random_uuid(), tour);
+    repeated := public.post_tracker_blinds_v1(hand, gen_random_uuid(), tour);
     PERFORM set_config('role', 'none', true);
     ASSERT answer->>'status' = 'success', answer::text;
     ASSERT (answer->>'bb_paid')::integer = expected_bb, answer::text;
@@ -102,7 +108,7 @@ BEGIN
   PERFORM set_config('request.jwt.claim.sub', outsider::text, true);
   PERFORM set_config('role', 'authenticated', true);
   BEGIN
-    PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid());
+    PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid(), tour);
     RAISE EXCEPTION 'another tracker bypassed the hand lock';
   EXCEPTION WHEN raise_exception THEN
     ASSERT SQLERRM = 'tracker_blinds_lock_required', SQLERRM;
@@ -112,7 +118,7 @@ BEGIN
   UPDATE public.tournament_hands SET locked_at = now() - interval '1 day' WHERE id = hand;
   PERFORM set_config('role', 'authenticated', true);
   BEGIN
-    PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid());
+    PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid(), tour);
     RAISE EXCEPTION 'expired lock accepted';
   EXCEPTION WHEN raise_exception THEN
     ASSERT SQLERRM = 'tracker_blinds_lock_required', SQLERRM;
@@ -122,7 +128,7 @@ BEGIN
   UPDATE public.table_sessions SET closed_at = clock_timestamp() WHERE id = session_id;
   PERFORM set_config('role', 'authenticated', true);
   BEGIN
-    PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid());
+    PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid(), tour);
     RAISE EXCEPTION 'closed session accepted';
   EXCEPTION WHEN raise_exception THEN
     ASSERT SQLERRM = 'tracker_blinds_session_unavailable', SQLERRM;
@@ -144,7 +150,7 @@ BEGIN
     ASSERT SQLERRM = 'tracker_blinds_not_confirmed', SQLERRM;
   END;
   BEGIN
-    PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid());
+    PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid(), tour);
     RAISE EXCEPTION 'injected failure did not abort';
   EXCEPTION WHEN raise_exception THEN
     ASSERT SQLERRM = 'injected_bb_failure', SQLERRM;
@@ -162,7 +168,7 @@ BEGIN
   INSERT INTO public.hand_players(hand_id, tournament_id, player_id, entry_number, seat_number, starting_stack)
   VALUES(hand,tour,sb,1,3,1000),(hand,tour,bb,1,2,1000);
   PERFORM set_config('role', 'authenticated', true);
-  answer := public.post_tracker_blinds_v1(hand, gen_random_uuid());
+  answer := public.post_tracker_blinds_v1(hand, gen_random_uuid(), tour);
   PERFORM set_config('role', 'none', true);
   ASSERT answer->>'sb_paid' = '0' AND answer->>'bb_paid' = '200' AND answer->>'ante_paid' = '200', answer::text;
   ASSERT (SELECT jsonb_agg(action_type ORDER BY action_order) FROM public.hand_actions WHERE hand_id = hand)
@@ -178,7 +184,7 @@ BEGIN
   VALUES(hand,tour,sb,1,1,1000),(hand,tour,bb,1,2,1000);
   PERFORM set_config('role', 'authenticated', true);
   BEGIN
-    PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid());
+    PERFORM public.post_tracker_blinds_v1(hand, gen_random_uuid(), tour);
     RAISE EXCEPTION 'old frozen rule was replaced';
   EXCEPTION WHEN raise_exception THEN
     ASSERT SQLERRM = 'tracker_blinds_hand_rule_unavailable', SQLERRM;

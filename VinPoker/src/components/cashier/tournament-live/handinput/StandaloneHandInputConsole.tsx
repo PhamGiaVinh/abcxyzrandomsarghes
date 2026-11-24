@@ -176,6 +176,8 @@ export function StandaloneHandInputConsole({ hook }: { hook: StandaloneHandInput
           players={hook.players}
           levelNumber={hook.blindLevelSnapshot?.level_number ?? null}
           ante={hook.blindLevelSnapshot?.ante ?? 0}
+          atomicBlinds={hook.blindLevelSnapshot?.big_blind_ante_only}
+          onPostBoth={hook.blindLevelSnapshot?.big_blind_ante_only ? hook.handlePostBothBlinds : undefined}
           levelMissing={hook.blindLevelMissing}
           lockedAmounts={hook.blindLevelCanonical}
           sbAmount={hook.sbAmount}

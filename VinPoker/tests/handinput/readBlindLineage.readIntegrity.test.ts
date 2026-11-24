@@ -12,8 +12,24 @@ vi.mock('@/integrations/supabase/client',()=>({supabase:{from:(table:string)=>{
     then:(resolve:(value:unknown)=>unknown,reject:(reason:unknown)=>unknown)=>Promise.resolve(response()).then(resolve,reject)};
   return query;
 }}}));
-import {readBlindLineage} from '@/lib/tournament/readBlindLineage';
+import {readBlindLineage,readHandBlindLevel} from '@/lib/tournament/readBlindLineage';
 beforeEach(()=>{fixture.failedTable=null;fixture.missingHand=false;fixture.native=null;});
+it('reads the frozen BB ante rule and seat positions, preserving legacy snapshots',async()=>{
+ const frozen={tracker_level_number:1,tracker_small_blind:100,tracker_big_blind:200,tracker_bba:0};
+ fixture.native={tournament_hands:frozen};
+ expect(await readHandBlindLevel('hand')).toEqual({level_number:1,small_blind:100,big_blind:200,ante:0});
+ fixture.native.tournament_hands={...frozen,tracker_bba:200,tracker_big_blind_ante_only:true,tracker_sb_position:null,tracker_bb_position:7};
+ expect(await readHandBlindLevel('hand')).toEqual({level_number:1,small_blind:100,big_blind:200,ante:200,
+  big_blind_ante_only:true,small_blind_seat:null,big_blind_seat:7});
+});
+it('rejects a conflicting frozen ante amount or missing BB seat',async()=>{
+ const frozen={tracker_level_number:1,tracker_small_blind:100,tracker_big_blind:200,tracker_bba:0,
+  tracker_big_blind_ante_only:true,tracker_sb_position:1,tracker_bb_position:2};
+ fixture.native={tournament_hands:frozen};
+ await expect(readHandBlindLevel('hand')).rejects.toThrow('tracker_hand_ante_rule_invalid');
+ fixture.native.tournament_hands={...frozen,tracker_bba:200,tracker_bb_position:null};
+ await expect(readHandBlindLevel('hand')).rejects.toThrow('tracker_hand_blind_positions_invalid');
+});
 it.skipIf(process.env.VINPOKER_NATIVE_DB_TEST!=='1')('reads actual Hand33 lineage and derives next HU button without changing stored evidence',async()=>{
  const args=['-d','PokerVision-P16-4C-Eval','--','env','PGHOST=127.0.0.1','PGPORT=55441','PGUSER=postgres','PGDATABASE=vinpoker_ops_cash115_qualified_c','psql','-w','-X','-qAt','-v','ON_ERROR_STOP=1'];
  const sql=(input:string)=>execFileSync('wsl',args,{input,encoding:'utf8',timeout:10000}).trim();

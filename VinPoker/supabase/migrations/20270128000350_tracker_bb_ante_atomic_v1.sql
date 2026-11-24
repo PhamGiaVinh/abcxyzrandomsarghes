@@ -40,7 +40,7 @@ BEGIN
 END;
 $freeze$;
 
-CREATE FUNCTION public.post_tracker_blinds_v1(p_hand_id uuid, p_request_id uuid)
+CREATE FUNCTION public.post_tracker_blinds_v1(p_hand_id uuid, p_request_id uuid, p_tournament_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -64,16 +64,16 @@ DECLARE
   previous_batch text;
 BEGIN
   IF actor IS NULL THEN RAISE EXCEPTION 'unauthorized'; END IF;
-  IF p_hand_id IS NULL OR p_request_id IS NULL THEN RAISE EXCEPTION 'tracker_blinds_invalid_request'; END IF;
+  IF p_hand_id IS NULL OR p_request_id IS NULL OR p_tournament_id IS NULL THEN RAISE EXCEPTION 'tracker_blinds_invalid_request'; END IF;
   SELECT h.table_session_id, t.club_id INTO session_id, club
   FROM public.tournament_hands h JOIN public.tournaments t ON t.id = h.tournament_id
-  WHERE h.id = p_hand_id;
+  WHERE h.id = p_hand_id AND h.tournament_id = p_tournament_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'tracker_blinds_hand_missing'; END IF;
   IF NOT public.is_club_tracker(actor, club) THEN RAISE EXCEPTION 'actor_not_allowed'; END IF;
 
   -- Control transfer and duplicate writers serialize on the same session/hand.
   PERFORM 1 FROM public.table_sessions WHERE id = session_id FOR UPDATE;
-  SELECT * INTO STRICT hand FROM public.tournament_hands WHERE id = p_hand_id FOR UPDATE;
+  SELECT * INTO STRICT hand FROM public.tournament_hands WHERE id = p_hand_id AND tournament_id = p_tournament_id FOR UPDATE;
   SELECT result INTO saved FROM floor_private.tracker_blind_receipts350 WHERE hand_id = p_hand_id;
   IF FOUND THEN RETURN saved || jsonb_build_object('duplicate', true); END IF;
   IF hand.status <> 'in_progress' OR coalesce(hand.is_voided, false)
@@ -162,9 +162,9 @@ BEGIN
   RETURN saved || jsonb_build_object('duplicate', false);
 END;
 $body$;
-ALTER FUNCTION public.post_tracker_blinds_v1(uuid, uuid) OWNER TO postgres;
-REVOKE ALL ON FUNCTION public.post_tracker_blinds_v1(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.post_tracker_blinds_v1(uuid, uuid) TO authenticated;
+ALTER FUNCTION public.post_tracker_blinds_v1(uuid, uuid, uuid) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.post_tracker_blinds_v1(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.post_tracker_blinds_v1(uuid, uuid, uuid) TO authenticated;
 
 CREATE FUNCTION floor_private.guard_tracker_blind_batch350()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $guard$

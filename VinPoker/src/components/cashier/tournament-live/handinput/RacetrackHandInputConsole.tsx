@@ -249,7 +249,8 @@ export function RacetrackHandInputConsole({ hook }: { hook: StandaloneHandInput 
                 }${hook.blindFetchedAt ? ` · lấy ${hook.blindFetchedAt.toTimeString().slice(0, 5)}` : ""}`
               : undefined
           }
-          onPostBoth={FEATURES.trackerBlindAutoSeed ? hook.handlePostBothBlinds : undefined}
+          atomicBlinds={hook.blindLevelSnapshot?.big_blind_ante_only}
+          onPostBoth={FEATURES.trackerBlindAutoSeed || hook.blindLevelSnapshot?.big_blind_ante_only ? hook.handlePostBothBlinds : undefined}
           onRefreshLevel={FEATURES.trackerWorkflowAids && !hook.blindLevelCanonical ? hook.refreshLiveLevel : undefined}
         />
       );

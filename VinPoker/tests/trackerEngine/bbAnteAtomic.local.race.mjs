@@ -15,7 +15,7 @@ assert.ok(identity.data.includes('tracker-bba349-pg17-'));
 const actor = randomUUID(), club = randomUUID(), tour = randomUUID(), table = randomUUID();
 const session = randomUUID(), level = randomUUID(), hand = randomUUID(), sb = randomUUID(), bb = randomUUID();
 const auth = `SET LOCAL request.jwt.claim.sub='${actor}';SET LOCAL ROLE authenticated;`;
-const post = `SELECT public.post_tracker_blinds_v1('${hand}','${randomUUID()}');`;
+const post = `SELECT public.post_tracker_blinds_v1('${hand}','${randomUUID()}','${tour}');`;
 const run = (name, query) => {
   const child = spawn(psql, [...args, '-c', query], { env: { ...process.env, PGAPPNAME: name }, windowsHide: true });
   let output = '', error = '';
