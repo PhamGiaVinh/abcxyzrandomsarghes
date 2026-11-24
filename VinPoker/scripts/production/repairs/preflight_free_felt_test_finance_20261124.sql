@@ -1,5 +1,7 @@
 -- READ ONLY. Capture exact IDs + drift fingerprint for the separately approved repair.
 -- No player names, bank payloads, tokens or full registration rows are emitted.
+BEGIN READ ONLY;
+SET LOCAL TIME ZONE 'UTC';
 SELECT r.id,r.created_at,r.buy_in,r.total_pay,r.status,r.price_snapshot IS NULL AS no_snapshot,
   r.cashier_paid_at IS NULL AS no_cashier_paid_at,coalesce(r.platform_fixed_fee,0) AS platform_fixed_fee
 FROM public.tournament_registrations r
@@ -13,3 +15,4 @@ FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid
 WHERE t.tgrelid IN ('public.tournament_registrations'::regclass,
   'public.cashier_buyin_movements'::regclass,'public.cashier_refund_requests'::regclass)
   AND NOT t.tgisinternal ORDER BY c.relname,t.tgname;
+COMMIT;

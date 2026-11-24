@@ -3,6 +3,7 @@
 -- Run in one transaction as postgres, with the acknowledgment set by the operator.
 -- ROLLBACK: rollback_free_felt_test_finance_20261124.sql (refuses intervening edits/payments).
 BEGIN;
+SET LOCAL TIME ZONE 'UTC';
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='10s';
 DO $$ BEGIN

@@ -44,7 +44,7 @@ sql(`CREATE FUNCTION test_report_date_guard() RETURNS void LANGUAGE plpgsql AS $
 assert.match(sql('SELECT test_report_date_guard();',false).stderr,/finance_report_event_start_unavailable/);
 sql(`DO $$ DECLARE r jsonb; BEGIN r:=get_owner_tour_rake_live_v1('22222222-2222-2222-2222-222222222222')#>'{tours,0}'; ASSERT (r->>'unavailableBuys')::int=2; ASSERT r->'rake'='null'::jsonb; END $$;`);
 const repair = readFileSync(repairPath, 'utf8'); // RED: missing before implementation
-const preimage = sql(`COPY (SELECT md5(jsonb_agg(to_jsonb(r) ORDER BY r.id)::text) FROM tournament_registrations r) TO STDOUT;`).stdout.trim();
+const preimage = sql(`SET TIME ZONE 'UTC'; COPY (SELECT md5(jsonb_agg(to_jsonb(r) ORDER BY r.id)::text) FROM tournament_registrations r) TO STDOUT;`).stdout.trim().split('\n').at(-1).trim();
 assert.match(preimage,/^[a-f0-9]{32}$/);
 const ack = `SET vinpoker.free_test_repair_ack='PREPARE_FREE_FELT_2_REGISTRATIONS_20261124'; SET vinpoker.free_test_expected_preimage_md5='${preimage}';\n`;
 const rollback = readFileSync('scripts/production/repairs/rollback_free_felt_test_finance_20261124.sql', 'utf8');

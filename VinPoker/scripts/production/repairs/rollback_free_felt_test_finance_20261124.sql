@@ -1,5 +1,6 @@
 -- Owner-gated forward rollback. Keeps the audit backup and all hand history.
 BEGIN;
+SET LOCAL TIME ZONE 'UTC';
 SET LOCAL lock_timeout='1s';
 SET LOCAL statement_timeout='10s';
 DO $$ BEGIN
