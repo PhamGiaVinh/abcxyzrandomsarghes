@@ -1,6 +1,7 @@
 import {render,screen,cleanup} from '@testing-library/react';
 import {afterEach,it,expect,vi} from 'vitest';
 import {TvBroadcastBoard} from './TvBroadcastBoard';
+import {TvBroadcastBoardView} from './TvBroadcastBoardView';
 import type {TvData} from '@/types/tv';
 vi.mock('@/hooks/useTvStackRange',()=>({useTvStackRange:()=>null}));
 afterEach(cleanup);
@@ -17,7 +18,7 @@ it('keeps canonical unknown prize and extrema unknown instead of estimating',()=
  expect(screen.getByText('2 / 4')).toBeInTheDocument();expect(screen.getByText('08:35')).toBeInTheDocument();
 });
 it('renders configured ranks and chip/BB values without fake currency conversion',()=>{
- render(<TvBroadcastBoard data={{...data,prizes:[{position:1,amount:1000000},{position:2,amount:500000}],largestStack:50000,smallestStack:10000}}/>);
+ render(<TvBroadcastBoardView range={{largest:50000,smallest:10000}} data={{...data,prizes:[{position:1,amount:1000000},{position:2,amount:500000}]}}/>);
  expect(screen.getByRole('heading',{name:'Places Paid'}).nextElementSibling).toHaveTextContent('2');
  expect(screen.getByText('50.000 (14 BB)')).toBeInTheDocument();expect(screen.getByText('1.000.000')).toBeInTheDocument();
 });

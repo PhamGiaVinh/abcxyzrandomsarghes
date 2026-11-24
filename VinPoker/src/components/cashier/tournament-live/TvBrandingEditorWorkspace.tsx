@@ -248,7 +248,7 @@ function ScopedTvBrandingEditor({ tournamentId,actorId,sessionEpoch,assetPreview
               <div className="mb-2 flex items-center justify-between text-[11px] uppercase tracking-[.18em] text-white/60">
                 <span>Draft 16:9 preview · not on TV</span><span>Safe area: 4–96%</span>
               </div>
-              <TvBroadcastPreview data={previewData} onLayoutChange={setLayout} />
+              <TvBroadcastPreview data={previewData} live={current !== null} onLayoutChange={setLayout} />
               <p className="mt-3 text-xs leading-relaxed text-white/55">{current ? "Dữ liệu của giải đang chọn." : "Đang minh họa bố cục bằng số liệu mẫu."} Nhấn Publish TV layout để áp dụng bố cục lên TV.</p>
               {layoutError && <p role="alert" className="mt-2 text-xs text-amber-300">{layoutError}</p>}
             </section>

@@ -40,9 +40,9 @@ export function TvBroadcastBoardView({ data, range, onLayoutChange }: {
       <div className="tv-broadcast-break"><span>Next Break</span><strong>{clock.nextBreakSecondsLeft == null ? '—' : formatClock(clock.nextBreakSecondsLeft)}</strong></div>
       <p className="tv-broadcast-note">{clock.terminalStatus ? clock.levelLabel : data.isRunning ? 'Đang diễn ra' : 'Đồng hồ đang tạm dừng'}</p>
       <div className="tv-broadcast-stacks">
-        <div><h2>Largest Stack</h2><strong title={range == null ? 'Chưa có dữ liệu tổng hợp đã xác minh' : undefined}>{stack(range?.largest ?? data.largestStack)}</strong></div>
+        <div><h2>Largest Stack</h2><strong title={range == null ? 'Chưa có dữ liệu tổng hợp đã xác minh' : undefined}>{stack(range === undefined ? data.largestStack : range?.largest)}</strong></div>
         <div><h2>Average Stack</h2><strong>{stack(data.averageStack)}</strong></div>
-        <div><h2>Smallest Stack</h2><strong title={range == null ? 'Chưa có dữ liệu tổng hợp đã xác minh' : undefined}>{stack(range?.smallest ?? data.smallestStack)}</strong></div>
+        <div><h2>Smallest Stack</h2><strong title={range == null ? 'Chưa có dữ liệu tổng hợp đã xác minh' : undefined}>{stack(range === undefined ? data.smallestStack : range?.smallest)}</strong></div>
       </div>
     </main>
     <aside className="tv-broadcast-payouts" aria-label="Cơ cấu giải thưởng">
