@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { applyPhase, preparePackage, releaseSha } from './tracker-bb-ante-release.mjs';
+import { applyPhase, catalogSql, preparePackage, releaseSha } from './tracker-bb-ante-release.mjs';
 
 const root = process.env.RELEASE_SOURCE_ROOT ?? fileURLToPath(new URL('../..', import.meta.url));
 const pre = { database: 'postgres', actor: 'postgres', pending: true, definitions: true, objects: true, metadata: Array.from({length:4}, (_, i) => ['retained', i, null]) };
 const post = { ...pre };
 const exact = { count: 1, exact: true };
+
+test('pins the observed production reader and retains its plan-cache wrapper', () => {
+  const phases=preparePackage(root);
+  assert.match(catalogSql(phases[0]),/eae66e8c287d78489e8facea7303f7b9/);
+  assert.match(catalogSql(phases[1],true),/f72e77c775b7b195dad149284f542533/);
+});
 
 test('prepares only the two reviewed migrations and pins the consumer source', () => {
   const phases = preparePackage(root);

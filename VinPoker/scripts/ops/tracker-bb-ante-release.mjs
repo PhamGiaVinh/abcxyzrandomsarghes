@@ -24,8 +24,10 @@ const signatures = [
   'public.get_public_tournament_hand_v2(uuid,uuid)',
   'floor_private.snapshot_tracker_hand_blinds()',
 ];
-const oldHashes = ['62ed37150e497f2d17eabfb305df245b', 'b6a5e93807c3ca7117506639536562ad', '6dc47b78563dac17956b3d126d70604e', '81554940f984d3349149cdeed959626e'];
-const newHashes = ['5cce390d5b970846feac276785ab63d9', 'bf33a1c0e9c10ab38e2314939a0caecd', '3d53c9eee7a8d48cee7e88575272f2c8', '8aeffecdfd90bafded96474ed9562dc4'];
+// Exact production metadata observed through a read-only SQL Editor preflight.
+// The public reader includes the plan-cache wrapper from20261104002200.
+const oldHashes = ['62ed37150e497f2d17eabfb305df245b', 'b6a5e93807c3ca7117506639536562ad', 'eae66e8c287d78489e8facea7303f7b9', '81554940f984d3349149cdeed959626e'];
+const newHashes = ['5cce390d5b970846feac276785ab63d9', 'bf33a1c0e9c10ab38e2314939a0caecd', 'f72e77c775b7b195dad149284f542533', '8aeffecdfd90bafded96474ed9562dc4'];
 const sqlString = value => `'${value.replaceAll("'", "''")}'`;
 const hash = value => createHash('sha256').update(value).digest('hex');
 
@@ -93,7 +95,7 @@ export function applyPhase(phase, transport, report = () => {}) {
   report(`TRACKER_BBA_COMMITTED_EXACT ${phase.version}`);
 }
 
-function main() {
+async function main() {
   const mode = process.argv[2];
   assert.ok(['verify-source', 'preflight', 'apply350', 'activate351'].includes(mode));
   const env = process.env;
@@ -123,6 +125,8 @@ function main() {
     // The protected workflow must record successful deployment of every consumer
     // from this revision before it may activate new-cohort chip rules.
     const consumers = JSON.parse(readFileSync(env.CONSUMER_RECEIPT_PATH, 'utf8'));
+    const { validateConsumerReceipt } = await import('./tracker-bb-ante-consumers.mjs');
+    validateConsumerReceipt(consumers);
     assert.equal(consumers.sourceSha, releaseSha);
     assert.equal(consumers.frontend.projectId, 'prj_wLBZF7nG5O2bffM9Qu1v2rgMuMwk');
     assert.equal(consumers.frontend.hostname, 'vinpoker.vercel.app');
@@ -135,6 +139,6 @@ function main() {
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  try { main(); }
+  try { await main(); }
   catch { console.error('TRACKER_BBA_STOP inspect exact source, consumers and receipt before any retry'); process.exitCode = 1; }
 }

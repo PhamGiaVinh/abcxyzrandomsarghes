@@ -1,0 +1,141 @@
+name: Tracker BB ante350351 coordinated protected release
+
+on:
+  workflow_dispatch:
+    inputs:
+      recovery_run_id:
+        description: Successful encrypted backup and isolated restore run
+        required: true
+        type: string
+      confirmation:
+        description: APPLY_TRACKER_BBA_350_351_3c6e2080a0afd2f611693ff13b280d368df886a3
+        required: true
+        type: string
+
+permissions: {actions: read, contents: read, checks: read, pull-requests: read, deployments: write}
+concurrency: {group: vinpoker-production-database-release, cancel-in-progress: false}
+env:
+  RELEASE_SHA: 3c6e2080a0afd2f611693ff13b280d368df886a3
+
+jobs:
+  qualify:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {path: runner}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ env.RELEASE_SHA }}', path: release}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Require owner dispatch, merged reviewed source, green checks and protected environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONFIRM_TRACKER_BBA: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = PhamGiaVinh/abcxyzrandomsarghes
+          test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          test "$GITHUB_TRIGGERING_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          test "$CONFIRM_TRACKER_BBA" = "APPLY_TRACKER_BBA_350_351_$RELEASE_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/environments/dealer-swing-production-critical" |
+            jq -e '.protection_rules | any(.type=="required_reviewers" and (.reviewers|length>0))' >/dev/null
+          pr="$(gh api "repos/$GITHUB_REPOSITORY/pulls/1779")"
+          jq -e '.merged==true and .base.ref=="main"' <<<"$pr" >/dev/null
+          head="$(jq -er .head.sha <<<"$pr")"
+          checks="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/commits/$head/check-runs?per_page=100")"
+          for name in runtime postgres collision-guard exact-release-source release-runner-postgres-17 ops-floor-cashier-disposable-db tracker-record-action-authority-hotfix-db tracker-start-hand-authority-hotfix-db tracker-takeover-authority-closure-db tracker-terminal-rpc-authority-hotfix-db 'Floor V3 catalog and promotion preflight'; do
+            jq -e --arg name "$name" '[.[]|.check_runs[]|select(.name==$name and .app.slug=="github-actions")]|max_by(.id)|.status=="completed" and .conclusion=="success"' <<<"$checks" >/dev/null
+          done
+          git -C runner fetch origin "$RELEASE_SHA"
+          git -C runner diff --exit-code "$RELEASE_SHA" HEAD -- VinPoker/src VinPoker/api VinPoker/public VinPoker/index.html VinPoker/ops.html VinPoker/package.json VinPoker/package-lock.json VinPoker/vite.config.ts VinPoker/vercel.json VinPoker/supabase/config.toml VinPoker/supabase/functions VinPoker/supabase/migrations/20270128000350_tracker_bb_ante_atomic_v1.sql VinPoker/supabase/migrations/20270128000351_tracker_bb_ante_settlement_v1.sql
+      - name: Qualify exact source and guarded release behavior without credentials
+        working-directory: runner/VinPoker
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/release/VinPoker
+        run: |
+          node scripts/ops/tracker-bb-ante-release.mjs verify-source
+          node --test scripts/ops/tracker-bb-ante-release.test.mjs scripts/ops/tracker-bb-ante-consumers.test.mjs
+
+  release:
+    needs: qualify
+    # Hold the existing frontend/Edge release lock as well as the workflow's DB lock.
+    concurrency: {group: production-source, cancel-in-progress: false}
+    environment: dealer-swing-production-critical
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      RELEASE_SOURCE_ROOT: ${{ github.workspace }}/release/VinPoker
+      SOURCE_CHECKOUT_SHA: 3c6e2080a0afd2f611693ff13b280d368df886a3
+      INITIAL_ACTOR: ${{ github.actor }}
+      TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+      REPOSITORY_OWNER: ${{ github.repository_owner }}
+      CONFIRM_TRACKER_BBA: ${{ inputs.confirmation }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      PGHOST: aws-1-ap-southeast-2.pooler.supabase.com
+      PGPORT: '5432'
+      PGUSER: postgres.orlesggcjamwuknxwcpk
+      PGDATABASE: postgres
+      PGSSLMODE: require
+      PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {path: runner}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ env.RELEASE_SHA }}', path: release}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13
+        with: {version: '2.101.0'}
+      - name: Verify recovery provenance and download metadata only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$RECOVERY_RUN_ID" =~ ^[0-9]+$ ]]
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID")"
+          workflow="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/floor-v3-recovery-backup.yml" --jq .id)"
+          jq -e --argjson workflow "$workflow" --arg owner "$GITHUB_REPOSITORY_OWNER" '.workflow_id==$workflow and .event=="workflow_dispatch" and .status=="completed" and .conclusion=="success" and .head_branch=="main" and .actor.login==$owner and .triggering_actor.login==$owner' <<<"$run" >/dev/null
+          artifact="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID/artifacts" |
+            jq -ce --arg name "floor-v3-restore-verification-$RECOVERY_RUN_ID" '[.artifacts[]|select(.name==$name and .expired==false and .size_in_bytes>0)]|if length==1 then .[0] else error("restore artifact missing") end')"
+          id="$(jq -r .id <<<"$artifact")"
+          digest="$(jq -er '.digest|select(test("^sha256:[a-f0-9]{64}$"))' <<<"$artifact")"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" >"$RUNNER_TEMP/tracker-bba-recovery.zip"
+          test "$(sha256sum "$RUNNER_TEMP/tracker-bba-recovery.zip"|cut -d ' ' -f1)" = "${digest#sha256:}"
+          test "$(unzip -Z1 "$RUNNER_TEMP/tracker-bba-recovery.zip")" = recovery-verification.json
+          unzip -p "$RUNNER_TEMP/tracker-bba-recovery.zip" recovery-verification.json >"$RUNNER_TEMP/tracker-bba-recovery.json"
+          {
+            printf 'RECOVERY_BASE_SHA=%s\n' "$(jq -er '.head_sha|select(test("^[a-f0-9]{40}$"))' <<<"$run")"
+            printf 'RECOVERY_RECEIPT_PATH=%s/tracker-bba-recovery.json\n' "$RUNNER_TEMP"
+            printf 'CONSUMER_RECEIPT_PATH=%s/tracker-bba-consumers.json\n' "$RUNNER_TEMP"
+          } >>"$GITHUB_ENV"
+      - name: Read-only consumer credential and deployed-version preflight before any apply
+        working-directory: runner/VinPoker
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASEACCESSTOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/ops/tracker-bb-ante-consumers.mjs preflight
+      - name: Install exact dormant350 writer and verify metadata
+        working-directory: runner/VinPoker
+        run: node scripts/ops/tracker-bb-ante-release.mjs apply350
+      - name: Deploy only six reviewed Edge consumers and exact production frontend
+        working-directory: runner/VinPoker
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASEACCESSTOKEN }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/ops/tracker-bb-ante-consumers.mjs deploy
+      - name: Activate351 only after deployed consumer verification
+        working-directory: runner/VinPoker
+        run: node scripts/ops/tracker-bb-ante-release.mjs activate351
+      - name: Retain version metadata even if a later phase fails
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tracker-bba-consumer-receipt-${{ github.run_id }}
+          path: ${{ runner.temp }}/tracker-bba-consumers.json
+          if-no-files-found: ignore
+          retention-days: 14

@@ -28,6 +28,27 @@ assert.equal(sql('tracker_bba350_full', `SELECT count(*) FROM pg_database WHERE 
 sql('tracker_bba350_full', `CREATE DATABASE ${name};`);
 try {
   sql(name,schema);
+  // Production preflight 2026-11-24: migration20261104002200 has wrapped this
+  // SQL reader in PL/pgSQL. Reproduce that migration's exact one-reader transform
+  // because the older schema clone's other live-reader preimage is different.
+  sql(name,`DO $fixture$ DECLARE fn record; BEGIN
+    SELECT p.*,n.nspname,pg_get_function_arguments(p.oid) arguments,
+      replace(pg_get_functiondef(p.oid),chr(13),'') definition INTO STRICT fn
+    FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+    WHERE p.oid='public.get_public_tournament_hand_v2(uuid,uuid)'::regprocedure;
+    ASSERT md5(fn.definition)='6dc47b78563dac17956b3d126d70604e';
+    EXECUTE format('CREATE OR REPLACE FUNCTION %I.%I(%s) RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='''' COST %s AS %L',
+      fn.nspname,fn.proname,fn.arguments,fn.procost,'BEGIN RETURN ('||regexp_replace(fn.prosrc,';[[:space:]]*$','')||'); END;');
+    ASSERT md5(replace(pg_get_functiondef(fn.oid),chr(13),''))='eae66e8c287d78489e8facea7303f7b9';
+  END $fixture$;
+  REVOKE ALL ON FUNCTION public.get_public_tournament_hand_v2(uuid,uuid) FROM PUBLIC,anon,authenticated,service_role;
+  GRANT EXECUTE ON FUNCTION public.get_public_tournament_hand_v2(uuid,uuid) TO anon,authenticated,service_role;
+  REVOKE ALL ON FUNCTION public.record_hand(uuid,uuid,integer,timestamptz,jsonb,jsonb,jsonb,jsonb,integer,uuid),
+    public.commit_tournament_settlement_outcome(uuid,uuid,bigint,text,bigint,text,text,text,jsonb,jsonb,jsonb,jsonb),
+    floor_private.snapshot_tracker_hand_blinds(),floor_private.tracker_manual_payouts_match_v1(jsonb,jsonb,jsonb)
+    FROM PUBLIC,anon,authenticated,service_role;`);
+  console.log('PRODUCTION_READER_EXPECTED_POST_HASH '+sql(name,`SELECT md5(replace(replace(pg_get_functiondef('public.get_public_tournament_hand_v2(uuid,uuid)'::regprocedure),chr(13),''),
+    $anchor$'ante',h.tracker_bba$anchor$,$new$'ante',h.tracker_bba,'bigBlindAnteOnly',h.tracker_big_blind_ante_only$new$));`));
   const phases=preparePackage(fileURLToPath(new URL('../..',import.meta.url)));
   for(const phase of phases) {
     applyPhase(phase, {

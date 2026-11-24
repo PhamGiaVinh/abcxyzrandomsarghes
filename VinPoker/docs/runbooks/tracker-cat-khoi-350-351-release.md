@@ -45,7 +45,8 @@ reinterpret the100 ante as an unmatched wager.
 
 1. Finish PR checks, anonymous preview/mobile replay checks, and required local
    engine/native acceptance. Keep the critical PR in draft until the final gate.
-2. Prepare a protected owner-only dispatch using the reviewed runner. Verify
+2. Qualify `.github/workflows/tracker-bb-ante-protected-apply.yml`, the protected
+   owner-only dispatch using the reviewed runner. Verify
    source checks, required-reviewer environment, exact revisions and credentials
    through the existing controlled DB/Edge runbooks. No generic `db push`.
 3. Obtain one owner approval covering these exact SQL sources, six Edge consumers,
@@ -54,8 +55,9 @@ reinterpret the100 ante as an unmatched wager.
 4. During a controlled pause in new hand creation, run the existing encrypted
    backup plus isolated restore verification. Require current production owner
    and effective ACL parity and a restore receipt less than one hour old.
-5. Read production function preimages and ACLs. The runner currently pins the four
-   definitions observed on the isolated application-schema clone. If production
+5. Re-read production function preimages and ACLs. The runner pins the four
+   definitions observed on production2026-11-24, including the PL/pgSQL plan-cache
+   wrapper on the public reader. If production
    differs, **stop** and inspect it; do not loosen hashes or assume local parity.
 6. Apply350 with the exact atomic ledger wrapper. Verify the receipt, function
    metadata, private table RLS, authenticated-only writer and both enabled guards.
@@ -64,6 +66,10 @@ reinterpret the100 ante as an unmatched wager.
    verified `vinpoker` project. Verify actual hostname revision and a working TEST
    page. Record deployment ID, source revision and deployed Edge versions in the
    protected job's consumer receipt. A boolean assertion alone is not evidence.
+   The workflow first reads Edge versions and Vercel project/alias access before
+   any DB apply. It uses pinned CLI2.101.0, preserves JWT settings, and records
+   existing central deployment receipts for registered components. Other consumer
+   versions are retained in the exact run's metadata artifact.
 8. Apply351 only after that consumer receipt is complete. It checks the exact350
    receipt, installs all settlement consumers, and activates the snapshot rule
    last within its transaction. Verify exact ledger, function hashes and unchanged
@@ -94,11 +100,25 @@ rule. Verify both cohorts and chip conservation after rollback.
 - Native PG17 application-schema clone:600-chip Finish,500-chip short-BB Finish,
   split/side-pot/refund cases, atomic duplicate/concurrency, leased history,
   correction and stop-new-cohort rollback tested separately.
+- Production read-only preflight: ledger ends at349, new rule column absent;
+  record-hand/correction/snapshot/payout-helper preimages match. Public reader
+  is the plan-cache wrapper installed by20261104002200: preimage
+  `eae66e8c287d78489e8facea7303f7b9`, expected postimage
+  `f72e77c775b7b195dad149284f542533`. Four relevant function ACLs were reproduced
+  in the disposable fixture; this does not prove all database ACLs match.
+- Current production function versions: update80, resettle10, resettle-commit18,
+  historical26, worker21, dispatcher17. First four verify JWT; last two use their
+  existing internal handler authorization with gateway JWT verification off.
 - Exact release wrapper: actual350/351 atomic receipts, preserved metadata,
   private-object checks; actual correction Edge preview/commit/stale retry and
-  conserved stacks. Run with `node --experimental-transform-types
-  scripts/ops/tracker-bb-ante-release.native.mjs` and the guarded local fixture.
+  conserved stacks. Run from `VinPoker/`, with the guarded local fixture and
+  `TRACKER_TEST_PSQL` / `TRACKER_TEST_SCHEMA` configured:
+
+  ```powershell
+  node --experimental-transform-types scripts/ops/tracker-bb-ante-release.native.mjs
+  ```
 - Native fixtures model Auth/HTTP and use an admin SQL transport. Their schema-only
   export is **not** production owner/effective-ACL parity or hosted Edge proof.
-- Production preimage/backup verification, a protected apply orchestrator,
-  production release, live write acceptance and real Safari audio are outstanding.
+- Fresh restore-verified backup, final owner GO, production release, live write
+  acceptance and real Safari audio remain outstanding. The protected release
+  orchestrator and its tests must pass before that GO is requested.

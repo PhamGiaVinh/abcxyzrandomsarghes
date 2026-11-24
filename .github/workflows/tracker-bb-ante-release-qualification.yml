@@ -5,6 +5,8 @@ on:
     paths:
       - .github/workflows/tracker-bb-ante-release-qualification.yml
       - VinPoker/scripts/ops/tracker-bb-ante-release*.mjs
+      - VinPoker/scripts/ops/tracker-bb-ante-consumers*.mjs
+      - .github/workflows/tracker-bb-ante-protected-apply.yml
       - VinPoker/supabase/migrations/20270128000350_tracker_bb_ante_atomic_v1.sql
       - VinPoker/supabase/migrations/20270128000351_tracker_bb_ante_settlement_v1.sql
 
@@ -29,3 +31,4 @@ jobs:
         run: |
           node scripts/ops/tracker-bb-ante-release.mjs verify-source
           node --test scripts/ops/tracker-bb-ante-release.test.mjs
+          node --test scripts/ops/tracker-bb-ante-consumers.test.mjs
