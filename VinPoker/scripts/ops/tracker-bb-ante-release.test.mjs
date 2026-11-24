@@ -16,11 +16,11 @@ test('activation-only qualifies the immutable release, while unrelated runner UI
   const calls=[];
   const git=(cwd,args)=>{
     calls.push({cwd,args});
-    if(cwd==='runner')throw Error('runner has newer TV and finance UI');
+    if(cwd==='runner'&&args.includes('HEAD'))throw Error('runner has newer TV and finance UI');
     return '';
   };
   assert.doesNotThrow(()=>qualifySourceTrees('release','runner','45398872397',git));
-  assert.equal(calls.length,1);assert.equal(calls[0].cwd,'release');
+  assert.equal(calls.length,2);assert.equal(calls[0].cwd,'release');
   assert.deepEqual(calls[0].args.slice(0,3),['status','--porcelain','--untracked-files=all']);
   assert.throws(()=>qualifySourceTrees('release','runner','',git),/newer TV/);
 });
@@ -28,6 +28,12 @@ test('activation-only qualifies the immutable release, while unrelated runner UI
 test('activation-only still rejects a changed release tree or an unrecognized original run', () => {
   assert.throws(()=>qualifySourceTrees('release','runner','45398872397',()=> ' M src/changed.ts'),/release tree/);
   assert.throws(()=>qualifySourceTrees('release','runner','other-run',()=>assert.fail('git must not run')),/resume run/);
+  assert.throws(()=>qualifySourceTrees('release','runner','45398872397',(cwd,args)=>{
+    if(cwd==='release')return '';
+    assert.ok(args.includes('c6e8bea574c438138734323637adf0a50e55c533'));
+    assert.ok(args.includes(':(exclude)src/pages/FinanceWorkspace.tsx'));
+    throw Error('Tracker runtime changed');
+  }),/Tracker runtime changed/);
 });
 
 test('actual activate351 CLI reaches its atomic writer without an import deadlock', () => {

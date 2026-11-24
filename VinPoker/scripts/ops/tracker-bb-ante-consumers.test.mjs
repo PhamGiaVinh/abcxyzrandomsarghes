@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { baseline, deployConsumers, validateConsumerReceipt, verifyDeployedConsumers } from './tracker-bb-ante-consumers.mjs';
+import { baseline, deployConsumers, reviewedFrontend, validateActivationReceipt, validateConsumerReceipt, verifyDeployedConsumers } from './tracker-bb-ante-consumers.mjs';
 import { releaseSha } from './tracker-bb-ante-release.mjs';
 
 function harness() {
@@ -67,4 +67,31 @@ test('resume rejects alias drift, revision drift and incomplete evidence without
     if(drift==='receipt')receipt.edgeVerified=false;
     await assert.rejects(verifyDeployedConsumers(h.transport,receipt));assert.deepEqual(h.writes,[]);
   }
+});
+
+test('preserves only the exact reviewed successor after protected workflow and durable receipt verification',async()=>{
+  const h=harness();const receipt=await deployConsumers(h.transport,h.save);h.writes.length=0;
+  const successor={id:reviewedFrontend.deploymentId,projectId:h.deployment.projectId,readyState:'READY',target:'production',gitSource:null,
+    meta:{githubCommitSha:reviewedFrontend.sourceSha,gitDirty:'1'}};
+  h.transport.getFrontend=async id=>id==='vinpoker.vercel.app'?structuredClone(successor):structuredClone(h.deployment);
+  h.transport.reviewedFrontendReceipt=async()=>({sha:reviewedFrontend.sourceSha,deploymentId:1234});
+  const verified=await verifyDeployedConsumers(h.transport,receipt);validateActivationReceipt(verified);
+  assert.deepEqual(verified.activationFrontend,{kind:'reviewed-successor',...reviewedFrontend,githubReceiptId:1234});
+  assert.equal(verified.frontend.deploymentId,h.deployment.id);assert.deepEqual(h.writes,[]);
+  for(const changed of [{id:'dpl_Unknown'}, {meta:{githubCommitSha:'f'.repeat(40),gitDirty:'1'}}, {meta:{githubCommitSha:reviewedFrontend.sourceSha,gitDirty:'unknown'}}]){
+    const bad={...successor,...changed};h.transport.getFrontend=async id=>id==='vinpoker.vercel.app'?bad:h.deployment;
+    await assert.rejects(verifyDeployedConsumers(h.transport,receipt),/alias differs/);
+  }
+  h.transport.getFrontend=async id=>id==='vinpoker.vercel.app'?successor:h.deployment;
+  h.transport.reviewedFrontendReceipt=async()=>null;
+  await assert.rejects(verifyDeployedConsumers(h.transport,receipt),/durable receipt/);assert.deepEqual(h.writes,[]);
+  h.transport.reviewedFrontendReceipt=async()=>{throw Error('protected workflow not completed');};
+  await assert.rejects(verifyDeployedConsumers(h.transport,receipt),/not completed/);assert.deepEqual(h.writes,[]);
+});
+
+test('activation-only cannot consume an old or boolean-only frontend evidence record',async()=>{
+  const h=harness();const receipt=await deployConsumers(h.transport,h.save);
+  assert.throws(()=>validateActivationReceipt(receipt),/frontend release evidence/);
+  assert.throws(()=>validateActivationReceipt({...receipt,activationFrontend:{kind:'reviewed-successor',verified:true}}),/frontend release evidence/);
+  const verified=await verifyDeployedConsumers(h.transport,receipt);validateActivationReceipt(verified);
 });

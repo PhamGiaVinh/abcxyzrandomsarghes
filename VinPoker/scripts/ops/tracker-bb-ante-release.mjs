@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildAtomicMigrationQuery, canonicalSqlText } from './ops-1359-release-gate.mjs';
 import { psqlEnvironment, receiptSql, validateContext } from './floor-37-47-protected-apply.mjs';
-import { validateConsumerReceipt } from './tracker-bb-ante-consumers.mjs';
+import { reviewedFrontend, validateActivationReceipt, validateConsumerReceipt } from './tracker-bb-ante-consumers.mjs';
 
 // Reviewed consumer/SQL revision; the runner can be added in a later commit.
 export const releaseSha = '3c6e2080a0afd2f611693ff13b280d368df886a3';
@@ -41,6 +41,9 @@ export function qualifySourceTrees(releaseRoot, runnerRoot, resumeRun = '', git 
   // pinned release checkout; current live consumer/alias checks still run later.
   // Keep the stricter runner equality check for the original deploy path.
   if (resumeRun === '') git(runnerRoot, ['diff','--exit-code',releaseSha,'HEAD','--',...paths]);
+  else git(runnerRoot,['diff','--exit-code',releaseSha,reviewedFrontend.sourceSha,'--',...paths,
+    ...['src/components/Layout.tsx','src/components/Layout.unread.test.tsx','src/components/tv/TvBroadcastBoardView.tsx','src/components/tv/tvBroadcastBoard.css',
+      'src/pages/ClubFinanceDashboard.tsx','src/pages/FinanceWorkspace.css','src/pages/FinanceWorkspace.tsx'].map(path=>`:(exclude)${path}`)]);
 }
 
 export function preparePackage(root) {
@@ -142,6 +145,7 @@ async function main() {
     // from this revision before it may activate new-cohort chip rules.
     const consumers = JSON.parse(readFileSync(env.CONSUMER_RECEIPT_PATH, 'utf8'));
     validateConsumerReceipt(consumers);
+    if(env.RESUME_CONSUMER_RUN_ID){assert.equal(env.RESUME_CONSUMER_RUN_ID,'45398872397');validateActivationReceipt(consumers);}
     assert.equal(consumers.sourceSha, releaseSha);
     assert.equal(consumers.frontend.projectId, 'prj_wLBZF7nG5O2bffM9Qu1v2rgMuMwk');
     assert.equal(consumers.frontend.hostname, 'vinpoker.vercel.app');
