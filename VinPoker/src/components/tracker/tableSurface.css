@@ -121,6 +121,15 @@
   color: #fff3dd;
 }
 
+.tracker-seat-action {
+  max-width: 100%;
+  font-size: clamp(12px, 1.8cqi, 15px);
+  font-weight: 800;
+  line-height: 1.25;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed] {
   top: calc(var(--tracker-avatar-size) * .18);
   left: 50%;

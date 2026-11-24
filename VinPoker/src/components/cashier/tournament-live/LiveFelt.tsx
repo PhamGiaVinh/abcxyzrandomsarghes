@@ -1163,12 +1163,12 @@ export function LiveFelt({
                     Operator/TV (viewerLayout off) keep the standalone ALL IN label as today,
                     so their render is byte-identical even with current_bet now populated. */}
                 {!viewerLayout && seat.is_all_in && (
-                  <div className="mt-0.5 text-[8px] font-bold text-red-400" style={nameShadow}>{t("liveHub.felt.allIn", "ALL IN")}</div>
+                  <div className="tracker-seat-action mt-0.5 text-red-400" style={nameShadow}>{t("liveHub.felt.allIn", "ALL IN")}</div>
                 )}
                 {viewerLayout && seat.is_all_in && !seat.is_folded && !hideCommittedSeatStacks
                   && ![seat.current_bet,seat.display_committed_bet].some(value=>typeof value==='number'&&Number.isFinite(value)&&value>0) && (
                   <div data-testid={`felt-all-in-status-${seat.player_id}`}
-                    className="mt-0.5 max-w-full text-[8px] font-bold text-red-400"
+                    className="tracker-seat-action mt-0.5 text-red-400"
                     title={t('liveHub.felt.sweptAllIn','Tổng chip đã cược trong hand; đã gom vào pot')}
                     style={nameShadow}>
                     {t("liveHub.felt.allIn", "ALL IN")}
@@ -1176,9 +1176,9 @@ export function LiveFelt({
                       ? ` · ${formatGameplayAmount(seat.total_committed)}` : ''}
                   </div>
                 )}
-                {seat.is_folded && <div className={unified ? "tracker-seat-line" : "mt-0.5 text-[8px] text-zinc-300"} style={unified ? undefined : nameShadow}>{t("liveHub.felt.folded", "FOLDED")}</div>}
+                {seat.is_folded && <div className="tracker-seat-action mt-0.5 text-zinc-300" style={nameShadow}>{t("liveHub.felt.folded", "FOLDED")}</div>}
                 {!seat.is_folded && !seat.is_all_in && seat.last_action && (
-                  <div className="mt-0.5 max-w-full truncate text-[8px] text-amber-300/90" style={nameShadow}>
+                  <div className="tracker-seat-action mt-0.5 text-amber-200" style={nameShadow}>
                     {viewerAmountsInBB && seat.last_action_type && seat.last_action_amount != null
                       ? formatActionLabel({
                           street: "",
