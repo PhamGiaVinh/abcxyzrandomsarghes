@@ -1507,12 +1507,12 @@ export function LiveFelt({
       {/* Action rail — OUTSIDE the felt so it never collides with the table. */}
       {latestAction && (
         <div className="mt-2.5 px-2">
-          <div className="tracker-display mx-auto flex w-fit max-w-full items-center gap-2 rounded-full border border-amber-500/30 bg-black/65 px-3.5 py-1.5 text-xs">
+          <div className="tracker-display mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-full border border-amber-500/30 bg-black/65 px-3.5 py-1.5 text-sm">
             <span className="shrink-0 text-[9px] font-bold uppercase tracking-widest text-amber-400/80">{t("liveHub.felt.action", "Hành động")}</span>
-            <span className="truncate text-amber-100">
+            <span className="min-w-0 break-words text-amber-100">
               {latestAction.seat_number > 0 && <span className="text-amber-300/70">{t("liveHub.seat", "Ghế {{n}}", { n: latestAction.seat_number })} · </span>}
               <span className="font-semibold text-emerald-300">{latestAction.display_name}</span>{" "}
-              <span className="tracker-num">{formatActionLabel(latestAction, formatGameplayAmount)}</span>
+              <span className="tracker-num font-extrabold">{formatActionLabel(latestAction, formatGameplayAmount)}</span>
             </span>
           </div>
         </div>
