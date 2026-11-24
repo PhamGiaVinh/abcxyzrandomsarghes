@@ -45,7 +45,7 @@ export function deriveReplayTableMotionEvents(args: {
   current: ReplayFrame;
 }): TableMotionEvent[] {
   const { handId, previous, current } = args;
-  if (current.index === 0) {
+  if (current.dealHoleCards ?? current.index === 0) {
     const seatNumbers = current.seats.filter(seat => seat.is_active).map(seat => seat.seat_number);
     return seatNumbers.length < 2 ? [] : [{ id: `replay:${handId}:deal`, handId, kind: "deal_hole", seatNumbers }];
   }

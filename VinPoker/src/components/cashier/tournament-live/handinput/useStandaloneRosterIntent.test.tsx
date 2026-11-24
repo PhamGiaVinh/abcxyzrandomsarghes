@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 const mock = vi.hoisted(() => ({ rpc: vi.fn(), error: vi.fn(),info:vi.fn(), staleOrphan: false, currentOrphan: false,
  getUser:vi.fn(), invoke:vi.fn(), warning:vi.fn(),deadBlind:false,resumeDeadBlind:false,previousVoided:false,lineageMissing:false,
- resumeSb:6 as number|null,resumeBb:7 as number|null,undoReads:false,
+ resumeSb:6 as number|null,resumeBb:7 as number|null,undoReads:false,bbAnte:false,blindsWritten:false,
  listeners: [] as Array<(event:string,session:{user:{id:string}}|null)=>void>,
  resumeReads: [] as Record<string, unknown>[] }));
 vi.mock("sonner", () => ({ toast: { error: mock.error, success: vi.fn(), info: mock.info,warning:mock.warning } }));
@@ -17,7 +17,9 @@ vi.mock('@/lib/tournament/readBlindLineage',async importOriginal=>({
  readBlindLineageState:async()=>({available:true,lineage:mock.deadBlind&&!mock.lineageMissing?{
   previousDealtSeats:[1,3,5,6,7,8,9],previousButtonSeat:4,previousSbPosition:5,previousBbSeat:6,
  }:null}),
- readHandBlindLevel:async()=>({level_number:1,small_blind:100,big_blind:100,ante:0}),
+ readHandBlindLevel:async()=>mock.bbAnte
+  ? {level_number:1,small_blind:100,big_blind:200,ante:200,big_blind_ante_only:true,small_blind_seat:mock.resumeSb,big_blind_seat:mock.resumeBb}
+  : {level_number:1,small_blind:100,big_blind:100,ante:0},
 }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
  auth: { getUser: () => mock.getUser() ?? Promise.resolve({ data: { user: { id: "actor" } } }),
@@ -29,6 +31,11 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
  from: (table: string) => {
   const result: {data:unknown;error:null} = { data: table === "tournaments" ? { id: "tour" }
    :table==='hand_actions'&&mock.resumeDeadBlind?[{player_id:'player-7',action_type:'post_bb',action_amount:100,action_order:1,street:'preflop'}]:[], error: null };
+  if(table==='hand_actions'&&mock.bbAnte) result.data=mock.blindsWritten?[
+   {player_id:'player-1',action_type:'post_sb',action_amount:100,action_order:1,street:'preflop'},
+   {player_id:'player-7',action_type:'post_ante',action_amount:200,action_order:2,street:'preflop'},
+   {player_id:'player-7',action_type:'post_bb',action_amount:200,action_order:3,street:'preflop'},
+  ]:[];
   // Resume now requires the actual frozen participants, even before cards are
   // shown. An empty mock result is missing evidence, not six empty card pairs.
   if(table==='hand_players'&&mock.resumeDeadBlind)result.data=[1,3,5,7,8,9].map(seat=>({
@@ -77,6 +84,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.clearA
  mock.previousVoided=false;
  mock.lineageMissing=false;
  mock.resumeSb=6;mock.resumeBb=7;mock.undoReads=false;
+ mock.bbAnte=false;mock.blindsWritten=false;
  mock.getUser.mockReset(); mock.invoke.mockReset();
  mock.resumeReads.length = 0; sessionStorage.clear(); localStorage.clear(); });
 async function prepareUndo(reply:(body:Record<string,unknown>)=>unknown,record=true){
@@ -99,6 +107,59 @@ async function prepareUndo(reply:(body:Record<string,unknown>)=>unknown,record=t
 const undoReceipt=(body:Record<string,unknown>,duplicate=false)=>({status:'success',data:{ok:true,duplicate,operation:'undo_open_hand',
  hand_id:body.hand_id,undone_action_id:body.expected_action_id,source_revision:Number(body.expected_source_revision)+1}});
 describe("actual roster hook intent", () => {
+ it('posts new-rule blinds once, then rebuilds the stacks and dead ante from confirmed server actions',async()=>{
+  mock.bbAnte=true;mock.resumeSb=1;
+  const h=await prepareUndo(()=>null,false);
+  expect(h.result.current.blindLevelSnapshot?.big_blind_ante_only).toBe(true);
+  let reply!:(value:unknown)=>void;
+  mock.invoke.mockImplementation(()=>new Promise(resolve=>{reply=resolve}));
+  let first!:Promise<void>,second!:Promise<void>;
+  act(()=>{first=h.result.current.handlePostBothBlinds();second=h.result.current.handlePostBothBlinds();});
+  expect(mock.invoke).toHaveBeenCalledTimes(1);
+  expect(mock.invoke.mock.calls[0][1].body).toMatchObject({action:'post_blinds_v1',tournament_id:'tour',
+   hand_id:'current-hand',expected_actor_id:'actor',request_id:expect.any(String)});
+  expect(h.result.current.actions).toHaveLength(0);
+  mock.blindsWritten=true;
+  await act(async()=>{reply({data:{status:'success',data:{status:'success',hand_id:'current-hand',big_blind_ante_only:true}},error:null});
+   await Promise.all([first,second]);});
+  expect(h.result.current.actions.map(action=>action.action_type)).toEqual(['post_sb','post_ante','post_bb']);
+  expect(h.result.current.players.find(player=>player.player_id==='player-7')).toMatchObject({
+   current_stack:19600,current_bet:200,total_bet:400});
+  expect(h.result.current.potBreakdown).toMatchObject({totalCommitted:500,totalPot:400,
+   uncalled:{player_id:'player-7',amount:100}});
+  expect(h.result.current.reviewPotBreakdown).toEqual(h.result.current.potBreakdown);
+  expect(h.result.current.blindsConfirmed).toBe(true);
+ });
+ it('blocks subsequent writes when the atomic post response cannot be verified',async()=>{
+  mock.bbAnte=true;mock.resumeSb=1;
+  const h=await prepareUndo(()=>null,false);
+  mock.invoke.mockResolvedValue({data:null,error:{message:'connection lost'}});
+  await act(async()=>{await h.result.current.handlePostBothBlinds();});
+  expect(h.result.current.actionSyncBlocked).toBe(true);
+  expect(h.result.current.actions).toHaveLength(0);
+  await act(async()=>{await h.result.current.handlePostBothBlinds();});
+  expect(mock.invoke).toHaveBeenCalledTimes(1);
+ });
+ it('resumes a new-rule hand with a frozen empty SB slot without inventing an SB',async()=>{
+  mock.bbAnte=true;mock.resumeSb=null;
+  const h=await prepareUndo(()=>null,false);
+  expect(h.result.current.handStarted).toBe(true);
+  expect(h.result.current.deadSb).toBe(true);
+  expect(h.result.current.blindSbSeat).toBeNull();
+ });
+ it('ignores an atomic blind response that arrives after changing tables',async()=>{
+  mock.bbAnte=true;mock.resumeSb=1;
+  const h=await prepareUndo(()=>null,false);
+  let reply!:(value:unknown)=>void;
+  mock.invoke.mockImplementation(()=>new Promise(resolve=>{reply=resolve}));
+  let pending!:Promise<void>;
+  act(()=>{pending=h.result.current.handlePostBothBlinds();});
+  mock.resumeDeadBlind=false;
+  await act(async()=>{await h.result.current.handleTableChange('b');});
+  await act(async()=>{reply({data:{status:'success',data:{status:'success',hand_id:'current-hand',big_blind_ante_only:true}},error:null});await pending;});
+  expect(h.result.current.actions).toHaveLength(0);
+  expect(h.result.current.handStarted).toBe(false);
+ });
  it("preserves the club portrait across dealer stack, name and avatar override edits", async () => {
   vi.stubEnv("VITE_CLUB_PLAYER_PORTRAITS", "true");
   try {

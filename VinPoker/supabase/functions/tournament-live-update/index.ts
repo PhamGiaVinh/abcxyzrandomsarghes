@@ -162,7 +162,7 @@ async function loadAuthoritativeVoiceFinish(input: {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const [{ data: hand, error: handError }, { data: players, error: playersError }, { data: actions, error: actionsError }] = await Promise.all([
-    service.from("tournament_hands").select("id, hand_number, created_at, button_seat, community_cards, status, is_voided")
+    service.from("tournament_hands").select("*")
       .eq("id", input.handId).eq("tournament_id", input.tournamentId).eq("table_id", input.tournamentTableId).maybeSingle(),
     service.from("hand_players").select("player_id, entry_number, seat_number, starting_stack, hole_cards, player_name")
       .eq("hand_id", input.handId).order("seat_number"),
@@ -173,6 +173,12 @@ async function loadAuthoritativeVoiceFinish(input: {
     throw new Error("finish_snapshot_unavailable");
   }
   const runtime = reduceHand(input.snapshot.players, input.snapshot.actions, input.snapshot.button_seat);
+  const antePayer = hand.tracker_big_blind_ante_only === true
+    ? (players ?? []).find((player: Record<string, unknown>) => player.seat_number === hand.tracker_bb_position)?.player_id
+    : undefined;
+  if (hand.tracker_big_blind_ante_only === true && typeof antePayer !== "string") {
+    throw new Error("finish_snapshot_unavailable");
+  }
   const settlement = await computeVoiceFinishSettlement({
     handId: input.handId,
     stateVersion: input.snapshot.state_version,
@@ -195,6 +201,7 @@ async function loadAuthoritativeVoiceFinish(input: {
       action_order: Number(action.action_order),
     })),
     bettingComplete: isBettingRoundComplete(runtime),
+    bigBlindAntePlayerId: antePayer,
   });
   return {
     handNumber: Number(hand.hand_number),
@@ -243,14 +250,18 @@ Deno.serve(async (req) => {
   // validation engine can reconstruct state. Server-authoritative — never the
   // client's view of state.
   async function loadHandForValidation(handId: string): Promise<
-    { seeds: PlayerSeed[]; priorActions: ActionRow[]; buttonSeat: number } | null
+    { seeds: PlayerSeed[]; priorActions: ActionRow[]; buttonSeat: number; bigBlindAntePlayerId?: string } | null
   > {
-    const [{ data: hand }, { data: hp }, { data: ha }] = await Promise.all([
-      supabase.from("tournament_hands").select("button_seat").eq("id", handId).maybeSingle(),
+    const [{ data: hand, error: handError }, { data: hp, error: playerError }, { data: ha, error: actionError }] = await Promise.all([
+      supabase.from("tournament_hands").select("*").eq("id", handId).eq("tournament_id", tournament_id).maybeSingle(),
       supabase.from("hand_players").select("player_id, seat_number, starting_stack").eq("hand_id", handId),
       supabase.from("hand_actions").select("player_id, street, action_type, action_amount, action_order").eq("hand_id", handId).order("action_order"),
     ]);
-    if (!hand || !hp) return null;
+    if (handError || playerError || actionError || !hand || !hp || !ha) return null;
+    const antePayer = (hand as any).tracker_big_blind_ante_only === true
+      ? (hp as any[]).find(player => player.seat_number === (hand as any).tracker_bb_position)?.player_id
+      : undefined;
+    if ((hand as any).tracker_big_blind_ante_only === true && typeof antePayer !== "string") return null;
     return {
       seeds: (hp as any[]).map((r) => ({
         player_id: r.player_id,
@@ -265,6 +276,7 @@ Deno.serve(async (req) => {
         action_order: r.action_order,
       })),
       buttonSeat: (hand as any).button_seat ?? 1,
+      bigBlindAntePlayerId: antePayer,
     };
   }
 
@@ -305,6 +317,18 @@ Deno.serve(async (req) => {
       return validationError("ACTOR_MISMATCH", "Tài khoản đã đổi; không áp intent của tài khoản trước.");
     }
     switch (action) {
+      case "post_blinds_v1": {
+        if (body.expected_actor_id !== user.id || typeof body.hand_id !== "string"
+          || typeof body.request_id !== "string") {
+          return validationError("INVALID_BLIND_INTENT", "Yêu cầu đặt blind không hợp lệ. Hãy tải lại bàn.");
+        }
+        result = await supabase.rpc("post_tracker_blinds_v1", {
+          p_tournament_id: tournament_id,
+          p_hand_id: body.hand_id,
+          p_request_id: body.request_id,
+        });
+        break;
+      }
       case "record_manual_hand_v1":
       case "get_manual_finish_receipt_v1":
       case "cancel_manual_finish_v1": {
@@ -315,7 +339,9 @@ Deno.serve(async (req) => {
         if (action === "record_manual_hand_v1") {
           // A receipt binds the frozen intent: never silently rewrite its pots.
           // Use the same server reconciliation as legacy Finish, without changing rounding.
-          const recon = reconcileSidePots(intent.payload.actions as ActionRow[], intent.payload.side_pots);
+          const frozen = await loadHandForValidation(intent.hand_id);
+          if (!frozen) return validationError("FINISH_SNAPSHOT_UNAVAILABLE", "Chưa xác minh được ván đã lưu. Hãy tải lại bàn.");
+          const recon = reconcileSidePots(intent.payload.actions as ActionRow[], intent.payload.side_pots, frozen.bigBlindAntePlayerId);
           if (recon.tampered) return validationError("SIDE_POTS_TAMPERED", "side_pots không khớp chuỗi hành động trên server.");
         }
         result = await supabase.rpc(action === "record_manual_hand_v1"
@@ -1243,6 +1269,12 @@ Deno.serve(async (req) => {
         code: "tracker_correction_pending" }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (result.error) throw result.error;
+    if (action === "post_blinds_v1" && (result.data?.status !== "success"
+      || result.data.hand_id !== body.hand_id || result.data.big_blind_ante_only !== true)) {
+      return new Response(JSON.stringify({ error: "blind_receipt_unconfirmed", code: "blind_receipt_unconfirmed" }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     if (action === "undo_last_action_v1") {
       const proof = result.data;
       if (proof?.ok === false && typeof proof.error === "string") {

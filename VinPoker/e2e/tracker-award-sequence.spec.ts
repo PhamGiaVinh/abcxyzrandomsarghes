@@ -34,7 +34,7 @@ for (const width of [390, 1440]) {
     await page.goto(`/__dev/livefelt?fixture=verified-sidepots&play=1&autoplay=0&orientation=${width < 640 ? "portrait" : "landscape"}&wrap=console`);
     await page.getByTitle(/^(Phát|Play)$/).click();
     const main = page.getByTestId("felt-settlement-award-label-tom");
-    await expect(main).toHaveText("+150 BB", { timeout: 20_000 });
+    await expect(main).toHaveText("WIN +150 BB", { timeout: 20_000 });
     const mainAppearedAt = Date.now();
     await expect(page.getByTestId("felt-stack-tom")).toHaveText("150 BB");
     await expect(page.getByTestId("felt-stack-phil")).toHaveText("0 BB");
@@ -52,7 +52,7 @@ for (const width of [390, 1440]) {
     expect(cues.filter(cue => cue === "hand-ranking-2536.mp3")).toHaveLength(1);
     await page.screenshot({ path: `shots/award-main-${width}.png`, fullPage: true });
     const side = page.getByTestId("felt-settlement-award-label-phil");
-    await expect(side).toHaveText("+50 BB");
+    await expect(side).toHaveText("WIN +50 BB");
     expect(Date.now() - mainAppearedAt).toBeGreaterThan(2_800);
     await expect(page.getByTestId("felt-stack-tom")).toHaveText("150 BB");
     await expect(page.getByTestId("felt-stack-phil")).toHaveText("50 BB");
@@ -72,7 +72,7 @@ test("fold win credits only the pot, keeps cards hidden, and mute suppresses the
   await page.goto("/__dev/livefelt?fixture=verified-fold&play=1&autoplay=0&orientation=portrait");
   await page.getByRole("button", { name: "Mute", exact: true }).click();
   await page.getByTitle(/^(Phát|Play)$/).click();
-  await expect(page.getByTestId("felt-settlement-award-label-phil")).toHaveText("+2 BB", { timeout: 15_000 });
+  await expect(page.getByTestId("felt-settlement-award-label-phil")).toHaveText("WIN +2 BB", { timeout: 15_000 });
   await expect(page.getByTestId("felt-stack-phil")).toHaveText("76 BB");
   await expect(page.locator('[data-testid="seat-holecards"] [data-card-code]')).toHaveCount(0);
   await expect(page.locator(".tracker-best-five-card")).toHaveCount(0);
@@ -81,9 +81,19 @@ test("fold win credits only the pot, keeps cards hidden, and mute suppresses the
 
 test("pausing during chip travel cancels the delayed winner cue", async ({ page }) => {
   await page.goto("/__dev/livefelt?fixture=verified-sidepots&play=1&autoplay=0&orientation=portrait");
+  await page.evaluate(() => {
+    const observer = new MutationObserver(() => {
+      if (!document.querySelector('[data-testid="felt-settlement-award-announcement"]')) return;
+      const pause = document.querySelector<HTMLButtonElement>('button[title="Tạm dừng"], button[title="Pause"]');
+      if (!pause) return;
+      observer.disconnect();
+      pause.click();
+      Object.assign(window, { pausedDuringAward: true });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
   await page.getByTitle(/^(Phát|Play)$/).click();
-  await page.getByTestId("felt-settlement-award-announcement").waitFor({ state: "attached", timeout: 20_000 });
-  await page.getByTitle(/^(Tạm dừng|Pause)$/).click();
+  await page.waitForFunction(() => (window as unknown as { pausedDuringAward: boolean }).pausedDuringAward, undefined, { timeout: 20_000 });
   await page.waitForTimeout(750);
   expect(await page.evaluate(() => (window as unknown as { trackerAudioStarts: { src: string }[] }).trackerAudioStarts.filter(sound => sound.src.includes("pot-award-2531.mp3")).length)).toBe(0);
 });

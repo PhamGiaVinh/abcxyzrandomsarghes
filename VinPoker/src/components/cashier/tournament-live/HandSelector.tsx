@@ -24,13 +24,14 @@ interface HandRow {
   tracker_big_blind?: number;
   tracker_small_blind?: number | null;
   tracker_bba?: number | null;
+  tracker_big_blind_ante_only?: boolean;
   tracker_level_number?: number | null;
   publicHistoryResult?: ReplayHand["publicHistoryResult"];
 }
 
 type PublicReplayPlayer = { playerId: string; seatNumber: number; name?: string | null; startingStack?: number | null; endingStack?: number | null; avatarUrl?: string | null; holeCards?: string[] };
 type PublicReplayAction = { id: string; playerId: string; street?: string | null; actionType: string; amount?: number | null; order: number };
-type PublicReplayPayload = { id?: string; handNumber?: number; buttonSeat?: number | null; board?: string[]; pot?: number | null; bigBlind?: number | null; smallBlind?: number | null; ante?: number | null; levelNumber?: number | null; players?: PublicReplayPlayer[]; actions?: PublicReplayAction[] };
+type PublicReplayPayload = { id?: string; handNumber?: number; buttonSeat?: number | null; board?: string[]; pot?: number | null; bigBlind?: number | null; smallBlind?: number | null; ante?: number | null; levelNumber?: number | null; bigBlindAnteOnly?: boolean; players?: PublicReplayPlayer[]; actions?: PublicReplayAction[] };
 
 interface HandSelectorProps {
   tournamentId: string;
@@ -125,7 +126,7 @@ export function HandSelector({
       }
       let q = supabase
         .from("tournament_hands")
-        .select("id, hand_number, created_at, community_cards, button_seat, pot_size, tracker_big_blind, tracker_small_blind, tracker_bba, tracker_level_number, status, is_voided, table_id")
+        .select("*")
         .eq("tournament_id", tournamentId)
         .eq("is_voided", false)
         .order("created_at", { ascending: false })
@@ -151,6 +152,7 @@ export function HandSelector({
           button_seat: h.button_seat,
           pot_size: h.pot_size,
           tracker_big_blind: h.tracker_big_blind, tracker_small_blind: h.tracker_small_blind, tracker_bba: h.tracker_bba, tracker_level_number: h.tracker_level_number,
+          tracker_big_blind_ante_only: h.tracker_big_blind_ante_only === true,
         }));
       handsScopeRef.current = listScope;
       setHands(rows);
@@ -193,6 +195,7 @@ export function HandSelector({
             community_cards: Array.isArray(safe.board) ? safe.board : [],
             stored_pot_size: safe.pot ?? row.pot_size,
             big_blind: safe.bigBlind ?? row.tracker_big_blind,
+            big_blind_ante_only: safe.bigBlindAnteOnly === true,
             small_blind: safe.smallBlind ?? row.tracker_small_blind,
             ante: safe.ante ?? row.tracker_bba,
             level_number: safe.levelNumber ?? row.tracker_level_number,
@@ -251,6 +254,7 @@ export function HandSelector({
           community_cards: (row.community_cards as string[]) || [],
           stored_pot_size: row.pot_size,
           big_blind: row.tracker_big_blind, small_blind: row.tracker_small_blind, ante: row.tracker_bba, level_number: row.tracker_level_number,
+          big_blind_ante_only: row.tracker_big_blind_ante_only === true,
           players: (handPlayers ?? []).map((p: any) => ({
             player_id: p.player_id,
             seat_number: p.seat_number,

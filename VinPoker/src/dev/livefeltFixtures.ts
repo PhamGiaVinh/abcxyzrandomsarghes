@@ -304,19 +304,26 @@ function verifiedSidepots(): ReplayHand {
     },
   };
 }
-function verifiedBbaJacks(): ReplayHand {
+function verifiedBbaJacks(seats: number): ReplayHand {
   const base = bestFiveQuads();
+  const observers = Array.from({ length: Math.max(0, seats - base.players.length) }, (_, index) => ({
+    player_id: `test-${index + 3}`, display_name: `TEST ${index + 3}`, seat_number: index + 3,
+    starting_stack: 10000, ending_stack: 10000,
+  }));
   return { ...base, hand_id: "fixture-bba-jj", button_seat: 1, small_blind: 100, ante: 200,
-    players: base.players.map(p => ({ ...p, starting_stack: p.player_id === "tom" ? 10000 : 10200, ending_stack: p.player_id === "tom" ? 20200 : 0 })),
+    big_blind_ante_only: true,
+    players: [...base.players.map(p => ({ ...p, starting_stack: p.player_id === "tom" ? 10000 : 10200, ending_stack: p.player_id === "tom" ? 20200 : 0 })), ...observers],
     actions: [
       { player_id: "tom", action_type: "post_sb", action_amount: 100 },
       { player_id: "phil", action_type: "post_ante", action_amount: 200 },
       { player_id: "phil", action_type: "post_bb", action_amount: 200 },
+      ...observers.map(player => ({ player_id: player.player_id, action_type: "fold", action_amount: 0 })),
       { player_id: "tom", action_type: "all_in", action_amount: 9900 },
       { player_id: "phil", action_type: "call", action_amount: 9800 },
     ].map((a, i) => ({ ...a, street: "preflop", action_order: i + 1 })),
     publicSettlement: { ...base.publicSettlement!, refunds: [],
-      players: [{ playerId: "tom", potAward: 20200, refund: 0, netDelta: 10200 }, { playerId: "phil", potAward: 0, refund: 0, netDelta: -10200 }],
+      players: [{ playerId: "tom", potAward: 20200, refund: 0, netDelta: 10200 }, { playerId: "phil", potAward: 0, refund: 0, netDelta: -10200 },
+        ...observers.map(player => ({ playerId: player.player_id, potAward: 0, refund: 0, netDelta: 0 }))],
       pots: [{ potId: "main-0", kind: "main", amount: 20200, winnerIds: ["tom"], allocations: [{ potId: "main-0", winnerId: "tom", amount: 20200 }] }],
     },
   };
@@ -343,7 +350,7 @@ function verifiedFold(): ReplayHand {
 
 export function buildFixtureHand(name: LiveFeltFixtureName, seats: number): ReplayHand {
   switch (name) {
-    case "verified-bba-jj": return verifiedBbaJacks();
+    case "verified-bba-jj": return verifiedBbaJacks(seats);
     case "verified-sidepots": return verifiedSidepots();
     case "verified-fold": return verifiedFold();
     case "fold-walk":

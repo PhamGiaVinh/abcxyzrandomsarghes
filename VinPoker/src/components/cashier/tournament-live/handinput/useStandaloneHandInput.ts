@@ -331,6 +331,7 @@ export function useStandaloneHandInput(tournamentId: string) {
   // has rendered the new actor. Mark the boundary when the writer acquires it.
   const manualActionGenerationRef = useRef(0);
   const handSubmitGuardRef = useRef(createSingleFlightGuard());
+  const blindPostFlightRef = useRef(createSingleFlightGuard());
   const finishOwnsSubmittingRef = useRef(false);
   const [pendingFinish, setPendingFinish] = useState<ManualFinishIntent | null>(null);
   const [pendingFinishError, setPendingFinishError] = useState<string | null>(null);
@@ -1562,18 +1563,27 @@ export function useStandaloneHandInput(tournamentId: string) {
     [players]
   );
 
+  const bigBlindAntePlayerId = useMemo(() => blindLevelSnapshot?.big_blind_ante_only
+    ? players.find(player => player.seat_number === blindLevelSnapshot.big_blind_seat)?.player_id
+    : undefined, [blindLevelSnapshot, players]);
+  const bigBlindAntePaid = useMemo(() => actions.reduce((sum, action) => sum
+    + (action.action_type === "post_ante" && action.player_id === bigBlindAntePlayerId ? action.amount : 0), 0),
+  [actions, bigBlindAntePlayerId]);
+
   // Review uses the same action-derived pot math as Finish. Keep the live gross
   // contribution display separate: it may still include a provisional return.
   const reviewPotBreakdown = useMemo(() => computePotBreakdown(contributionsFromActions(
     actions.map((action) => ({ player_id: action.player_id, action_type: action.action_type, action_amount: action.amount })),
-  )), [actions]);
+    bigBlindAntePlayerId,
+  )), [actions, bigBlindAntePlayerId]);
 
   const potBreakdown = useMemo(
     () =>
       computePotBreakdown(
-        players.map((p) => ({ player_id: p.player_id, total_bet: p.total_bet, is_folded: p.is_folded }))
+        players.map((p) => ({ player_id: p.player_id, total_bet: p.total_bet, is_folded: p.is_folded,
+          ...(p.player_id === bigBlindAntePlayerId ? { big_blind_ante: bigBlindAntePaid } : {}) }))
       ),
-    [players]
+    [players, bigBlindAntePlayerId, bigBlindAntePaid]
   );
 
   const playerName = useCallback(
@@ -1982,6 +1992,16 @@ export function useStandaloneHandInput(tournamentId: string) {
       setSbAmount(frozenLevel.small_blind);
       setBbAmount(frozenLevel.big_blind);
       setLiveLevelNumber(frozenLevel.level_number);
+      if (frozenLevel.big_blind_ante_only) {
+        const sbSeat = frozenLevel.small_blind_seat ?? null;
+        const bbSeat = frozenLevel.big_blind_seat;
+        if (bbSeat == null || !players.some(player => player.seat_number === bbSeat)) {
+          throw new Error("Không xác minh được ghế BB đã lưu. Hãy tải lại bàn.");
+        }
+        const deadSb = sbSeat == null || !players.some(player => player.seat_number === sbSeat);
+        setDeadSb(deadSb);
+        setResumedBlindSlots({ handId: handData.hand_id, sbSeat: deadSb ? null : sbSeat, bbSeat, deadSb });
+      }
       if (!await claimHandLock(handData.hand_id)) {
         setOrphanHand({ id: handData.hand_id, hand_number: Number(handNumber) });
         markSync("uncertain");
@@ -2008,10 +2028,13 @@ export function useStandaloneHandInput(tournamentId: string) {
     }
   };
 
-  const handleContinueOrphan = async (opts?: { silent?: boolean }): Promise<boolean> => {
-    if (!orphanHand) return false;
-    const targetOrphan = orphanHand;
+  const handleContinueOrphan = async (opts?: { silent?: boolean; hand?: { id: string; hand_number: number } }): Promise<boolean> => {
+    const targetOrphan = opts?.hand ?? orphanHand;
+    if (!targetOrphan) return false;
     const loadToken = tableLoadGuardRef.current.capture(tableId);
+    const authGeneration = userAuthGeneration.current;
+    const isCurrent = () => tableLoadGuardRef.current.isCurrent(loadToken)
+      && userAuthGeneration.current === authGeneration;
     setSubmitting(true);
     setActionSyncBlocked(true);
     try {
@@ -2037,14 +2060,14 @@ export function useStandaloneHandInput(tournamentId: string) {
         supabase.from("hand_players").select("player_id, entry_number, hole_cards")
           .eq("hand_id", targetOrphan.id),
       ]));
-      if (!tableLoadGuardRef.current.isCurrent(loadToken)) return false;
+      if (!isCurrent()) return false;
       const { data: hand, error: handErr } = handResult;
       const { data: actionRows, error: actErr } = actionResult;
       if (handErr || !hand) throw new Error(handErr?.message || "Không tải được hand đang diễn ra");
       if (actErr) throw new Error(actErr.message);
       if (cardResult.error) throw new Error("Không tải được bài tẩy đã lưu. Chưa tiếp tục hand; hãy thử tải lại bàn.");
       const frozenLevel = await readHandBlindLevel(targetOrphan.id);
-      if (!tableLoadGuardRef.current.isCurrent(loadToken)) return false;
+      if (!isCurrent()) return false;
       if (frozenLevel) {
         setBlindLevelSnapshot(frozenLevel);
         setBlindLevelCanonical(true);
@@ -2058,17 +2081,20 @@ export function useStandaloneHandInput(tournamentId: string) {
       const postedSeat=(type:string)=>rows.filter(row=>row.action_type===type)
         .map(row=>players.find(player=>player.player_id===row.player_id)?.seat_number);
       const postedSb=postedSeat('post_sb'),postedBb=postedSeat('post_bb');
-      const sbPosition=hand.tracker_sb_position??postedSb[0];
-      const bbPosition=hand.tracker_bb_position??postedBb[0];
+      const sbPosition=frozenLevel?.big_blind_ante_only
+        ? frozenLevel.small_blind_seat : hand.tracker_sb_position??postedSb[0];
+      const bbPosition=frozenLevel?.big_blind_ante_only
+        ? frozenLevel.big_blind_seat : hand.tracker_bb_position??postedBb[0];
       const validPosition=(value:unknown):value is number=>typeof value==='number'
         &&Number.isInteger(value)&&value>=1&&value<=maxSeats;
-      if(!validPosition(sbPosition)||!validPosition(bbPosition)
+      if(!(validPosition(sbPosition)||(frozenLevel?.big_blind_ante_only&&sbPosition===null))||!validPosition(bbPosition)
         ||!players.some(player=>player.seat_number===bbPosition)
         ||postedSb.length>1||postedBb.length>1
         ||postedSb.some(seat=>seat!==sbPosition)||postedBb.some(seat=>seat!==bbPosition)) {
         throw new Error('Không xác minh được vị trí blind đã lưu của hand. Dừng post blind và gọi Floor.');
       }
       const resumedDeadSb=!players.some(player=>player.seat_number===sbPosition);
+      if (frozenLevel?.big_blind_ante_only) setDeadSb(resumedDeadSb);
 
       const {communitySlots,communityCount,playerHoleCards:resumedCards}=
         readResumeCards(hand.community_cards,cardResult.data,players);
@@ -2104,7 +2130,7 @@ export function useStandaloneHandInput(tournamentId: string) {
       setUndoStack([]);
       setSelectedActorId(null);
       if (!await claimHandLock(hand.id)) return false;
-      if (!tableLoadGuardRef.current.isCurrent(loadToken)) return false;
+      if (!isCurrent()) return false;
       setPlayerHoleCards(resumedCards);
       holeCardsBroadcastRef.current = Object.keys(resumedCards).length > 0;
       const contenders = rebuiltPlayers.filter(player => !player.is_folded);
@@ -2116,10 +2142,11 @@ export function useStandaloneHandInput(tournamentId: string) {
       if (!opts?.silent) toast.success("Resuming hand #" + hand.hand_number);
       return true;
     } catch (e: any) {
+      if (!isCurrent()) return false;
       toast.error(e.message || "Không thể tiếp tục hand");
       return false;
     } finally {
-      setSubmitting(false);
+      if (isCurrent()) setSubmitting(false);
     }
   };
 
@@ -2550,6 +2577,10 @@ export function useStandaloneHandInput(tournamentId: string) {
   };
 
   const handlePostBlind = (type: "post_sb" | "post_bb", playerId: string, amount: number) => {
+    if (blindLevelSnapshot?.big_blind_ante_only) {
+      toast.error("Dùng nút đặt blind và ante để xác nhận cả lượt.");
+      return;
+    }
     if (isReadOnly) {
       toast.error("Phiên làm việc đã hết hạn");
       return;
@@ -2578,6 +2609,44 @@ export function useStandaloneHandInput(tournamentId: string) {
   // A rejected step stops the chain (an accepted SB stays — it WAS recorded).
   const [autoBlindStep, setAutoBlindStep] = useState<null | "bb" | "confirm">(null);
   const handlePostBothBlinds = async () => {
+    if (blindLevelSnapshot?.big_blind_ante_only) {
+      if (!handId || !user?.id || isReadOnly || submitting || actionSyncBlocked || streetRollbackRef.current) return;
+      if (!blindPostFlightRef.current.begin()) return;
+      const loadToken = tableLoadGuardRef.current.capture(tableId);
+      const scope = actionScopeRef.current;
+      const authGeneration = userAuthGeneration.current;
+      const isCurrent = () => tableLoadGuardRef.current.isCurrent(loadToken)
+        && actionScopeRef.current === scope && userAuthGeneration.current === authGeneration;
+      setSubmitting(true);
+      markSync("sending", "Đặt blind và ante");
+      try {
+        const response = await waitForManualPlayerResponse(supabase.functions.invoke("tournament-live-update", {
+          body: { action: "post_blinds_v1", tournament_id: tournamentId, hand_id: handId,
+            request_id: crypto.randomUUID(), expected_actor_id: user.id },
+        }));
+        if (!isCurrent()) return;
+        const envelope = asRecord(response.data);
+        const receipt = asRecord(envelope?.data);
+        if (response.error || envelope?.status !== "success" || receipt?.status !== "success"
+          || receipt.hand_id !== handId || receipt.big_blind_ante_only !== true) {
+          throw new Error("Chưa xác minh được kết quả đặt blind và ante. Hãy tải lại bàn.");
+        }
+        const resumed = await handleContinueOrphan({ silent: true, hand: { id: handId, hand_number: Number(handNumber) } });
+        if (!isCurrent()) return;
+        if (!resumed) throw new Error("Blind đã được ghi. Hãy tải lại bàn để đồng bộ trước khi tiếp tục.");
+        setBlindsConfirmedLocal(true);
+        markSync("sent", "Đã đặt blind và ante");
+      } catch (error) {
+        if (!isCurrent()) return;
+        setActionSyncBlocked(true);
+        markSync("uncertain", "Cần tải lại để xác minh blind và ante");
+        toast.error(error instanceof Error ? error.message : "Hãy tải lại bàn để xác minh blind và ante.");
+      } finally {
+        blindPostFlightRef.current.finish();
+        if (isCurrent()) setSubmitting(false);
+      }
+      return;
+    }
     if (isReadOnly) {
       toast.error("Phiên làm việc đã hết hạn");
       return;
@@ -3829,7 +3898,8 @@ export function useStandaloneHandInput(tournamentId: string) {
       // display memo is unchanged.
       const submitBreakdown = computePotBreakdown(
         contributionsFromActions(
-          actions.map((a) => ({ player_id: a.player_id, action_type: a.action_type, action_amount: a.amount }))
+          actions.map((a) => ({ player_id: a.player_id, action_type: a.action_type, action_amount: a.amount })),
+          bigBlindAntePlayerId,
         )
       );
       const draft = buildRecordHandBody({

@@ -8,6 +8,7 @@ export function useTrackerRunoutSounds(
   enabled: boolean,
   muted: boolean,
   hasRanking: boolean,
+  playing = true,
 ) {
   const consumed = useRef<{ key: string; startedAt: number; initial: boolean; award: boolean } | null>(null);
   const phase = presentation?.phase;
@@ -16,6 +17,10 @@ export function useTrackerRunoutSounds(
     if (!key || !enabled) {
       if (consumed.current) cancelPendingTrackerPokerSounds();
       consumed.current = null;
+      return;
+    }
+    if (!playing) {
+      cancelPendingTrackerPokerSounds();
       return;
     }
     if (consumed.current?.key !== key) {
@@ -44,5 +49,5 @@ export function useTrackerRunoutSounds(
       }, Math.max(0, POT_AWARD_TRAVEL_MS - (Date.now() - cue.startedAt)));
       return () => clearTimeout(timer);
     }
-  }, [enabled, hasRanking, key, muted, phase]);
+  }, [enabled, hasRanking, key, muted, phase, playing]);
 }

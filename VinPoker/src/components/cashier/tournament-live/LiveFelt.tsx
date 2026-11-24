@@ -357,6 +357,7 @@ export interface LiveFeltProps {
   dealSound?: boolean;
   /** Static historical hand: never invent card backs for cards not public in the payload. */
   hideUnrecordedHoleCards?: boolean;
+  hideHoleCards?: boolean;
 }
 
 export function LiveFelt({
@@ -400,6 +401,7 @@ export function LiveFelt({
   motionEnabled = false,
   dealSound = false,
   hideUnrecordedHoleCards = false,
+  hideHoleCards = false,
 }: LiveFeltProps) {
   const { t } = useTranslation();
   const unified = !!useTrackerCardStyle();
@@ -626,6 +628,12 @@ export function LiveFelt({
       ? showdownPresentation.potLayers.slice(Math.max(0, activePotLayerIndex) + (awardArrived ? 1 : 0))
       : showdownPresentation.potLayers
     : [];
+  const visibleMainPot = visibleSettlementPotLayers.find(pot => pot.kind === "main");
+  const visibleSidePots = visibleSettlementPotLayers.filter(pot => pot.kind === "side");
+  const settlementClusters = [
+    ...(visibleMainPot ? [{ pot: visibleMainPot, amount: visibleMainPot.amount }] : []),
+    ...(visibleSidePots.length > 0 ? [{ pot: visibleSidePots[0], amount: visibleSidePots.reduce((sum, pot) => sum + pot.amount, 0) }] : []),
+  ];
   const settlementPotPoint = (visibleIndex: number, total: number): Pt => {
     const horizontalOffset = (visibleIndex - (total - 1) / 2) * 13;
     return {
@@ -689,7 +697,7 @@ export function LiveFelt({
     const measure = () => {
       const w = el.clientWidth;
       if (!w || w >= LANDSCAPE_DESIGN_W) { setFit(null); return; }
-      const scale = w / LANDSCAPE_DESIGN_W;
+      const scale = (unified ? Math.max(1, w - 24) : w) / LANDSCAPE_DESIGN_W;
       const designH = LANDSCAPE_DESIGN_W / motionAspect;
       setFit({ scale, h: Math.round(designH * scale) + FIT_PAD * 2 });
     };
@@ -1149,6 +1157,7 @@ export function LiveFelt({
                       data-testid={`felt-settlement-award-label-${seat.player_id}`}
                       className="tracker-settlement-award-label mt-1"
                       style={{ position: "relative", zIndex: 30 }}>
+                      <span data-testid={`felt-win-${seat.player_id}`} className="tracker-seat-win">WIN</span>{" "}
                       +{formatGameplayAmount(allocation.amount)}
                     </span>
                   ))}
@@ -1157,12 +1166,12 @@ export function LiveFelt({
                     Operator/TV (viewerLayout off) keep the standalone ALL IN label as today,
                     so their render is byte-identical even with current_bet now populated. */}
                 {!viewerLayout && seat.is_all_in && (
-                  <div className="mt-0.5 text-[8px] font-bold text-red-400" style={nameShadow}>{t("liveHub.felt.allIn", "ALL IN")}</div>
+                  <div className="tracker-seat-action mt-0.5 text-red-400" style={nameShadow}>{t("liveHub.felt.allIn", "ALL IN")}</div>
                 )}
                 {viewerLayout && seat.is_all_in && !seat.is_folded && !hideCommittedSeatStacks
                   && ![seat.current_bet,seat.display_committed_bet].some(value=>typeof value==='number'&&Number.isFinite(value)&&value>0) && (
                   <div data-testid={`felt-all-in-status-${seat.player_id}`}
-                    className="mt-0.5 max-w-full text-[8px] font-bold text-red-400"
+                    className="tracker-seat-action mt-0.5 text-red-400"
                     title={t('liveHub.felt.sweptAllIn','Tổng chip đã cược trong hand; đã gom vào pot')}
                     style={nameShadow}>
                     {t("liveHub.felt.allIn", "ALL IN")}
@@ -1170,9 +1179,9 @@ export function LiveFelt({
                       ? ` · ${formatGameplayAmount(seat.total_committed)}` : ''}
                   </div>
                 )}
-                {seat.is_folded && <div className={unified ? "tracker-seat-line" : "mt-0.5 text-[8px] text-zinc-300"} style={unified ? undefined : nameShadow}>{t("liveHub.felt.folded", "FOLDED")}</div>}
+                {seat.is_folded && <div className="tracker-seat-action mt-0.5 text-zinc-300" style={nameShadow}>{t("liveHub.felt.folded", "FOLDED")}</div>}
                 {!seat.is_folded && !seat.is_all_in && seat.last_action && (
-                  <div className="mt-0.5 max-w-full truncate text-[8px] text-amber-300/90" style={nameShadow}>
+                  <div className="tracker-seat-action mt-0.5 text-amber-200" style={nameShadow}>
                     {viewerAmountsInBB && seat.last_action_type && seat.last_action_amount != null
                       ? formatActionLabel({
                           street: "",
@@ -1189,7 +1198,7 @@ export function LiveFelt({
                 {/* Compact: face-DOWN backs are dropped entirely (RPT pods carry no cards
                     until a reveal) — the short felt can't afford the extra pod height.
                     Revealed cards (showdown/all-in) still render. Non-compact unchanged. */}
-                {!seat.is_folded && (!hideUnrecordedHoleCards || (seat.hole_cards && seat.hole_cards.length === 2)) && (unified || !compactActive || (seat.hole_cards && seat.hole_cards.length === 2)) && (
+                {!hideHoleCards && !seat.is_folded && (!hideUnrecordedHoleCards || (seat.hole_cards && seat.hole_cards.length === 2)) && (unified || !compactActive || (seat.hole_cards && seat.hole_cards.length === 2)) && (
                 <div
                   data-testid="seat-holecards"
                   data-all-in={seat.is_all_in || undefined}
@@ -1257,9 +1266,9 @@ export function LiveFelt({
               </div>
             )}
 
-            {(settlementPayoutPhase === "pot_collect" ? [] : visibleSettlementPotLayers.slice(0, 2)).map((pot, visibleIndex) => {
-              const point = settlementPotPoint(visibleIndex, Math.min(2, visibleSettlementPotLayers.length));
-              const isAwardingPot = settlementPayoutPhase === "pot_award" && !awardArrived && visibleIndex === 0;
+            {(settlementPayoutPhase === "pot_collect" ? [] : settlementClusters).map(({ pot, amount }, visibleIndex) => {
+              const point = settlementPotPoint(visibleIndex, settlementClusters.length);
+              const isAwardingPot = settlementPayoutPhase === "pot_award" && !awardArrived && pot.potId === activePotLayer?.potId;
               return (
                 <div
                   key={pot.potId}
@@ -1271,7 +1280,7 @@ export function LiveFelt({
                   style={{ left: `${point.l}%`, top: `${point.t}%`, marginTop: settlementPotMarginTop }}
                 >
                   <CenterPotStack compact
-                    label={formatGameplayAmount(visibleIndex === 0 ? pot.amount : visibleSettlementPotLayers.slice(1).reduce((sum, layer) => sum + layer.amount, 0))}
+                    label={formatGameplayAmount(amount)}
                   />
                   {isAwardingPot && activePotAwardsComplete && activePotAwardRows.flatMap(({ allocation, seat }, allocationIndex) => {
                     const slot = ((seat.seat_number - 1) % 9) + 1;
@@ -1498,12 +1507,12 @@ export function LiveFelt({
       {/* Action rail — OUTSIDE the felt so it never collides with the table. */}
       {latestAction && (
         <div className="mt-2.5 px-2">
-          <div className="tracker-display mx-auto flex w-fit max-w-full items-center gap-2 rounded-full border border-amber-500/30 bg-black/65 px-3.5 py-1.5 text-xs">
+          <div className="tracker-display mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-full border border-amber-500/30 bg-black/65 px-3.5 py-1.5 text-sm">
             <span className="shrink-0 text-[9px] font-bold uppercase tracking-widest text-amber-400/80">{t("liveHub.felt.action", "Hành động")}</span>
-            <span className="truncate text-amber-100">
+            <span className="min-w-0 break-words text-amber-100">
               {latestAction.seat_number > 0 && <span className="text-amber-300/70">{t("liveHub.seat", "Ghế {{n}}", { n: latestAction.seat_number })} · </span>}
               <span className="font-semibold text-emerald-300">{latestAction.display_name}</span>{" "}
-              <span className="tracker-num">{formatActionLabel(latestAction, formatGameplayAmount)}</span>
+              <span className="tracker-num text-base font-extrabold sm:text-lg">{formatActionLabel(latestAction, formatGameplayAmount)}</span>
             </span>
           </div>
         </div>

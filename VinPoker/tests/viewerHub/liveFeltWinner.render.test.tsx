@@ -130,13 +130,16 @@ describe("LiveFelt verified best-five focus", () => {
           checkBoard();
           expect(view.queryByTestId('felt-settlement-collect-center')).toBeNull();
           const pots=view.container.querySelectorAll('[data-testid^="felt-settlement-pot-"]');
-          expect(pots).toHaveLength(phase === "static" ? 0 : Math.min(2, 3 - index));
+          expect(pots).toHaveLength(phase === "static" ? 0 : index === 0 ? 2 : 1);
           if (phase === "pot_award") {
+          expect(view.queryByTestId('felt-win-tom')).toBeNull();
           expect(pots[0]).toHaveAttribute('data-testid',`felt-settlement-pot-${index===0?'main':'side'}-0`);
           expect(pots[0].className.includes('-translate-y-1/2')).toBe(portrait);
           expect((pots[0] as HTMLElement).style.marginTop).toBe(portrait?'16px':'24px');
           act(()=>vi.advanceTimersByTime(420));
-          expect(view.container.querySelectorAll('[data-testid^="felt-settlement-pot-"]')).toHaveLength(Math.min(2, 2-index));
+          expect(view.getByTestId('felt-win-tom')).toHaveTextContent('WIN');
+          expect(view.queryByTestId('felt-win-nine-1')).toBeNull();
+          expect(view.container.querySelectorAll('[data-testid^="felt-settlement-pot-"]')).toHaveLength(index < 2 ? 1 : 0);
           }
           const credited=phase==='static'?6000:(index+1)*2000;
           expect(view.getByTestId('felt-stack-tom')).toHaveAttribute('data-stack-target',String(1000+credited));
@@ -437,7 +440,7 @@ describe("LiveFelt verified best-five focus", () => {
     act(() => vi.advanceTimersByTime(420));
     expect(target()).toBe(13_000);
     expect(tooltip()).toBe("Tom Dwan · 13000");
-    expect(view.getByTestId("felt-settlement-award-label-tom").textContent).toBe("+40 BB");
+    expect(view.getByTestId("felt-settlement-award-label-tom").textContent).toBe("WIN +40 BB");
     view.rerender(felt("pot_award", 0));
     expect(target()).toBe(13_000);
     view.rerender(felt("pot_award", 1));
@@ -445,7 +448,7 @@ describe("LiveFelt verified best-five focus", () => {
     act(() => vi.advanceTimersByTime(420));
     expect(target()).toBe(25_000);
     expect(tooltip()).toBe("Tom Dwan · 25000");
-    expect(view.getByTestId("felt-settlement-award-label-tom").textContent).toBe("+60 BB");
+    expect(view.getByTestId("felt-settlement-award-label-tom").textContent).toBe("WIN +60 BB");
     view.rerender(felt("static", 0));
     expect(target()).toBe(25_000);
     expect(view.queryByTestId("felt-settlement-award-label-phil")).toBeNull();

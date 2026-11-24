@@ -27,7 +27,7 @@ export async function runPaidCorrectionEdge({sql,service,fixture,hand,scenario})
  }catch(error){errors.push(String(error));return {data:null,error:{message:name==='resolve_tracker_correction_intent_v1'&&String(error).includes('idempotency_mismatch')?'idempotency_mismatch':String(error)}};}},
  from(table){assert.ok(['tournament_hands','hand_players','hand_actions','tournament_chip_counts','tournament_settlement_outcomes'].includes(table));
   let columns,where=[],order=[],limit;const column=value=>{assert.match(value,/^[a-z_]+$/);return value;};
-  const query={select:value=>{assert.match(value,/^[a-z_,]+$/);columns=value;return query;},
+  const query={select:value=>{if(value==='*')assert.equal(table,'tournament_hands');else assert.match(value,/^[a-z_,]+$/);columns=value;return query;},
    eq:(key,value)=>{where.push(`${column(key)}=${quote(value)}`);return query;},
    in:(key,values)=>{assert.ok(values.length>0);where.push(`${column(key)} IN (${values.map(quote).join(',')})`);return query;},
    order:(key,options)=>{order.push(column(key)+(options?.ascending===false?' DESC':' ASC'));return query;},
