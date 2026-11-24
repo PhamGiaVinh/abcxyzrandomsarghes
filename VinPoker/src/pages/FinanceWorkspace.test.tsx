@@ -2,13 +2,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const auth = vi.hoisted(() => ({ loading:false, isCashier:false, isAccountant:false, isClubOwner:false, isAdmin:false, isClubAdmin:false }));
+const auth = vi.hoisted(() => ({ loading:false, rolesLoading:false, rolesError:null as string|null, isCashier:false, isAccountant:false, isClubOwner:false, isAdmin:false, isClubAdmin:false }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => auth }));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: { accountingControl:true } }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t:(key:string)=>key }) }));
 import FinanceWorkspace from "./FinanceWorkspace";
 
-beforeEach(()=>Object.assign(auth,{loading:false,isCashier:false,isAccountant:false,isClubOwner:false,isAdmin:false,isClubAdmin:false}));
+beforeEach(()=>Object.assign(auth,{loading:false,rolesLoading:false,rolesError:null,isCashier:false,isAccountant:false,isClubOwner:false,isAdmin:false,isClubAdmin:false}));
 afterEach(cleanup);
 function mount(path="/finance"){
  return render(<MemoryRouter initialEntries={[path]}><Routes>
@@ -45,4 +45,14 @@ it("shows exactly three main destinations to the owner",()=>{
  expect(navigation.textContent).toContain("Đối soát");
  expect(navigation.textContent).toContain("Báo cáo");
  expect(screen.getByText("Tra cứu chi tiết").closest("details")).not.toHaveAttribute("open");
+});
+it("waits for club roles after the auth session has loaded",()=>{
+ auth.rolesLoading=true;mount();
+ expect(screen.queryByText("Home page")).toBeNull();
+ expect(screen.queryByText("Report page")).toBeNull();
+});
+it("shows a role read failure without sending the user home",()=>{
+ auth.rolesError="roles unavailable";mount();
+ expect(screen.getByRole("alert")).toBeVisible();
+ expect(screen.queryByText("Home page")).toBeNull();
 });

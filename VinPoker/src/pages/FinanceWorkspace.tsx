@@ -6,11 +6,12 @@ import { cn } from "@/lib/utils";
 
 /** Shared navigation only; each existing page retains its own data and access guards. */
 export default function FinanceWorkspace() {
-  const { isAccountant, isClubOwner, isAdmin, isClubAdmin, isCashier, loading } = useAuth();
+  const { isAccountant, isClubOwner, isAdmin, isClubAdmin, isCashier, loading, rolesLoading, rolesError } = useAuth();
   const { pathname } = useLocation();
   const landing = pathname === "/finance";
 
-  if (landing && !loading) {
+  if (landing && rolesError) return <p role="alert" className="p-4">Chưa xác minh được quyền CLB. Vui lòng tải lại trang.</p>;
+  if (landing && !loading && !rolesLoading) {
     const destination = isClubOwner || isAdmin || isClubAdmin
       ? "/club/admin/finance"
       : isAccountant ? "/accountant" : isCashier ? "/cashier" : "/";
