@@ -123,7 +123,7 @@
 
 .tracker-seat-action {
   max-width: 100%;
-  font-size: clamp(14px, 2.2cqi, 18px);
+  font-size: clamp(16px, 2.5cqi, 20px);
   font-weight: 800;
   line-height: 1.25;
   text-transform: uppercase;

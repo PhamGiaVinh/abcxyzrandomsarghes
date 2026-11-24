@@ -16,7 +16,7 @@
 .spectator-mini-plate { position: relative; border: 1px solid color-mix(in srgb, var(--table-rail), transparent 20%); border-radius: 4px; padding: 3px 2px; background: #07110ff5; line-height: 1.3; z-index: 3; }
 .spectator-mini-name { font-size: clamp(8px, 1.8cqi, 11px); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #f5f4ed; }
 .spectator-mini-stack { font-size: clamp(9px, 1.9cqi, 12px); font-weight: 700; color: #a7e8cb; }
-.spectator-mini-status { font-size: clamp(12px, 2.6cqi, 16px); line-height: 1.25; font-weight: 800; text-transform: uppercase; color: #f5dfa6; overflow-wrap: anywhere; }
+.spectator-mini-status { font-size: clamp(14px, 2.9cqi, 18px); line-height: 1.25; font-weight: 800; text-transform: uppercase; color: #f5dfa6; overflow-wrap: anywhere; }
 .spectator-mini-seat[data-folded=true] .spectator-mini-portrait { opacity: .65; }
 .spectator-mini-empty { position: absolute; transform: translate(-50%, -50%); display: grid; place-items: center; width: 20px; height: 20px; border: 1px dashed #c9b98588; border-radius: 50%; background: #08100ed9; font-size: 9px; color: #e1d9c4; }
 .spectator-mini-button { position: absolute; bottom: 0; right: 6%; z-index: 4; display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: #f4d272; color: #141510; font-size: 9px; font-weight: 800; box-shadow: 0 1px 3px #000a; }

@@ -1512,7 +1512,7 @@ export function LiveFelt({
             <span className="min-w-0 break-words text-amber-100">
               {latestAction.seat_number > 0 && <span className="text-amber-300/70">{t("liveHub.seat", "Ghế {{n}}", { n: latestAction.seat_number })} · </span>}
               <span className="font-semibold text-emerald-300">{latestAction.display_name}</span>{" "}
-              <span className="tracker-num font-extrabold">{formatActionLabel(latestAction, formatGameplayAmount)}</span>
+              <span className="tracker-num text-base font-extrabold sm:text-lg">{formatActionLabel(latestAction, formatGameplayAmount)}</span>
             </span>
           </div>
         </div>
