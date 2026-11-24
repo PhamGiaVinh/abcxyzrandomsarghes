@@ -118,6 +118,10 @@
     {
       "referenceSha": "482d9fc27a6357e59881021f9c163f53a5d26740",
       "fingerprint": "8f4e8ee4743fe5b3c160e62b0311c5756559965f48e615831a39b5d51b9298d8"
+    },
+    {
+      "referenceSha": "24af209f692f8593371eeb24e8f027f3e1d45805",
+      "fingerprint": "9fdd9aa490522f9360f66adfa9ccd47fe2f1f328213b9ffccb9051824773f9b5"
     }
   ],
   "functions": [
