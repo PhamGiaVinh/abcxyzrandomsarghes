@@ -389,6 +389,7 @@ const App = () => {
                   <Route path="/club/admin/player-finance" element={<PlayerFinancialReport />} />
                   <Route path="/club/admin/accounting-control" element={<AccountingControl />} />
                   <Route path="/accountant" element={<AccountantDashboard />} />
+                  <Route path="/cashier" element={<CashierDashboard />} />
                 </Route>
                 <Route path="/club/admin/expenses" element={<ClubExpenses />} />
                 <Route path="/club/admin/insurance" element={<DealerInsuranceProfiles />} />
@@ -415,7 +416,6 @@ const App = () => {
                 {/* GE-2D online-poker LOBBY — keeps Layout chrome. The TABLE route is
                     chrome-less above (full-screen). Pages self-gate on FEATURES.onlinePoker. */}
                 <Route path="/poker" element={<OnlinePoker />} />
-                <Route path="/cashier" element={<CashierDashboard />} />
                 <Route path="/dealer-board" element={<DealerControlBoard />} />
                 <Route path="/tracker" element={<TrackerDashboard />} />
                 <Route path="/tracker/history" element={<TrackerHandHistory />} />
