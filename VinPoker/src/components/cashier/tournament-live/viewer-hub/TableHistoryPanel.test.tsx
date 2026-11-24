@@ -19,8 +19,8 @@ describe("table-specific public history cards", () => {
       playerId:'bb',entryNumber:2,seatNumber:9,name:'Refunded BB',amount:100,
     }}}],nextCursor:null},error:null});
     render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()}/>);
-    expect(await screen.findByText(/Đã xác minh: hoàn trả toàn bộ cược/)).toHaveTextContent('Refunded BB · 100 (1 BB)');
-    expect(screen.getByText('Pot 0 (0 BB)')).toBeInTheDocument();
+    expect(await screen.findByText(/Đã xác minh: hoàn trả toàn bộ cược/)).toHaveTextContent('Refunded BB · 1 BB');
+    expect(screen.getByText('Pot 0 BB')).toBeInTheDocument();
     expect(screen.queryByText(/Nhận pot/)).not.toBeInTheDocument();
     rpc.mockResolvedValueOnce({data:{access:'public',items:[{...item,result:{status:'pending'}}],nextCursor:null},error:null});
     fireEvent.focus(window);
@@ -50,8 +50,8 @@ describe("table-specific public history cards", () => {
     rpc.mockResolvedValue({data:{access:'public',items:[{handId:'refund-pot',handNumber:1,createdAt:'2026-10-18T01:00:00Z',pot:300,bigBlind:200,
       result:{status:'verified',recipients:[{playerId:'winner',entryNumber:1,name:'Refund winner',potAward:200,netDelta:100,potKinds:['main']}]}}],nextCursor:null},error:null});
     render(<TableHistoryPanel tournamentId="tour" tableId="table" currentSessionId="session" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()}/>);
-    await screen.findByText('Refund winner');expect(screen.getByText('Pot 200 (1 BB)')).toBeInTheDocument();
-    expect(screen.queryByText('Pot 300 (1,5 BB)')).not.toBeInTheDocument();
+    await screen.findByText('Refund winner');expect(screen.getByText('Pot 1 BB')).toBeInTheDocument();
+    expect(screen.queryByText('Pot 1,5 BB')).not.toBeInTheDocument();
   });
   it('uses the later correction when two pages overlap during a multi-page refresh',async()=>{
     const hand={handId:'refresh-overlap',handNumber:18,createdAt:'2026-10-18T01:00:00Z'};
@@ -271,9 +271,9 @@ describe("table-specific public history cards", () => {
     ], nextCursor: null }, error: null });
     render(<TableHistoryPanel tournamentId="tour-9" tableId="table-9" currentSessionId="session-9" onSelectHand={vi.fn()} onAccessRevoked={vi.fn()} />);
     const card = (await screen.findByText("Hand #9")).closest("article")!;
-    expect(within(card).getByText("Pot 4.8M (24 BB)")).toBeInTheDocument();
+    expect(within(card).getByText("Pot 24 BB")).toBeInTheDocument();
     expect(within(card).getByText("100k/200k · Ante 25k")).toBeInTheDocument();
-    expect(within(card).getByText("+2.4M (12 BB)")).toHaveClass("text-emerald-400");
+    expect(within(card).getByText("+12 BB")).toHaveClass("text-emerald-400");
   });
 
   it("renders verified recipients once with signed net, and keeps unverified hands visible", async () => {
@@ -288,10 +288,10 @@ describe("table-specific public history cards", () => {
     render(<TableHistoryPanel tournamentId="tour-a" tableId="table-a" currentSessionId="current-session" onSelectHand={select} onAccessRevoked={vi.fn()} />);
     const split = await screen.findByText("Hand #26");
     const card = split.closest("article")!;
-    expect(within(card).getByText("Pot 280k (14 BB)")).toBeInTheDocument();
+    expect(within(card).getByText("Pot 14 BB")).toBeInTheDocument();
     expect(within(card).getByText("10k/20k · Ante 0")).toBeInTheDocument();
-    expect(within(card).getByText("+160k (8 BB)")).toHaveClass("text-emerald-400");
-    expect(within(card).getByText("−60k (3 BB)")).toHaveClass("text-rose-400");
+    expect(within(card).getByText("+8 BB")).toHaveClass("text-emerald-400");
+    expect(within(card).getByText("−3 BB")).toHaveClass("text-rose-400");
     expect(within(card).getByText("Nhận pot phụ")).toBeInTheDocument();
     const pending = screen.getByText("Hand #25").closest("article")!;
     expect(within(pending).getByText("Pot —")).toBeInTheDocument();

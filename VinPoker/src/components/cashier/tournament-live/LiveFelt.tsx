@@ -36,7 +36,8 @@ import {
 } from "@/lib/tracker-poker/replayBestFiveFocus";
 import { POT_AWARD_TRAVEL_MS, isReplaySettlementPayoutPhase, showdownRevealDelay, type ReplayRunoutPhase, type ReplayRunoutPresentation } from "@/lib/tracker-poker/replayRunoutTimeline";
 import { shouldCollectCommittedChips } from "@/lib/tracker-poker/livePotCollection";
-import { formatViewerChipAndBB } from "@/lib/tracker-poker/viewerAmounts";
+import { toggleViewerAmountUnit } from "@/components/tracker/viewerAmountUnit";
+import { formatViewerAmount, type ViewerAmountUnit } from "@/lib/tracker-poker/viewerAmounts";
 
 /** Count-up text (Phase 3, tableFx only): tweens a numeric display toward its target.
  *  First render / enabled-off / reduced-motion emit the target directly, so static
@@ -241,6 +242,7 @@ export interface LiveFeltProps {
   formatBB: (n: number) => string | null;
   /** Spectator projection: every gameplay amount is rendered as BB only. */
   viewerAmountsInBB?: boolean;
+  viewerAmountUnit?: ViewerAmountUnit;
   viewerBigBlind?: number | null;
   /** Narrow-phone vertical layout (tall oval + portrait seat map). */
   portrait?: boolean;
@@ -372,6 +374,7 @@ export function LiveFelt({
   latestAction,
   formatBB,
   viewerAmountsInBB = false,
+  viewerAmountUnit,
   viewerBigBlind = null,
   portrait: portraitProp,
   buttonSeat = null,
@@ -497,8 +500,10 @@ export function LiveFelt({
   // on every render, so operator/TV and static renders are byte-identical. Display
   // only — every gate below still reads the raw potSize.
   const displayPot = useCountUp(potSize, { enabled: tableFx });
-  const formatViewerAmount = (amount: number): string => formatBB(amount) ?? "— BB";
-  const formatGameplayAmount = viewerAmountsInBB ? formatViewerAmount : formatStack;
+  const formatSpectatorAmount = (amount: number): string => viewerAmountUnit
+    ? formatViewerAmount(amount, viewerBigBlind, viewerAmountUnit)
+    : formatBB(amount) ?? "— BB";
+  const formatGameplayAmount = viewerAmountsInBB ? formatSpectatorAmount : formatStack;
 
   const revealKey = revealOrder?.length ? JSON.stringify([motionHandKey, handNumber, revealOrder]) : null;
   const revealCount = revealOrder?.length ?? 0;
@@ -628,6 +633,14 @@ export function LiveFelt({
       ? showdownPresentation.potLayers.slice(Math.max(0, activePotLayerIndex) + (awardArrived ? 1 : 0))
       : showdownPresentation.potLayers
     : [];
+  const confirmedPots = showdownPresentation?.enabled ? showdownPresentation.potLayers : undefined;
+  const visiblePotLayers = viewerAmountUnit
+    ? (confirmedPots?.reduce((sum, pot) => sum + pot.amount, 0) === displayPot ? confirmedPots : undefined)
+    : potBreakdown?.pots;
+  const renderViewerPot = () => <TablePot total={potUnavailable ? "—" : formatGameplayAmount(displayPot)}
+    layers={potUnavailable ? undefined : visiblePotLayers} formatAmount={formatGameplayAmount}
+    onAmountClick={viewerAmountUnit ? toggleViewerAmountUnit : undefined}
+    amountUnitLabel={viewerAmountUnit === "bb" ? "Chip" : "BB"} />;
   const visibleMainPot = visibleSettlementPotLayers.find(pot => pot.kind === "main");
   const visibleSidePots = visibleSettlementPotLayers.filter(pot => pot.kind === "side");
   const settlementClusters = [
@@ -829,7 +842,7 @@ export function LiveFelt({
           {!unified && potSize > 0 && compactActive && portrait && !hideBaseCenterPot && (
             <div data-testid="felt-total-pot" className="relative mb-2 flex flex-col items-center">
               {viewerLayout ? (
-                <CenterPotStack compact label={`${formatGameplayAmount(displayPot)}`} />
+                viewerAmountUnit ? renderViewerPot() : <CenterPotStack compact label={`${formatGameplayAmount(displayPot)}`} />
               ) : (
                 <div className="tracker-pot-pulse inline-flex flex-col items-center rounded-full bg-black/70 px-4 py-1.5 shadow-[0_0_18px_hsl(var(--viewer-neon)_/_0.16)]" style={{ border: "1px solid hsl(var(--poker-gold) / 0.58)" }}>
                   <div className="tracker-display text-[8px] font-black uppercase tracking-[0.22em]" style={{ color: "hsl(var(--poker-gold) / 0.82)" }}>{t("liveHub.felt.totalPot", "Total Pot")}</div>
@@ -841,8 +854,7 @@ export function LiveFelt({
           {unified && <>
             <TableLogo url={appearance?.logoUrl} />
             {(potSize > 0 || potUnavailable) && !hideBaseCenterPot && <div data-testid="felt-total-pot" className="mb-1.5">
-              <TablePot total={potUnavailable ? '—' : viewerAmountsInBB ? formatViewerChipAndBB(displayPot, viewerBigBlind ?? blinds?.bb ?? null) : formatGameplayAmount(displayPot)}
-                layers={potUnavailable ? undefined : potBreakdown?.pots} formatAmount={formatGameplayAmount} />
+              {renderViewerPot()}
             </div>}
           </>}
           {/* Board — revealed cards face up. VIEWER: undealt slots render NOTHING (the
@@ -929,14 +941,14 @@ export function LiveFelt({
               className={`mt-2.5 flex flex-col items-center${viewerLayout ? " relative" : ""}`}
             >
               {viewerLayout ? (
-                <CenterPotStack label={`${potUnavailable ? "—" : viewerAmountsInBB ? formatViewerChipAndBB(displayPot, viewerBigBlind ?? blinds?.bb ?? null) : formatGameplayAmount(displayPot)}`} />
+                viewerAmountUnit ? renderViewerPot() : <CenterPotStack label={`${potUnavailable ? "—" : formatGameplayAmount(displayPot)}`} />
               ) : <div
                 className="tracker-pot-pulse inline-flex flex-col items-center rounded-full bg-black/55 px-3.5 py-1"
                 style={{ border: "1px solid hsl(var(--poker-gold) / 0.42)" }}
               >
                 <span className="sr-only">{t("liveHub.felt.pot", "Pot")}</span>
                 <div className="tracker-num text-lg font-bold leading-tight sm:text-xl" style={{ color: "hsl(var(--poker-gold))" }}>
-                  {potUnavailable ? "—" : viewerAmountsInBB ? formatViewerChipAndBB(displayPot, viewerBigBlind ?? blinds?.bb ?? null) : formatStack(displayPot)}
+                  {potUnavailable ? "—" : formatGameplayAmount(displayPot)}
                   {!viewerAmountsInBB && formatBB(potSize) && (
                     <span className="ml-1.5 text-[10px] font-normal" style={{ color: "hsl(var(--poker-gold) / 0.6)" }}>
                       ({formatBB(displayPot)})
@@ -944,7 +956,7 @@ export function LiveFelt({
                   )}
                 </div>
               </div>}
-              {potBreakdown && potBreakdown.sidePots.length > 0 && (
+              {!viewerAmountUnit && potBreakdown && potBreakdown.sidePots.length > 0 && (
                 <div
                   className={
                     viewerLayout
@@ -1040,7 +1052,7 @@ export function LiveFelt({
 
           const stackAmount = viewerAmountsInBB ? (
                       <div data-testid={`felt-stack-${seat.player_id}`} data-stack-target={displayedStack(seat)} className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
-                        <CountUpText value={displayedStack(seat)} format={formatViewerAmount} enabled={tableFx} />
+                        <CountUpText value={displayedStack(seat)} format={formatSpectatorAmount} enabled={tableFx} />
                       </div>
                     ) : compactActive && formatBB(seat.chip_count) ? (
                       <>
@@ -1192,7 +1204,7 @@ export function LiveFelt({
                           action_type: seat.last_action_type,
                           action_amount: seat.last_action_amount,
                           action_order: 0,
-                        }, formatViewerAmount)
+                        }, formatSpectatorAmount)
                       : seat.last_action}
                   </div>
                 )}
@@ -1327,7 +1339,7 @@ export function LiveFelt({
                     className="tracker-settlement-award-recipient"
                   >
                     <span className="truncate">{winner.playerName}</span>
-                    <span className="tracker-num whitespace-nowrap">+{viewerAmountsInBB ? awardBB ?? "— BB" : `${formatStack(allocation.amount)}${awardBB ? ` (${awardBB})` : ""}`}</span>
+                    <span className="tracker-num whitespace-nowrap">+{viewerAmountsInBB ? formatGameplayAmount(allocation.amount) : `${formatStack(allocation.amount)}${awardBB ? ` (${awardBB})` : ""}`}</span>
                   </div>
                 );
               })}
@@ -1482,6 +1494,7 @@ export function LiveFelt({
           potSize={settlementPotResultActive ? visibleSettlementPotLayers.reduce((sum, layer) => sum + layer.amount, 0) : displayPot}
           formatBB={formatBB}
           viewerAmountsInBB={viewerAmountsInBB}
+          formatViewerPot={viewerAmountUnit ? formatGameplayAmount : undefined}
           runout={runout}
         />
       )}

@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { PokerCard, CardBack } from '../PokerVisuals';
 import { PotChips } from '../ChipStack';
-import { formatViewerBBOrUnavailable, formatViewerChipAndBB } from '@/lib/tracker-poker/viewerAmounts';
-import { formatStack } from '@/lib/format';
+import { useViewerAmountUnit, toggleViewerAmountUnit } from "@/components/tracker/viewerAmountUnit";
+import { formatViewerAmount } from '@/lib/tracker-poker/viewerAmounts';
 import { TRACKER_TABLE_GEOMETRY } from '@/components/tracker/trackerTableLayout';
 import { TableSurface, usesCatKhoi } from '@/components/tracker/TableSurface';
 import { TableLogo, TableBlinds } from '@/components/tracker/TableIdentity';
@@ -14,11 +14,8 @@ export function SpectatorMiniTable({ table, appearance, onPlayerSelect }: { tabl
   const { t } = useTranslation();
   const playersBySeat = new Map(table.players.map(player => [player.seatNumber, player]));
   const latestActor = table.latestAction ? table.players.find(player => player.playerId === table.latestAction?.playerId && player.entryNumber === table.latestAction.entryNumber) : null;
-  const amount = (value: number | null | undefined) => {
-    if (value == null) return '— BB';
-    const bb = formatViewerBBOrUnavailable(value, table.bigBlind ?? 0);
-    return bb === '— BB' ? `${formatStack(value)} · — BB` : bb;
-  };
+  const unit = useViewerAmountUnit();
+  const amount = (value: number | null | undefined) => formatViewerAmount(value, table.bigBlind, unit);
   const stateLabel = table.trackerState === 'waiting' ? 'Đang chờ ván bài'
     : table.trackerState === 'inactive' ? 'Bàn chưa hoạt động'
     : table.trackerState === 'closed' ? 'Phiên bàn đã đóng'
@@ -29,10 +26,11 @@ export function SpectatorMiniTable({ table, appearance, onPlayerSelect }: { tabl
       <TableLogo url={appearance?.logoUrl} />
       {stateLabel && <span className="spectator-mini-state">{stateLabel}</span>}
       {table.pot != null ? (
-        <span className="spectator-mini-pot tracker-num inline-flex items-center gap-1">
+        <button type="button" className="spectator-mini-pot tracker-num inline-flex items-center gap-1 pointer-events-auto"
+          onClick={toggleViewerAmountUnit} aria-label={amount(table.pot) + " · " + (unit === "bb" ? "Chip" : "BB")}>
           {table.pot > 0 && <PotChips compact />}
-          {formatViewerChipAndBB(table.pot, table.bigBlind)}
-        </span>
+          {amount(table.pot)}
+        </button>
       ) : !stateLabel && <span className="spectator-mini-pot tracker-num">—</span>}
       {!!table.board?.length && <span className="spectator-mini-board">{table.board.map((card, index) => <PokerCard key={`${index}:${card}`} card={card} size="sm" className="spectator-mini-card" />)}</span>}
       <TableBlinds level={table.levelNumber} sb={table.smallBlind} bb={table.bigBlind} ante={table.ante} />

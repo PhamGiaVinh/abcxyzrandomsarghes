@@ -8,7 +8,8 @@ import { useTranslation } from "react-i18next";
 import { Crown, Share2, Play } from "lucide-react";
 import { PokerCard, CardBack } from "../PokerVisuals";
 import { fmtCompact } from "./hubDerive";
-import { formatViewerBBOrUnavailable } from "@/lib/tracker-poker/viewerAmounts";
+import { useViewerAmountUnit } from "@/components/tracker/viewerAmountUnit";
+import { formatViewerAmount } from "@/lib/tracker-poker/viewerAmounts";
 import type { HandFeedItem, HandFeedTag } from "./handFeedDerive";
 import { ViewerActionTimeline } from "./ViewerActionTimeline";
 import type { ReplayTarget } from "./replayTarget";
@@ -48,6 +49,7 @@ function publicPlayerName(name: string, playerId: string, fallback: string): str
 
 export function HandFeedCard({ item, rpt = false, tableName, onViewHand, onShare }: HandFeedCardProps) {
   const { t, i18n } = useTranslation();
+  const unit = useViewerAmountUnit();
   const replayTarget: ReplayTarget = { handId: item.handId, tableId: item.tableId, handNumber: item.handNumber };
   const verificationLabel = item.verificationStatus === "verified"
     ? t("liveHub.handFeed.proofVerified", "Đã xác minh kết quả")
@@ -96,7 +98,7 @@ export function HandFeedCard({ item, rpt = false, tableName, onViewHand, onShare
               </span>
             )}
             <span className="tracker-num text-sm font-bold text-[hsl(var(--viewer-neon))]">
-              {t("liveHub.handFeed.pot", "POT")} {formatViewerBBOrUnavailable(item.potChips, item.bigBlind)}
+              {t("liveHub.handFeed.pot", "POT")} {formatViewerAmount(item.potChips, item.bigBlind, unit)}
             </span>
             {item.sidePotCount > 0 && (
               <span className="tracker-num ml-auto text-[10px] font-bold text-warning">
@@ -151,7 +153,7 @@ export function HandFeedCard({ item, rpt = false, tableName, onViewHand, onShare
                   <span className={`tracker-num ml-auto min-w-[78px] text-right text-xs font-bold ${
                     player.deltaChips > 0 ? "text-success" : player.deltaChips < 0 ? "text-destructive" : "text-muted-foreground"
                   }`}>
-                    {player.deltaChips > 0 ? "+" : player.deltaChips < 0 ? "−" : ""}{formatViewerBBOrUnavailable(Math.abs(player.deltaChips), item.bigBlind)}
+                    {player.deltaChips > 0 ? "+" : player.deltaChips < 0 ? "−" : ""}{formatViewerAmount(Math.abs(player.deltaChips), item.bigBlind, unit)}
                   </span>
                 </div>
               );
@@ -210,7 +212,7 @@ export function HandFeedCard({ item, rpt = false, tableName, onViewHand, onShare
       {/* pot */}
       <p data-testid="hand-verification-state" className="mb-2 text-[10px] text-muted-foreground">{verificationLabel}</p>
       <div className="mb-2 flex items-baseline gap-2">
-        <span className="tracker-num text-lg font-bold text-primary">{formatViewerBBOrUnavailable(item.potChips, item.bigBlind)}</span>
+        <span className="tracker-num text-lg font-bold text-primary">{formatViewerAmount(item.potChips, item.bigBlind, unit)}</span>
         {item.sidePotCount > 0 && (
           <span className="tracker-num rounded-full border border-warning/40 px-1.5 text-[9px] font-bold text-warning">
             +{item.sidePotCount} {t("liveHub.handFeed.sidePot", "side")}
@@ -261,7 +263,7 @@ export function HandFeedCard({ item, rpt = false, tableName, onViewHand, onShare
               }`}
             >
               {p.deltaChips > 0 ? "+" : p.deltaChips < 0 ? "−" : ""}
-              {formatViewerBBOrUnavailable(Math.abs(p.deltaChips), item.bigBlind)}
+              {formatViewerAmount(Math.abs(p.deltaChips), item.bigBlind, unit)}
             </span>
           </div>
         ))}

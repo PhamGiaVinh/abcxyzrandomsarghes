@@ -27,7 +27,7 @@ import {
   type ReplayRunoutPresentation,
 } from "@/lib/tracker-poker/replayRunoutTimeline";
 import { formatActionLabel, formatStack, type ActionLog } from "./LiveFelt";
-import { formatViewerBBOrUnavailable, formatViewerChipAndBB, formatViewerSignedChipAndBB } from "@/lib/tracker-poker/viewerAmounts";
+import { formatViewerAmount, type ViewerAmountUnit } from "@/lib/tracker-poker/viewerAmounts";
 import { markPokerSoundGesture, stopTrackerPokerSounds } from "@/lib/pokerLiveSound";
 
 const SPEEDS = [0.5, 1, 2, 4, 8];
@@ -51,6 +51,7 @@ interface ReplayScrubberProps {
    * the HAND's OWN blind (detectBigBlind), never the current clock level.
    */
   hud?: boolean;
+  viewerAmountUnit?: ViewerAmountUnit;
   /**
    * UAT wave 2 (liveFeltCompact, viewer-only) — ADDITIVE; absent → frames are
    * byte-identical to today's. Frame seats additionally carry `current_bet` (chips
@@ -71,6 +72,7 @@ export function ReplayScrubber({
   hand,
   onFrame,
   hud = false,
+  viewerAmountUnit,
   trackBets = false,
   onSpeedChange,
   onPlayingChange,
@@ -316,7 +318,7 @@ export function ReplayScrubber({
     () => (hud ? Math.max(0, ...sortedActions.filter((a) => a.action_type === "post_ante").map((a) => a.action_amount), 0) : 0),
     [hud, sortedActions]
   );
-  const amountForHud = (n: number): string => formatViewerBBOrUnavailable(n, bb);
+  const amountForHud = (n: number): string => formatViewerAmount(n, bb, viewerAmountUnit ?? "bb");
   // Hand-summary bullets reveal only actions reached by the current replay frame.
   const bullets = (() => {
     if (!hud) return [];
@@ -553,7 +555,7 @@ export function ReplayScrubber({
               {hand.publicHistoryResult.recipients.map((recipient, index) => (
                 <div key={`${recipient.playerId}:${index}`} className="flex items-center justify-between gap-2">
                   <span className="min-w-0 truncate">{publicName(recipient.name, recipient.playerId)}{recipient.seatNumber ? ` · ${t("liveHub.seat", "Ghế {{n}}", { n: recipient.seatNumber })}` : ""}</span>
-                  <span className="tracker-num shrink-0 font-semibold">{formatViewerSignedChipAndBB(recipient.netDelta, bb)}</span>
+                  <span className="tracker-num shrink-0 font-semibold">{recipient.netDelta > 0 ? "+" : ""}{amountForHud(recipient.netDelta)}</span>
                 </div>
               ))}
             </div>
@@ -561,7 +563,7 @@ export function ReplayScrubber({
           {step === lastIndex && current?.showdownResult !== "needs_resettle" && fullRefund && (
             <div data-testid="replay-full-refund" className="rounded-xl border border-border/60 bg-background/35 px-3 py-2 text-xs text-muted-foreground">
               <div className="font-semibold">{t("liveHub.replay.fullRefund", "Đã xác minh: hoàn trả toàn bộ cược chưa được theo.")}</div>
-              <div>{publicName(hand.players.find((player) => player.player_id === fullRefund.playerId)?.display_name, fullRefund.playerId)} · {formatViewerChipAndBB(fullRefund.amount, bb)}</div>
+              <div>{publicName(hand.players.find((player) => player.player_id === fullRefund.playerId)?.display_name, fullRefund.playerId)} · {amountForHud(fullRefund.amount)}</div>
             </div>
           )}
           {current?.showdownResult !== "needs_resettle" && !currentPresentation && !runoutPresentation && !(step === lastIndex && (hand.publicHistoryResult?.status === "verified" || fullRefund)) && (
@@ -585,7 +587,7 @@ export function ReplayScrubber({
         <div className={hud ? "border-t border-border/20 pt-3 text-xs text-foreground" : "text-xs text-amber-100 border-t border-border/20 pt-2"}>
           {(!hud || current.latestAction.seat_number > 0) && <span className={hud ? "text-muted-foreground" : "text-amber-300/70"}>{hud ? t("liveHub.seat", "Ghế {{n}}", { n: current.latestAction.seat_number }) : `Ghế ${current.latestAction.seat_number}`} · </span>}
           <span className={hud ? "font-semibold text-[hsl(var(--viewer-neon))]" : "font-semibold text-emerald-300"}>{hud ? publicName(current.latestAction.display_name, current.latestAction.player_id) : current.latestAction.display_name}</span>{" "}
-          {formatActionLabel(current.latestAction, hud ? amountForHud : formatStack)}
+          {formatActionLabel(current.latestAction, hud || viewerAmountUnit ? amountForHud : formatStack)}
         </div>
       )}
 
@@ -599,7 +601,7 @@ export function ReplayScrubber({
             action_type: a.action_type,
             action_amount: a.action_amount,
             action_order: a.action_order,
-          } as ActionLog, hud ? amountForHud : formatStack);
+          } as ActionLog, hud || viewerAmountUnit ? amountForHud : formatStack);
           const rawName = hand.players.find((p) => p.player_id === a.player_id)?.display_name;
           const name = hud ? publicName(rawName, a.player_id) : rawName || a.player_id.slice(0, 6);
           const active = step === i + 1;
