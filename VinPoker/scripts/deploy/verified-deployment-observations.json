@@ -114,6 +114,10 @@
     {
       "referenceSha": "32beacffba4aa9ce2214814aafca3b4a25645edf",
       "fingerprint": "fbc3181f677e207259cff301b3837f221db01d997eef02e2e2fd1a6293c95d35"
+    },
+    {
+      "referenceSha": "482d9fc27a6357e59881021f9c163f53a5d26740",
+      "fingerprint": "8f4e8ee4743fe5b3c160e62b0311c5756559965f48e615831a39b5d51b9298d8"
     }
   ],
   "functions": [
