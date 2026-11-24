@@ -27,7 +27,7 @@ vi.mock('@/lib/publicTableTransport',()=>({readPublicTableRequest:async(_url:str
 vi.mock('@/components/tracker/useTournamentTableAppearance',()=>({useTournamentTableAppearance:()=>({data:undefined})}));
 vi.mock('@/components/td-ai/TdAiAssistantPanel',()=>({TdAiAssistantPanel:()=>null}));
 vi.mock('@/lib/tracker-poker/useTrackerRunoutSounds',()=>({useTrackerRunoutSounds:()=>{}}));
-vi.mock('./LiveFelt',()=>({LiveFelt:({toActId}:{toActId?:string|null})=> <div data-testid="rendered-felt" data-actor={toActId??'none'}>Hand blinds unavailable</div>,formatStack:String,formatActionLabel:String}));
+vi.mock('./LiveFelt',()=>({LiveFelt:({toActId,hideHoleCards,latestAction}:{toActId?:string|null;hideHoleCards?:boolean;latestAction?:{action_type:string}|null})=> <div data-testid="rendered-felt" data-actor={toActId??'none'} data-hidden-cards={Boolean(hideHoleCards)} data-action={latestAction?.action_type??'none'}>Hand blinds unavailable</div>,formatStack:String,formatActionLabel:String}));
 // Exercise the real parent read/presentation boundary; child completion is held
 // explicitly rather than claiming this unit test is browser/DB acceptance.
 vi.mock('./HandSelector',()=>({HandSelector:({onSelectHand,replayTargetState,onRetryReplayTarget}:{onSelectHand:(id:string,h:unknown)=>void;replayTargetState:{kind:string};onRetryReplayTarget?:()=>void})=><><p data-testid="target-state">{replayTargetState.kind}</p>{replayTargetState.kind==='query_error'&&<button onClick={onRetryReplayTarget}>Thử tìm lại hand</button>}<button onClick={()=>onSelectHand('hand',hand)}>Deliver replay</button></>}));
@@ -123,6 +123,50 @@ it('removes the previous hand and clock as soon as the viewer switches tournamen
   } }));
   expect(screen.queryByText('Hand #38')).not.toBeInTheDocument();
   expect(screen.queryByTestId('rendered-felt')).not.toBeInTheDocument();
+});
+
+it('holds a batched all-in and call until the observed new hand has finished dealing', async () => {
+  vi.useFakeTimers();
+  let started = false;
+  const players = [1, 2].map(index => ({ playerId: `p${index}`, seatNumber: index, entryNumber: 1,
+    name: `PLAYER${index}`, startingStack: 1000, endingStack: null, holeCards: [], eliminated: false, avatarUrl: null }));
+  const actions = [
+    { playerId: 'p1', actionType: 'post_sb', amount: 100 },
+    { playerId: 'p2', actionType: 'post_bb', amount: 200 },
+    { playerId: 'p1', actionType: 'all_in', amount: 900 },
+    { playerId: 'p2', actionType: 'call', amount: 800 },
+  ].map((action, index) => ({ ...action, id: `action-${index}`, entryNumber: 1, order: index + 1, street: 'preflop' }));
+  rpc.mockImplementation(async (name: string) => ({ error: null, data:
+    name === 'get_public_tournament_clock_summary'
+      ? [{ ...publicClock, tournament_id: 'tour', players_remaining: 2, average_stack: 1000 }]
+      : name === 'get_public_tournament_table_live_or_last_hand_v2'
+        ? { access: 'public', state: started ? 'live' : 'waiting', tableId: 'table', tableSessionId: 'session',
+            hand: started ? { id: 'new-hand', tournamentId: 'tour', tableId: 'table', tableSessionId: 'session',
+              handNumber: 51, status: 'in_progress', buttonSeat: 1, board: [], pot: 2000,
+              smallBlind: 100, bigBlind: 200, ante: 0, levelNumber: 1, players, actions, holeCardsPolicy: 'recorded' } : null }
+        : null }));
+  try {
+    render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table" />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    started = true;
+    await act(async () => {
+      events.forEach(fn => fn({ payload: { tournamentId: 'tour', components: ['tables'] } }));
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    const felt = screen.getByTestId('rendered-felt');
+    expect(felt).toHaveAttribute('data-hidden-cards', 'true');
+    expect(felt).toHaveAttribute('data-action', 'post_sb');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1400); });
+    expect(felt).toHaveAttribute('data-hidden-cards', 'false');
+    expect(felt).toHaveAttribute('data-action', 'post_bb');
+    await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+    expect(felt).toHaveAttribute('data-action', 'all_in');
+    await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+    expect(felt).toHaveAttribute('data-action', 'call');
+  } finally {
+    cleanup();
+    vi.useRealTimers();
+  }
 });
 
 it('reports a failed hand action read and recovers when a genuinely empty list is returned', async () => {
