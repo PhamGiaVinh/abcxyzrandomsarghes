@@ -166,7 +166,7 @@ const ClubFinanceDashboard = () => {
             <Button size="sm" variant="outline" className="h-9" onClick={() => { setRelativeRange(30);setFrom(rangeStartISO(30)); setTo(todayISO()); }}>30 ngày</Button>
             <Button size="sm" variant="outline" className="h-9" onClick={() => { setRelativeRange('month');setFrom(monthStartISO()); setTo(todayISO()); }}>Tháng này</Button>
           </div>
-          {isAdmin && (
+          {(isAdmin || isClubOwner) && (
             <div>
               <Label className="text-xs text-muted-foreground">Câu lạc bộ</Label>
               <Select value={clubFilter} onValueChange={setClubFilter}>
@@ -296,9 +296,6 @@ const ClubFinanceDashboard = () => {
                 <Line label="• Online" value={formatVND(summary.revenue.rakeOnline)} sub />
                 <Line label="• Offline" value={formatVND(summary.revenue.rakeOffline)} sub />
                 <Line label="• Re-entry" value={formatVND(summary.revenue.rakeReentry)} sub />
-                {(summary.revenue.serviceFee ?? 0) > 0 && (
-                  <Line label="Phí dịch vụ" value={formatVND(summary.revenue.serviceFee)} strong />
-                )}
                 <div className="h-px bg-border/50 my-1" />
                 <Line label="Thực thu (đối chiếu)" value={formatVND(summary.revenue.rakeActual)} muted />
                 <Line
@@ -400,7 +397,7 @@ const ClubFinanceDashboard = () => {
               </div>
             </Card>
 
-            {isAdmin && (
+            {(isAdmin || isClubOwner) && (
               <Card className="p-4 gradient-card border-primary/20">
                 <div className="text-sm font-semibold mb-2 flex items-center gap-2"><Building2 className="w-4 h-4 text-primary" /> Chi phí đã ghi nhận theo CLB</div>
                 <p className="text-xs text-muted-foreground mb-2">Độ dài thanh theo trị tuyệt đối; số âm là khoản giảm chi phí.</p>
