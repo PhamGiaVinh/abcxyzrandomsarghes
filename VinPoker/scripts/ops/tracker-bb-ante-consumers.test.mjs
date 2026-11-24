@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { baseline, deployConsumers, validateConsumerReceipt } from './tracker-bb-ante-consumers.mjs';
+import { baseline, deployConsumers, validateConsumerReceipt, verifyDeployedConsumers } from './tracker-bb-ante-consumers.mjs';
 import { releaseSha } from './tracker-bb-ante-release.mjs';
 
 function harness() {
@@ -49,4 +49,22 @@ test('frontend shell failure cannot produce a final receipt',async()=>{
 test('wrong frontend access or settings stops before any consumer write',async()=>{
   const h=harness();h.transport.frontendPreflight=async()=>{throw Error('frontend project denied');};
   await assert.rejects(deployConsumers(h.transport,h.save),/frontend project/);assert.deepEqual(h.writes,[]);
+});
+
+test('resumes only from a complete receipt and current exact versions without any deployment write',async()=>{
+  const h=harness();const receipt=await deployConsumers(h.transport,h.save);h.writes.length=0;
+  await verifyDeployedConsumers(h.transport,receipt);assert.deepEqual(h.writes,[]);
+  h.functions[0].version++;
+  await assert.rejects(verifyDeployedConsumers(h.transport,receipt),/Resumed Edge/);
+  assert.deepEqual(h.writes,[]);
+});
+
+test('resume rejects alias drift, revision drift and incomplete evidence without writes',async()=>{
+  for(const drift of ['alias','revision','receipt']){
+    const h=harness();const receipt=await deployConsumers(h.transport,h.save);h.writes.length=0;
+    if(drift==='alias')h.transport.getFrontend=async id=>({...h.deployment,id:id==='vinpoker.vercel.app'?'dpl_Other':h.deployment.id});
+    if(drift==='revision')h.deployment.gitSource.sha='f'.repeat(40);
+    if(drift==='receipt')receipt.edgeVerified=false;
+    await assert.rejects(verifyDeployedConsumers(h.transport,receipt));assert.deepEqual(h.writes,[]);
+  }
 });

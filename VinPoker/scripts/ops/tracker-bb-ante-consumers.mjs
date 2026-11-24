@@ -34,6 +34,17 @@ export function validateConsumerReceipt(receipt){
   assert.match(receipt.frontend.deploymentId,/^dpl_[a-zA-Z0-9]+$/);
 }
 
+export async function verifyDeployedConsumers(transport, receipt){
+  validateConsumerReceipt(receipt);
+  await transport.frontendPreflight();
+  const inventory=await transport.listEdges();
+  for(const expected of baseline)assert.deepEqual(selected(inventory,expected.slug),{...expected,version:expected.version+1},'Resumed Edge metadata differs');
+  const deployed=await transport.getFrontend(receipt.frontend.deploymentId);
+  const alias=await transport.getFrontend('vinpoker.vercel.app');
+  assert.ok(frontendMatches(deployed)&&frontendMatches(alias)&&deployed.id===receipt.frontend.deploymentId&&alias.id===deployed.id,'Resumed frontend revision or alias differs');
+  await transport.verifyShells();
+}
+
 export async function deployConsumers(transport,save){
   const initial=await transport.listEdges();
   for(const expected of baseline)assert.deepEqual(selected(initial,expected.slug),expected,'Edge production baseline differs');
@@ -74,7 +85,7 @@ export async function deployConsumers(transport,save){
 }
 
 async function main(){
-  const mode=process.argv[2];assert.ok(['preflight','deploy'].includes(mode),'Explicit preflight or deploy mode required');
+  const mode=process.argv[2];assert.ok(['preflight','deploy','verify-deployed'].includes(mode),'Explicit preflight, deploy or verify-deployed mode required');
   const env=process.env;
   assert.equal(env.GITHUB_EVENT_NAME,'workflow_dispatch');assert.equal(env.GITHUB_REPOSITORY,'PhamGiaVinh/abcxyzrandomsarghes');
   assert.equal(env.CONFIRM_TRACKER_BBA,`APPLY_TRACKER_BBA_350_351_${releaseSha}`);
@@ -121,6 +132,10 @@ async function main(){
       if(registered[component])await recordSuccessfulReceipt({repository:env.GITHUB_REPOSITORY,token:env.GITHUB_TOKEN,component,targetSha:releaseSha,manifest});
     },
   };
+  if(mode==='verify-deployed'){
+    await verifyDeployedConsumers(transport,JSON.parse(readFileSync(env.CONSUMER_RECEIPT_PATH,'utf8')));
+    console.log('TRACKER_EXISTING_CONSUMERS_READONLY_VERIFIED');return;
+  }
   if(mode==='preflight'){
     const inventory=await transport.listEdges();
     for(const expected of baseline)assert.deepEqual(selected(inventory,expected.slug),expected,'Edge production baseline differs');
