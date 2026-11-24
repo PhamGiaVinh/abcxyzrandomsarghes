@@ -17,7 +17,9 @@ export function trackerBetPoint(point: { l: number; t: number }, portrait: boole
   // A radial inset puts the stack directly on the player's name at iPad widths.
   if (!portrait) {
     if (point.t < 20) {
-      if (point.l === 50) return { l: 59, t: 28 };
+      // The middle top seat has its own centered lane. Move below the name
+      // plate instead of shifting its chips into the neighbouring seat's lane.
+      if (point.l === 50) return { l: 50, t: 31 };
       return { l: point.l < 50 ? 31 : 69, t: 28 };
     }
     if (point.t > 80) return { l: point.l < 50 ? 27 : 73, t: 70 };

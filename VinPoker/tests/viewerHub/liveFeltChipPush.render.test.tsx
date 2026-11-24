@@ -7,10 +7,11 @@
 //   P2-2  a chip fires on the FIRST action of a NEW hand: the composite nonce
 //         (handNumber*10000+count) changes across the hand boundary and the
 //         layer dedupes by "!== last", not "> last", so it is not skipped.
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { render, cleanup } from "@testing-library/react";
 import { LiveFelt, type SeatInfo } from "@/components/cashier/tournament-live/LiveFelt";
+import { TrackerViewerCardProvider } from "@/components/tracker/TrackerCardStyle";
 
 const noBB = () => null;
 
@@ -44,7 +45,7 @@ function boardSegment(html: string): string {
   return afterBoard.split('data-testid="seat-holecards"')[0] ?? "";
 }
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe("LiveFelt liveTableFx — board stagger is prop-gated (P2-1)", () => {
   const flop = { displayCards: ["Ah", "Kd", "Qc", "", ""] };
@@ -65,6 +66,17 @@ describe("LiveFelt liveTableFx — board stagger is prop-gated (P2-1)", () => {
 });
 
 describe("LiveFelt liveTableFx — chip-push (P2-2)", () => {
+  it.each([false,true])('starts seat 5 all-in travel at its visible chip pile (portrait=%s)',portrait=>{
+    vi.stubGlobal('ResizeObserver',class { observe(){} disconnect(){} });
+    const {container}=render(<TrackerViewerCardProvider><LiveFelt {...baseProps} viewerLayout compact portrait={portrait} tableFx
+      seats={[seat({player_id:'five',seat_number:5,is_all_in:true,current_bet:30000,total_committed:30000})]}
+      chipPush={{seatNumber:5,nonce:50001,kind:'all_in'}}/></TrackerViewerCardProvider>);
+    const pile=container.querySelector<HTMLElement>('[data-tracker-bet="5"]')!;
+    const travel=container.querySelector<HTMLElement>('.tracker-chip-push')!;
+    expect(travel.style.getPropertyValue('--cp-fx')).toBe(pile.style.left);
+    expect(travel.style.getPropertyValue('--cp-fy')).toBe(pile.style.top);
+  });
+
   const seats = [seat({ player_id: "a", seat_number: 1 }), seat({ player_id: "b", seat_number: 2 })];
   const chipCount = (el: HTMLElement) => el.querySelectorAll(".tracker-chip-push").length;
 
