@@ -13,6 +13,9 @@ verify_jwt = false
 [functions.send-payroll-statement]
 verify_jwt = true
 
+[functions.owner-sepay-assistant]
+verify_jwt = true
+
 [functions.public-spectator-projector-v2]
 verify_jwt = false
 
