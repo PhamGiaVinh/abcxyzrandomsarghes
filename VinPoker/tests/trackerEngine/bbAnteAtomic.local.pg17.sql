@@ -5,6 +5,19 @@ DO $$ BEGIN
   ASSERT inet_server_port() = 55519 AND host(inet_server_addr()) = '127.0.0.1';
 END $$;
 
+-- Minimum writer seam only: enable the snapshot locally inside this rolled-back
+-- transaction. The release qualification uses the full schema and migration351.
+DO $activate_fixture$
+DECLARE definition text;
+BEGIN
+ definition:=pg_get_functiondef('floor_private.snapshot_tracker_hand_blinds()'::regprocedure);
+ IF position('NEW.tracker_big_blind_ante_only := true' IN definition)=0 THEN
+  ASSERT position('NEW.tracker_bba := v_level.ante;' IN definition)>0;
+  EXECUTE replace(definition,'NEW.tracker_bba := v_level.ante;',
+   'NEW.tracker_bba := v_level.big_blind; NEW.tracker_big_blind_ante_only := true;');
+ END IF;
+END $activate_fixture$;
+
 CREATE FUNCTION public.test_fail_bb_ante349() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   IF NEW.action_type = 'post_bb' AND current_setting('tracker_test.fail_hand', true) = NEW.hand_id::text THEN

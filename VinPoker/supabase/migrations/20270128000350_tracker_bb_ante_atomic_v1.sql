@@ -1,5 +1,6 @@
 -- DRAFT coordinated release: requires matching Edge, readers and hand-input UI.
--- Existing hands keep their frozen rule. Only new Tracker hands use BB-only ante.
+-- Dormant schema/writer only. Migration351 activates the rule for new hands
+-- after settlement/readers are ready in its transaction. Existing hands stay unchanged.
 -- Rollback: stop new hand creation, restore the prior snapshot function through a
 -- reviewed forward migration, and retain receipts/rules for already-started hands.
 BEGIN;
@@ -18,27 +19,6 @@ CREATE TABLE floor_private.tracker_blind_receipts350 (
 );
 ALTER TABLE floor_private.tracker_blind_receipts350 ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON floor_private.tracker_blind_receipts350 FROM PUBLIC, anon, authenticated, service_role;
-
--- Preserve the existing session/level/position checks and function privileges.
-DO $freeze$
-DECLARE
-  definition text;
-  anchor text := '  NEW.tracker_bba := v_level.ante;';
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_proc
-    WHERE oid = 'floor_private.snapshot_tracker_hand_blinds()'::regprocedure
-      AND proowner = 'postgres'::regrole AND prosecdef
-  ) THEN RAISE EXCEPTION 'tracker_bba_snapshot_authority_mismatch'; END IF;
-  definition := replace(pg_get_functiondef('floor_private.snapshot_tracker_hand_blinds()'::regprocedure), chr(13), '');
-  IF (length(definition) - length(replace(definition, anchor, ''))) / length(anchor) <> 1 THEN
-    RAISE EXCEPTION 'tracker_bba_snapshot_dependency_drift';
-  END IF;
-  EXECUTE replace(definition, anchor,
-    '  NEW.tracker_bba := v_level.big_blind;' || chr(10) ||
-    '  NEW.tracker_big_blind_ante_only := true;');
-END;
-$freeze$;
 
 CREATE FUNCTION public.post_tracker_blinds_v1(p_hand_id uuid, p_request_id uuid, p_tournament_id uuid)
 RETURNS jsonb

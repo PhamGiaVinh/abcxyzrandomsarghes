@@ -44,11 +44,13 @@ BEGIN
  ASSERT NOT has_function_privilege('anon','floor_private.tracker_manual_payouts_match350(jsonb,jsonb,jsonb,uuid)','EXECUTE');
  RAISE NOTICE 'BB_ANTE_SETTLEMENT_PASS: matched, split, short ante, side pot, refund and ineligible winner';
 END $test$;
-DO $finish$
+CREATE TEMP TABLE bba_finished_cases(hand_id uuid,bb_start integer,pot integer);
+CREATE FUNCTION pg_temp.test_bba_finish351(bb_start integer) RETURNS void LANGUAGE plpgsql AS $finish$
 DECLARE actor uuid:=gen_random_uuid();club uuid:=gen_random_uuid();tour uuid:=gen_random_uuid();
  game uuid:=gen_random_uuid();tbl uuid:=gen_random_uuid();session uuid:=gen_random_uuid();level uuid:=gen_random_uuid();
  sb uuid:=gen_random_uuid();bb uuid:=gen_random_uuid();sb_entry uuid:=gen_random_uuid();bb_entry uuid:=gen_random_uuid();
  hand uuid;answer jsonb;repeated jsonb;actions jsonb;players jsonb;intent jsonb;revision bigint;
+ ante_paid integer:=least(200,greatest(bb_start-200,0));board jsonb:='[]';sb_cards jsonb:='[]';bb_cards jsonb:='[]';
 BEGIN
  INSERT INTO auth.users(id) VALUES(actor),(sb),(bb);
  INSERT INTO public.clubs(id,name,region,owner_id) VALUES(club,'BB ante full TEST','VN',actor);
@@ -62,48 +64,57 @@ BEGIN
  INSERT INTO public.tournament_tables(id,tournament_id,table_id,game_table_id,table_session_id,status,floor_control_mode)
  VALUES(tbl,tour,game,game,session,'active','tracker');
  INSERT INTO public.tournament_entries(id,tournament_id,player_id,entry_no,status,current_stack,table_id,seat_number)
- VALUES(sb_entry,tour,sb,1,'seated',1000,game,1),(bb_entry,tour,bb,1,'seated',1000,game,2);
+ VALUES(sb_entry,tour,sb,1,'seated',1000,game,1),(bb_entry,tour,bb,1,'seated',bb_start,game,2);
  INSERT INTO public.tournament_seats(tournament_id,player_id,entry_number,entry_id,tournament_table_id,table_session_id,seat_number,chip_count)
- VALUES(tour,sb,1,sb_entry,tbl,session,1,1000),(tour,bb,1,bb_entry,tbl,session,2,1000);
+ VALUES(tour,sb,1,sb_entry,tbl,session,1,1000),(tour,bb,1,bb_entry,tbl,session,2,bb_start);
  PERFORM set_config('request.jwt.claim.sub',actor::text,true);
  PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',actor,'role','authenticated')::text,true);
  INSERT INTO public.tournament_hands(tournament_id,table_id,tournament_table_id,table_session_id,hand_number,
   status,button_seat,created_by,locked_by_user_id,locked_at)
  VALUES(tour,tbl,tbl,session,1,'in_progress',1,actor,actor,now()) RETURNING id INTO hand;
  INSERT INTO public.hand_players(hand_id,tournament_id,player_id,entry_number,seat_number,starting_stack)
- VALUES(hand,tour,sb,1,1,1000),(hand,tour,bb,1,2,1000);
+ VALUES(hand,tour,sb,1,1,1000),(hand,tour,bb,1,2,bb_start);
  answer:=public.post_tracker_blinds_v1(hand,gen_random_uuid(),tour);
  ASSERT answer->>'status'='success',answer::text;
+ ASSERT (answer->>'bb_paid')::integer=200 AND (answer->>'ante_paid')::integer=ante_paid,answer::text;
  answer:=public.record_action(hand,sb,'call',4,1,'preflop',100);
  ASSERT answer->>'status'='success',answer::text;
- answer:=public.record_action(hand,bb,'fold',5,1,'preflop',0);
- ASSERT answer->>'status'='success',answer::text;
+ IF bb_start>400 THEN
+  answer:=public.record_action(hand,bb,'fold',5,1,'preflop',0);
+  ASSERT answer->>'status'='success',answer::text;
+ ELSE
+  board:='["2c","3d","7s","8h","9c"]';sb_cards:='["Jh","Jd"]';bb_cards:='["As","Qd"]';
+  answer:=public.update_community_cards(hand,board,actor);
+  ASSERT answer->>'status'='success',answer::text;
+ END IF;
  SELECT jsonb_agg(jsonb_build_object('player_id',a.player_id,'entry_number',a.entry_number,'street',a.street,
   'action_type',a.action_type,'action_amount',a.action_amount,'action_order',a.action_order) ORDER BY a.action_order)
  INTO actions FROM public.hand_actions a WHERE a.hand_id=hand;
  SELECT source_revision INTO revision FROM public.tournament_hands WHERE id=hand;
- players:=jsonb_build_array(jsonb_build_object('player_id',sb,'entry_number',1,'seat_number',1,'starting_stack',1000,'ending_stack',1400,
-  'is_eliminated',false,'hole_cards','[]'::jsonb),jsonb_build_object('player_id',bb,'entry_number',1,'seat_number',2,
-  'starting_stack',1000,'ending_stack',600,'is_eliminated',false,'hole_cards','[]'::jsonb));
+ players:=jsonb_build_array(jsonb_build_object('player_id',sb,'entry_number',1,'seat_number',1,'starting_stack',1000,'ending_stack',1200+ante_paid,
+  'is_eliminated',false,'hole_cards',sb_cards),jsonb_build_object('player_id',bb,'entry_number',1,'seat_number',2,
+  'starting_stack',bb_start,'ending_stack',bb_start-200-ante_paid,'is_eliminated',bb_start=200+ante_paid,'hole_cards',bb_cards));
  intent:=jsonb_build_object('actor_id',actor,'request_id',gen_random_uuid(),'tournament_id',tour,'tournament_table_id',tbl,
   'hand_id',hand,'table_session_id',session,'control_epoch',1,'source_revision',revision,
   'payload',jsonb_build_object('hand_time',now(),'players',players,'actions',actions,'side_pots',
-   jsonb_build_array(jsonb_build_object('amount',600,'eligible_player_ids',jsonb_build_array(sb))),
-   'community_cards','[]'::jsonb,'pot_size',600));
+   jsonb_build_array(jsonb_build_object('amount',400+ante_paid,'eligible_player_ids',CASE WHEN bb_start>400 THEN jsonb_build_array(sb) ELSE jsonb_build_array(sb,bb) END)),
+   'community_cards',board,'pot_size',400+ante_paid));
  answer:=public.record_tracker_manual_hand_v1(jsonb_set(intent,'{payload,pot_size}','400'));
  ASSERT answer->>'error'='SIDE_POTS_TAMPERED',answer::text;
  ASSERT (SELECT status='in_progress' FROM public.tournament_hands WHERE id=hand),'rejected Finish must not complete the hand';
  answer:=public.record_tracker_manual_hand_v1(intent);
  ASSERT answer->>'ok'='true',answer::text;
- ASSERT (SELECT status='completed' AND pot_size=600 FROM public.tournament_hands WHERE id=hand);
- ASSERT (SELECT sum(ending_stack)=2000 FROM public.hand_players WHERE hand_id=hand);
- ASSERT (SELECT chip_count=1400 FROM public.tournament_seats WHERE tournament_id=tour AND player_id=sb);
- ASSERT (SELECT chip_count=600 FROM public.tournament_seats WHERE tournament_id=tour AND player_id=bb);
+ ASSERT (SELECT status='completed' AND pot_size=400+ante_paid FROM public.tournament_hands WHERE id=hand);
+ ASSERT (SELECT sum(ending_stack)=1000+bb_start FROM public.hand_players WHERE hand_id=hand);
+ ASSERT (SELECT chip_count=1200+ante_paid FROM public.tournament_seats WHERE tournament_id=tour AND player_id=sb);
+ ASSERT (SELECT chip_count=bb_start-200-ante_paid FROM public.tournament_seats WHERE tournament_id=tour AND player_id=bb);
  ASSERT public.get_public_tournament_hand_v2(tour,hand)->>'bigBlindAnteOnly'='true';
  repeated:=public.record_tracker_manual_hand_v1(intent);
  ASSERT repeated->>'ok'='true',repeated::text;
- ASSERT (SELECT chip_count=1400 FROM public.tournament_seats WHERE tournament_id=tour AND player_id=sb),'duplicate Finish must not award twice';
+ ASSERT (SELECT chip_count=1200+ante_paid FROM public.tournament_seats WHERE tournament_id=tour AND player_id=sb),'duplicate Finish must not award twice';
  ASSERT (SELECT source_revision FROM public.tournament_hands WHERE id=hand)=(answer->>'committed_source_revision')::bigint;
- RAISE NOTICE 'BB_ANTE_FULL_MANUAL_FINISH_PASS: actual atomic posts, actions, receipt, 600 pot and canonical ending stacks';
+ INSERT INTO bba_finished_cases VALUES(hand,bb_start,400+ante_paid);
+ RAISE NOTICE 'BB_ANTE_FULL_MANUAL_FINISH_PASS: BB starting %, ante %, pot %, conserved %',bb_start,ante_paid,400+ante_paid,1000+bb_start;
 END $finish$;
+DO $$ BEGIN PERFORM pg_temp.test_bba_finish351(1000);PERFORM pg_temp.test_bba_finish351(300);END $$;
 ROLLBACK;

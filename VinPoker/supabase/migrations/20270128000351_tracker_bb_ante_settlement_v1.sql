@@ -1,8 +1,9 @@
 -- DRAFT paired with350, the frozen-rule Edge/frontend readers and settlement.
 -- Allocate after350; Supabase CLI generated the initial empty file.
 -- Rollback: stop new hands; retain350 rules/receipts for in-progress hands.
--- Restore saved definitions only after draining new-rule hands. Never turn an
--- already-started hand back into a legacy hand or discard its ante records.
+-- Restore ONLY the saved snapshot function through a reviewed forward migration
+-- to stop new cohorts. Retain these validators/readers for every already-started
+-- or completed new-rule hand. Never reset its rule or discard ante records.
 BEGIN;
 SET LOCAL lock_timeout='5s';
 SET LOCAL statement_timeout='30s';
@@ -103,4 +104,62 @@ BEGIN
  IF EXISTS(SELECT 1 FROM pg_proc WHERE oid=signature AND proacl IS DISTINCT FROM old_acl) THEN
   RAISE EXCEPTION 'tracker_ante_public_privilege_changed';END IF;
 END $reader$;
+
+-- A completed-hand correction rewrites the action stream. It may preserve the
+-- already-confirmed forced posts, never change them or create another batch.
+DO $correction$
+DECLARE signature regprocedure:='public.commit_tournament_settlement_outcome(uuid,uuid,bigint,text,bigint,text,text,text,jsonb,jsonb,jsonb,jsonb)'::regprocedure;
+ definition text;old_acl aclitem[];old_owner oid;
+ delete_anchor text:='    DELETE FROM public.hand_actions WHERE hand_id = p_hand_id;';
+ changes_anchor text:=$anchor$  FOR v_item IN SELECT value FROM jsonb_array_elements(COALESCE(p_hand_changes, '[]'::jsonb)) LOOP$anchor$;
+BEGIN
+ SELECT proacl,proowner INTO old_acl,old_owner FROM pg_proc WHERE oid=signature;
+ definition:=replace(pg_get_functiondef(signature),chr(13),'');
+ IF md5(definition)<>'b6a5e93807c3ca7117506639536562ad'
+  OR array_length(string_to_array(definition,delete_anchor),1)<>2
+  OR array_length(string_to_array(definition,changes_anchor),1)<>2
+  OR array_length(string_to_array(definition,'  v_item jsonb;'),1)<>2 THEN
+  RAISE EXCEPTION 'tracker_ante_correction_dependency_drift';END IF;
+ INSERT INTO floor_private.tracker_bb_ante_originals351 VALUES(signature::text,definition,md5(definition));
+ definition:=replace(definition,'  v_item jsonb;',$new$  v_item jsonb;
+  v_bba_prior_batch text := current_setting('vinpoker.blind_batch_hand',true);$new$);
+ definition:=replace(definition,delete_anchor,$new$    IF v_hand.tracker_big_blind_ante_only THEN
+      IF (SELECT coalesce(jsonb_agg(jsonb_build_object('player_id',a.player_id,'entry_number',a.entry_number,
+        'street',a.street,'action_type',a.action_type,'action_amount',a.action_amount,'action_order',a.action_order)
+        ORDER BY a.action_order),'[]'::jsonb) FROM public.hand_actions a WHERE a.hand_id=p_hand_id
+        AND a.action_type IN('post_sb','post_bb','post_ante')) IS DISTINCT FROM
+       (SELECT coalesce(jsonb_agg(jsonb_build_object('player_id',(a->>'player_id')::uuid,
+        'entry_number',coalesce((a->>'entry_number')::integer,1),'street',coalesce(a->>'street','preflop'),
+        'action_type',a->>'action_type','action_amount',coalesce((a->>'action_amount')::numeric,0),
+        'action_order',(a->>'action_order')::integer) ORDER BY (a->>'action_order')::integer),'[]'::jsonb)
+        FROM jsonb_array_elements(p_edit->'actions') a WHERE a->>'action_type' IN('post_sb','post_bb','post_ante')) THEN
+        RAISE EXCEPTION 'tracker_blind_correction_requires_frozen_posts';
+      END IF;
+      PERFORM set_config('vinpoker.blind_batch_hand',p_hand_id::text,true);
+    END IF;
+$new$||delete_anchor);
+ definition:=replace(definition,changes_anchor,
+  $new$  PERFORM set_config('vinpoker.blind_batch_hand',coalesce(v_bba_prior_batch,''),true);
+$new$||changes_anchor);
+ EXECUTE definition;
+ IF EXISTS(SELECT 1 FROM pg_proc WHERE oid=signature AND (proacl IS DISTINCT FROM old_acl OR proowner IS DISTINCT FROM old_owner)) THEN
+  RAISE EXCEPTION 'tracker_ante_correction_privilege_changed';END IF;
+END $correction$;
+
+-- Activate last, in this same transaction.350 by itself leaves the old frozen
+-- rule intact; no new hand can see a half-installed settlement package.
+DO $freeze$
+DECLARE signature regprocedure:='floor_private.snapshot_tracker_hand_blinds()'::regprocedure;
+ definition text;anchor text:='  NEW.tracker_bba := v_level.ante;';old_acl aclitem[];
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid=signature AND proowner='postgres'::regrole AND prosecdef) THEN
+  RAISE EXCEPTION 'tracker_bba_snapshot_authority_mismatch';END IF;
+ SELECT proacl INTO old_acl FROM pg_proc WHERE oid=signature;
+ definition:=replace(pg_get_functiondef(signature),chr(13),'');
+ IF array_length(string_to_array(definition,anchor),1)<>2 THEN RAISE EXCEPTION 'tracker_bba_snapshot_dependency_drift';END IF;
+ INSERT INTO floor_private.tracker_bb_ante_originals351 VALUES(signature::text,definition,md5(definition));
+ EXECUTE replace(definition,anchor,'  NEW.tracker_bba := v_level.big_blind;'||chr(10)||'  NEW.tracker_big_blind_ante_only := true;');
+ IF EXISTS(SELECT 1 FROM pg_proc WHERE oid=signature AND proacl IS DISTINCT FROM old_acl) THEN
+  RAISE EXCEPTION 'tracker_bba_snapshot_privilege_changed';END IF;
+END $freeze$;
 COMMIT;
