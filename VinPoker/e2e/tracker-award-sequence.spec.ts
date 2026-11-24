@@ -81,10 +81,19 @@ test("fold win credits only the pot, keeps cards hidden, and mute suppresses the
 
 test("pausing during chip travel cancels the delayed winner cue", async ({ page }) => {
   await page.goto("/__dev/livefelt?fixture=verified-sidepots&play=1&autoplay=0&orientation=portrait");
+  await page.evaluate(() => {
+    const observer = new MutationObserver(() => {
+      if (!document.querySelector('[data-testid="felt-settlement-award-announcement"]')) return;
+      const pause = document.querySelector<HTMLButtonElement>('button[title="Tạm dừng"], button[title="Pause"]');
+      if (!pause) return;
+      observer.disconnect();
+      pause.click();
+      Object.assign(window, { pausedDuringAward: true });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  });
   await page.getByTitle(/^(Phát|Play)$/).click();
-  await page.getByTestId("felt-settlement-award-announcement").waitFor({ state: "attached", timeout: 20_000 });
-  // Pause inside the 420 ms flight, without Playwright's scrolling/animation wait.
-  await page.getByTitle(/^(Tạm dừng|Pause)$/).evaluate((button: HTMLButtonElement) => button.click());
+  await page.waitForFunction(() => (window as unknown as { pausedDuringAward: boolean }).pausedDuringAward, undefined, { timeout: 20_000 });
   await page.waitForTimeout(750);
   expect(await page.evaluate(() => (window as unknown as { trackerAudioStarts: { src: string }[] }).trackerAudioStarts.filter(sound => sound.src.includes("pot-award-2531.mp3")).length)).toBe(0);
 });

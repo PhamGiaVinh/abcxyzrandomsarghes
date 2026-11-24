@@ -219,6 +219,7 @@ function TournamentLiveViewContent({
   useEffect(() => () => presentationQueueRef.current?.reset(), []);
   const [tableMotionEvents, setTableMotionEvents] = useState<TableMotionEvent[]>([]);
   const [replayMotionSpeed, setReplayMotionSpeed] = useState(1);
+  const [replayPlaying, setReplayPlaying] = useState(false);
   const [clockData, setClockData] = useState<{
     is_running: boolean;
     remaining_seconds: number;
@@ -1490,6 +1491,7 @@ function TournamentLiveViewContent({
     mode === "replay" && spectator && FEATURES.liveReplayHud && FEATURES.liveTableFx && replayFrameSource === "playback",
     soundMuted,
     Boolean(replayVisibleShowdownPresentation?.winners.some(winner => winner.bestFive.length === 5)),
+    replayPlaying,
   );
   const replayFocusPhase = replayRunoutFocusPhase(replayRunoutForSelectedHand?.phase ?? (
     replayVisibleShowdownPresentation?.enabled ? "static" : null
@@ -2303,7 +2305,7 @@ function TournamentLiveViewContent({
                 ? isReplay && FEATURES.liveReplayHud ? replayFeltPayout : !isReplay ? livePayoutForHand : null
                 : null}
               hideUnrecordedHoleCards={spectator && !isReplay && tableDisplayState === "last_completed"}
-              hideHoleCards={spectator && !isReplay && waitingForLiveDeal}
+              hideHoleCards={isReplay ? selectedReplayFrame?.holeCardsDealt === false : spectator && waitingForLiveDeal}
             />
           )}
           {spectator && hudPlayerId && <Suspense fallback={<p role="status">Đang mở hồ sơ người chơi…</p>}><PublicPlayerHud tournamentId={tournamentId} playerId={hudPlayerId} onClose={() => setHudPlayerId(null)} /></Suspense>}
@@ -2315,6 +2317,7 @@ function TournamentLiveViewContent({
               hud={spectator && FEATURES.liveReplayHud}
               trackBets={spectator && FEATURES.liveFeltCompact}
               onSpeedChange={setReplayMotionSpeed}
+              onPlayingChange={setReplayPlaying}
             />
           )}
 
@@ -2356,6 +2359,7 @@ function TournamentLiveViewContent({
               hud
               trackBets={FEATURES.liveFeltCompact}
               onSpeedChange={setReplayMotionSpeed}
+              onPlayingChange={setReplayPlaying}
               showdownPresentation={replayShowdownPresentation}
               onRunoutPresentation={handleSelectedReplayRunoutPresentation}
               selectedPotIndex={replaySelectedPotIndex}

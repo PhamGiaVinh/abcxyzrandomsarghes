@@ -58,6 +58,7 @@ interface ReplayScrubberProps {
    */
   trackBets?: boolean;
   onSpeedChange?: (speed: number) => void;
+  onPlayingChange?: (playing: boolean) => void;
   /** The sole verified winner/rank model shared with the felt. */
   showdownPresentation?: VerifiedShowdownPresentation | null;
   /** Ephemeral playback-only state; never changes the replay frame or settlement. */
@@ -72,6 +73,7 @@ export function ReplayScrubber({
   hud = false,
   trackBets = false,
   onSpeedChange,
+  onPlayingChange,
   showdownPresentation = null,
   onRunoutPresentation,
   selectedPotIndex = 0,
@@ -87,6 +89,8 @@ export function ReplayScrubber({
 
   const [step, setStep] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [dealStarted, setDealStarted] = useState(false);
+  useEffect(() => { onPlayingChange?.(isPlaying); }, [isPlaying, onPlayingChange]);
   // The viewer HUD uses a readable 1× cinematic baseline. Legacy/operator replay
   // remains at its previous 2× default.
   const [speed, setSpeed] = useState(() => hud ? 1 : 2);
@@ -130,6 +134,8 @@ export function ReplayScrubber({
     () => [...(hand.actions || [])].sort((a, b) => a.action_order - b.action_order),
     [hand]
   );
+  const firstBetIndex = sortedActions.findIndex(action => !action.action_type.startsWith("post_"));
+  const blindPostCount = firstBetIndex < 0 ? sortedActions.length : firstBetIndex;
   // Scheduling must know the terminal proof BEFORE reaching the terminal frame.
   // The parent's presentation is deliberately disabled on earlier frames so it
   // cannot reveal winners/cards early; using it here skipped the whole payout.
@@ -160,6 +166,7 @@ export function ReplayScrubber({
   useEffect(() => {
     setFrameSource("jump");
     setStep(0);
+    setDealStarted(false);
     setIsPlaying(false);
     setSpeed(hud ? 1 : 2);
     publishRunoutPresentation(null);
@@ -172,8 +179,12 @@ export function ReplayScrubber({
   onFrameRef.current = onFrame;
   useEffect(() => {
     const f = frames[Math.min(step, lastIndex)];
-    if (f) onFrameRef.current(f, frameSource);
-  }, [step, frames, lastIndex,frameSource]);
+    if (f) onFrameRef.current(hud ? {
+      ...f,
+      dealHoleCards: step === blindPostCount && dealStarted,
+      holeCardsDealt: step > blindPostCount || (step === blindPostCount && dealStarted),
+    } : f, frameSource);
+  }, [step, frames, lastIndex, frameSource, hud, blindPostCount, dealStarted]);
 
   // A cancellable playback timeline replaces the fixed interval. Standard action
   // steps retain their speed behavior; verified payouts always get the pot award
@@ -181,8 +192,19 @@ export function ReplayScrubber({
   // jump, and hand changes clear this effect.
   useEffect(() => {
     if (!isPlaying) return;
+    if (hud && step === blindPostCount && !dealStarted) {
+      const timer = window.setTimeout(() => {
+        setFrameSource("playback");
+        setDealStarted(true);
+      }, 350 / speed);
+      return () => window.clearTimeout(timer);
+    }
     if (step < lastIndex) {
       const enteringVerifiedPayout = step === lastIndex - 1 && hasVerifiedPayoutSequence;
+      const dealBoundary = hud ? blindPostCount : 0;
+      const frameDelay = step === dealBoundary
+        ? Math.max(1000, hand.players.length * 400 + (hud ? 300 : 600))
+        : 1000;
       const timer = window.setTimeout(() => {
         setFrameSource("playback");
         if (enteringVerifiedPayout) {
@@ -195,7 +217,7 @@ export function ReplayScrubber({
           ));
         }
         setStep((currentStep) => Math.min(lastIndex, currentStep + 1));
-      }, (step === 0 ? Math.max(1000, hand.players.length * 400 + 600) : 1000) / speed);
+      }, frameDelay / speed);
       return () => window.clearTimeout(timer);
     }
 
@@ -213,12 +235,13 @@ export function ReplayScrubber({
       if (nextPresentation.phase === "static") setIsPlaying(false);
     }, replayRunoutPhaseDuration(runoutPresentation.phase, speed, shownPlayers));
     return () => window.clearTimeout(timer);
-  }, [hand.players.length, hasCinematicAllInRunout, hasVerifiedPayoutSequence, isPlaying, lastIndex, publishRunoutPresentation, runoutKey, runoutPresentation, shownPlayers, speed, step, verifiedPotLayerCount]);
+  }, [hand.players.length, hasCinematicAllInRunout, hasVerifiedPayoutSequence, isPlaying, lastIndex, publishRunoutPresentation, runoutKey, runoutPresentation, shownPlayers, speed, step, verifiedPotLayerCount, hud, blindPostCount, dealStarted]);
 
   const pauseTo = (nextStep: number) => {
     if (hud) stopTrackerPokerSounds();
     markPokerSoundGesture("tracker");
     setFrameSource("scrub");
+    setDealStarted(nextStep >= blindPostCount);
     const entersVerifiedPayout = nextStep === lastIndex && hasVerifiedPayoutSequence;
     const reducedMotion = entersVerifiedPayout
       && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
@@ -241,6 +264,7 @@ export function ReplayScrubber({
     }
     if (!isPlaying && step === 0) setFrameSource("playback");
     if (step >= lastIndex) {
+      setDealStarted(false);
       setFrameSource("playback");
       publishRunoutPresentation(null);
       setStep(0);

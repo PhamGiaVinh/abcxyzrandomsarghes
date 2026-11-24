@@ -10,6 +10,22 @@ afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); vi.mocked(trackerSound
 const kinds = () => vi.mocked(playPokerLiveSound).mock.calls.map(call => call[0]);
 
 describe("Tracker street and award cues", () => {
+  it("keeps a newly mounted award phase silent while paused and plays it once on resume", () => {
+    vi.useFakeTimers();
+    const { rerender } = renderHook(({ playing }) =>
+      useTrackerRunoutSounds(phase("paused-hand", "pot_award", 0), true, false, true, playing),
+    { initialProps: { playing: false } });
+    act(() => vi.advanceTimersByTime(1000));
+    expect(kinds()).toEqual([]);
+    rerender({ playing: true });
+    expect(kinds()).toEqual(["hand_ranking"]);
+    act(() => vi.advanceTimersByTime(420));
+    expect(kinds()).toEqual(["hand_ranking", "pot_award"]);
+    rerender({ playing: false });
+    rerender({ playing: true });
+    act(() => vi.advanceTimersByTime(1000));
+    expect(kinds()).toEqual(["hand_ranking", "pot_award"]);
+  });
   it("pause cancels a delayed award even when the presentation and source stay unchanged", () => {
     vi.useFakeTimers();
     renderHook(() => useTrackerRunoutSounds(phase("hand", "pot_award", 0), true, false, false));

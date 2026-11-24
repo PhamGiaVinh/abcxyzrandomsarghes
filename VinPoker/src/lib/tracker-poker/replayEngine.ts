@@ -76,6 +76,9 @@ export interface ReplayHand {
 }
 
 export interface ReplayFrame {
+  /** Playback-only cues supplied by the transport after blind setup. */
+  dealHoleCards?: boolean;
+  holeCardsDealt?: boolean;
   /** 0..N — number of actions applied. */
   index: number;
   seats: SeatInfo[];

@@ -23,6 +23,13 @@ const frame = (over: Partial<ReplayFrame>): ReplayFrame => ({
 });
 
 describe("deriveReplayTableMotionEvents", () => {
+  it("waits for the HUD's post-blind deal cue instead of dealing at frame zero", () => {
+    expect(deriveReplayTableMotionEvents({ handId: "h", previous: null,
+      current: frame({ index: 0, dealHoleCards: false }) })).toEqual([]);
+    const posted = frame({ index: 3, dealHoleCards: false });
+    expect(deriveReplayTableMotionEvents({ handId: "h", previous: posted,
+      current: frame({ index: 3, dealHoleCards: true }) }).map(event => event.kind)).toEqual(["deal_hole"]);
+  });
   it("emits all five VinPoker-native beats on verified single-step transitions", () => {
     const previous = frame({ index: 0 });
     const current = frame({

@@ -80,6 +80,7 @@ function LiveFeltPreviewContent() {
   const [frame, setFrame] = useState<ReplayFrame>(frames[step]);
   const [runout, setRunout] = useState<ReplayRunoutPresentation | null>(null);
   const [motionSpeed, setMotionSpeed] = useState(1);
+  const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
@@ -129,7 +130,7 @@ function LiveFeltPreviewContent() {
     () => selectVerifiedPotLayerPresentation(verifiedPresentation, runout?.potAwardIndex ?? selectedPotIndex),
     [selectedPotIndex, runout?.potAwardIndex, verifiedPresentation],
   );
-  useTrackerRunoutSounds(runout, play, muted, Boolean(visiblePresentation.winners.some(winner => winner.bestFive.length === 5)));
+  useTrackerRunoutSounds(runout, play, muted, Boolean(visiblePresentation.winners.some(winner => winner.bestFive.length === 5)), playing);
 
   const staticPayoutPresentation = play && runout ? runout : visiblePresentation.enabled
     ? createReplayRunoutPresentation(
@@ -141,6 +142,7 @@ function LiveFeltPreviewContent() {
 
   const felt = (
     <LiveFelt
+      hideHoleCards={play && frame.holeCardsDealt === false}
       seats={frame.seats.map(seat => ({ ...seat,
         ...(params.get('stress') === '1' ? { display_name: `Nguyễn Hoàng Minh Anh · ${seat.seat_number}`, chip_count: 123456789012 } : {}),
         ...(params.has('allbets') ? { is_folded: false, current_bet: 1000000, display_committed_bet: 1000000 } : {}),
@@ -214,7 +216,7 @@ function LiveFeltPreviewContent() {
       {play && (
         <div className="mt-3">
           <ReplayScrubber hand={hand} onFrame={handleFrame} hud trackBets={viewerLayout && compact}
-            showdownPresentation={verifiedPresentation} onRunoutPresentation={setRunout} onSpeedChange={setMotionSpeed}
+            showdownPresentation={verifiedPresentation} onRunoutPresentation={setRunout} onSpeedChange={setMotionSpeed} onPlayingChange={setPlaying}
             selectedPotIndex={selectedPotIndex} onSelectedPotIndexChange={setSelectedPotIndex}/>
           {params.get("autoplay") !== "0" && <AutoPlay speed={speed} />}
         </div>
