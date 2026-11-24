@@ -17,6 +17,7 @@ assert.equal(createHash('sha256').update(readFileSync(process.env.SCHEMA_FILE)).
 assert.deepEqual(capture.registrations.map(r=>r.id).sort(),manifest.registrationIds.toSorted());
 assert.equal(capture.tournament.id,manifest.tournamentId);
 assert.equal(capture.functions.length,manifest.functions.length);
+assert.deepEqual(capture.functions.map(f=>f.oid).toSorted(),manifest.functions.map(f=>f.signature).toSorted());
 for(const f of capture.functions){
   assert.equal(createHash('md5').update(f.definition).digest('hex'),manifest.functions.find(m=>m.signature===f.oid)?.definitionMd5,f.oid);
 }
@@ -63,4 +64,3 @@ assert.equal(sql(`SELECT md5(snapshot::text) FROM floor_private.tour_revenue_buy
 sql(ack+readFileSync('scripts/production/repairs/rollback_free_felt_test_finance_20261124.sql','utf8'));
 assert.equal(sql("SET TIME ZONE 'UTC'; SELECT md5(jsonb_agg(to_jsonb(r)-'updated_at' ORDER BY id)::text) FROM tournament_registrations r;"),sql("SET TIME ZONE 'UTC'; SELECT md5(jsonb_agg(before_row-'updated_at' ORDER BY registration_id)::text) FROM floor_private.free_felt_finance_20261124_backup;"));
 console.log('CURRENT_TRIGGER_REPORT_NATIVE_PASS: exact live trigger/report definitions, real private classifier and finance_v2; old error -> zero totals; tournament unchanged; rollback with actual triggers. Full schema clone provenance remains separately recorded.');
-
