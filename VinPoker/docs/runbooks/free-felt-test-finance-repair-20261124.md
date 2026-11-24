@@ -1,4 +1,4 @@
-# Legacy free TEST finance repair — preparation, not live-ready
+# Legacy free TEST finance repair — reviewed correction; final live approval required
 
 Owner confirmed on 24 November that the two registrations in Center Point's
 `TEST — Felt UAT (compact)` were free test data. Read-only SQL observed:
@@ -41,8 +41,7 @@ production schema, private classifier or complete finance-summary RPC.**
 
 ## Required before live GO
 
-1. Reconnect authenticated Supabase access. The connector declined read access;
-   browser control subsequently timed out. No live writes have been performed.
+1. Authenticated Supabase CLI read-only access now works. Browser control still times out; no repair has been applied.
 2. Run `preflight_free_felt_test_finance_20261124.sql` read-only. Record the exact
    two registration IDs, full-row preimage fingerprint, current trigger/function
    fingerprints, actual platform-fixed-fee and cashier-paid-at values. Stop if
@@ -98,3 +97,38 @@ If correction needs reversal, separately approve the rollback file. It restores
 only original buy-in from the private backup, refuses intervening row/payment/
 history changes, and retains the backup with a rollback timestamp. It will restore
 the original report error too. Never delete the tournament or its hand history.
+
+## Qualification update — 24 November
+
+Official CLI 2.101.0 `db query --linked` succeeded in read-only transactions on
+the confirmed project. Exact IDs and whole-row UTC preimage are pinned in
+`free-felt-test-finance-20261124-manifest.json`. Both rows have zero platform fee,
+NULL cashier-paid-at, and no movement/refund/legacy-settlement/voucher-transfer.
+
+The schema-only clone's file hash and 23 current live function definitions are
+bound to that manifest. `freeTestFinanceRepair.currentSchema.native.mjs` verifies
+those hashes, runs the actual private classifier and finance-v2 on loopback with
+the captured registration rows, reproduces the original failure, verifies zero
+revenue and an unchanged 123000 VND control expense, then rolls back. Current
+registration UPDATE triggers remain enabled for the correction and rollback;
+replica mode is used only when seeding the isolated fixture. It checks the exact
+registration preimage hash and unchanged tournament record. This is SQL runtime
+evidence with a simulated authenticated owner context, not browser/HTTP UAT or
+universal parity for unrelated schema objects.
+
+An immutable legacy close snapshot exists for this TEST tour. It already has
+unavailableBuys 2, NULL event day and NULL revenue; snapshot JSON MD5 is
+`c7529734fd3d37d87541a2ec6ca97f16`. The correction preserves that historical
+snapshot. Historical close export remains unavailable; this package repairs the
+live aggregate report and does not rewrite a past close to appear valid.
+
+Existing encrypted backup run **45395561876** completed SUCCESS, including isolated
+restore, matching table counts and database-owner/effective-ACL parity. Snapshot
+recovery point: `2026-11-24T12:40:43.550654Z`. Metadata-only restore artifact
+14922825006; no plaintext database data downloaded. Recheck freshness and target
+preimages immediately before any apply; do not silently substitute an expired
+recovery point. This receipt does not certify recovery of hosted Vault keys.
+
+Final live approval is still required for this exact repair package. After GO,
+preserve the live report limits above and verify server results and the actual
+owner web view before claiming the finance-report capability complete.

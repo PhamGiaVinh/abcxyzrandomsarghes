@@ -21,6 +21,7 @@ END $$;
 -- Prevent a concurrent payment/refund or registration insert from crossing preflight.
 -- NOWAIT: abort rather than queue behind live work. Lock duration is transaction bounded.
 LOCK TABLE public.cashier_buyin_movements,public.cashier_refund_requests,
+  public.payment_settlements,public.satellite_ticket_value_transfers,
   public.tournament_registrations IN SHARE ROW EXCLUSIVE MODE NOWAIT;
 CREATE TEMP VIEW free_felt_history_fingerprint AS
 SELECT jsonb_build_object(
@@ -44,6 +45,7 @@ DO $$ BEGIN
     (SELECT count(*) FROM public.tournament_registrations
       WHERE tournament_id='5a51bec5-4da0-4dd9-861a-cc4e7678478c'
         AND club_id='22222222-2222-2222-2222-222222222222'
+        AND id IN ('5ccba4ae-82de-4f5c-a0f0-327dd7655779','a339364c-3f70-4b70-9257-9d73cd180915')
         AND status='confirmed' AND buy_in=1000000 AND total_pay=0
         AND coalesce(platform_fixed_fee,0)=0 AND price_snapshot IS NULL
         AND cashier_paid_at IS NULL
@@ -62,7 +64,11 @@ DO $$ BEGIN
       WHERE r.tournament_id='5a51bec5-4da0-4dd9-861a-cc4e7678478c') OR
     EXISTS(SELECT 1 FROM public.cashier_refund_requests f
       JOIN public.tournament_registrations r ON r.id=f.registration_id
-      WHERE r.tournament_id='5a51bec5-4da0-4dd9-861a-cc4e7678478c') THEN
+      WHERE r.tournament_id='5a51bec5-4da0-4dd9-861a-cc4e7678478c') OR
+    EXISTS(SELECT 1 FROM public.payment_settlements s JOIN public.tournament_registrations r
+      ON r.id=s.tournament_registration_id WHERE r.tournament_id='5a51bec5-4da0-4dd9-861a-cc4e7678478c') OR
+    EXISTS(SELECT 1 FROM public.satellite_ticket_value_transfers s JOIN public.tournament_registrations r
+      ON r.id=s.registration_id WHERE r.tournament_id='5a51bec5-4da0-4dd9-861a-cc4e7678478c') THEN
     RAISE EXCEPTION 'free_felt_money_evidence';
   END IF;
   IF (SELECT count(*) FROM public.tournament_hands
@@ -75,14 +81,20 @@ CREATE TABLE floor_private.free_felt_finance_20261124_backup(
   before_row jsonb NOT NULL,
   after_row jsonb,
   history_fingerprint jsonb NOT NULL,
+  close_fingerprint text NOT NULL,
+  tournament_before jsonb NOT NULL,
   prepared_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   reason text NOT NULL DEFAULT 'Owner confirmed these two legacy TEST registrations were free; no revenue receipt fabricated',
   rolled_back_at timestamptz
 );
 ALTER TABLE floor_private.free_felt_finance_20261124_backup ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON floor_private.free_felt_finance_20261124_backup FROM PUBLIC,anon,authenticated,service_role;
-INSERT INTO floor_private.free_felt_finance_20261124_backup(registration_id,before_row,history_fingerprint)
-SELECT r.id,to_jsonb(r),(SELECT fingerprint FROM free_felt_history_fingerprint) FROM public.tournament_registrations r
+INSERT INTO floor_private.free_felt_finance_20261124_backup(registration_id,before_row,history_fingerprint,close_fingerprint,tournament_before)
+SELECT r.id,to_jsonb(r),(SELECT fingerprint FROM free_felt_history_fingerprint),
+  (SELECT md5(coalesce(jsonb_agg(to_jsonb(c) ORDER BY c.tournament_id),'[]'::jsonb)::text)
+    FROM floor_private.tour_revenue_buy_close_v1 c WHERE c.tournament_id=r.tournament_id),
+  (SELECT to_jsonb(t) FROM public.tournaments t WHERE t.id=r.tournament_id)
+FROM public.tournament_registrations r
 WHERE r.tournament_id='5a51bec5-4da0-4dd9-861a-cc4e7678478c';
 -- Leave price_snapshot NULL: do not claim a reconstructed historical price receipt.
 UPDATE public.tournament_registrations r SET buy_in=0
@@ -90,10 +102,22 @@ FROM floor_private.free_felt_finance_20261124_backup b WHERE r.id=b.registration
 UPDATE floor_private.free_felt_finance_20261124_backup b SET after_row=to_jsonb(r)
 FROM public.tournament_registrations r WHERE r.id=b.registration_id;
 DO $$ BEGIN
+  IF EXISTS(SELECT 1 FROM floor_private.free_felt_finance_20261124_backup b
+      WHERE b.tournament_before IS DISTINCT FROM
+        (SELECT to_jsonb(t) FROM public.tournaments t WHERE t.id=(b.before_row->>'tournament_id')::uuid)
+      OR b.close_fingerprint IS DISTINCT FROM
+        (SELECT md5(coalesce(jsonb_agg(to_jsonb(c) ORDER BY c.tournament_id),'[]'::jsonb)::text)
+          FROM floor_private.tour_revenue_buy_close_v1 c WHERE c.tournament_id=(b.before_row->>'tournament_id')::uuid)) THEN
+    RAISE EXCEPTION 'free_felt_tournament_or_close_changed';
+  END IF;
   IF EXISTS(SELECT 1 FROM public.cashier_buyin_movements m
       JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=m.registration_id)
     OR EXISTS(SELECT 1 FROM public.cashier_refund_requests f
-      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=f.registration_id) THEN
+      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=f.registration_id)
+    OR EXISTS(SELECT 1 FROM public.payment_settlements s
+      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=s.tournament_registration_id)
+    OR EXISTS(SELECT 1 FROM public.satellite_ticket_value_transfers s
+      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=s.registration_id) THEN
     RAISE EXCEPTION 'free_felt_post_update_money_evidence';
   END IF;
   IF EXISTS(SELECT 1 FROM floor_private.free_felt_finance_20261124_backup

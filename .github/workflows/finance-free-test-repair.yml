@@ -4,6 +4,7 @@ on:
     paths:
       - 'VinPoker/scripts/production/repairs/*free_felt_test_finance_20261124.sql'
       - 'VinPoker/tests/cashier/freeTestFinanceRepair.native.mjs'
+      - 'VinPoker/tests/cashier/freeTestFinanceRepair.currentSchema.native.mjs'
       - '.github/workflows/finance-free-test-repair.yml'
 permissions:
   contents: read

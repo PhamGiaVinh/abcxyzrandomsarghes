@@ -10,6 +10,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 LOCK TABLE public.cashier_buyin_movements,public.cashier_refund_requests,
+  public.payment_settlements,public.satellite_ticket_value_transfers,
   public.tournament_registrations IN SHARE ROW EXCLUSIVE MODE NOWAIT;
 CREATE TEMP VIEW free_felt_history_fingerprint AS
 SELECT jsonb_build_object(
@@ -33,7 +34,11 @@ DO $$ BEGIN
   IF EXISTS(SELECT 1 FROM public.cashier_buyin_movements m
       JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=m.registration_id)
     OR EXISTS(SELECT 1 FROM public.cashier_refund_requests f
-      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=f.registration_id) THEN
+      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=f.registration_id)
+    OR EXISTS(SELECT 1 FROM public.payment_settlements s
+      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=s.tournament_registration_id)
+    OR EXISTS(SELECT 1 FROM public.satellite_ticket_value_transfers s
+      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=s.registration_id) THEN
     RAISE EXCEPTION 'free_felt_rollback_money_evidence';
   END IF;
 END $$;
@@ -43,7 +48,11 @@ DO $$ BEGIN
   IF EXISTS(SELECT 1 FROM public.cashier_buyin_movements m
       JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=m.registration_id)
     OR EXISTS(SELECT 1 FROM public.cashier_refund_requests f
-      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=f.registration_id) THEN
+      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=f.registration_id)
+    OR EXISTS(SELECT 1 FROM public.payment_settlements s
+      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=s.tournament_registration_id)
+    OR EXISTS(SELECT 1 FROM public.satellite_ticket_value_transfers s
+      JOIN floor_private.free_felt_finance_20261124_backup b ON b.registration_id=s.registration_id) THEN
     RAISE EXCEPTION 'free_felt_rollback_post_update_money_evidence';
   END IF;
   IF EXISTS(SELECT 1 FROM floor_private.free_felt_finance_20261124_backup b

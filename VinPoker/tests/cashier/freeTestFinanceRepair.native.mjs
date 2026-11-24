@@ -14,7 +14,11 @@ function sql(text, ok = true) {
 const repairPath = 'scripts/production/repairs/repair_free_felt_test_finance_20261124.sql';
 const setup = `
 CREATE SCHEMA auth; CREATE SCHEMA floor_private;
-CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
+DO $$ BEGIN
+IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon; END IF;
+IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF;
+IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='service_role') THEN CREATE ROLE service_role; END IF;
+END $$;
 CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$SELECT 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'::uuid$$;
 CREATE TABLE clubs(id uuid,owner_id uuid);
 CREATE TABLE club_accountants(club_id uuid,user_id uuid);
@@ -24,11 +28,14 @@ CREATE TABLE tournaments(id uuid PRIMARY KEY,club_id uuid,name text,status text,
 CREATE TABLE tournament_registrations(id uuid PRIMARY KEY,tournament_id uuid,club_id uuid,player_id uuid,status text,created_at timestamptz,confirmed_at timestamptz,buy_in bigint,total_pay bigint,platform_fixed_fee bigint,price_snapshot jsonb,cashier_paid_at timestamptz,reference_code text);
 CREATE TABLE cashier_buyin_movements(registration_id uuid,purpose text,direction text,applied_amount bigint);
 CREATE TABLE cashier_refund_requests(registration_id uuid,status text,amount bigint);
+CREATE TABLE payment_settlements(tournament_registration_id uuid);
+CREATE TABLE satellite_ticket_value_transfers(registration_id uuid);
+CREATE TABLE floor_private.tour_revenue_buy_close_v1(tournament_id uuid,snapshot jsonb);
 CREATE TABLE tournament_hands(id integer,tournament_id uuid,hand_time timestamptz);
 CREATE TABLE hand_actions(id integer,hand_id integer,action text);
 CREATE TABLE hand_players(id integer,hand_id integer,stack bigint);
 INSERT INTO tournaments VALUES('5a51bec5-4da0-4dd9-861a-cc4e7678478c','22222222-2222-2222-2222-222222222222','TEST — Felt UAT (compact)','live','2026-07-03 01:41:58.17781+07',NULL,NULL);
-INSERT INTO tournament_registrations SELECT ('00000000-0000-0000-0000-00000000000'||n)::uuid,'5a51bec5-4da0-4dd9-861a-cc4e7678478c','22222222-2222-2222-2222-222222222222',('00000000-0000-0000-0000-00000000000'||n)::uuid,'confirmed', CASE n WHEN 1 THEN '2026-07-24 18:43:49.723826+07'::timestamptz ELSE '2026-07-24 18:43:50.71677+07'::timestamptz END,'2026-07-24 18:43:49.981128+07',1000000,0,0,NULL,NULL,NULL FROM generate_series(1,2)n;
+INSERT INTO tournament_registrations SELECT CASE n WHEN 1 THEN '5ccba4ae-82de-4f5c-a0f0-327dd7655779'::uuid ELSE 'a339364c-3f70-4b70-9257-9d73cd180915'::uuid END,'5a51bec5-4da0-4dd9-861a-cc4e7678478c','22222222-2222-2222-2222-222222222222',('00000000-0000-0000-0000-00000000000'||n)::uuid,'confirmed', CASE n WHEN 1 THEN '2026-07-24 18:43:49.723826+07'::timestamptz ELSE '2026-07-24 18:43:50.71677+07'::timestamptz END,'2026-07-24 18:43:49.981128+07',1000000,0,0,NULL,NULL,NULL FROM generate_series(1,2)n;
 INSERT INTO tournament_hands SELECT n,'5a51bec5-4da0-4dd9-861a-cc4e7678478c','2026-07-03 02:02:15.987+07' FROM generate_series(1,31)n;
 `;
 sql(setup);
@@ -69,17 +76,17 @@ sql('DROP TRIGGER test_history ON tournament_registrations;');
 sql(`CREATE FUNCTION test_payment() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN INSERT INTO cashier_buyin_movements VALUES(NEW.id,'buyin','in',1); RETURN NEW; END$$; CREATE TRIGGER test_payment AFTER UPDATE ON tournament_registrations FOR EACH ROW EXECUTE FUNCTION test_payment();`);
 assert.match(sql(ack + repair, false).stderr, /post_update_money_evidence/);
 sql(`DO $$BEGIN ASSERT (SELECT count(*) FROM cashier_buyin_movements)=0; ASSERT (SELECT count(*) FROM tournament_registrations WHERE buy_in=1000000)=2; ASSERT to_regclass('floor_private.free_felt_finance_20261124_backup') IS NULL; END$$; DROP TRIGGER test_payment ON tournament_registrations;`);
-sql(`INSERT INTO cashier_buyin_movements VALUES('00000000-0000-0000-0000-000000000001','buyin','in',1);`);
+sql(`INSERT INTO cashier_buyin_movements VALUES('5ccba4ae-82de-4f5c-a0f0-327dd7655779','buyin','in',1);`);
 assert.match(sql(ack + repair, false).stderr, /money_evidence/);
 sql('TRUNCATE cashier_buyin_movements;'); // disposable fixture only
-sql(`UPDATE tournament_registrations SET price_snapshot='{}' WHERE id='00000000-0000-0000-0000-000000000001';`);
+sql(`UPDATE tournament_registrations SET price_snapshot='{}' WHERE id='5ccba4ae-82de-4f5c-a0f0-327dd7655779';`);
 assert.match(sql(ack + repair, false).stderr, /registration_drift/);
 sql('ALTER TABLE tournament_registrations DISABLE TRIGGER paid_guard; UPDATE tournament_registrations SET price_snapshot=NULL; ALTER TABLE tournament_registrations ENABLE TRIGGER paid_guard;');
 sql(ack + repair);
 sql('SELECT test_report_date_guard();');
 sql(`DO $$ DECLARE r jsonb; BEGIN r:=get_owner_tour_rake_live_v1('22222222-2222-2222-2222-222222222222')#>'{tours,0}'; ASSERT (r->>'unavailableBuys')::int=0; ASSERT (r->>'rake')::numeric=0; ASSERT (r->>'serviceFee')::numeric=0; ASSERT (r->>'collected')::numeric=0; ASSERT (SELECT count(*) FROM tournament_hands)=31; ASSERT (SELECT start_time IS NULL FROM tournaments); ASSERT (SELECT count(*) FROM floor_private.free_felt_finance_20261124_backup)=2; ASSERT NOT has_table_privilege('authenticated','floor_private.free_felt_finance_20261124_backup','SELECT'); END $$;`);
 assert.match(sql(ack + repair, false).stderr, /already_prepared/);
-sql(`UPDATE tournament_registrations SET reference_code='LATER-EDIT' WHERE id='00000000-0000-0000-0000-000000000001';`);
+sql(`UPDATE tournament_registrations SET reference_code='LATER-EDIT' WHERE id='5ccba4ae-82de-4f5c-a0f0-327dd7655779';`);
 assert.match(sql(ack + rollback, false).stderr, /rollback_drift/);
 sql(`UPDATE tournament_registrations SET reference_code=NULL;`);
 sql(`CREATE TRIGGER test_payment AFTER UPDATE ON tournament_registrations FOR EACH ROW EXECUTE FUNCTION test_payment();`);
