@@ -807,7 +807,10 @@ function TournamentLiveViewContent({
         if (spectator && nextInProgress) nextPot = liveDisplay.potSize;
       }
 
-      if (spectator && !nextInProgress && (currentState !== "last_completed" || observedLiveHandRef.current === hand.id)) {
+      // A freshly mounted viewer still needs the server's verified outcome.
+      // Observation controls whether to animate below, not whether the winner
+      // and already-awarded chips may be displayed on the completed table.
+      if (spectator && !nextInProgress) {
         const { data: settlementData, error: settlementError } = await supabase.rpc(
           "get_public_tournament_settlement" as never,
           { p_hand_id: hand.id } as never,

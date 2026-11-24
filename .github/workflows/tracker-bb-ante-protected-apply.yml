@@ -39,6 +39,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CONFIRM_TRACKER_BBA: ${{ inputs.confirmation }}
           RESUME_CONSUMER_RUN_ID: ${{ inputs.resume_consumer_run_id }}
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/release/VinPoker
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = PhamGiaVinh/abcxyzrandomsarghes
@@ -56,7 +57,8 @@ jobs:
             jq -e --arg name "$name" '[.[]|.check_runs[]|select(.name==$name and .app.slug=="github-actions")]|max_by(.id)|.status=="completed" and .conclusion=="success"' <<<"$checks" >/dev/null
           done
           git -C runner fetch origin "$RELEASE_SHA"
-          git -C runner diff --exit-code "$RELEASE_SHA" HEAD -- VinPoker/src VinPoker/api VinPoker/public VinPoker/index.html VinPoker/ops.html VinPoker/package.json VinPoker/package-lock.json VinPoker/vite.config.ts VinPoker/vercel.json VinPoker/supabase/config.toml VinPoker/supabase/functions VinPoker/supabase/migrations/20270128000350_tracker_bb_ante_atomic_v1.sql VinPoker/supabase/migrations/20270128000351_tracker_bb_ante_settlement_v1.sql
+          git -C runner fetch origin c6e8bea574c438138734323637adf0a50e55c533
+          node runner/VinPoker/scripts/ops/tracker-bb-ante-release.mjs qualify-source-tree
       - name: Qualify exact source and guarded release behavior without credentials
         working-directory: runner/VinPoker
         env:
@@ -79,6 +81,7 @@ jobs:
       TRIGGERING_ACTOR: ${{ github.triggering_actor }}
       REPOSITORY_OWNER: ${{ github.repository_owner }}
       CONFIRM_TRACKER_BBA: ${{ inputs.confirmation }}
+      RESUME_CONSUMER_RUN_ID: ${{ inputs.resume_consumer_run_id }}
       SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
       PGHOST: aws-1-ap-southeast-2.pooler.supabase.com
       PGPORT: '5432'

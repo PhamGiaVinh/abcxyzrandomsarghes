@@ -142,39 +142,22 @@ const ClubFinanceDashboard = () => {
   const seg = (v: number) => (r && r.total > 0 ? (v / r.total) * 100 : 0);
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h1 className="font-display text-2xl text-primary">Tài chính CLB</h1>
-          <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">
-            {isAdmin ? "super_admin · toàn bộ CLB" : "chủ CLB"}
-          </Badge>
+    <div className="min-w-0 space-y-5 font-sans">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">Tài chính CLB</h1>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Theo dõi khoản đã ghi nhận. Lương tạm tính được tách riêng.</p>
         </div>
-          <div className="text-xs text-muted-foreground">Tách khoản đã ghi nhận và lương tạm tính</div>
+        <Badge variant="outline" className="shrink-0 text-[10px] text-muted-foreground">{isAdmin ? "Quản trị" : "Chủ CLB"}</Badge>
       </div>
 
-      {/* Filters */}
-      <Card className="p-3 gradient-card border-primary/20">
+      <section aria-label="Bộ lọc báo cáo" className="rounded-xl border border-border/70 bg-card p-3 sm:p-4">
         <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <Label htmlFor="owner-finance-from" className="text-xs text-muted-foreground">Từ ngày</Label>
-            <Input id="owner-finance-from" type="date" value={from} onChange={(e) => {setRelativeRange(null);setFrom(e.target.value);}} className="h-9 w-[150px]" />
-          </div>
-          <div>
-            <Label htmlFor="owner-finance-to" className="text-xs text-muted-foreground">Đến ngày</Label>
-            <Input id="owner-finance-to" type="date" value={to} onChange={(e) => {setRelativeRange(null);setTo(e.target.value);}} className="h-9 w-[150px]" />
-          </div>
-          <div className="flex gap-1">
-            <Button size="sm" variant="outline" className="h-9" onClick={() => { setRelativeRange(7);setFrom(rangeStartISO(7)); setTo(todayISO()); }}>7 ngày</Button>
-            <Button size="sm" variant="outline" className="h-9" onClick={() => { setRelativeRange(30);setFrom(rangeStartISO(30)); setTo(todayISO()); }}>30 ngày</Button>
-            <Button size="sm" variant="outline" className="h-9" onClick={() => { setRelativeRange('month');setFrom(monthStartISO()); setTo(todayISO()); }}>Tháng này</Button>
-          </div>
           {(isAdmin || isClubOwner) && (
-            <div>
+            <div className="min-w-0 flex-1">
               <Label className="text-xs text-muted-foreground">Câu lạc bộ</Label>
               <Select value={clubFilter} onValueChange={setClubFilter}>
-                <SelectTrigger className="h-9 w-[180px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger aria-label="Câu lạc bộ" className="mt-1 h-11 w-full min-w-0"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tất cả các CLB</SelectItem>
                   {clubs.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
@@ -182,17 +165,31 @@ const ClubFinanceDashboard = () => {
               </Select>
             </div>
           )}
-          <div className="flex gap-1 ml-auto">
-            <Button size="sm" variant="outline" className="h-9" onClick={reload} disabled={loading}>
-              <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loading ? "animate-spin" : ""}`} /> Làm mới
+          <div className="flex shrink-0 gap-2">
+            <Button aria-label="Làm mới" size="sm" variant="outline" className="h-11 w-11 px-3 sm:w-auto" onClick={reload} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} /><span className="ml-2 hidden sm:inline">Làm mới</span>
             </Button>
-            <Button size="sm" variant="outline" className="h-9" onClick={exportXlsx} disabled={loading || !summary || !!error}>
-              <Download className="w-3.5 h-3.5 mr-1" /> Xuất Excel
+            <Button aria-label="Xuất Excel" size="sm" variant="outline" className="h-11 w-11 px-3 sm:w-auto" onClick={exportXlsx} disabled={loading || !summary || !!error}>
+              <Download className="h-4 w-4" /><span className="ml-2 hidden sm:inline">Xuất Excel</span>
             </Button>
           </div>
         </div>
-      </Card>
-
+        <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-muted/40 p-1">
+          <Button size="sm" variant={relativeRange===7?'secondary':'ghost'} aria-pressed={relativeRange===7} className="h-11 text-xs" onClick={() => { setRelativeRange(7);setFrom(rangeStartISO(7)); setTo(todayISO()); }}>7 ngày</Button>
+          <Button size="sm" variant={relativeRange===30?'secondary':'ghost'} aria-pressed={relativeRange===30} className="h-11 text-xs" onClick={() => { setRelativeRange(30);setFrom(rangeStartISO(30)); setTo(todayISO()); }}>30 ngày</Button>
+          <Button size="sm" variant={relativeRange==='month'?'secondary':'ghost'} aria-pressed={relativeRange==='month'} className="h-11 text-xs" onClick={() => { setRelativeRange('month');setFrom(monthStartISO()); setTo(todayISO()); }}>Tháng này</Button>
+        </div>
+        <details className="mt-3 text-xs">
+          <summary className="flex cursor-pointer list-none min-h-11 items-center justify-between gap-2 py-1 text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <span className="tabular-nums">{from.split('-').reverse().join('/')} – {to.split('-').reverse().join('/')}</span>
+            <span className="shrink-0 font-medium text-foreground">Đổi ngày</span>
+          </summary>
+          <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 border-t sm:grid-cols-2 border-border/60 pt-3">
+            <div className="min-w-0"><Label htmlFor="owner-finance-from" className="text-xs text-muted-foreground">Từ ngày</Label><Input id="owner-finance-from" type="date" value={from} onChange={(e) => {setRelativeRange(null);setFrom(e.target.value);}} className="mt-1 h-10 min-w-0 max-w-full text-base sm:text-sm" /></div>
+            <div className="min-w-0"><Label htmlFor="owner-finance-to" className="text-xs text-muted-foreground">Đến ngày</Label><Input id="owner-finance-to" type="date" value={to} onChange={(e) => {setRelativeRange(null);setTo(e.target.value);}} className="mt-1 h-10 min-w-0 max-w-full text-base sm:text-sm" /></div>
+          </div>
+        </details>
+      </section>
       {error && (
         <Card className="p-4 border-destructive/40 bg-destructive/10 text-sm flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-destructive" /> {error === "finance_report_event_start_unavailable" ? t(financeReadErrorKey(new Error(error))) : error}
@@ -229,6 +226,10 @@ const ClubFinanceDashboard = () => {
             )}
           </div>
 
+          <details className="rounded-xl border border-border/70 bg-card p-4">
+            <summary className="cursor-pointer text-sm font-medium">Lương tạm tính và số dư hiện tại</summary>
+            <p className="mt-1 text-xs text-muted-foreground">Xem riêng các khoản chưa ghi nhận vào chi phí.</p>
+            <div className="mt-4 space-y-3">
           <Card className="p-4 gradient-card border-primary/20 space-y-3">
             <h2 className="text-sm font-semibold">Lương nhân viên đang tạm tính · hiện tại</h2>
             {summary.staffLive ? <>
@@ -263,6 +264,9 @@ const ClubFinanceDashboard = () => {
               <p className="text-xs text-muted-foreground">Số dư hiện tại, có thể gồm ca từ kỳ trước. Chưa cộng vào chi phí đã ghi nhận; chi phí PT được ghi nhận khi trả.</p>
             </> : <p className="text-sm text-muted-foreground">Chưa có dữ liệu lương dealer PT đã xác minh.</p>}
           </Card>
+
+            </div>
+          </details>
 
           {/* Revenue breakdown — two SEPARATE streams: Giải đấu (rake) vs Staking (phí) */}
           <Card className="p-4 gradient-card border-primary/20 space-y-3">
@@ -503,9 +507,9 @@ function Kpi({ icon, label, value, hint, accent, highlight }: {
   icon: React.ReactNode; label: string; value: string; hint?: string; accent?: string; highlight?: boolean;
 }) {
   return (
-    <Card className={`p-3 gradient-card ${highlight ? "border-primary/40" : "border-primary/20"}`}>
+    <Card className={`min-w-0 p-3 sm:p-4 ${highlight ? "col-span-2 md:col-span-1 border-primary/30 bg-primary/5" : "border-border/70 bg-card"}`}>
       <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">{icon}{label}</div>
-      <div className={`text-lg font-display font-bold mt-1 ${accent ?? "text-foreground"}`}>{value}</div>
+      <div className={`break-words text-xl font-semibold tabular-nums tracking-tight mt-2 ${accent ?? "text-foreground"}`}>{value}</div>
       {hint && <div className="text-[10px] text-muted-foreground mt-0.5">{hint}</div>}
     </Card>
   );
@@ -515,7 +519,7 @@ function Line({ label, value, strong, muted, sub, tone }: {
   label: string; value: string; strong?: boolean; muted?: boolean; sub?: boolean; tone?: string;
 }) {
   return (
-    <div className="flex items-center justify-between text-[11px]">
+    <div className="flex min-w-0 items-start justify-between gap-3 text-xs">
       <span className={muted ? "text-muted-foreground/60" : sub ? "text-muted-foreground pl-1" : "text-muted-foreground"}>{label}</span>
       <span className={`font-mono ${strong ? "font-bold text-primary" : "text-foreground/90"}`} style={tone ? { color: tone } : undefined}>{value}</span>
     </div>

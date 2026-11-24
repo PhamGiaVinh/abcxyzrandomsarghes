@@ -4,6 +4,14 @@
   "project": "orlesggcjamwuknxwcpk",
   "frontends": [
     {
+      "referenceSha": "3ccfe8e7d7bde1724474770cc87edf9ac26426ab",
+      "fingerprint": "d78bbaddcd15b1c49c2b45c22088f4a4a2ee72bb51f1658fe7659ca4da0dcbc2"
+    },
+    {
+      "referenceSha": "40f4d5673782e4d11ef13ec76415383b859b43cf",
+      "fingerprint": "a49df77cbc784a46220f57dc1d543f4eafa08fa4dea2f5238ea232176902f2e8"
+    },
+    {
       "referenceSha": "b04650ffe9f4804d1e1f9354b206d235ad8aa8c2",
       "fingerprint": "787d64018d27fffe7fb6c9faf322e5eb208ea0b3af51e77292208bd20dfaa8db"
     },
@@ -102,6 +110,14 @@
     {
       "referenceSha": "8a9be1958c4d76326ddf6bbb344c1d36aa667178",
       "fingerprint": "c17dec704db0d1e8181992db9542fd495c3d888e2f9c2d1b256a040e601cf856"
+    },
+    {
+      "referenceSha": "32beacffba4aa9ce2214814aafca3b4a25645edf",
+      "fingerprint": "fbc3181f677e207259cff301b3837f221db01d997eef02e2e2fd1a6293c95d35"
+    },
+    {
+      "referenceSha": "482d9fc27a6357e59881021f9c163f53a5d26740",
+      "fingerprint": "8f4e8ee4743fe5b3c160e62b0311c5756559965f48e615831a39b5d51b9298d8"
     }
   ],
   "functions": [

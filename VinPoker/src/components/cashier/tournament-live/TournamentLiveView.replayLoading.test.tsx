@@ -2,6 +2,8 @@ import {render,screen,waitFor,fireEvent,cleanup,act} from '@testing-library/reac
 import {afterEach,expect,it,vi} from 'vitest';
 import {TournamentLiveView} from './TournamentLiveView';
 
+vi.mock('@/lib/featureFlags',async(importOriginal)=>{const original=await importOriginal<typeof import('@/lib/featureFlags')>();return {...original,FEATURES:{...original.FEATURES,publicSpectatorLastHandHistory:true}};});
+
 const publicClock={is_running:false,remaining_seconds:null,current_level:null,small_blind:null,big_blind:null,big_blind_ante:null};
 const { tableRead } = vi.hoisted(() => ({ tableRead: vi.fn() }));
 const {rpc,hand,target,auth,signals,liveSignals,events,statuses}=vi.hoisted(()=>({
@@ -27,7 +29,7 @@ vi.mock('@/lib/publicTableTransport',()=>({readPublicTableRequest:async(_url:str
 vi.mock('@/components/tracker/useTournamentTableAppearance',()=>({useTournamentTableAppearance:()=>({data:undefined})}));
 vi.mock('@/components/td-ai/TdAiAssistantPanel',()=>({TdAiAssistantPanel:()=>null}));
 vi.mock('@/lib/tracker-poker/useTrackerRunoutSounds',()=>({useTrackerRunoutSounds:()=>{}}));
-vi.mock('./LiveFelt',()=>({LiveFelt:({toActId,hideHoleCards,latestAction,potSize,potBreakdown,seats}:{toActId?:string|null;hideHoleCards?:boolean;latestAction?:{action_type:string}|null;potSize?:number;potBreakdown?:unknown;seats?:unknown[]})=> <div data-testid="rendered-felt" data-pot={potSize} data-breakdown={JSON.stringify(potBreakdown)} data-seats={JSON.stringify(seats)} data-actor={toActId??'none'} data-hidden-cards={Boolean(hideHoleCards)} data-action={latestAction?.action_type??'none'}>Hand blinds unavailable</div>,formatStack:String,formatActionLabel:String}));
+vi.mock('./LiveFelt',()=>({LiveFelt:({toActId,hideHoleCards,latestAction,potSize,potBreakdown,seats,showdownPresentation}:{showdownPresentation?:{enabled:boolean};toActId?:string|null;hideHoleCards?:boolean;latestAction?:{action_type:string}|null;potSize?:number;potBreakdown?:unknown;seats?:unknown[]})=> <div data-testid="rendered-felt" data-verified={Boolean(showdownPresentation?.enabled)} data-pot={potSize} data-breakdown={JSON.stringify(potBreakdown)} data-seats={JSON.stringify(seats)} data-actor={toActId??'none'} data-hidden-cards={Boolean(hideHoleCards)} data-action={latestAction?.action_type??'none'}>Hand blinds unavailable</div>,formatStack:String,formatActionLabel:String}));
 // Exercise the real parent read/presentation boundary; child completion is held
 // explicitly rather than claiming this unit test is browser/DB acceptance.
 vi.mock('./HandSelector',()=>({HandSelector:({onSelectHand,replayTargetState,onRetryReplayTarget}:{onSelectHand:(id:string,h:unknown)=>void;replayTargetState:{kind:string};onRetryReplayTarget?:()=>void})=><><p data-testid="target-state">{replayTargetState.kind}</p>{replayTargetState.kind==='query_error'&&<button onClick={onRetryReplayTarget}>Thử tìm lại hand</button>}<button onClick={()=>onSelectHand('hand',hand)}>Deliver replay</button></>}));
@@ -328,4 +330,30 @@ it.each([false,true])('clears an already displayed hand after denial even with a
  await act(async()=>{events.forEach(fn=>fn({payload:{tournamentId:'tour',components:['clock']}}));await vi.advanceTimersByTimeAsync(1001);});
  expect(screen.queryByTestId('rendered-felt')).not.toBeInTheDocument();
  expect(screen.getByText('Bàn này không còn được công khai.')).toBeInTheDocument();
+});
+
+it.each([false, true])('reads verified completion on opening last hand; observed live=%s', async (observed) => {
+  let completed = !observed;
+  const players = [1, 2].map(seat => ({playerId:`p${seat}`,entryNumber:1,seatNumber:seat,name:`TEST ${seat}`,
+    startingStack:1000,endingStack:seat===1?1200:800,holeCards:[],avatarUrl:null}));
+  const actions = [{id:'a1',playerId:'p1',entryNumber:1,street:'preflop',actionType:'post_sb',amount:200,order:1},
+    {id:'a2',playerId:'p2',entryNumber:1,street:'preflop',actionType:'post_bb',amount:200,order:2},
+    {id:'a3',playerId:'p2',entryNumber:1,street:'preflop',actionType:'fold',amount:0,order:3}];
+  const settlement={schemaVersion:'settlement-outcome-v1',status:'verified',players:[
+    {playerId:'p1',potAward:400,refund:0,netDelta:200},{playerId:'p2',potAward:0,refund:0,netDelta:-200}],
+    pots:[{potId:'main-0',kind:'main',amount:400,winnerIds:['p1'],allocations:[{potId:'main-0',winnerId:'p1',amount:400}]}],refunds:[],handRanks:[]};
+  rpc.mockImplementation(async(name:string)=>({error:null,data:
+    name==='get_public_tournament_clock_summary'?[{...publicClock,tournament_id:'tour',players_remaining:2,average_stack:1000}]:
+    name==='get_public_tournament_settlement'?settlement:
+    name==='get_public_tournament_table_live_or_last_hand_v2'?{access:'public',state:completed?'last_completed':'live',tableId:'table',tableSessionId:'session',hand:{
+      id:'settled-hand',tournamentId:'tour',tableId:'table',tableSessionId:'session',handNumber:2,buttonSeat:1,status:completed?'completed':'in_progress',board:[],pot:400,
+      smallBlind:100,bigBlind:200,ante:0,players,actions}}:null}));
+  render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table"/>);
+  await screen.findByTestId('rendered-felt');
+  if(observed){
+    completed=true;
+    await act(async()=>{events.forEach(fn=>fn({payload:{tournamentId:'tour',components:['tables']}}));});
+  }
+  await waitFor(()=>expect(screen.getByTestId('rendered-felt')).toHaveAttribute('data-verified','true'));
+  expect(rpc.mock.calls.some(([name,args])=>name==='get_public_tournament_settlement'&&args.p_hand_id==='settled-hand')).toBe(true);
 });

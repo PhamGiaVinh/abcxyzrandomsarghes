@@ -6,11 +6,18 @@ import { pathToFileURL } from 'node:url';
 import { edgeConsumers, releaseSha } from './tracker-bb-ante-release.mjs';
 import { validateContext } from './floor-37-47-protected-apply.mjs';
 import { loadDeploymentManifest } from '../deploy/deployment-manifest.mjs';
-import { receiptComponents, recordSuccessfulReceipt } from '../deploy/deployment-receipts.mjs';
+import { receiptComponents, recordSuccessfulReceipt, selectLatestSuccessfulReceipt } from '../deploy/deployment-receipts.mjs';
 
 const project='orlesggcjamwuknxwcpk';
 const frontendProject='prj_wLBZF7nG5O2bffM9Qu1v2rgMuMwk';
 const team='team_tjxaiA2Z3ZwHSQUMnMs4F5yE';
+// Exact independently reviewed deployment now serving production. Never accept
+// an arbitrary successor or redeploy the original frontend over this release.
+export const reviewedFrontend = Object.freeze({
+  sourceSha:'c6e8bea574c438138734323637adf0a50e55c533',
+  deploymentId:'dpl_4yEFUmAMegq5nUXEX39yPK75ZJUR',
+  workflowRunId:'45407139593',
+});
 // Read-only production inventory observed2026-11-24. Drift requires review.
 export const baseline=Object.freeze([
   {slug:'tournament-live-update',id:'4b89f5f8-05af-4025-a276-fe1f5051c6f1',version:80,verify_jwt:true,status:'ACTIVE'},
@@ -23,6 +30,8 @@ export const baseline=Object.freeze([
 const subset=row=>({slug:row.slug,id:row.id,version:row.version,verify_jwt:row.verify_jwt,status:row.status});
 function selected(inventory,slug){const rows=inventory.filter(row=>row.slug===slug);assert.equal(rows.length,1,'Edge metadata missing or duplicated');return subset(rows[0]);}
 function frontendMatches(row){return row?.projectId===frontendProject&&row.target==='production'&&row.readyState==='READY'&&row.gitSource?.sha===releaseSha&&!row.meta?.gitDirty;}
+function reviewedFrontendMatches(row){return row?.id===reviewedFrontend.deploymentId&&row.projectId===frontendProject&&row.target==='production'&&row.readyState==='READY'
+  &&row.gitSource==null&&row.meta?.githubCommitSha===reviewedFrontend.sourceSha&&row.meta?.gitDirty==='1';}
 
 export function validateConsumerReceipt(receipt){
   assert.ok(receipt?.sourceSha===releaseSha&&receipt.edgeVerified===true&&Array.isArray(receipt.edgeVersions),'Consumer receipt incomplete');
@@ -34,6 +43,17 @@ export function validateConsumerReceipt(receipt){
   assert.match(receipt.frontend.deploymentId,/^dpl_[a-zA-Z0-9]+$/);
 }
 
+export function validateActivationReceipt(receipt){
+  validateConsumerReceipt(receipt);
+  const proof=receipt.activationFrontend;
+  if(proof?.kind==='original'){
+    assert.deepEqual(proof,{kind:'original',sourceSha:releaseSha,deploymentId:receipt.frontend.deploymentId});return;
+  }
+  assert.ok(proof?.kind==='reviewed-successor'&&proof.sourceSha===reviewedFrontend.sourceSha
+    &&proof.deploymentId===reviewedFrontend.deploymentId&&proof.workflowRunId===reviewedFrontend.workflowRunId
+    &&Number.isSafeInteger(proof.githubReceiptId)&&proof.githubReceiptId>0,'Current frontend release evidence missing or different');
+}
+
 export async function verifyDeployedConsumers(transport, receipt){
   validateConsumerReceipt(receipt);
   await transport.frontendPreflight();
@@ -41,8 +61,18 @@ export async function verifyDeployedConsumers(transport, receipt){
   for(const expected of baseline)assert.deepEqual(selected(inventory,expected.slug),{...expected,version:expected.version+1},'Resumed Edge metadata differs');
   const deployed=await transport.getFrontend(receipt.frontend.deploymentId);
   const alias=await transport.getFrontend('vinpoker.vercel.app');
-  assert.ok(frontendMatches(deployed)&&frontendMatches(alias)&&deployed.id===receipt.frontend.deploymentId&&alias.id===deployed.id,'Resumed frontend revision or alias differs');
+  assert.ok(frontendMatches(deployed)&&deployed.id===receipt.frontend.deploymentId,'Original frontend receipt deployment differs');
+  let proof;
+  if(frontendMatches(alias)&&alias.id===deployed.id){
+    proof={kind:'original',sourceSha:releaseSha,deploymentId:deployed.id};
+  }else{
+    assert.ok(reviewedFrontendMatches(alias),'Resumed frontend revision or alias differs');
+    const evidence=await transport.reviewedFrontendReceipt();
+    assert.ok(evidence?.sha===reviewedFrontend.sourceSha&&Number.isSafeInteger(evidence.deploymentId)&&evidence.deploymentId>0,'Reviewed frontend durable receipt missing');
+    proof={kind:'reviewed-successor',...reviewedFrontend,githubReceiptId:evidence.deploymentId};
+  }
   await transport.verifyShells();
+  const result={...receipt,activationFrontend:proof};validateActivationReceipt(result);return result;
 }
 
 export async function deployConsumers(transport,save){
@@ -110,11 +140,28 @@ async function main(){
     if(!response.ok)throw Error(`Vercel consumer operation failed (${response.status}); no automatic writer retry`);
     return response.json();
   };
+  const github=async path=>{
+    const response=await fetch(`https://api.github.com/repos/${env.GITHUB_REPOSITORY}/${path}`,{
+      headers:{Authorization:`Bearer ${env.GITHUB_TOKEN}`,Accept:'application/vnd.github+json'},signal:AbortSignal.timeout(30000),
+    });
+    assert.ok(response.ok,'Reviewed frontend GitHub evidence unavailable');return response.json();
+  };
   const transport={
     listEdges:async()=>JSON.parse(cli(['functions','list','--project-ref',project,'--output','json'])),
     deployEdge:async slug=>{assert.ok(edgeConsumers.includes(slug));cli(['functions','deploy',slug,'--project-ref',project,'--use-api','--yes']);console.log('TRACKER_EDGE_DEPLOYED '+slug);},
     createFrontend:()=>vercel('/v13/deployments',{name:'vinpoker',project:frontendProject,target:'production',gitSource:{type:'github',repoId:1240686570,ref:releaseSha}}),
     getFrontend:id=>{assert.ok(/^dpl_[a-zA-Z0-9]+$/.test(id)||id==='vinpoker.vercel.app');return vercel('/v13/deployments/'+id);},
+    reviewedFrontendReceipt:async()=>{
+      const run=await github('actions/runs/'+reviewedFrontend.workflowRunId);
+      assert.ok(run.status==='completed'&&run.conclusion==='success'&&run.event==='workflow_dispatch'&&run.head_branch==='main'
+        &&run.head_sha===reviewedFrontend.sourceSha&&run.path==='.github/workflows/vbackerworkflowmain.yml'
+        &&run.actor?.login===env.REPOSITORY_OWNER&&run.triggering_actor?.login===env.REPOSITORY_OWNER,'Reviewed frontend protected workflow not successful');
+      const deployments=await github('deployments?'+new URLSearchParams({environment:registered.frontend,sha:reviewedFrontend.sourceSha,per_page:'10'}));
+      assert.ok(Array.isArray(deployments),'Reviewed frontend deployment evidence malformed');
+      const statuses=new Map();
+      for(const deployment of deployments){assert.equal(deployment.sha,reviewedFrontend.sourceSha);statuses.set(String(deployment.id),await github(`deployments/${deployment.id}/statuses?per_page=10`));}
+      return selectLatestSuccessfulReceipt(deployments,statuses);
+    },
     frontendPreflight:async()=>{
       const settings=await vercel('/v9/projects/'+frontendProject);
       assert.ok(settings.id===frontendProject&&settings.accountId===team&&settings.rootDirectory==='VinPoker'&&settings.framework==='vite','Frontend production project settings differ');
@@ -133,7 +180,8 @@ async function main(){
     },
   };
   if(mode==='verify-deployed'){
-    await verifyDeployedConsumers(transport,JSON.parse(readFileSync(env.CONSUMER_RECEIPT_PATH,'utf8')));
+    const receipt=await verifyDeployedConsumers(transport,JSON.parse(readFileSync(env.CONSUMER_RECEIPT_PATH,'utf8')));
+    writeFileSync(env.CONSUMER_RECEIPT_PATH,JSON.stringify(receipt,null,2)+'\n',{mode:0o600});
     console.log('TRACKER_EXISTING_CONSUMERS_READONLY_VERIFIED');return;
   }
   if(mode==='preflight'){
