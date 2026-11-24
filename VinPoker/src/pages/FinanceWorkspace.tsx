@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { useTranslation } from "react-i18next";
 import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { FEATURES } from "@/lib/featureFlags";
@@ -9,7 +8,6 @@ import { cn } from "@/lib/utils";
 export default function FinanceWorkspace() {
   const { isAccountant, isClubOwner, isAdmin, isClubAdmin, isCashier, loading } = useAuth();
   const { pathname } = useLocation();
-  const { t } = useTranslation();
   const landing = pathname === "/finance";
 
   if (landing && !loading) {
@@ -37,22 +35,25 @@ export default function FinanceWorkspace() {
           )}
           {(isClubAdmin || isClubOwner) && (
             <FinanceLink to="/club/admin/finance" label="Báo cáo" landing={landing}>
-              {t("financeWorkspace.overviewDescription")}
+              Doanh thu, dòng tiền và công nợ.
             </FinanceLink>
           )}
-          {(isClubOwner || isAdmin) && <FinanceLink to="/club/admin/player-finance" label={t("playerFinance.title")} landing={landing}>{t("playerFinance.navDescription")}</FinanceLink>}
           {(isAccountant || isClubOwner || isAdmin) && (
             <FinanceLink to="/accountant" label="Đối soát" landing={landing}>
-              {t("financeWorkspace.payrollDescription")}
-            </FinanceLink>
-          )}
-          {(isClubAdmin || isClubOwner) && FEATURES.accountingControl && (
-            <FinanceLink to="/club/admin/accounting-control" label={t("financeWorkspace.reconciliation")} landing={landing}>
-              {t("financeWorkspace.reconciliationDescription")}
+              Lương, chi phí và các khoản cần kiểm tra.
             </FinanceLink>
           )}
         </nav>
       </div>
+      {(isClubOwner || isAdmin || isClubAdmin) && (
+        <details className="rounded-lg border border-border px-3 py-2 text-sm">
+          <summary className="cursor-pointer text-muted-foreground">Tra cứu chi tiết</summary>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {(isClubOwner || isAdmin) && <NavLink className="text-primary underline" to="/club/admin/player-finance">Giao dịch theo người chơi</NavLink>}
+            {FEATURES.accountingControl && <NavLink className="text-primary underline" to="/club/admin/accounting-control">Các báo cáo đối soát hiện có</NavLink>}
+          </div>
+        </details>
+      )}
       <Outlet />
     </div>
   );
