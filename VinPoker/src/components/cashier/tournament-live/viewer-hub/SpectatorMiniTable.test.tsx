@@ -26,3 +26,18 @@ it('uses Cát khói for standard tables and keeps explicit tournament colors', (
   expect(custom).toContain('spectator-mini-surface');
   expect(custom).not.toContain('data-cat-khoi');
 });
+
+it('renders two server-projected chip groups, aggregating all side layers', () => {
+  const html=renderToStaticMarkup(<SpectatorMiniTable table={{...table,trackerState:'live',pot:13000,potLayers:[10000,2000,1000]}}/>);
+  expect(html).toContain('50 BB');expect(html).toContain('15 BB');
+  expect(html.match(/tracker-chip-column/g)).toHaveLength(6);
+  expect(html).not.toContain('Side 1');expect(html).not.toContain('Main');
+});
+
+it('hides the side group without chips and retains old aggregate-only publications', () => {
+  const main=renderToStaticMarkup(<SpectatorMiniTable table={{...table,pot:10000,potLayers:[10000]}}/>);
+  expect(main.match(/tracker-chip-column/g)).toHaveLength(3);
+  expect(main).not.toContain('Cụm chip phụ');
+  const old=renderToStaticMarkup(<SpectatorMiniTable table={{...table,pot:10000}}/>);
+  expect(old).not.toContain('mini-pot-groups');expect(old).toContain('50 BB');
+});

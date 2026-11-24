@@ -34,6 +34,8 @@ export interface PublicTableSnapshot {
   street: string | null;
   board: string[] | null;
   pot: number | null;
+  /** Matched layers projected by the server; first is main, remainder are sides. */
+  potLayers?: number[] | null;
   levelNumber?: number | null;
   ante?: number | null;
   smallBlind: number | null;

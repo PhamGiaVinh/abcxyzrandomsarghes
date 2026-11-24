@@ -17,6 +17,27 @@ const viewports = [
 
 test.beforeAll(() => fs.mkdirSync(shots, { recursive: true }));
 
+for (const width of [320,375,390,414,1440]) {
+  test(`mini pot groups fit ${width}px`, async ({page}) => {
+    await page.setViewportSize({width,height:900});
+    await page.goto('/__dev/viewer-rpt?view=tables&pots=split');
+    const table=page.getByRole('article',{name:'Bàn 14'});
+    const groups=table.getByTestId('mini-pot-groups');
+    await expect(groups).toBeVisible();
+    await expect(groups).toContainText('50 BB');await expect(groups).toContainText('15 BB');
+    await expect(groups.locator('.tracker-chip-column')).toHaveCount(6);
+    const geometry=await groups.evaluate(el=>{
+      const rect=el.getBoundingClientRect(),center=el.parentElement!.getBoundingClientRect();
+      const columns=[...el.querySelectorAll('.tracker-chip-column')];
+      return {inside:rect.left>=center.left-1&&rect.right<=center.right+1,
+        colors:new Set(columns.map(column=>(column.firstElementChild as HTMLElement).style.background)).size,
+        overflow:document.documentElement.scrollWidth-innerWidth};
+    });
+    expect(geometry).toEqual({inside:true,colors:3,overflow:0});
+    await page.screenshot({path:path.join(shots,`mini-pot-groups-${width}.png`),fullPage:true});
+  });
+}
+
 for (const viewport of viewports) {
   test(`spectator tables fit ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize(viewport);
