@@ -674,10 +674,11 @@ export function LiveFelt({
     if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const slot = ((chipPush.seatNumber - 1) % 9) + 1;
     const pos = seatMap[slot] || seatMap[1];
+    const from = unified && viewerLayout ? trackerBetPoint(pos, portrait) : pos;
     // Phase 3: cap the transient queue at 3 — at 8× replay (125ms/step vs the ~520ms fly
     // animation) unbounded pushes stack into chip spam; the newest 3 keep the effect legible.
-    setChips((cs) => [...cs, { id: chipPush.nonce, fx: `${pos.l}%`, fy: `${pos.t}%`, color: chipColorFor(chipPush.kind) }].slice(-3));
-  }, [chipPush, seatMap]);
+    setChips((cs) => [...cs, { id: chipPush.nonce, fx: `${from.l}%`, fy: `${from.t}%`, color: chipColorFor(chipPush.kind) }].slice(-3));
+  }, [chipPush, seatMap, unified, viewerLayout, portrait]);
 
   // V2 landscape scale-to-fit: a wide 9-max table can't fit a narrow phone width without
   // overlap, so below LANDSCAPE_DESIGN_W we render the felt at that design width and scale

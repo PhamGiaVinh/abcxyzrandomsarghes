@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {cleanup,render,screen} from '@testing-library/react';
 import { LiveFelt, type SeatInfo } from "@/components/cashier/tournament-live/LiveFelt";
+import { TrackerViewerCardProvider } from "@/components/tracker/TrackerCardStyle";
 
 const noBB = () => null;
 
@@ -36,6 +37,19 @@ const baseProps = {
 const stackCount = (html: string) => (html.match(/z-\[15\]/g) || []).length;
 
 describe("LiveFelt committed-bet chip stack (viewerLayout)", () => {
+  it.each([false, true])('centers seat 5 all-in chips below its own avatar (portrait=%s)', portrait => {
+    try {
+      const container=document.createElement('div');
+      container.innerHTML=renderToStaticMarkup(<TrackerViewerCardProvider><LiveFelt {...baseProps} viewerLayout compact portrait={portrait}
+        seats={[seat({player_id:'five',seat_number:5,is_all_in:true,current_bet:30000,total_committed:30000})]}/></TrackerViewerCardProvider>);
+      const pod=container.querySelector<HTMLElement>('[data-tracker-seat="5"]')!;
+      const chips=container.querySelector<HTMLElement>('[data-tracker-bet="5"]')!;
+      expect(chips.style.left).toBe(pod.style.left);
+      expect(parseFloat(chips.style.top)).toBeGreaterThan(parseFloat(pod.style.top));
+      expect(chips).toHaveTextContent('30k');
+    } finally {cleanup();}
+  });
+
   it("renders the felt stack layer ONLY under viewerLayout (none for operator/TV)", () => {
     const s = [seat({ player_id: "a", seat_number: 1, current_bet: 200000 })];
     expect(stackCount(renderToStaticMarkup(<LiveFelt seats={s} {...baseProps} />))).toBe(0);

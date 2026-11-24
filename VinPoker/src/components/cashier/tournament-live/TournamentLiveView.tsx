@@ -2287,7 +2287,7 @@ function TournamentLiveViewContent({
               viewerAmountsInBB={spectator}
               viewerBigBlind={isReplay ? replayBigBlind : bigBlind}
               tableFx={spectator && FEATURES.liveTableFx && (isReplay || tableDisplayState !== "last_completed" || Boolean(livePayoutForHand))}
-              chipPush={spectator && FEATURES.liveTableFx && tableDisplayState !== "last_completed" ? chipPush : null}
+              chipPush={spectator && FEATURES.liveTableFx && (isReplay || tableDisplayState !== "last_completed") ? chipPush : null}
               potUnavailable={!isReplay && tableDisplayState === "last_completed" && handPotMissing}
               compact={compactFelt}
               blinds={feltBlinds}
