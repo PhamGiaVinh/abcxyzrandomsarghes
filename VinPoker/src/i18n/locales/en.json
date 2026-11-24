@@ -2076,6 +2076,7 @@
     "detailsUnavailable": "Deal or profile history could not be fully loaded. Data is unverified; try again."
   },
   "financeRead": {
+    "missingEventStart": "A tournament with financial activity has no start date. Verify its event date to determine the reporting period.",
     "forbidden": "You do not have permission to view this club's financial report.",
     "missingBackend": "The server does not have the required report version. Figures cannot be verified.",
     "invalid": "The report data is incomplete or invalid. Figures cannot be verified.",

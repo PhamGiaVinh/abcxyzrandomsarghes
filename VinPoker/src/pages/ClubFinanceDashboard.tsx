@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { formatVND } from "@/lib/format";
 import { exportToExcel } from "@/lib/exportExcel";
 import { useClubFinanceSummary } from "@/hooks/useClubFinanceSummary";
-import {financeBusinessToday} from '@/lib/financeSummaryRead';
+import {financeBusinessToday, financeReadErrorKey} from '@/lib/financeSummaryRead';
 import {startLiveReportRefresh} from '@/lib/liveReportRefresh';
 import {
   PAYROLL_STATUS_META, AGING_BUCKETS, margin, formatPct, formatVndShort,
@@ -44,7 +45,8 @@ const tooltipStyle = {
 } as const;
 
 const ClubFinanceDashboard = () => {
-  const { isAdmin, isClubAdmin, isClubOwner } = useAuth();
+  const { t } = useTranslation();
+  const { isAdmin, isClubAdmin, isClubOwner, loading: authLoading, rolesLoading, authError, rolesError } = useAuth();
   const [from, setFrom] = useState(rangeStartISO(30));
   const [to, setTo] = useState(todayISO());
   const [clubFilter, setClubFilter] = useState("all");
@@ -76,6 +78,8 @@ const ClubFinanceDashboard = () => {
   );
 
   // Visible to club_admin, super_admin, OR club owner (clubs.owner_id). After all hooks (rules-of-hooks).
+  if (authLoading || rolesLoading) return <p role="status" className="p-6">Đang xác minh quyền CLB…</p>;
+  if (authError || rolesError) return <p role="alert" className="p-6">Chưa xác minh được quyền CLB. Vui lòng tải lại trang.</p>;
   if (!(isClubAdmin || isClubOwner)) {
     return <Navigate to="/" replace />;
   }
@@ -191,7 +195,7 @@ const ClubFinanceDashboard = () => {
 
       {error && (
         <Card className="p-4 border-destructive/40 bg-destructive/10 text-sm flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-destructive" /> {error}
+          <AlertCircle className="w-4 h-4 text-destructive" /> {error === "finance_report_event_start_unavailable" ? t(financeReadErrorKey(new Error(error))) : error}
         </Card>
       )}
 
