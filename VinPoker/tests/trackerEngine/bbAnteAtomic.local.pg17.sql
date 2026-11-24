@@ -46,7 +46,7 @@ BEGIN
         (gen_random_uuid(),tour,bb,1,table_id,2,1000,true,'active');
 
   ASSERT NOT has_function_privilege('anon', 'public.post_tracker_blinds_v1(uuid,uuid)', 'EXECUTE');
-  ASSERT NOT has_table_privilege('authenticated', 'floor_private.tracker_blind_receipts349', 'INSERT');
+  ASSERT NOT has_table_privilege('authenticated', 'floor_private.tracker_blind_receipts350', 'INSERT');
   FOR case_index IN 1..4 LOOP
     bb_stack := (ARRAY[1000,300,100,0])[case_index];
     expected_bb := least(200, bb_stack);
@@ -82,7 +82,7 @@ BEGIN
     ASSERT repeated->>'duplicate' = 'true', repeated::text;
     ASSERT (SELECT count(*) FROM public.hand_actions WHERE hand_id = hand) = CASE WHEN expected_ante > 0 THEN 3 ELSE 2 END;
     ASSERT (SELECT sum(action_amount) FROM public.hand_actions WHERE hand_id = hand) = 100 + expected_bb + expected_ante;
-    ASSERT (SELECT count(*) FROM floor_private.tracker_blind_receipts349 WHERE hand_id = hand) = 1;
+    ASSERT (SELECT count(*) FROM floor_private.tracker_blind_receipts350 WHERE hand_id = hand) = 1;
     BEGIN
       UPDATE public.tournament_hands SET tracker_big_blind_ante_only = false WHERE id = hand;
       RAISE EXCEPTION 'frozen rule was changed';
@@ -151,7 +151,7 @@ BEGIN
   END;
   PERFORM set_config('role', 'none', true);
   ASSERT NOT EXISTS(SELECT 1 FROM public.hand_actions WHERE hand_id = hand), 'partial SB/ante writes survived';
-  ASSERT NOT EXISTS(SELECT 1 FROM floor_private.tracker_blind_receipts349 WHERE hand_id = hand);
+  ASSERT NOT EXISTS(SELECT 1 FROM floor_private.tracker_blind_receipts350 WHERE hand_id = hand);
   ASSERT current_setting('vinpoker.blind_batch_hand', true) IS DISTINCT FROM hand::text;
 
   -- Rehearse the existing dead-SB frozen-position case with two remaining players.

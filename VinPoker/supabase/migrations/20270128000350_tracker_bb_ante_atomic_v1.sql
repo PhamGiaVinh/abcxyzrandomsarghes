@@ -9,15 +9,15 @@ SET LOCAL statement_timeout = '30s';
 ALTER TABLE public.tournament_hands
   ADD COLUMN tracker_big_blind_ante_only boolean NOT NULL DEFAULT false;
 
-CREATE TABLE floor_private.tracker_blind_receipts349 (
+CREATE TABLE floor_private.tracker_blind_receipts350 (
   hand_id uuid PRIMARY KEY REFERENCES public.tournament_hands(id) ON DELETE CASCADE,
   request_id uuid NOT NULL,
   actor_id uuid NOT NULL,
   created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
   result jsonb NOT NULL
 );
-ALTER TABLE floor_private.tracker_blind_receipts349 ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON floor_private.tracker_blind_receipts349 FROM PUBLIC, anon, authenticated, service_role;
+ALTER TABLE floor_private.tracker_blind_receipts350 ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON floor_private.tracker_blind_receipts350 FROM PUBLIC, anon, authenticated, service_role;
 
 -- Preserve the existing session/level/position checks and function privileges.
 DO $freeze$
@@ -74,7 +74,7 @@ BEGIN
   -- Control transfer and duplicate writers serialize on the same session/hand.
   PERFORM 1 FROM public.table_sessions WHERE id = session_id FOR UPDATE;
   SELECT * INTO STRICT hand FROM public.tournament_hands WHERE id = p_hand_id FOR UPDATE;
-  SELECT result INTO saved FROM floor_private.tracker_blind_receipts349 WHERE hand_id = p_hand_id;
+  SELECT result INTO saved FROM floor_private.tracker_blind_receipts350 WHERE hand_id = p_hand_id;
   IF FOUND THEN RETURN saved || jsonb_build_object('duplicate', true); END IF;
   IF hand.status <> 'in_progress' OR coalesce(hand.is_voided, false)
      OR NOT hand.tracker_big_blind_ante_only THEN
@@ -127,7 +127,7 @@ BEGIN
   IF sb.player_id IS NOT NULL THEN
     action_order := action_order + 1;
     reply := public.record_action(p_hand_id, sb.player_id, 'post_sb', action_order, sb.entry_number,
-      'preflop', sb_paid, 'blind349:' || p_hand_id || ':sb', p_request_id::text, actor);
+      'preflop', sb_paid, 'blind350:' || p_hand_id || ':sb', p_request_id::text, actor);
     IF reply->>'status' IS DISTINCT FROM 'success' OR reply ? 'error' THEN
       RAISE EXCEPTION 'tracker_blinds_sb_rejected: %', reply;
     END IF;
@@ -136,14 +136,14 @@ BEGIN
   IF ante_paid > 0 THEN
     action_order := action_order + 1;
     reply := public.record_action(p_hand_id, bb.player_id, 'post_ante', action_order, bb.entry_number,
-      'preflop', ante_paid, 'blind349:' || p_hand_id || ':ante', p_request_id::text, actor);
+      'preflop', ante_paid, 'blind350:' || p_hand_id || ':ante', p_request_id::text, actor);
     IF reply->>'status' IS DISTINCT FROM 'success' OR reply ? 'error' THEN
       RAISE EXCEPTION 'tracker_blinds_ante_rejected: %', reply;
     END IF;
   END IF;
   action_order := action_order + 1;
   reply := public.record_action(p_hand_id, bb.player_id, 'post_bb', action_order, bb.entry_number,
-    'preflop', bb_paid, 'blind349:' || p_hand_id || ':bb', p_request_id::text, actor);
+    'preflop', bb_paid, 'blind350:' || p_hand_id || ':bb', p_request_id::text, actor);
   IF reply->>'status' IS DISTINCT FROM 'success' OR reply ? 'error' THEN
     RAISE EXCEPTION 'tracker_blinds_bb_rejected: %', reply;
   END IF;
@@ -157,7 +157,7 @@ BEGIN
     'big_blind_ante_only', true, 'small_blind', hand.tracker_small_blind,
     'big_blind', hand.tracker_big_blind, 'ante', hand.tracker_bba,
     'sb_paid', sb_paid, 'bb_paid', bb_paid, 'ante_paid', ante_paid, 'actions', actions);
-  INSERT INTO floor_private.tracker_blind_receipts349(hand_id, request_id, actor_id, result)
+  INSERT INTO floor_private.tracker_blind_receipts350(hand_id, request_id, actor_id, result)
   VALUES (p_hand_id, p_request_id, actor, saved);
   RETURN saved || jsonb_build_object('duplicate', false);
 END;
@@ -166,7 +166,7 @@ ALTER FUNCTION public.post_tracker_blinds_v1(uuid, uuid) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.post_tracker_blinds_v1(uuid, uuid) FROM PUBLIC, anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.post_tracker_blinds_v1(uuid, uuid) TO authenticated;
 
-CREATE FUNCTION floor_private.guard_tracker_blind_batch349()
+CREATE FUNCTION floor_private.guard_tracker_blind_batch350()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $guard$
 DECLARE uses_bb_ante boolean;
 BEGIN
@@ -177,17 +177,17 @@ BEGIN
     IF current_setting('vinpoker.blind_batch_hand', true) IS DISTINCT FROM NEW.hand_id::text THEN
       RAISE EXCEPTION 'tracker_blinds_atomic_batch_required';
     END IF;
-  ELSIF NOT EXISTS (SELECT 1 FROM floor_private.tracker_blind_receipts349 WHERE hand_id = NEW.hand_id) THEN
+  ELSIF NOT EXISTS (SELECT 1 FROM floor_private.tracker_blind_receipts350 WHERE hand_id = NEW.hand_id) THEN
     RAISE EXCEPTION 'tracker_blinds_not_confirmed';
   END IF;
   RETURN NEW;
 END;
 $guard$;
-REVOKE ALL ON FUNCTION floor_private.guard_tracker_blind_batch349() FROM PUBLIC, anon, authenticated, service_role;
-CREATE TRIGGER trg_guard_tracker_blind_batch349 BEFORE INSERT ON public.hand_actions
-FOR EACH ROW EXECUTE FUNCTION floor_private.guard_tracker_blind_batch349();
+REVOKE ALL ON FUNCTION floor_private.guard_tracker_blind_batch350() FROM PUBLIC, anon, authenticated, service_role;
+CREATE TRIGGER trg_guard_tracker_blind_batch350 BEFORE INSERT ON public.hand_actions
+FOR EACH ROW EXECUTE FUNCTION floor_private.guard_tracker_blind_batch350();
 
-CREATE FUNCTION floor_private.guard_tracker_ante_rule349()
+CREATE FUNCTION floor_private.guard_tracker_ante_rule350()
 RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $rule$
 BEGIN
   IF TG_OP = 'UPDATE' THEN
@@ -200,8 +200,8 @@ BEGIN
   RETURN NEW;
 END;
 $rule$;
-REVOKE ALL ON FUNCTION floor_private.guard_tracker_ante_rule349() FROM PUBLIC, anon, authenticated, service_role;
-CREATE TRIGGER trg_guard_tracker_ante_rule349 BEFORE INSERT OR UPDATE OF tracker_big_blind_ante_only
-ON public.tournament_hands FOR EACH ROW EXECUTE FUNCTION floor_private.guard_tracker_ante_rule349();
+REVOKE ALL ON FUNCTION floor_private.guard_tracker_ante_rule350() FROM PUBLIC, anon, authenticated, service_role;
+CREATE TRIGGER trg_guard_tracker_ante_rule350 BEFORE INSERT OR UPDATE OF tracker_big_blind_ante_only
+ON public.tournament_hands FOR EACH ROW EXECUTE FUNCTION floor_private.guard_tracker_ante_rule350();
 
 COMMIT;

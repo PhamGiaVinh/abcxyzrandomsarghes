@@ -61,7 +61,7 @@ try {
   assert.equal(payload(original).duplicate, false);
   assert.equal(payload(second).duplicate, true);
   const count = () => JSON.parse(sql(`SELECT json_build_object('actions',(SELECT count(*) FROM public.hand_actions WHERE hand_id='${hand}'),
-    'receipts',(SELECT count(*) FROM floor_private.tracker_blind_receipts349 WHERE hand_id='${hand}'),
+    'receipts',(SELECT count(*) FROM floor_private.tracker_blind_receipts350 WHERE hand_id='${hand}'),
     'chips',(SELECT sum(action_amount) FROM public.hand_actions WHERE hand_id='${hand}'));`));
   assert.deepEqual(count(), { actions: 3, receipts: 1, chips: 500 });
   const call = sql(`BEGIN;${auth}SELECT public.record_action('${hand}','${sb}','call',4,1,'preflop',100);COMMIT;`);
