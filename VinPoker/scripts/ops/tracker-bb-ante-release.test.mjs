@@ -5,12 +5,30 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { applyPhase, catalogSql, preparePackage, releaseSha } from './tracker-bb-ante-release.mjs';
+import { applyPhase, catalogSql, preparePackage, releaseSha, qualifySourceTrees } from './tracker-bb-ante-release.mjs';
 
 const root = process.env.RELEASE_SOURCE_ROOT ?? fileURLToPath(new URL('../..', import.meta.url));
 const pre = { database: 'postgres', actor: 'postgres', pending: true, definitions: true, objects: true, metadata: Array.from({length:4}, (_, i) => ['retained', i, null]) };
 const post = { ...pre };
 const exact = { count: 1, exact: true };
+
+test('activation-only qualifies the immutable release, while unrelated runner UI changes are never deployed', () => {
+  const calls=[];
+  const git=(cwd,args)=>{
+    calls.push({cwd,args});
+    if(cwd==='runner')throw Error('runner has newer TV and finance UI');
+    return '';
+  };
+  assert.doesNotThrow(()=>qualifySourceTrees('release','runner','45398872397',git));
+  assert.equal(calls.length,1);assert.equal(calls[0].cwd,'release');
+  assert.deepEqual(calls[0].args.slice(0,3),['status','--porcelain','--untracked-files=all']);
+  assert.throws(()=>qualifySourceTrees('release','runner','',git),/newer TV/);
+});
+
+test('activation-only still rejects a changed release tree or an unrecognized original run', () => {
+  assert.throws(()=>qualifySourceTrees('release','runner','45398872397',()=> ' M src/changed.ts'),/release tree/);
+  assert.throws(()=>qualifySourceTrees('release','runner','other-run',()=>assert.fail('git must not run')),/resume run/);
+});
 
 test('actual activate351 CLI reaches its atomic writer without an import deadlock', () => {
   const directory = mkdtempSync(join(tmpdir(), 'tracker-activation-cli-'));

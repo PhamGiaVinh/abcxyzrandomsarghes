@@ -139,6 +139,12 @@ Do not rerun the original deployment steps or advance Edge versions again.
 1. Use the corrected runner after required checks. Keep the same confirmation
    and set `resume_consumer_run_id=45398872397`. Supply a currently valid,
    successfully restore-verified backup run; never extend its one-hour TTL.
+   The runner may contain newer unrelated UI on main. Activation-only qualifies
+   the separate pristine `3c6e2080a` runtime checkout, and never deploys the runner
+   application. The original deploy path retains full runner/runtime equality.
+   Live Edge versions/JWT and the exact deployed frontend revision/alias are still
+   checked independently; an unrelated newer deployment is not automatically
+   accepted and must not be downgraded to make a preflight pass.
 2. The workflow checks the original failed run's owner, main SHA, workflow and
    successful350/consumer steps. It downloads only the retained consumer metadata,
    pins its artifact SHA256
