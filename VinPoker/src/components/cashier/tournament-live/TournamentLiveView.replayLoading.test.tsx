@@ -27,12 +27,29 @@ vi.mock('@/lib/publicTableTransport',()=>({readPublicTableRequest:async(_url:str
 vi.mock('@/components/tracker/useTournamentTableAppearance',()=>({useTournamentTableAppearance:()=>({data:undefined})}));
 vi.mock('@/components/td-ai/TdAiAssistantPanel',()=>({TdAiAssistantPanel:()=>null}));
 vi.mock('@/lib/tracker-poker/useTrackerRunoutSounds',()=>({useTrackerRunoutSounds:()=>{}}));
-vi.mock('./LiveFelt',()=>({LiveFelt:({toActId,hideHoleCards,latestAction}:{toActId?:string|null;hideHoleCards?:boolean;latestAction?:{action_type:string}|null})=> <div data-testid="rendered-felt" data-actor={toActId??'none'} data-hidden-cards={Boolean(hideHoleCards)} data-action={latestAction?.action_type??'none'}>Hand blinds unavailable</div>,formatStack:String,formatActionLabel:String}));
+vi.mock('./LiveFelt',()=>({LiveFelt:({toActId,hideHoleCards,latestAction,potSize,potBreakdown,seats}:{toActId?:string|null;hideHoleCards?:boolean;latestAction?:{action_type:string}|null;potSize?:number;potBreakdown?:unknown;seats?:unknown[]})=> <div data-testid="rendered-felt" data-pot={potSize} data-breakdown={JSON.stringify(potBreakdown)} data-seats={JSON.stringify(seats)} data-actor={toActId??'none'} data-hidden-cards={Boolean(hideHoleCards)} data-action={latestAction?.action_type??'none'}>Hand blinds unavailable</div>,formatStack:String,formatActionLabel:String}));
 // Exercise the real parent read/presentation boundary; child completion is held
 // explicitly rather than claiming this unit test is browser/DB acceptance.
 vi.mock('./HandSelector',()=>({HandSelector:({onSelectHand,replayTargetState,onRetryReplayTarget}:{onSelectHand:(id:string,h:unknown)=>void;replayTargetState:{kind:string};onRetryReplayTarget?:()=>void})=><><p data-testid="target-state">{replayTargetState.kind}</p>{replayTargetState.kind==='query_error'&&<button onClick={onRetryReplayTarget}>Thử tìm lại hand</button>}<button onClick={()=>onSelectHand('hand',hand)}>Deliver replay</button></>}));
 vi.mock('./ReplayScrubber',()=>({ReplayScrubber:()=>null}));
 afterEach(async()=>{cleanup();await Promise.resolve();rpc.mockReset();signals.length=0;liveSignals.length=0;events.length=0;statuses.length=0;vi.useRealTimers()});
+it('carries the frozen public ante through live pot and seat wager projection',async()=>{
+ const players=[1,2].map(seat=>({playerId:`p${seat}`,entryNumber:1,seatNumber:seat,name:`TEST ${seat}`,
+  startingStack:1000,endingStack:null,holeCards:[],avatarUrl:null}));
+ const actions=[['p1','post_sb',100],['p2','post_ante',200],['p2','post_bb',200],['p1','call',100]]
+  .map(([playerId,actionType,amount],index)=>({id:`a${index}`,playerId,actionType,amount,order:index+1,entryNumber:1,street:'preflop'}));
+ rpc.mockImplementation(async(name:string)=>({error:null,data:
+  name==='get_public_tournament_clock_summary'?[{...publicClock,tournament_id:'tour',players_remaining:2,average_stack:1000}]:
+  name==='get_public_tournament_table_live_or_last_hand_v2'?{access:'public',state:'live',tableId:'table',tableSessionId:'session',hand:{
+   id:'live-hand',handNumber:1,buttonSeat:1,status:'in_progress',board:[],pot:600,smallBlind:100,bigBlind:200,
+   ante:200,bigBlindAnteOnly:true,players,actions}}:null}));
+ render(<TournamentLiveView tournamentId="tour" spectator selectedTableIdOverride="table"/>);
+ const felt=await screen.findByTestId('rendered-felt');
+ await waitFor(()=>expect(felt).toHaveAttribute('data-pot','600'));
+ expect(JSON.parse(felt.getAttribute('data-breakdown')!)).toMatchObject({totalPot:600,uncalled:null});
+ expect(JSON.parse(felt.getAttribute('data-seats')!).find((seat:{player_id:string})=>seat.player_id==='p2'))
+  .toMatchObject({current_bet:200,chip_count:600});
+});
 it.each([false,true])('aborts a held URL replay resolver and rejects its late reply; hand-only=%s',async(handVisibilityOnly)=>{
  let finish!:(value:unknown)=>void;const held=new Promise(resolve=>{finish=resolve;});
  rpc.mockImplementation((name:string)=>name==='get_public_tournament_table_hand_v2'?held:Promise.resolve({error:null,data:

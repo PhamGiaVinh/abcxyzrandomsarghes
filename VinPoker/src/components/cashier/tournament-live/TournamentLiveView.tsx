@@ -129,10 +129,11 @@ type PublicHandResponse = {
   smallBlind?: number | null;
   levelNumber?: number | null;
   ante?: number | null;
+  bigBlindAnteOnly?: boolean;
   actions?: Array<{ id: string; playerId: string; entryNumber: number; street: string | null; actionType: string; amount: number | null; order: number }>;
   players?: Array<{ playerId: string; entryNumber: number; seatNumber: number; startingStack: number | null; endingStack: number | null; name: string; avatarUrl: string | null; holeCards: string[] }>;
 };
-type HandSource = PublicHandResponse & { hand_number?: number | null; table_id?: string | null; button_seat?: number | null; community_cards?: string[] | null; pot_size?: number | null; tracker_big_blind?: number | null; tracker_small_blind?: number | null; tracker_bba?: number | null; tracker_level_number?: number | null };
+type HandSource = PublicHandResponse & { hand_number?: number | null; table_id?: string | null; button_seat?: number | null; community_cards?: string[] | null; pot_size?: number | null; tracker_big_blind?: number | null; tracker_small_blind?: number | null; tracker_bba?: number | null; tracker_level_number?: number | null; tracker_big_blind_ante_only?: boolean };
 type PublicHandCatalogResponse = { access?: string; items?: Array<{ id: string; tableId: string | null; handNumber: number; status?: string | null; isVoided?: boolean | null }> };
 
 const STREET_ORDER = ["preflop", "flop", "turn", "river"];
@@ -508,9 +509,11 @@ function TournamentLiveViewContent({
     let nextBettingRoundComplete = false;
     let nextStartingStacks = new Map<string, number>();
     let nextLiveCompletedHand: ReplayHand | null = null;
+    let nextBigBlindAnteOnly = false;
 
     if (sourceHands.length > 0) {
       const hand = sourceHands[0];
+      nextBigBlindAnteOnly = hand.tracker_big_blind_ante_only === true || hand.bigBlindAnteOnly === true;
       nextHandId = hand.id;
       sourceHandBigBlind = hand.tracker_big_blind ?? 0;
       if (sourceHandBigBlind > 0 && hand.tracker_small_blind != null) nextHandBlinds = { sb: hand.tracker_small_blind, bb: sourceHandBigBlind, ante: hand.tracker_bba ?? 0, level: hand.tracker_level_number };
@@ -531,6 +534,7 @@ function TournamentLiveViewContent({
           p_hand_id: hand.id,
         } as never)).data;
         const safe = (publicHand ?? {}) as PublicHandResponse;
+        nextBigBlindAnteOnly = safe.bigBlindAnteOnly === true;
         sourceHandBigBlind = safe.bigBlind ?? 0;
         nextHandBlinds = sourceHandBigBlind > 0 && safe.smallBlind != null ? { sb: safe.smallBlind, bb: sourceHandBigBlind, ante: safe.ante ?? 0, level: safe.levelNumber } : null;
         seatInfos = (safe.players ?? []).map((player) => ({
@@ -694,6 +698,7 @@ function TournamentLiveViewContent({
           startingStacks: startingStackMap,
           actions: actionData as any,
           inProgress: nextInProgress,
+          bigBlindAnteOnly: nextBigBlindAnteOnly,
         });
         if (nextInProgress && spectator) {
           seatInfos = seatInfos.map((seat) => ({
@@ -725,7 +730,9 @@ function TournamentLiveViewContent({
             const add = streetContribution(a.action_type, a.action_amount);
             if (add > 0) totalBets[a.player_id] = (totalBets[a.player_id] || 0) + add;
             if ((a.street || "preflop") !== curStreet) return;
-            if (add > 0) streetBets[a.player_id] = (streetBets[a.player_id] || 0) + add;
+            if (add > 0 && !(nextBigBlindAnteOnly && a.action_type === "post_ante")) {
+              streetBets[a.player_id] = (streetBets[a.player_id] || 0) + add;
+            }
             if (!POSTS.includes(a.action_type)) acted.add(a.player_id);
             lastActorSeat = seatMap.get(a.player_id) ?? lastActorSeat;
           });
@@ -810,10 +817,11 @@ function TournamentLiveViewContent({
         const seatByPlayer = new Map(seatInfos.map((seat) => [seat.player_id, seat]));
         nextLiveCompletedHand = {
           hand_id: hand.id,
-          hand_number: hand.hand_number,
-          button_seat: hand.button_seat || 1,
+          hand_number: nextHandNumber,
+          button_seat: nextButtonSeat,
+          big_blind_ante_only: nextBigBlindAnteOnly,
           community_cards: nextCommunity,
-          stored_pot_size: hand.pot_size,
+          stored_pot_size: nextPot,
           players: liveHandPlayers.map((hp) => ({
             player_id: hp.player_id,
             seat_number: hp.seat_number,
@@ -887,6 +895,7 @@ function TournamentLiveViewContent({
         button_seat: nextButtonSeat,
         community_cards: nextCommunity,
         big_blind: nextHandBigBlind,
+        big_blind_ante_only: nextBigBlindAnteOnly,
         players: seatInfos.map(seat => ({
           player_id: seat.player_id, seat_number: seat.seat_number,
           display_name: seat.display_name, avatar_url: seat.avatar_url,
