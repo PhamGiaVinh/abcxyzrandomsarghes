@@ -26,7 +26,7 @@ const actor='81400000-0000-4000-8000-000000000001',tour='85000000-0000-4000-8000
 function proof(i){return {ok:true,status:'success',hand_id:i.hand_id,actor_id:i.actor_id,request_id:i.request_id,intent:i,table_session_id:i.table_session_id,control_epoch:i.control_epoch,expected_source_revision:i.source_revision,committed_source_revision:i.source_revision+1,starting_total:1000,ending_total:1000};}
 const notFound={data:{error:'receipt_not_found',code:'receipt_not_found'},error:null};
 function memory(){const map=new Map();return {map,storage:{get length(){return map.size;},key:n=>[...map.keys()][n]??null,getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)}};}
-function harness(durable=memory()){
+function harness(durable=memory(),antePayer){
  const stored=durable.map,legacy=memory(),calls=[],effects=[],errors=[];let invoke;
  const state={submitting:false,write:async i=>({data:{status:'success',data:proof(i)},error:null}),read:async()=>notFound,cancel:async()=>notFound};
  const deps={...finish,canonicalVoiceJson,confirm:()=>true,pendingFinish:null,pendingFinishError:null,buildRecordHandBody,readEdgeError,computePotBreakdown,contributionsFromActions,toSidePotsJson,waitForManualPlayerResponse,observeTrackerContextRead,
@@ -36,7 +36,7 @@ function harness(durable=memory()){
   handSubmitGuardRef:{current:createSingleFlightGuard()},finishOwnsSubmittingRef:{current:false},setPendingFinish:v=>{state.pending=v;},setSubmitting:v=>{state.submitting=v;},markSync:(...a)=>effects.push(['sync',...a]),
   localStorage:durable.storage,sessionStorage:legacy.storage,crypto:globalThis.crypto,Response,
   players:[{player_id:'a',entry_number:1,seat_number:1,starting_stack:500,current_stack:500},{player_id:'b',entry_number:1,seat_number:2,starting_stack:500,current_stack:500}],
-  communityCards:[],potSize:0,playerHoleCards:{},actions:[],
+  communityCards:[],potSize:0,playerHoleCards:{},actions:[],bigBlindAntePlayerId:antePayer,
   toast:{error:m=>errors.push(m),info:m=>errors.push(m),warning:m=>errors.push(m),success:m=>effects.push(['success',m])},
   ensureRecordedHandDisplayOutcome:async input=>{effects.push(['outcome',input]);return {ok:true};},playTrackerSoundOnce:()=>effects.push(['sound']),playedSoundsRef:{current:new Set()},
   setLastHandId:v=>effects.push(['last',v]),FEATURES:{floorDeferredTrackerMoveV1:true},availableTables:[{id:table,tableSessionId:session}],
@@ -95,6 +95,16 @@ test('legacy migration ignores other actors but blocks corrupt journals in its e
 });
 test('successful exact proof applies the hand and clears only its own journal',async()=>{
  const h=harness();await h.submit();assert.equal(h.calls.length,1);assert.equal(h.calls[0].action,'record_manual_hand_v1');assert.equal(h.stored.size,0);assert.equal(h.effects.filter(x=>x[0]==='outcome').length,1);assert.equal(h.state.submitting,false);
+});
+test('the actual submit callback keeps frozen BB ante in its 600 chip Finish payload',async()=>{
+ const h=harness(undefined,'b');
+ h.deps.actions.push(...[['a','post_sb',100],['b','post_ante',200],['b','post_bb',200],['a','call',100]]
+  .map(([player_id,action_type,amount],index)=>({player_id,action_type,amount,street:'preflop',action_order:index+1})));
+ h.deps.endingStacks.a=900;h.deps.endingStacks.b=100;
+ await h.submit();assert.equal(h.calls.length,1,JSON.stringify(h.errors));
+ assert.equal(h.calls[0].finish_intent.payload.pot_size,600);
+ assert.deepEqual(h.calls[0].finish_intent.payload.side_pots,[{amount:600,eligible_player_ids:['a','b']}]);
+ assert.equal(h.stored.size,0);
 });
 test('lost response reconciles the exact server receipt without retrying writer',async()=>{
  const h=harness();let sent;h.state.write=async i=>{sent=i;return {data:null,error:new Error('response lost')};};h.state.read=async()=>({data:{data:proof(sent)},error:null});
