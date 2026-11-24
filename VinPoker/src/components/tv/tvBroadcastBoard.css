@@ -1,14 +1,326 @@
-.tv-broadcast-viewport { container: broadcast / size; width: 100%; height: 100svh; }
-.tv-broadcast-preview { container: broadcast / size; width: 1920px; height: 1080px; transform-origin: top left; }
-.tv-broadcast { --tv-brand-label-size: 1cqmin; }
-.tv-broadcast{position:relative;isolation:isolate;--tv-gold:#edce70;--tv-line:#d1b35b33;display:grid;grid-template-columns:23% minmax(0,1fr) 24%;grid-template-rows:auto 1fr auto;min-height:100cqh;width:100%;background:#171305;color:#f7f4e8;font-family:Inter,system-ui,sans-serif;font-variant-numeric:tabular-nums}
-.tv-broadcast-title{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1.5cqmin 2cqmin;border-bottom:1px solid var(--tv-line)}
-.tv-broadcast-title h1{margin:0;text-align:center;font-size:clamp(20px,3.4cqmin,56px);font-weight:700;flex:1;overflow-wrap:anywhere}.tv-broadcast-title img{width:6cqmin;height:6cqmin;object-fit:contain}.tv-broadcast-title>span{font-size:clamp(10px,1.6cqmin,24px);max-width:18%;overflow-wrap:anywhere;color:var(--tv-gold)}
-.tv-broadcast h2{margin:0;font-size:clamp(13px,2.1cqmin,32px);font-weight:500;color:#c3bdab}.tv-broadcast p{margin:0}
-.tv-broadcast-summary{display:flex;flex-direction:column;justify-content:space-around;text-align:center;padding:3cqmin 1cqmin;border-right:1px solid var(--tv-line)}.tv-broadcast-summary strong{display:block;margin-top:1.5cqmin;font-size:clamp(19px,3cqmin,48px);overflow-wrap:anywhere}.tv-broadcast-gold{color:var(--tv-gold)}.tv-broadcast-green{color:#96d875}
-.tv-broadcast-clock{text-align:center;display:flex;flex-direction:column;justify-content:center;min-width:0;padding-top:2cqmin}.tv-broadcast-time{font-size:clamp(52px,12cqmin,180px);font-weight:700;line-height:1.2;margin:1cqmin 0 2cqmin}.tv-broadcast-blinds{font-size:clamp(23px,4.5cqmin,72px);margin:1cqmin 0 2cqmin;overflow-wrap:anywhere}.tv-broadcast-next{font-size:clamp(19px,3cqmin,48px);color:#c3bdab;padding:1cqmin}.tv-broadcast-break{display:flex;justify-content:center;gap:3cqmin;border-block:1px solid var(--tv-line);padding:2cqmin 1cqmin;margin-top:2cqmin;font-size:clamp(16px,2.8cqmin,42px)}.tv-broadcast-note{font-size:clamp(14px,2.4cqmin,36px);color:#c3bdab;padding:1.5cqmin}
-.tv-broadcast-stacks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));margin-top:auto;border-top:1px solid var(--tv-line)}.tv-broadcast-stacks>div{padding:2cqmin .7cqmin}.tv-broadcast-stacks>div+div{border-left:1px solid var(--tv-line)}.tv-broadcast-stacks h2{font-size:clamp(11px,1.7cqmin,25px)}.tv-broadcast-stacks strong{display:block;color:#7cd6f4;font-size:clamp(14px,2.2cqmin,34px);margin-top:1cqmin;overflow-wrap:anywhere}
-.tv-broadcast-payouts{border-left:1px solid var(--tv-line);padding:2cqmin;overflow:auto;max-height:88cqh}.tv-broadcast-payouts h2{margin-bottom:2cqmin;color:var(--tv-gold)}.tv-broadcast-payouts ol{list-style:none;padding:0;margin:0}.tv-broadcast-payouts li{display:flex;justify-content:space-between;gap:1cqmin;padding:.7cqmin 0;font-size:clamp(13px,2.4cqmin,36px)}.tv-broadcast-payouts li:first-child{color:var(--tv-gold)}.tv-broadcast-payouts li span{color:#c3bdab}.tv-broadcast-payouts li strong{overflow-wrap:anywhere;text-align:right}.tv-broadcast footer{grid-column:1/-1;border-top:1px solid var(--tv-line);padding:1cqmin;text-align:center;font-size:clamp(12px,1.6cqmin,24px)}
-@container broadcast (max-width:600px){.tv-broadcast{grid-template-columns:1fr 1fr;grid-template-rows:auto auto auto auto}.tv-broadcast-title{flex-wrap:wrap}.tv-broadcast-title>span{display:none}.tv-broadcast-clock{grid-column:1/-1;grid-row:2}.tv-broadcast-summary{grid-column:1;grid-row:3;gap:2rem}.tv-broadcast-payouts{grid-column:2;grid-row:3;max-height:none}.tv-broadcast-time{font-size:22cqw}.tv-broadcast-stacks{padding-block:1rem}}
+.tv-broadcast-viewport {
+  container: broadcast / size;
+  width: 100%;
+  height: 100svh;
+}
 
-.tv-broadcast :where(h1,h2,h3){font-family:inherit}
+.tv-broadcast-preview {
+  container: broadcast / size;
+  width: 1920px;
+  height: 1080px;
+  transform-origin: top left;
+}
+
+.tv-broadcast {
+  --tv-brand-label-size: 1cqmin;
+  --tv-gold: #cfad65;
+  --tv-line: #b99a5266;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: 27% minmax(0, 1fr) 27%;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100cqh;
+  padding: 0 2cqw;
+  background: radial-gradient(ellipse at 50% 40%, #143b1b, #071e0c 80%);
+  color: #faf6df;
+  font-family: 'Barlow Condensed', 'Arial Narrow', Arial, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-broadcast :where(h1, h2, h3) {
+  margin: 0;
+  font-family: inherit;
+}
+
+.tv-broadcast p {
+  margin: 0;
+}
+
+.tv-broadcast h2 {
+  color: #f3eed9;
+  font-size: 2.8cqmin;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .035em;
+}
+
+.tv-broadcast-title {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2cqw;
+  min-height: 10cqh;
+  padding: 1.5cqh 0;
+  border-bottom: 2px solid var(--tv-gold);
+}
+
+.tv-broadcast-title h1 {
+  flex: 1;
+  text-align: center;
+  font-size: 4.7cqmin;
+  line-height: 1.1;
+  font-weight: 800;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+
+.tv-broadcast-title img {
+  width: 6cqmin;
+  height: 6cqmin;
+  object-fit: contain;
+}
+
+.tv-broadcast-title > span {
+  max-width: 18%;
+  font-size: 1.7cqmin;
+  color: var(--tv-gold);
+  overflow-wrap: anywhere;
+}
+
+.tv-broadcast-summary,
+.tv-broadcast-payouts {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 3cqh 1.5cqw 2cqh;
+  text-align: center;
+}
+
+.tv-broadcast-summary > div,
+.tv-broadcast-prize,
+.tv-broadcast-next {
+  padding: 1.5cqh 0;
+}
+
+.tv-broadcast-summary > div + div,
+.tv-broadcast-awards,
+.tv-broadcast-next {
+  border-top: 1px solid var(--tv-line);
+}
+
+.tv-broadcast-summary strong,
+.tv-broadcast-prize > strong,
+.tv-broadcast-next > strong {
+  display: block;
+  margin-top: 1.2cqh;
+  font-size: 4.7cqmin;
+  font-weight: 750;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.tv-broadcast-break strong {
+  font-size: 5.4cqmin;
+}
+
+.tv-broadcast-gold {
+  color: #f3d796;
+}
+
+.tv-broadcast-green {
+  color: #faf6df;
+}
+
+.tv-broadcast-clock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 2cqh 0;
+  text-align: center;
+}
+
+.tv-broadcast-dial {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: min(66cqh, 100%);
+  aspect-ratio: 1;
+  border: .55cqmin solid var(--tv-gold);
+  border-radius: 50%;
+  background: radial-gradient(circle, #123719 0%, #08250f 75%);
+  box-shadow: inset 0 0 0 .5cqmin #08250f, inset 0 0 0 .65cqmin #b99a5266;
+}
+
+.tv-broadcast-ticks {
+  position: absolute;
+  inset: 1.4cqmin;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.tv-broadcast-ticks::before,
+.tv-broadcast-ticks::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-conic-gradient(var(--tv-gold) 0deg 1deg, transparent 1deg 6deg);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 1.6cqmin), #000 0);
+}
+
+.tv-broadcast-ticks::after {
+  background: repeating-conic-gradient(var(--tv-gold) 0deg 1.6deg, transparent 1.6deg 30deg);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3.3cqmin), #000 0);
+}
+
+.tv-broadcast-dial > h2 {
+  font-size: 5cqmin;
+  font-weight: 800;
+}
+
+.tv-broadcast-blinds-label {
+  margin-top: 2cqh;
+  color: var(--tv-gold);
+  font-size: 1.8cqmin;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.tv-broadcast-blinds {
+  max-width: 80%;
+  font-size: 4cqmin;
+  line-height: 1.3;
+}
+
+.tv-broadcast-time {
+  margin: 1.2cqh 0;
+  font-size: 20cqmin;
+  font-weight: 800;
+  letter-spacing: -.055em;
+  line-height: 1.1;
+}
+
+.tv-broadcast-time[data-long-time='true'] {
+  font-size: 14cqmin;
+}
+
+.tv-broadcast-note {
+  max-width: 70%;
+  color: #e3cc94;
+  font-size: 1.7cqmin;
+  line-height: 1.4;
+}
+
+.tv-broadcast-awards {
+  flex: 1;
+  min-height: 0;
+  margin-top: 1cqh;
+  padding-top: 2.5cqh;
+}
+
+.tv-broadcast-awards > p {
+  margin-top: 2cqh;
+  font-size: 2cqmin;
+  color: #d4cfba;
+}
+
+.tv-broadcast-payouts ol {
+  max-height: 36cqh;
+  overflow: auto;
+  list-style: none;
+  margin: 2cqh 0;
+  padding: 0;
+}
+
+.tv-broadcast-payouts li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1cqw;
+  padding: 1.1cqh 0;
+  font-size: 2.6cqmin;
+}
+
+.tv-broadcast-payouts li span {
+  min-width: 4.5cqmin;
+  padding: .5cqh .7cqw;
+  background: #cfad65;
+  color: #08250f;
+  font-size: 2cqmin;
+  font-weight: 800;
+}
+
+.tv-broadcast-payouts li strong {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.tv-broadcast-next > strong {
+  font-size: 2.8cqmin;
+}
+
+.tv-broadcast-stacks {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 2px solid var(--tv-gold);
+  margin-top: 1cqh;
+  padding: 2.3cqh 0 2.8cqh;
+  text-align: center;
+}
+
+.tv-broadcast-stacks > div {
+  padding: 0 1cqw;
+}
+
+.tv-broadcast-stacks > div + div {
+  border-left: 1px solid var(--tv-line);
+}
+
+.tv-broadcast-stacks h2 {
+  font-size: 2.2cqmin;
+}
+
+.tv-broadcast-stacks strong {
+  display: block;
+  margin-top: 1.1cqh;
+  color: #faf6df;
+  font-size: 4cqmin;
+  overflow-wrap: anywhere;
+}
+
+.tv-broadcast footer {
+  grid-column: 1 / -1;
+  padding: 1cqh;
+  border-top: 1px solid var(--tv-line);
+  text-align: center;
+  color: #e3cc94;
+  font-size: 1.7cqmin;
+}
+
+@container broadcast (max-width: 600px) {
+  .tv-broadcast {
+    grid-template-columns: 1fr 1fr;
+    height: auto;
+    min-height: 100cqh;
+  }
+  .tv-broadcast-title > span {
+    display: none;
+  }
+  .tv-broadcast-clock {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .tv-broadcast-dial {
+    width: min(65cqh, 85cqw);
+  }
+  .tv-broadcast-summary {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .tv-broadcast-payouts {
+    grid-column: 2;
+    grid-row: 3;
+  }
+  .tv-broadcast-summary, .tv-broadcast-payouts {
+    gap: 1cqh;
+  }
+}
