@@ -130,6 +130,25 @@
   overflow-wrap: anywhere;
 }
 
+.tracker-seat-win {
+  display: inline-block;
+  margin-right: .4em;
+  color: #ffe7a3;
+  font-size: clamp(13px, 2cqi, 18px);
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-shadow: 0 1px 3px #241b15, 0 0 10px #d9a941;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tracker-seat-win { animation: tracker-win-arrival 650ms ease-out both; }
+  @keyframes tracker-win-arrival {
+    from { opacity: 0; transform: translateY(5px) scale(.8); }
+    55% { opacity: 1; transform: translateY(-1px) scale(1.12); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+}
+
 .tracker-unified:has([data-cat-khoi]) .tracker-seat-cards[data-revealed] {
   top: calc(var(--tracker-avatar-size) * .18);
   left: 50%;

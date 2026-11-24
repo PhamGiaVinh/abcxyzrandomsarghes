@@ -1155,6 +1155,7 @@ export function LiveFelt({
                       data-testid={`felt-settlement-award-label-${seat.player_id}`}
                       className="tracker-settlement-award-label mt-1"
                       style={{ position: "relative", zIndex: 30 }}>
+                      <span data-testid={`felt-win-${seat.player_id}`} className="tracker-seat-win">WIN</span>{" "}
                       +{formatGameplayAmount(allocation.amount)}
                     </span>
                   ))}
