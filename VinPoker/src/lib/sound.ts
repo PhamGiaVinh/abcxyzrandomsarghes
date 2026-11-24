@@ -171,3 +171,36 @@ export function initButtonSounds() {
   // Use both pointerdown and touchstart for max mobile coverage.
   window.addEventListener("pointerdown", handler, { capture: true, passive: true });
 }
+
+/** TV audio is unlocked by the operator's explicit button gesture. */
+export async function enableTvLevelAudio(): Promise<boolean> {
+  const ac = getCtx();
+  if (!ac) return false;
+  try {
+    if (ac.state === 'suspended') await ac.resume();
+    return ac.state === 'running';
+  } catch { return false; }
+}
+
+export async function playTvLevelChime() {
+  const ac = getCtx();
+  if (!ac) return;
+  try {
+    if (ac.state === 'suspended') await ac.resume();
+    if (ac.state !== 'running') return;
+    [660, 880, 1100].forEach((frequency, index) => {
+      const start = ac.currentTime + index * 0.22;
+      const oscillator = ac.createOscillator();
+      const gain = ac.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(frequency, start);
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.18, start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.65);
+      oscillator.connect(gain).connect(ac.destination);
+      oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
+      oscillator.start(start);
+      oscillator.stop(start + 0.7);
+    });
+  } catch { /* A TV without audio still displays the authoritative clock. */ }
+}

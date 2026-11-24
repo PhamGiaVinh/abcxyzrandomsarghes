@@ -166,6 +166,8 @@
     "exitToMain": "Về app chính"
   },
   "tv": {
+    "levelSoundOn": "Âm báo đang bật",
+    "levelSoundOff": "Bật âm báo",
     "level": "Level",
     "blinds": "Blinds",
     "ante": "Ante",
