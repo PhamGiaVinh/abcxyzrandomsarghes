@@ -139,12 +139,31 @@ Do not rerun the original deployment steps or advance Edge versions again.
 1. Use the corrected runner after required checks. Keep the same confirmation
    and set `resume_consumer_run_id=45398872397`. Supply a currently valid,
    successfully restore-verified backup run; never extend its one-hour TTL.
+   The runner may contain newer unrelated UI on main. Activation-only qualifies
+   the separate pristine `3c6e2080a` runtime checkout, and never deploys the runner
+   application. The original deploy path retains full runner/runtime equality.
+   Live Edge versions/JWT and the exact deployed frontend revision/alias are still
+   checked independently. The independently reviewed successor is now exactly
+   `c6e8bea574c438138734323637adf0a50e55c533`, deployment
+   `dpl_4yEFUmAMegq5nUXEX39yPK75ZJUR`, protected workflow `45407139593`.
+   Only the seven listed TV/finance/Layout UI files may differ
+   in the runtime-tree comparison. Unknown runtime differences stop qualification.
+   That exact successor additionally needs the completed successful owner-dispatched
+   workflow and its successful durable frontend receipt. No arbitrary newer
+   deployment is accepted; do not downgrade independently released UI.
 2. The workflow checks the original failed run's owner, main SHA, workflow and
    successful350/consumer steps. It downloads only the retained consumer metadata,
    pins its artifact SHA256
    `9abf1caf4d51221d3086847dfad44ae20dc208be79c323fd358e656e77d817bd`,
    then rechecks live Edge IDs/versions/JWT, exact frontend source/deployment/alias
    and app shells. Any drift stops before activation.
+   For the known prebuilt successor, Vercel reports its source in
+   `meta.githubCommitSha` and `gitDirty="1"` after the reviewed build recipe
+   generates version/cache files. This is accepted only for the exact deployment
+   ID, SHA, protected workflow and durable receipt above, never as a general dirty
+   source exemption. The original clean API-created deployment remains anchored
+   in the original artifact. Current-alias evidence is added to the local metadata
+   receipt and required again by the activation entry point.
 3. The original350 apply and all deployment steps are skipped. Existing activation
    guards still require the exact350 ledger receipt, unmodified function preimages,
    pending351, fresh backup and original protected owner/connection context.

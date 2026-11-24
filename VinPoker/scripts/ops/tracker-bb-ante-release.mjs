@@ -3,10 +3,10 @@ import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildAtomicMigrationQuery, canonicalSqlText } from './ops-1359-release-gate.mjs';
 import { psqlEnvironment, receiptSql, validateContext } from './floor-37-47-protected-apply.mjs';
-import { validateConsumerReceipt } from './tracker-bb-ante-consumers.mjs';
+import { reviewedFrontend, validateActivationReceipt, validateConsumerReceipt } from './tracker-bb-ante-consumers.mjs';
 
 // Reviewed consumer/SQL revision; the runner can be added in a later commit.
 export const releaseSha = '3c6e2080a0afd2f611693ff13b280d368df886a3';
@@ -31,6 +31,20 @@ const oldHashes = ['62ed37150e497f2d17eabfb305df245b', 'b6a5e93807c3ca7117506639
 const newHashes = ['5cce390d5b970846feac276785ab63d9', 'bf33a1c0e9c10ab38e2314939a0caecd', 'f72e77c775b7b195dad149284f542533', '8aeffecdfd90bafded96474ed9562dc4'];
 const sqlString = value => `'${value.replaceAll("'", "''")}'`;
 const hash = value => createHash('sha256').update(value).digest('hex');
+
+export function qualifySourceTrees(releaseRoot, runnerRoot, resumeRun = '', git = (cwd, args) => execFileSync('git', ['-C', cwd, ...args], {encoding:'utf8'})) {
+  assert.ok(resumeRun === '' || resumeRun === '45398872397', 'Unrecognized resume run');
+  const paths = ['src','api','public','index.html','ops.html','package.json','package-lock.json','vite.config.ts','vercel.json','supabase/config.toml','supabase/functions',
+    'supabase/migrations/20270128000350_tracker_bb_ante_atomic_v1.sql','supabase/migrations/20270128000351_tracker_bb_ante_settlement_v1.sql'];
+  assert.equal(git(releaseRoot, ['status','--porcelain','--untracked-files=all','--',...paths]).trim(), '', 'Immutable release tree is dirty');
+  // Activation-only never deploys the runner application. Qualify the separate
+  // pinned release checkout; current live consumer/alias checks still run later.
+  // Keep the stricter runner equality check for the original deploy path.
+  if (resumeRun === '') git(runnerRoot, ['diff','--exit-code',releaseSha,'HEAD','--',...paths]);
+  else git(runnerRoot,['diff','--exit-code',releaseSha,reviewedFrontend.sourceSha,'--',...paths,
+    ...['src/components/Layout.tsx','src/components/Layout.unread.test.tsx','src/components/tv/TvBroadcastBoardView.tsx','src/components/tv/tvBroadcastBoard.css',
+      'src/pages/ClubFinanceDashboard.tsx','src/pages/FinanceWorkspace.css','src/pages/FinanceWorkspace.tsx'].map(path=>`:(exclude)${path}`)]);
+}
 
 export function preparePackage(root) {
   return items.map(item => {
@@ -98,13 +112,17 @@ export function applyPhase(phase, transport, report = () => {}) {
 
 async function main() {
   const mode = process.argv[2];
-  assert.ok(['verify-source', 'preflight', 'apply350', 'activate351'].includes(mode));
+  assert.ok(['verify-source', 'qualify-source-tree', 'preflight', 'apply350', 'activate351'].includes(mode));
   const env = process.env;
   const root = resolve(env.RELEASE_SOURCE_ROOT ?? '.');
   const revision = path => execFileSync('git', ['-C', path, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
   assert.equal(revision(root), releaseSha);
   const phases = preparePackage(root);
   if (mode === 'verify-source') { console.log('TRACKER_BBA_REVIEWED_SOURCE_PASS'); return; }
+  if (mode === 'qualify-source-tree') {
+    qualifySourceTrees(root, fileURLToPath(new URL('../..',import.meta.url)), env.RESUME_CONSUMER_RUN_ID);
+    console.log('TRACKER_BBA_IMMUTABLE_RUNTIME_TREE_PASS'); return;
+  }
   assert.equal(env.GITHUB_EVENT_NAME, 'workflow_dispatch');
   assert.equal(env.GITHUB_REPOSITORY, 'PhamGiaVinh/abcxyzrandomsarghes');
   assert.equal(env.RELEASE_SHA, releaseSha);
@@ -127,6 +145,7 @@ async function main() {
     // from this revision before it may activate new-cohort chip rules.
     const consumers = JSON.parse(readFileSync(env.CONSUMER_RECEIPT_PATH, 'utf8'));
     validateConsumerReceipt(consumers);
+    if(env.RESUME_CONSUMER_RUN_ID){assert.equal(env.RESUME_CONSUMER_RUN_ID,'45398872397');validateActivationReceipt(consumers);}
     assert.equal(consumers.sourceSha, releaseSha);
     assert.equal(consumers.frontend.projectId, 'prj_wLBZF7nG5O2bffM9Qu1v2rgMuMwk');
     assert.equal(consumers.frontend.hostname, 'vinpoker.vercel.app');

@@ -30,5 +30,7 @@ jobs:
           RELEASE_SOURCE_ROOT: ${{ github.workspace }}/release/VinPoker
         run: |
           node scripts/ops/tracker-bb-ante-release.mjs verify-source
+          git fetch origin c6e8bea574c438138734323637adf0a50e55c533
+          RESUME_CONSUMER_RUN_ID=45398872397 node scripts/ops/tracker-bb-ante-release.mjs qualify-source-tree
           node --test scripts/ops/tracker-bb-ante-release.test.mjs
           node --test scripts/ops/tracker-bb-ante-consumers.test.mjs
