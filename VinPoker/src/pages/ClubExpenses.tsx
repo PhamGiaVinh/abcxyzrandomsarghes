@@ -211,7 +211,7 @@ type ExpenseInput=Parameters<ReturnType<typeof useRecordClubExpense>['mutateAsyn
 function parseExpenseAmount(input: string): number | null {
   const value = input.trim();
   if (!/^-?(?:\d+|[1-9]\d{0,2}(?:\.\d{3})+)$/.test(value)) return null;
-  const amount = Number(value.replaceAll(".", ""));
+  const amount = Number(value.replace(/\./g, ""));
   return Number.isSafeInteger(amount) ? amount : null;
 }
 
