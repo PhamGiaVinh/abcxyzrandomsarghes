@@ -44,6 +44,27 @@ describe("DealerPtWageTab policy control", () => {
     });
   });
 
+  it('uses the scoped finance endpoint and rejects another club response',async()=>{
+    testState.auth={isAdmin:false,isClubAdmin:false,isClubOwner:false};
+    testState.rpc.mockResolvedValue({data:{club_id:'other-club',as_of:'2026-11-25T15:00:00Z',dealers:[]},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead readOnly/>);
+    await screen.findByText('Không xác minh được phạm vi lương PT.');
+    expect(testState.rpc.mock.calls.some(([name])=>name==='get_finance_dealer_pt_wages_v1')).toBe(true);
+    expect(screen.queryByText('Chưa có dealer part-time đang hoạt động')).toBeNull();
+  });
+
+  it('forces the finance reader to remain read-only even for an administrator',async()=>{
+    testState.rpc.mockResolvedValue({data:{club_id:'club-1',as_of:'2026-11-25T15:00:00Z',dealers:[{
+      dealer_id:'33333333-3333-4333-8333-333333333333',full_name:'FINANCE PT',hourly_rate_vnd:60000,
+      accrued_minutes:1,balance_vnd:1000,last_reset_at:null,current_shift_open:false,current_shift_start:null,last_payment:null,
+    }]},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead readOnly={false} finalizeStatements/>);
+    await screen.findByText('FINANCE PT');
+    expect(testState.rpc.mock.calls.every(([name])=>name==='get_finance_dealer_pt_wages_v1')).toBe(true);
+    expect(screen.queryByRole('button',{name:'Thanh toán'})).toBeNull();
+    expect(screen.queryByRole('button',{name:'Chốt phiếu PT'})).toBeNull();
+  });
+
   it('uses the statement flow for a cashier and never offers the legacy balance payment when statements are enabled', async () => {
     testState.auth = { isAdmin: false, isClubAdmin: false, isClubOwner: false };
     testState.rpc.mockImplementation(async name => ({ data: name === 'get_club_pt_wages' ? { dealers: [{
