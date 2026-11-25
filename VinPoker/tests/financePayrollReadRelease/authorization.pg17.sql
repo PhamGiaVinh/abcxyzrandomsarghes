@@ -7,7 +7,10 @@ CREATE TEMP TABLE auth_before AS SELECT jsonb_build_object(
  'settlements',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.dealer_pt_wage_settlements s)) fingerprint;
 SELECT set_config('test.read_statement',(SELECT id::text FROM public.dealer_payroll_statements WHERE dealer_id='18000000-0000-4000-8000-000000000051'),true);
 DELETE FROM public.club_accountants WHERE club_id='18000000-0000-4000-8000-000000000001' AND user_id='18000000-0000-4000-8000-000000000014';
-INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES('18000000-0000-4000-8000-000000000002','18000000-0000-4000-8000-000000000011','Other TEST club','TEST','approved');
+-- Preserve the real one-club-per-owner invariant in cross-CLB test data.
+INSERT INTO auth.users(id) VALUES('18000000-0000-4000-8000-000000000015');
+INSERT INTO public.profiles(user_id,display_name) VALUES('18000000-0000-4000-8000-000000000015','Other TEST club owner');
+INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES('18000000-0000-4000-8000-000000000002','18000000-0000-4000-8000-000000000015','Other TEST club','TEST','approved');
 INSERT INTO public.club_accountants(club_id,user_id) VALUES('18000000-0000-4000-8000-000000000002','18000000-0000-4000-8000-000000000014');
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub='18000000-0000-4000-8000-000000000014';
