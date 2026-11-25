@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/finance-expense-scope.yml'
       - 'VinPoker/tests/financeExpenses/**'
+      - 'VinPoker/supabase/pending-migrations/20270128000354_finance_expense_scope_idempotency.sql'
 permissions:
   actions: read
   contents: read
@@ -53,6 +54,21 @@ jobs:
           node scripts/ops/restore-schema-test-baseline.mjs
       - name: Reproduce existing bugs without applying product changes
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financeExpenses/scope.baseline.sql
+      - name: Save exact rollback preimage and install isolated candidate
+        run: |
+          set -euo pipefail
+          psql -X -At -v ON_ERROR_STOP=1 -c "SELECT pg_get_functiondef('public.record_club_expense(uuid,public.expense_category,bigint,timestamptz,text,text,text,uuid,uuid,text,uuid,text)'::regprocedure)" > "$RUNNER_TEMP/expense-reader-original.sql"
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/20270128000354_finance_expense_scope_idempotency.sql
+      - name: Verify valid adjustments, exact retries, rejection without writes and revoked roles
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financeExpenses/scope.candidate.sql
+      - name: Exercise same-key intents on independent connections with an observed lock barrier
+        working-directory: VinPoker
+        run: bash tests/financeExpenses/scope.concurrent.sh "$RUNNER_TEMP/finance-expense-race"
+      - name: Verify rollback restores original RPC source
+        run: |
+          set -euo pipefail
+          psql -X -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/expense-reader-original.sql"
+          test "$(psql -X -Atqc "SELECT md5(prosrc) FROM pg_proc WHERE oid='public.record_club_expense(uuid,public.expense_category,bigint,timestamptz,text,text,text,uuid,uuid,text,uuid,text)'::regprocedure")" = ec4209e4c6e11503ecd4e52c5d4be0ee
       - name: Remove runner-local schema artifact
         if: always()
         run: rm -rf -- "$RUNNER_TEMP/finance-expense-schema"
