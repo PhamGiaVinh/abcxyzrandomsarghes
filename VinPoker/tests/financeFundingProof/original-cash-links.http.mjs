@@ -26,7 +26,7 @@ try{
   console.log('FUNDING_ORIGINAL_CASE',kind);
   const club=id(100+index),owner=id(200+index),cashier=id(300+index),employee=id(400+index),dealer=id(500+index);
   sql(`INSERT INTO auth.users(id) VALUES('${owner}'),('${cashier}'),('${employee}');
-   INSERT INTO public.profiles(user_id,display_name) VALUES('${owner}','TEST funding owner'),('${cashier}','TEST funding cashier'),('${employee}','TEST funding employee');
+   INSERT INTO public.profiles(user_id,display_name) VALUES('${owner}','TEST funding owner ${index}'),('${cashier}','TEST funding cashier ${index}'),('${employee}','TEST funding employee ${index}');
    INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES('${club}','${owner}','TEST isolated funding ${index}','TEST','approved');
    INSERT INTO public.club_cashiers(club_id,user_id) VALUES('${club}','${cashier}');
    INSERT INTO public.cashier_tour_settings(club_id,enabled) VALUES('${club}',true);`);
