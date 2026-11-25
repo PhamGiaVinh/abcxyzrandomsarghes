@@ -1,0 +1,82 @@
+name: Expense attribution browser and HTTP qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/finance-expense-attribution.yml'
+      - 'VinPoker/src/components/ExpenseAttribution*'
+      - 'VinPoker/src/hooks/clubExpenses/useClubExpenses.ts'
+      - 'VinPoker/src/hooks/clubExpenses/useRecordClubExpense.test.tsx'
+      - 'VinPoker/src/pages/ClubExpenses*'
+      - 'VinPoker/src/lib/clubExpenses/mockExpenses.ts'
+      - 'VinPoker/src/lib/featureFlags.ts'
+      - 'VinPoker/src/lib/sessionReadEpoch.ts'
+      - 'VinPoker/src/hooks/useAuth.tsx'
+      - 'VinPoker/tests/financeExpenseAttribution/**'
+permissions: {actions: read, contents: read}
+jobs:
+  expense-attribution:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    services:
+      postgres:
+        image: postgres:17
+        env: {POSTGRES_HOST_AUTH_METHOD: trust, POSTGRES_DB: vinpoker_ops_expense_attribution}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -d vinpoker_ops_expense_attribution"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_expense_attribution
+      SOURCE_SHA: '${{ github.event.pull_request.head.sha }}'
+      CAPTURE_RUN: '45651278424'
+      CAPTURE_SHA: 'c9dba24211152ddf5f010a46d0afab118cfbf482'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ github.event.pull_request.head.sha }}', persist-credentials: false}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Restore only approved schema into empty loopback database
+        working-directory: VinPoker
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CAPTURE_RUN" > "$RUNNER_TEMP/bank-capture.json"
+          jq -e --arg sha "$CAPTURE_SHA" --arg owner "$GITHUB_REPOSITORY_OWNER" '.conclusion=="success" and .head_sha==$sha and .head_branch=="main" and .event=="workflow_dispatch" and .actor.login==$owner and .path==".github/workflows/capture-live-public-schema.yml"' "$RUNNER_TEMP/bank-capture.json" >/dev/null
+          export SCHEMA_ARTIFACT_DIR="$RUNNER_TEMP/expense-attribution-schema"
+          gh run download "$CAPTURE_RUN" -R "$GITHUB_REPOSITORY" -n live-public-schema -D "$SCHEMA_ARTIFACT_DIR"
+          node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
+          test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
+          node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Install only reviewed 354 reference and retry guard in isolated schema
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270128000354_finance_expense_scope_idempotency.sql
+      - name: Install locked dependencies and browser
+        working-directory: VinPoker
+        run: |
+          npm ci --ignore-scripts --no-audit --fund=false
+          npx playwright install --with-deps chromium
+      - name: Verify race failures and affected component lint
+        working-directory: VinPoker
+        run: |
+          npx vitest run src/hooks/clubExpenses/useRecordClubExpense.test.tsx src/pages/ClubExpenses.test.tsx src/components/ExpenseAttributionFields.test.tsx src/components/ExpenseAttributionForm.test.tsx --maxWorkers=1 --minWorkers=1
+          npx eslint src/components/ExpenseAttributionFields.tsx src/hooks/clubExpenses/useClubExpenses.ts src/pages/ClubExpenses.tsx src/hooks/clubExpenses/useRecordClubExpense.test.tsx src/pages/ClubExpenses.test.tsx src/components/ExpenseAttributionFields.test.tsx src/components/ExpenseAttributionForm.test.tsx
+      - name: Verify form attribution retry and expense report through actual API
+        working-directory: VinPoker
+        run: node tests/financeExpenseAttribution/attribution.http.mjs
+      - name: Check actual application references and build
+        working-directory: VinPoker
+        env: {NODE_OPTIONS: '--max-old-space-size=4096'}
+        run: |
+          npx tsc -b --pretty false
+          npm run build
+      - name: Upload only synthetic browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: expense-attribution-browser-sanitized, path: '${{ runner.temp }}/expense-attribution-browser/*', if-no-files-found: warn, retention-days: 30}
+      - name: Remove runner-local schema
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/expense-attribution-schema"

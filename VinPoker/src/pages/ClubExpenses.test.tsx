@@ -1,7 +1,8 @@
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {MemoryRouter} from 'react-router-dom';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
-const f=vi.hoisted(()=>({read:vi.fn(),write:vi.fn(),pendingInput:null as any,clubError:false,clubs:[{id:'club-a',name:'LOCAL TEST A'}],summary:{data:undefined as any,isError:true,isLoading:false,isFetching:false,refetch:vi.fn()}}));
+const f=vi.hoisted(()=>({read:vi.fn(),write:vi.fn(),pendingInput:null as unknown,clubError:false,clubs:[{id:'club-a',name:'LOCAL TEST A'}],summary:{data:undefined as unknown,isError:true,isLoading:false,isFetching:false,refetch:vi.fn()}}));
+vi.mock('@/integrations/supabase/client',()=>({supabase:{from:vi.fn()}}));
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({loading:false,isClubOwner:true})}));
 vi.mock('@/lib/featureFlags',()=>({FEATURES:{clubExpenses:true}}));
 vi.mock('@/lib/clubExpenses/dataSource',()=>({clubExpensesSource:()=> 'live'}));

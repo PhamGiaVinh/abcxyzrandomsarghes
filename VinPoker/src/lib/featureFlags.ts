@@ -1695,6 +1695,9 @@ export const FEATURES = {
    * 20261236000000); the entry page + accountant Sổ chi phí tab write to Supabase. Kill-switch: set false.
    */
   clubExpenses: true,
+  // Requires exact expense reference-scope/idempotency guards (354) and owner UAT.
+  // Optional metadata only: no approval, cash-source or recognition-policy change.
+  clubExpenseAttribution: false,
   /**
    * staffSalaryChot — the salary chốt/duyệt workspace (accountant computes + chốt the monthly
    * salary and submits it; the club owner approves/rejects; a run is marked paid only after

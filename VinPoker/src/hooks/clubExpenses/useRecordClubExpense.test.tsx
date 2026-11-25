@@ -21,7 +21,7 @@ it('retains the request identity after a lost response and permits a fresh ident
  const keys=f.rpc.mock.calls.map(c=>c[1].p_idempotency_key);expect(keys[1]).toBe(keys[0]);await act(async()=>{await v.result.current.mutateAsync(input);});expect(f.rpc.mock.calls[2][1].p_idempotency_key).not.toBe(keys[0]);
 });
 it('retains an uncertain request through remount and restores its draft',async()=>{
- f.rpc.mockResolvedValueOnce({data:null,error:Error('lost')}).mockResolvedValue({data:receipt,error:null});const v=mount();await act(async()=>{await expect(v.result.current.mutateAsync(input)).rejects.toThrow();});v.unmount();const next=mount();expect((next.result.current as any).pendingInput).toEqual(input);await act(async()=>{await next.result.current.mutateAsync(input);});expect(f.rpc.mock.calls[1][1].p_idempotency_key).toBe(f.rpc.mock.calls[0][1].p_idempotency_key);
+ f.rpc.mockResolvedValueOnce({data:null,error:Error('lost')}).mockResolvedValue({data:receipt,error:null});const v=mount();await act(async()=>{await expect(v.result.current.mutateAsync(input)).rejects.toThrow();});v.unmount();const next=mount();expect(next.result.current.pendingInput).toEqual(input);await act(async()=>{await next.result.current.mutateAsync(input);});expect(f.rpc.mock.calls[1][1].p_idempotency_key).toBe(f.rpc.mock.calls[0][1].p_idempotency_key);
 });
 it('does not issue a changed expense while its previous outcome is unknown',async()=>{
  f.rpc.mockResolvedValue({data:null,error:Error('lost')});const v=mount();await act(async()=>{await expect(v.result.current.mutateAsync(input)).rejects.toThrow();await expect(v.result.current.mutateAsync({...input,amountVnd:20000})).rejects.toThrow();});expect(f.rpc).toHaveBeenCalledTimes(1);
@@ -87,9 +87,28 @@ it.skipIf(!process.env.VINPOKER_EXPENSE_RECORD_NATIVE_RUNTIME)('retries the actu
  });
  try{
   const first=mount(fixture.club);await act(async()=>{await expect(first.result.current.mutateAsync(input)).rejects.toThrow();});expect(facts().count).toBe(before.count+1);expect(f.success).not.toHaveBeenCalled();first.unmount();
-  const retry=mount(fixture.club);expect(retry.result.current.pendingInput).toEqual(input);await act(async()=>{await retry.result.current.mutateAsync(input);});expect(keys).toHaveLength(2);expect(keys[0]).toBe(keys[1]);expect((receipts[1] as any).idempotent).toBe(true);expect((receipts[1] as any).expense_id).toBe((receipts[0] as any).expense_id);expect(f.success).toHaveBeenCalledTimes(1);
+  const retry=mount(fixture.club);expect(retry.result.current.pendingInput).toEqual(input);await act(async()=>{await retry.result.current.mutateAsync(input);});expect(keys).toHaveLength(2);expect(keys[0]).toBe(keys[1]);expect((receipts[1] as Record<string,unknown>).idempotent).toBe(true);expect((receipts[1] as Record<string,unknown>).expense_id).toBe((receipts[0] as Record<string,unknown>).expense_id);expect(f.success).toHaveBeenCalledTimes(1);
   const after=facts();expect(after.count).toBe(before.count+1);expect(after.total).toBe(before.total+10000);expect(after.otherExpenses).toBe(before.otherExpenses);native('protected');
   const finance=native('sql',`BEGIN READ ONLY;${guard}${ownerAuth}SELECT public.get_club_finance_summary_v2('2026-10-31','2026-10-31','${fixture.club}');ROLLBACK;`);expect(finance.cost.clubExpenses).toBe(after.total);expect(finance.net).toBe(-after.total);
   journal.hookRetry={pass:true,keys,receipts,before,after,finance,remountRestoredDraft:true,withheldResponseAfterActualCommit:true,deliveryFaultModelled:true,hostedNetwork:false};journal.phase='QUALIFIED_NATIVE_EXPENSE_CONCURRENCY_AND_CLIENT_POST_COMMIT_RETRY';save();
  }catch(error){journal.hookError=String(error);save();throw error;}
 },30000);
+
+it('preserves tournament evidence and its identity after an unknown acknowledgement and remount',async()=>{
+ const linked={...input,tournamentId:'18100000-0000-4000-8000-000000000001',attachmentUrl:'https://example.test/receipt.pdf'};
+ f.rpc.mockResolvedValueOnce({data:null,error:Error('lost')}).mockResolvedValue({data:receipt,error:null});
+ const v=mount();await act(async()=>{await expect(v.result.current.mutateAsync(linked)).rejects.toThrow();});v.unmount();const next=mount();
+ expect(next.result.current.pendingInput).toMatchObject(linked);
+ await act(async()=>{await next.result.current.mutateAsync(linked);});
+ expect(f.rpc.mock.calls[0][1]).toMatchObject({p_tournament_id:linked.tournamentId,p_series_id:null,p_attachment_url:linked.attachmentUrl});
+ expect(f.rpc.mock.calls[1][1]).toEqual(f.rpc.mock.calls[0][1]);
+});
+it('does not silently reuse an unknown expense receipt for another series allocation',async()=>{
+ f.rpc.mockResolvedValue({data:null,error:Error('lost')});const v=mount();
+ await act(async()=>{await expect(v.result.current.mutateAsync({...input,seriesId:'18100000-0000-4000-8000-000000000002'})).rejects.toThrow();
+  await expect(v.result.current.mutateAsync({...input,seriesId:'18100000-0000-4000-8000-000000000003'})).rejects.toThrow();});
+ expect(f.rpc).toHaveBeenCalledTimes(1);
+});
+it.each([{tournamentId:'invalid'}, {tournamentId:'18100000-0000-4000-8000-000000000001',seriesId:'18100000-0000-4000-8000-000000000002'}, {attachmentUrl:'javascript:alert(1)'}])('rejects an invalid/ambiguous attribution before sending %j',async(link)=>{
+ const v=mount();f.rpc.mockResolvedValue({data:receipt,error:null});await act(async()=>{await expect(v.result.current.mutateAsync({...input,...link})).rejects.toThrow();});expect(f.rpc).not.toHaveBeenCalled();
+});

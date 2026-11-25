@@ -88,6 +88,9 @@ export function mockRecordExpense(input: {
   description?: string;
   paymentStatus: ExpensePaymentStatus;
   paymentSource?: ExpensePaymentSource | null;
+  tournamentId?: string;
+  seriesId?: string;
+  attachmentUrl?: string;
 }): ClubExpenseRow {
   const all = readAll();
   const rows = all[input.clubId] ?? seedRows(input.clubId);
@@ -100,6 +103,9 @@ export function mockRecordExpense(input: {
     description: input.description,
     paymentStatus: input.paymentStatus,
     paymentSource: input.paymentSource ?? null,
+    tournamentId:input.tournamentId??null,
+    seriesId:input.seriesId??null,
+    attachmentUrl:input.attachmentUrl??null,
     createdAt: new Date().toISOString(),
   };
   all[input.clubId] = [row, ...rows];
