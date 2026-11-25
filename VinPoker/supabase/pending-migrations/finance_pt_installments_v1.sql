@@ -6,7 +6,19 @@
 BEGIN;
 SET LOCAL lock_timeout='5s';
 SET LOCAL statement_timeout='30s';
+-- Serialize the index preimage check with DDL on the canonical payment table.
+-- A matching name alone is insufficient: never drop an unrelated/weakened index.
+LOCK TABLE public.dealer_pt_wage_payments IN ACCESS EXCLUSIVE MODE;
 DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT FROM pg_catalog.pg_index i
+    WHERE i.indexrelid=to_regclass('public.dealer_pt_wage_payments_statement_uq')
+      AND i.indrelid='public.dealer_pt_wage_payments'::regclass
+      AND i.indisunique AND i.indisvalid AND i.indisready AND i.indislive AND i.indimmediate
+      AND NOT i.indisprimary AND NOT i.indisexclusion
+      AND pg_catalog.pg_get_indexdef(i.indexrelid)=
+        'CREATE UNIQUE INDEX dealer_pt_wage_payments_statement_uq ON public.dealer_pt_wage_payments USING btree (statement_id) WHERE (statement_id IS NOT NULL)'
+  ) THEN RAISE EXCEPTION 'PT_INSTALLMENT_LEGACY_INDEX_DRIFT'; END IF;
   IF to_regclass('public.finance_pt_installment_plans_v1') IS NOT NULL
     OR to_regprocedure('public.record_pt_statement_installment_v1(uuid,text,bigint,text,text,uuid,text)') IS NOT NULL
   THEN RAISE EXCEPTION 'PT_INSTALLMENT_NAMESPACE_COLLISION'; END IF;
