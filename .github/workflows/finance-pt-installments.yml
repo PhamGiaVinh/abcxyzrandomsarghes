@@ -55,6 +55,9 @@ jobs:
           export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
           test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
           node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Refuse drifted legacy indexes without partial migration
+        working-directory: VinPoker
+        run: bash tests/financePayrollInstallments/installments.preflight.sh "$RUNNER_TEMP/pt-preflight"
       - name: Install pending extension on empty isolated schema only
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql
       - name: Verify legacy full-payment behavior after affected insert guard changes
