@@ -6,6 +6,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
 import { formatVND } from '@/lib/format';
+import {FEATURES} from '@/lib/featureFlags';
+import {PtStatementDetailsDialog} from './PtStatementDetailsDialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ptStatementReceiptSchema as Receipt, loadPtStatementPayment, retainPtStatementPayment,
@@ -35,6 +37,7 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
   const [payConfirm, setPayConfirm] = useState(false);
   const [method, setMethod] = useState<'cash' | 'bank'>('cash');
   const [reference, setReference] = useState('');
+  const [detailsOpen,setDetailsOpen]=useState(false);
 
   async function read(requestId: string | null) {
     const result = await observeTrackerContextRead((supabase.rpc as unknown as Rpc)('get_part_time_payroll_statement_status_v1', {
@@ -60,7 +63,10 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
       if (!alive.current) return;
       setStatement(row); setReady(true); setError(null);
     } catch {
-      if (alive.current) setError('Chưa xác minh được phiếu PT. Hãy tải lại trước khi chốt.');
+      if (alive.current) {
+        setStatement(null);setDetailsOpen(false);setConfirm(false);setPayConfirm(false);
+        setError('Chưa xác minh được phiếu PT. Hãy tải lại trước khi chốt.');
+      }
     }
   }
 
@@ -148,6 +154,8 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
 
   const active = statement && !['voided', 'replaced'].includes(statement.state);
   return <div className="mt-3 space-y-2 border-t border-border pt-3">
+    {FEATURES.financePtStatementDetails && statement && <Button size="sm" variant="outline" className="min-h-11" onClick={()=>setDetailsOpen(true)}>Xem phiếu &amp; lịch sử chi</Button>}
+    {FEATURES.financePtStatementDetails && <PtStatementDetailsDialog statement={statement} open={detailsOpen} onOpenChange={setDetailsOpen}/>}
     {active && <div role="status" className="space-y-1 text-xs"><p>Phiếu đã chốt: {formatVND(statement.net_amount_vnd)} · {statement.payment_id ? 'Đã ghi nhận chi' : 'Chưa chi'}</p>
       <p>Đã chi: {formatVND(statement.payment_id ? statement.net_amount_vnd : 0)} · Còn phải trả: {formatVND(statement.payment_id ? 0 : statement.net_amount_vnd)}</p>
       {statement.payment_id && <p className="break-all">Mã chứng từ: {statement.payment_id}</p>}

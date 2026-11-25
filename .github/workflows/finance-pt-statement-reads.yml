@@ -1,0 +1,89 @@
+name: PT standalone read release qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/finance-pt-statement-reads.yml'
+      - 'VinPoker/supabase/pending-migrations/finance_pt_statement_reads_v1*'
+      - 'VinPoker/supabase/migrations/20270128000355_finance_pt_statement_reads_v1.sql'
+      - 'VinPoker/tests/financePayrollReadRelease/**'
+      - 'VinPoker/src/components/cashier/PtStatement*'
+      - 'VinPoker/src/components/dealer-app/salary/Dealer*'
+      - 'VinPoker/src/lib/ptStatementDetails*'
+      - 'VinPoker/src/lib/featureFlags.ts'
+permissions: {actions: read, contents: read}
+jobs:
+  standalone-read:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env: {POSTGRES_HOST_AUTH_METHOD: trust, POSTGRES_DB: vinpoker_ops_pt_read_release}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -d vinpoker_ops_pt_read_release"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_pt_read_release
+      CAPTURE_RUN: '45651278424'
+      CAPTURE_SHA: 'c9dba24211152ddf5f010a46d0afab118cfbf482'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ github.event.pull_request.head.sha }}', persist-credentials: false}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Verify captured schema provenance and restore empty loopback database
+        working-directory: VinPoker
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CAPTURE_RUN" > "$RUNNER_TEMP/pt-read-capture.json"
+          jq -e --arg sha "$CAPTURE_SHA" --arg owner "$GITHUB_REPOSITORY_OWNER" '.conclusion=="success" and .head_sha==$sha and .head_branch=="main" and .event=="workflow_dispatch" and .actor.login==$owner and .path==".github/workflows/capture-live-public-schema.yml"' "$RUNNER_TEMP/pt-read-capture.json" >/dev/null
+          export SCHEMA_ARTIFACT_DIR="$RUNNER_TEMP/pt-read-schema"
+          gh run download "$CAPTURE_RUN" -R "$GITHUB_REPOSITORY" -n live-public-schema -D "$SCHEMA_ARTIFACT_DIR"
+          node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
+          test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
+          node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Verify clean install rollback and drift refusals in cloned empty databases
+        working-directory: VinPoker
+        run: bash tests/financePayrollReadRelease/preflight.sh "$RUNNER_TEMP/pt-read-preflight"
+      - name: Install only read RPCs and preserve existing routine relation and grant catalog
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          psql -XAt -v ON_ERROR_STOP=1 -f tests/financePayrollReadRelease/catalog-fingerprint.sql > "$RUNNER_TEMP/pt-read-catalog-before"
+          diff --strip-trailing-cr supabase/pending-migrations/finance_pt_statement_reads_v1.sql supabase/migrations/20270128000355_finance_pt_statement_reads_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000355_finance_pt_statement_reads_v1.sql
+          test "$(psql -XAt -v ON_ERROR_STOP=1 -f tests/financePayrollReadRelease/catalog-fingerprint.sql)" = "$(cat "$RUNNER_TEMP/pt-read-catalog-before")"
+      - name: Install locked application and pinned browser
+        working-directory: VinPoker
+        run: |
+          npm ci --ignore-scripts --no-audit --fund=false
+          npx playwright install --with-deps chromium
+      - name: Verify real legacy 5M full pay and assembled browser read entries
+        working-directory: VinPoker
+        run: node tests/financePayrollReadRelease/read-release.http.mjs
+      - name: Verify recipient pagination and accountant revocation on original schema
+        run: |
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollReadRelease/recipient-history.pg17.sql
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollReadRelease/authorization.pg17.sql
+      - name: Verify affected read components and unchanged legacy payment client
+        working-directory: VinPoker
+        run: npx vitest run src/lib/ptStatementDetails.test.ts src/lib/ptStatementPayment.test.ts src/components/cashier/PtStatementDetailsDialog.test.tsx src/components/cashier/PtStatementControl.test.tsx src/components/dealer-app/salary/DealerPtStatementHistory.test.tsx src/components/dealer-app/salary/DealerSalaryScreen.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Check application references and build
+        working-directory: VinPoker
+        env: {NODE_OPTIONS: '--max-old-space-size=4096'}
+        run: |
+          npx tsc -b --pretty false
+          npm run build
+      - name: Upload only sanitized synthetic browser images
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: pt-read-release-browser-sanitized, path: '${{ runner.temp }}/pt-read-browser/*.png', if-no-files-found: warn, retention-days: 30}
+      - name: Remove runner-local schema
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/pt-read-schema"

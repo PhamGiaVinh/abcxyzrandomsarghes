@@ -2,8 +2,9 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PtStatementControl } from './PtStatementControl';
 
-const state = vi.hoisted(() => ({ actor: '11111111-1111-4111-8111-111111111111', rpc: vi.fn() }));
-vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: state.actor }, session: null }) }));
+const state = vi.hoisted(() => ({ actor: '11111111-1111-4111-8111-111111111111', rpc: vi.fn(), details:false,session:{access_token:'TEST_OPERATOR'} }));
+vi.mock('@/lib/featureFlags',()=>({FEATURES:{get financePtStatementDetails(){return state.details;}}}));
+vi.mock('@/hooks/useAuth', () => ({ useAuth: () => ({ user: { id: state.actor }, session: state.session }) }));
 vi.mock('@/integrations/supabase/client', () => ({ supabase: { rpc: state.rpc } }));
 const club = '22222222-2222-4222-8222-222222222222', dealer = '33333333-3333-4333-8333-333333333333';
 const props = () => ({ clubId: club, dealerId: dealer, dealerName: 'Dealer TEST', onFinalized: vi.fn() });
@@ -11,7 +12,29 @@ const receipt = (request: string) => ({ statement_id: '44444444-4444-4444-8444-4
   club_id: club, dealer_id: dealer, state: 'finalized', net_amount_vnd: 102478,
   finalized_at: '2026-10-30T10:00:00+07:00', payment_id: null, statement_hash: 'a'.repeat(64) });
 const key = () => `vinpoker:pt-statement:v1:${state.actor}:${club}:${dealer}`;
-beforeEach(() => { sessionStorage.clear(); state.actor = '11111111-1111-4111-8111-111111111111'; state.rpc.mockReset(); });
+beforeEach(() => { sessionStorage.clear(); state.actor = '11111111-1111-4111-8111-111111111111'; state.rpc.mockReset();state.details=false; });
+
+describe('read-only statement entry',()=>{
+  it('opens frozen detail without changing the legacy payment seam',async()=>{
+    state.details=true;const frozen=receipt('55555555-5555-4555-8555-555555555555');
+    state.rpc.mockImplementation(async(name)=>({error:null,data:name==='get_pt_statement_installments_v1'
+      ?{...frozen,dealer_name:'Dealer TEST',club_name:'CLB TEST',as_of:frozen.finalized_at,
+        approved_amount_vnd:frozen.net_amount_vnd,gross_amount_vnd:frozen.net_amount_vnd,deduction_amount_vnd:0,
+        paid_total_vnd:0,remaining_vnd:frozen.net_amount_vnd,lines:[],payments:[]}:frozen}));
+    render(<PtStatementControl {...props()}/>);
+    fireEvent.click(await screen.findByRole('button',{name:'Xem phiếu & lịch sử chi'}));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('Phiếu lương PT');
+    await screen.findByText('CLB TEST');
+    expect(state.rpc.mock.calls.every(([name])=>['get_part_time_payroll_statement_status_v1','get_pt_statement_installments_v1'].includes(name))).toBe(true);
+  });
+  it('removes old private statement facts after a failed status recheck',async()=>{
+    state.rpc.mockResolvedValueOnce({error:null,data:receipt('55555555-5555-4555-8555-555555555555')})
+      .mockResolvedValue({data:null,error:{code:'42501'}});
+    render(<PtStatementControl {...props()}/>);await screen.findByText(/Phiếu đã chốt:/);
+    fireEvent(window,new Event('focus'));await screen.findByRole('alert');
+    expect(screen.queryByText(/Phiếu đã chốt:/)).toBeNull();
+  });
+});
 
 describe('cashier pays the finalized PT statement', () => {
   it('lets the cashier pay a frozen statement and reconciles a lost response without calling the legacy balance API', async () => {
