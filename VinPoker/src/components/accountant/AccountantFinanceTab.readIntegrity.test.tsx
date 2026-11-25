@@ -49,3 +49,5 @@ it('explains missing event dates as a data issue',()=>{
  expect(screen.getByRole('alert')).toHaveTextContent('thiếu ngày bắt đầu');
  expect(screen.getByRole('alert')).not.toHaveTextContent('kiểm tra kết nối');
 });
+
+it('reads an inherited report range instead of replacing it with this month',()=>{render(<AccountantFinanceTab clubId="B" dateRange={{from:"2026-10-01",to:"2026-10-20"}} />);expect(fixture.read).toHaveBeenLastCalledWith("B","2026-10-01","2026-10-20");});

@@ -25,3 +25,5 @@ it("keeps three work tabs and loads personnel settings only on demand",async()=>
 });
 
 it.each([["report","Report fixture"],["expenses","Expense fixture"],["salary","Salary fixture"]])("opens requested %s work without another tab click",(tab,text)=>{render(<MemoryRouter initialEntries={["/accountant?tab="+tab]}><AccountantDashboard/></MemoryRouter>);expect(screen.getByText(text)).toBeVisible();});
+
+it("does not fall back to the first club when a linked club is unavailable",()=>{render(<MemoryRouter initialEntries={["/accountant?club=other-club&tab=salary"]}><AccountantDashboard/></MemoryRouter>);expect(screen.queryByText("Salary fixture")).toBeNull();expect(screen.queryByText("Dealer fixture")).toBeNull();});
