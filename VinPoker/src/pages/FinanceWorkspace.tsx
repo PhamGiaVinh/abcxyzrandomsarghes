@@ -1,13 +1,14 @@
 import type { ReactNode } from "react";
 import { Navigate, NavLink, Link, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { financeDestination } from "@/lib/financeNavigation";
 import { cn } from "@/lib/utils";
 import "./FinanceWorkspace.css";
 
 /** Shared navigation only; each existing page retains its own data and access guards. */
 export default function FinanceWorkspace() {
   const { isAccountant, isClubOwner, isAdmin, isClubAdmin, isCashier, loading, rolesLoading, rolesError } = useAuth();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const landing = pathname === "/finance";
 
   if (landing && rolesError) return <p role="alert" className="p-4">Chưa xác minh được quyền CLB. Vui lòng tải lại trang.</p>;
@@ -15,7 +16,7 @@ export default function FinanceWorkspace() {
     const destination = isClubOwner || isAdmin || isClubAdmin
       ? "/club/admin/finance"
       : isAccountant ? "/accountant" : isCashier ? "/cashier" : "/";
-    return <Navigate to={destination} replace />;
+    return <Navigate to={financeDestination(destination, search)} replace />;
   }
 
   return (
@@ -47,7 +48,7 @@ export default function FinanceWorkspace() {
           )}
         </nav>
       </div>
-      {(isAccountant || isClubOwner || isAdmin) && <div className="flex flex-wrap gap-3 text-sm"><Link className="inline-flex min-h-11 items-center text-primary underline" to="/accountant?tab=expenses">Khoản chi và chi phí CLB</Link></div>}
+      {(isAccountant || isClubOwner || isAdmin) && <div className="flex flex-wrap gap-3 text-sm"><Link className="inline-flex min-h-11 items-center text-primary underline" to={financeDestination("/accountant?tab=expenses", search)}>Khoản chi và chi phí CLB</Link></div>}
       <Outlet />
       {(isClubOwner || isAdmin || isClubAdmin) && (
         <details className="rounded-lg border border-border px-3 py-2 text-sm">
@@ -69,7 +70,7 @@ function FinanceLink({ to, label, landing, children }: {
   const target = new URL(to, "https://local.invalid");
   const selected = pathname === target.pathname && (target.pathname !== "/accountant" || (new URLSearchParams(search).get("tab") ?? "salary") === target.searchParams.get("tab"));
   return (
-    <Link to={to} aria-current={selected ? "page" : undefined} className={cn(
+    <Link to={financeDestination(to, search)} aria-current={selected ? "page" : undefined} className={cn(
       "min-h-11 flex-1 rounded-lg px-3 py-2.5 text-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       selected ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-card/50",
       landing && "p-4",

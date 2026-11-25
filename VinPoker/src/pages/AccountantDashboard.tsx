@@ -1,5 +1,5 @@
 import { useOperationalCapabilities } from "@/hooks/useOperationalCapabilities";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { BarChart3, Calculator, ReceiptText, Table2, Wallet } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -41,17 +41,22 @@ export default function AccountantDashboard() {
 
   const clubsQuery = useSalaryClubs(source, gateOk && FEATURES.accountantWorkspace);
   const clubs = clubsQuery.isError ? [] : clubsQuery.data ?? [];
-  const [clubId, setClubId] = useState("");
+  const clubId = searchParams.get("club");
+  const setClubId = useCallback((value: string) => setSearchParams(previous => {
+    const next = new URLSearchParams(previous);
+    next.set("club", value);
+    return next;
+  }), [setSearchParams]);
   const [showStaffSettings, setShowStaffSettings] = useState(false);
   const [showFnbDetails, setShowFnbDetails] = useState(false);
   const [salaryView, setSalaryView] = useState<"staff" | "dealer">("staff");
-  const activeClub = clubId ? clubs.find((club) => club.id === clubId) : clubs[0];
+  const activeClub = clubId !== null ? clubs.find((club) => club.id === clubId) : clubs[0];
   const activeClubId = activeClub?.id ?? null;
   const { caps } = useAccountantCapabilities(FEATURES.accountantWorkspace ? activeClubId : null);
 
   useEffect(() => {
-    if (!clubId && activeClubId) setClubId(activeClubId);
-  }, [clubId, activeClubId]);
+    if (clubId === null && activeClubId) setClubId(activeClubId);
+  }, [clubId, activeClubId, setClubId]);
 
   if (loading || access.loading) return <RouteLoader />;
   if (authError || access.error) return <p role="alert" className="p-6">Chưa xác minh được quyền nhân sự. Vui lòng tải lại trang.</p>;
@@ -175,7 +180,15 @@ export default function AccountantDashboard() {
 
         <TabsContent value="report" className="space-y-3">
           {activeClub && financeAvailable ? (
-            <AccountantFinanceTab clubId={activeClubId} />
+            <AccountantFinanceTab clubId={activeClubId}
+              dateRange={searchParams.has("from") || searchParams.has("to") ? {from: searchParams.get("from") ?? "", to: searchParams.get("to") ?? ""} : undefined}
+              onClearDateRange={() => setSearchParams(previous => {
+                const next = new URLSearchParams(previous);
+                next.delete("from");
+                next.delete("to");
+                return next;
+              })}
+            />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
           )}
