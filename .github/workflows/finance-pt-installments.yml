@@ -5,6 +5,7 @@ on:
       - '.github/workflows/finance-pt-installments.yml'
       - 'VinPoker/tests/financePayrollInstallments/**'
       - 'VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql'
+      - 'VinPoker/supabase/pending-migrations/finance_pt_intent_resolution_v1.sql'
       - 'VinPoker/src/lib/ptStatement*'
       - 'VinPoker/src/components/cashier/PtStatement*'
       - 'VinPoker/src/lib/featureFlags.ts'
@@ -60,6 +61,8 @@ jobs:
         run: bash tests/financePayrollInstallments/installments.preflight.sh "$RUNNER_TEMP/pt-preflight"
       - name: Install pending extension on empty isolated schema only
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql
+      - name: Verify old retained intent resolution before considering installment activation
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/intent-resolution.pg17.sql
       - name: Verify legacy full-payment behavior after affected insert guard changes
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/baseline.pg17.sql
       - name: Verify immutable 5M statement with 2M and 3M installments
