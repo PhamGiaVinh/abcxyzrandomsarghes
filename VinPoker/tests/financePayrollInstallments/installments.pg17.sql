@@ -1,0 +1,96 @@
+\set ON_ERROR_STOP on
+BEGIN;
+DO $$ BEGIN
+  IF current_database()<>'vinpoker_ops_pt_installment' THEN RAISE EXCEPTION 'isolated_database_required'; END IF;
+  IF EXISTS(SELECT FROM public.clubs) OR EXISTS(SELECT FROM public.dealer_pt_wage_payments) THEN
+    RAISE EXCEPTION 'empty_schema_restore_required';
+  END IF;
+END $$;
+INSERT INTO auth.users(id) VALUES ('18000000-0000-4000-8000-000000000011');
+INSERT INTO public.profiles(user_id,display_name) VALUES ('18000000-0000-4000-8000-000000000011','PT installment TEST owner');
+INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES
+ ('18000000-0000-4000-8000-000000000001','18000000-0000-4000-8000-000000000011','PT installment TEST','TEST','approved');
+SET LOCAL request.jwt.claim.sub='18000000-0000-4000-8000-000000000011';
+INSERT INTO public.dealers(id,club_id,full_name,status,employment_type,hourly_rate_vnd) VALUES
+ ('18000000-0000-4000-8000-000000000051','18000000-0000-4000-8000-000000000001','PT installment TEST dealer','active','part_time',50000);
+INSERT INTO public.dealer_pt_wage_rate_history(dealer_id,hourly_rate_vnd,pt_eligible,effective_from,changed_by) VALUES
+ ('18000000-0000-4000-8000-000000000051',50000,true,'2026-11-01T00:00:00+07:00','18000000-0000-4000-8000-000000000011');
+INSERT INTO public.dealer_attendance(dealer_id,shift_date,status,current_state,check_in_time,check_out_time)
+SELECT '18000000-0000-4000-8000-000000000051',day::date,'checked_out','checked_out',
+ day::timestamptz+interval '8 hours',day::timestamptz+interval '28 hours'
+FROM generate_series('2026-11-01'::date,'2026-11-05'::date,interval '1 day') AS days(day);
+
+DO $$ BEGIN
+  IF to_regprocedure('public.record_pt_statement_installment_v1(uuid,text,bigint,text,text,uuid,text)') IS NULL THEN
+    RAISE EXCEPTION 'PT_INSTALLMENT_REQUIRED_BEHAVIOR_MISSING: cannot pay 2M then 3M against one immutable 5M statement';
+  END IF;
+END $$;
+INSERT INTO public.finance_pt_installment_rollout_v1(club_id,enabled)
+VALUES ('18000000-0000-4000-8000-000000000001',true);
+SET LOCAL ROLE authenticated;
+DO $$ DECLARE f jsonb; BEGIN
+  f:=public.finalize_part_time_payroll_statement('18000000-0000-4000-8000-000000000091',
+    '18000000-0000-4000-8000-000000000001','18000000-0000-4000-8000-000000000051','TEST immutable 5M installments');
+  IF f->>'net_amount_vnd' IS DISTINCT FROM '5000000' THEN RAISE EXCEPTION 'fixture_not_five_million'; END IF;
+  PERFORM set_config('test.pt_statement_id',f->>'statement_id',true);
+END $$;
+RESET ROLE;
+CREATE TEMP TABLE pt_statement_before AS SELECT to_jsonb(s) snapshot FROM public.dealer_payroll_statements s
+WHERE id=current_setting('test.pt_statement_id')::uuid;
+SELECT set_config('test.pt_statement_hash',statement_hash,true) FROM public.dealer_payroll_statements
+WHERE id=current_setting('test.pt_statement_id')::uuid;
+SET LOCAL ROLE authenticated;
+DO $pay$
+DECLARE s uuid:=current_setting('test.pt_statement_id')::uuid; h text:=current_setting('test.pt_statement_hash');
+  a jsonb; p jsonb; r jsonb; d jsonb;
+BEGIN
+  a:=public.approve_pt_statement_installments_v1(s,h,'18000000-0000-4000-8000-000000000092','TEST owner approves 5M budget');
+  p:=public.record_pt_statement_installment_v1(s,h,2000000,'bank','TEST part 1','18000000-0000-4000-8000-000000000093','TEST 2M');
+  IF p->>'amount_vnd' IS DISTINCT FROM '2000000' OR p->>'paid_total_vnd' IS DISTINCT FROM '2000000'
+    OR p->>'remaining_vnd' IS DISTINCT FROM '3000000' OR p->>'idempotent' IS DISTINCT FROM 'false'
+  THEN RAISE EXCEPTION 'first_installment_not_two_million_with_three_remaining'; END IF;
+  r:=public.record_pt_statement_installment_v1(s,h,2000000,'bank','TEST part 1','18000000-0000-4000-8000-000000000093','TEST 2M');
+  IF r->>'payment_id' IS DISTINCT FROM p->>'payment_id' OR r->>'idempotent' IS DISTINCT FROM 'true'
+  THEN RAISE EXCEPTION 'lost_response_created_duplicate_payment'; END IF;
+  BEGIN
+    PERFORM public.record_pt_statement_installment_v1(s,h,3000000,'bank','TEST part 1','18000000-0000-4000-8000-000000000093','TEST 2M');
+    RAISE EXCEPTION 'changed_request_accepted';
+  EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+  BEGIN
+    PERFORM public.pay_finalized_part_time_payroll_statement(s,'bank','TEST must not add 5M','legacy-after-installment','TEST');
+    RAISE EXCEPTION 'legacy_full_payment_accepted_after_installment';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL; END;
+  BEGIN
+    PERFORM public.void_dealer_payroll_statement(s,'TEST must not erase 3M debt');
+    RAISE EXCEPTION 'partial_debt_voided';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL; END;
+  d:=public.get_pt_statement_installments_v1(s);
+  IF d->>'approved_amount_vnd' IS DISTINCT FROM '5000000' OR d->>'remaining_vnd' IS DISTINCT FROM '3000000'
+    OR jsonb_array_length(d->'payments')<>1 THEN RAISE EXCEPTION 'detail_lost_partial_debt'; END IF;
+  IF public.get_club_pt_wages('18000000-0000-4000-8000-000000000001')->'dealers'->0->>'balance_vnd' IS DISTINCT FROM '0'
+    THEN RAISE EXCEPTION 'partial_payment_released_reserved_interval'; END IF;
+  BEGIN
+    PERFORM public.record_pt_statement_installment_v1(s,h,3000001,'bank','TEST overspend','18000000-0000-4000-8000-000000000094','TEST');
+    RAISE EXCEPTION 'overspend_accepted';
+  EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
+  p:=public.record_pt_statement_installment_v1(s,h,3000000,'cash',NULL,'18000000-0000-4000-8000-000000000095','TEST remainder');
+  IF p->>'paid_total_vnd' IS DISTINCT FROM '5000000' OR p->>'remaining_vnd' IS DISTINCT FROM '0'
+  THEN RAISE EXCEPTION 'last_installment_not_settled'; END IF;
+  r:=public.record_pt_statement_installment_v1(s,h,2000000,'bank','TEST part 1','18000000-0000-4000-8000-000000000093','TEST 2M');
+  IF r->>'amount_vnd' IS DISTINCT FROM '2000000' OR r->>'remaining_vnd' IS DISTINCT FROM '0'
+    OR r->>'idempotent' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'original_receipt_lost_after_settlement'; END IF;
+END $pay$;
+RESET ROLE;
+DO $store$ DECLARE s uuid:=current_setting('test.pt_statement_id')::uuid; BEGIN
+  IF NOT EXISTS(SELECT FROM public.dealer_payroll_statements p CROSS JOIN pt_statement_before b
+    WHERE p.id=s AND (to_jsonb(p)-'pt_wage_payment_id')=(b.snapshot-'pt_wage_payment_id'))
+  THEN RAISE EXCEPTION 'original_approved_statement_changed'; END IF;
+  IF (SELECT count(*) FROM public.dealer_pt_wage_payments WHERE statement_id=s)<>2
+    OR (SELECT sum(amount_vnd) FROM public.dealer_pt_wage_payments WHERE statement_id=s)<>5000000
+    OR (SELECT sum(minutes_paid) FROM public.dealer_pt_wage_payments WHERE statement_id=s)<>6000
+  THEN RAISE EXCEPTION 'cash_or_minutes_double_counted'; END IF;
+  IF NOT EXISTS(SELECT FROM public.dealer_pt_wage_settlements WHERE statement_id=s AND status='paid')
+  THEN RAISE EXCEPTION 'paid_settlement_not_marked_paid'; END IF;
+END $store$;
+ROLLBACK;
+SELECT 'PT_INSTALLMENTS_5M_TO_3M_TO_ZERO_RETRY_IMMUTABILITY_PASS' AS result;

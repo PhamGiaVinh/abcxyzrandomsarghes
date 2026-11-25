@@ -1,4 +1,4 @@
-name: PT installment starting-state isolated PostgreSQL
+name: PT installment isolated PostgreSQL
 on:
   pull_request:
     paths:
@@ -49,8 +49,8 @@ jobs:
           export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
           test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
           node scripts/ops/restore-schema-test-baseline.mjs
-      - name: Verify actual current 5M statement reservation and single full payment
-        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/baseline.pg17.sql
+      - name: Verify immutable 5M statement with 2M and 3M installments
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/installments.pg17.sql
       - name: Remove runner-local schema artifact
         if: always()
         run: rm -rf -- "$RUNNER_TEMP/pt-installment-schema"
