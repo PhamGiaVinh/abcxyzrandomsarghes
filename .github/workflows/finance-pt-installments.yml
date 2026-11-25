@@ -5,13 +5,16 @@ on:
       - '.github/workflows/finance-pt-installments.yml'
       - 'VinPoker/tests/financePayrollInstallments/**'
       - 'VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql'
+      - 'VinPoker/src/lib/ptStatement*'
+      - 'VinPoker/src/components/cashier/PtStatement*'
+      - 'VinPoker/src/lib/featureFlags.ts'
 permissions:
   actions: read
   contents: read
 jobs:
   pt-starting-state:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    timeout-minutes: 20
     services:
       postgres:
         image: postgres:17
@@ -34,6 +37,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
       - name: Verify capture provenance and restore schema on loopback
         working-directory: VinPoker
         env:
@@ -69,6 +74,25 @@ jobs:
       - name: Verify actual PostgREST finalize approve installment and revoked operator flow
         working-directory: VinPoker
         run: node tests/financePayrollInstallments/installments.http.mjs
+      - name: Install locked application dependencies without postinstall browser downloads
+        working-directory: VinPoker
+        run: npm ci --ignore-scripts --no-audit --fund=false
+      - name: Verify real HTTP packets against the application client boundary
+        working-directory: VinPoker
+        run: node --experimental-strip-types tests/financePayrollInstallments/verify-client-contract.mjs
+      - name: Verify affected operator details and full-payment compatibility
+        working-directory: VinPoker
+        run: npx vitest run src/lib/ptStatementPayment.test.ts src/lib/ptStatementDetails.test.ts src/components/cashier/PtStatementControl.test.tsx src/components/cashier/PtStatementDetailsDialog.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Check actual application and tooling references
+        working-directory: VinPoker
+        env: {NODE_OPTIONS: '--max-old-space-size=4096'}
+        run: npx tsc -b --pretty false
+      - name: Build the reviewed application
+        working-directory: VinPoker
+        env: {NODE_OPTIONS: '--max-old-space-size=4096'}
+        run: npm run build
       - name: Remove runner-local schema artifact
         if: always()
-        run: rm -rf -- "$RUNNER_TEMP/pt-installment-schema"
+        run: |
+          rm -rf -- "$RUNNER_TEMP/pt-installment-schema"
+          rm -f -- "$RUNNER_TEMP/pt-installment-client-packets.json"

@@ -66,7 +66,7 @@ export function clearPtStatementPayment(storage: Storage, intent: PtStatementPay
   if (storage.getItem(key) !== null) throw Error('PT_PAYMENT_STORAGE_UNAVAILABLE');
 }
 
-/** A paid, same-hash statement is authoritative even when the write response was lost. */
+/** Recover legacy full-payment statements only; installment markers are not full-request receipts. */
 export async function submitPtStatementPayment(rpc: Rpc, value: PtStatementPaymentIntent, isCurrent: () => boolean): Promise<PtStatementReceipt> {
   const intent = intentSchema.parse(value), expected = intent.statement;
   const read = async () => {
@@ -84,8 +84,8 @@ export async function submitPtStatementPayment(rpc: Rpc, value: PtStatementPayme
   };
   const before = await read();
   if (!isCurrent()) throw Error('PT_PAYMENT_ACTOR_CHANGED');
-  if (before.payment_id) return before;
   if (before.installments_adopted) throw Error('PT_PAYMENT_MOVED_TO_INSTALLMENTS');
+  if (before.payment_id) return before;
   let paymentId: string | null = null;
   let failure: unknown = null;
   try {
@@ -100,6 +100,7 @@ export async function submitPtStatementPayment(rpc: Rpc, value: PtStatementPayme
     paymentId = paid.payment_id;
   } catch (cause) { failure = cause; }
   const after = await read();
+  if (after.installments_adopted) throw Error('PT_PAYMENT_MOVED_TO_INSTALLMENTS');
   if (!after.payment_id || (paymentId && paymentId !== after.payment_id)) throw failure ?? Error('PT_PAYMENT_UNVERIFIED');
   return after;
 }

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {createHmac, randomBytes} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
+import {writeFileSync} from 'node:fs';
+import {join} from 'node:path';
 
 // Disposable runner only: no production URL, credential discovery or real notifications.
 assert.equal(process.env.PGHOST, '127.0.0.1');
@@ -101,6 +103,7 @@ try {
   assert.equal(partialReport.dealerLive.ptFinalizedUnpaidBalance,beforeCash.dealerLive.ptFinalizedUnpaidBalance-2000000);
   assert.equal(partialReport.cost.ptWagePaid,beforeCash.cost.ptWagePaid+2000000);
   const partial=fingerprint();
+  const partialDetails=await success('get_pt_statement_installments_v1',{p_statement_id:statementId},ownerJwt);
   for(const deniedJwt of [token(undefined),token('18000000-0000-4000-8000-000000000013')]) {
     const denied=await rpc('record_pt_statement_installment_v1',{...first,p_amount_vnd:1},deniedJwt);
     assert.equal(denied.status,403);assert.equal(denied.data.code,'42501');
@@ -139,6 +142,13 @@ try {
   assert.equal(completeReport.cost.ptWagePaid,beforeCash.cost.ptWagePaid+5000000);
   assert.equal(sql(`SELECT count(*)||':'||sum(amount_vnd)||':'||sum(minutes_paid) FROM public.dealer_pt_wage_payments WHERE statement_id='${statementId}'`),'2:5000000:6000');
   assert.equal(sql(`SELECT (to_jsonb(s)-'pt_wage_payment_id')::text FROM public.dealer_payroll_statements s WHERE id='${statementId}'`),original);
+  // Synthetic TEST packets only, retained on the disposable runner for the real
+  // client parser. Expected identity comes from finalization/original snapshot,
+  // not from the detail packet under test. No credentials are written.
+  if(process.env.RUNNER_TEMP) writeFileSync(join(process.env.RUNNER_TEMP,'pt-installment-client-packets.json'),JSON.stringify({
+    expected:{statement_id:statementId,statement_hash:JSON.parse(original).statement_hash,club_id:club,dealer_id:dealer,net_amount_vnd:5000000},
+    partial:partialDetails,complete,
+  }));
   console.log('PT_HTTP_FINALIZE_APPROVE_2M_RETRY_DENY_REVOKE_3M_IMMUTABLE_5M_PASS');
 } finally {
   spawnSync('docker',['rm','--force',container],{stdio:'ignore'});

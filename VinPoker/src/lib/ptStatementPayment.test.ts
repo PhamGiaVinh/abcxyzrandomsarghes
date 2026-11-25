@@ -18,6 +18,24 @@ describe('finalized PT payment boundary', () => {
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(loadPtStatementPayment(sessionStorage,actor,club,dealer)?.key).toBe(i.key);
   });
+  it('does not treat the final installment marker as a receipt for an old full-payment request',async()=>{
+    const i=retainPtStatementPayment(sessionStorage,intent());
+    const rpc=vi.fn(async()=>({data:{...i.statement,payment_id:payment,installments_adopted:true,
+      paid_total_vnd:i.statement.net_amount_vnd,remaining_vnd:0},error:null}));
+    await expect(submitPtStatementPayment(rpc,i,()=>true)).rejects.toThrow('PT_PAYMENT_MOVED_TO_INSTALLMENTS');
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(loadPtStatementPayment(sessionStorage,actor,club,dealer)?.key).toBe(i.key);
+  });
+  it('does not recover a full-payment request from installments adopted while its write waited',async()=>{
+    const i=intent();let reads=0;
+    const rpc=vi.fn(async(name:string)=>{
+      if(name==='pay_finalized_part_time_payroll_statement') return {data:null,error:{code:'55000'}};
+      return {data:++reads===1?i.statement:{...i.statement,payment_id:payment,installments_adopted:true,
+        paid_total_vnd:i.statement.net_amount_vnd,remaining_vnd:0},error:null};
+    });
+    await expect(submitPtStatementPayment(rpc,i,()=>true)).rejects.toThrow('PT_PAYMENT_MOVED_TO_INSTALLMENTS');
+    expect(rpc.mock.calls.filter(([name])=>name==='pay_finalized_part_time_payroll_statement')).toHaveLength(1);
+  });
   it('recovers a committed lost response from the same immutable statement without a second write', async () => {
     const i = retainPtStatementPayment(sessionStorage, intent()); let paid = false;
     const rpc = vi.fn(async (name: string) => {

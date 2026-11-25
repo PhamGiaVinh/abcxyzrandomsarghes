@@ -6,6 +6,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
 import { formatVND } from '@/lib/format';
+import {FEATURES} from '@/lib/featureFlags';
+import {PtStatementDetailsDialog} from './PtStatementDetailsDialog';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ptStatementReceiptSchema as Receipt, loadPtStatementPayment, retainPtStatementPayment,
@@ -35,6 +37,7 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
   const [payConfirm, setPayConfirm] = useState(false);
   const [method, setMethod] = useState<'cash' | 'bank'>('cash');
   const [reference, setReference] = useState('');
+  const [detailsOpen,setDetailsOpen]=useState(false);
 
   async function read(requestId: string | null) {
     const result = await observeTrackerContextRead((supabase.rpc as unknown as Rpc)('get_part_time_payroll_statement_status_v1', {
@@ -158,9 +161,11 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
     </div>}
     {active && statement.payment_id && canFinalize && !paymentPending && <Button size="sm" variant="outline" disabled={busy || !ready} onClick={() => { setNextPeriod(true); setConfirm(true); }}>Chốt kỳ PT tiếp theo</Button>}
     {active && !statement.payment_id && !statement.installments_adopted && statement.net_amount_vnd > 0 && !paymentPending && <Button size="sm" disabled={busy || !ready} onClick={() => setPayConfirm(true)}>Phát lương và tất toán</Button>}
+    {FEATURES.financePtStatementDetails && statement && <Button size="sm" variant="outline" disabled={busy || !ready} onClick={()=>setDetailsOpen(true)}>Xem phiếu &amp; lịch sử chi</Button>}
     {paymentPending && <Button size="sm" variant="outline" disabled={busy || !ready} onClick={() => void pay()}>Kiểm tra khoản chi PT đã lưu</Button>}
     {error && !confirm && !payConfirm && <p role="alert" className="text-xs text-destructive">{error}</p>}
     {!ready && <Button size="sm" variant="outline" disabled={busy} onClick={() => void refresh()}>Tải lại phiếu PT</Button>}
+    {FEATURES.financePtStatementDetails && detailsOpen && statement && <PtStatementDetailsDialog statement={statement} open={detailsOpen} onOpenChange={setDetailsOpen}/>}
     {statement && !active && <p role="status" className="text-xs">Phiếu đã hủy hoặc thay thế. Cần kiểm tra lịch sử trước khi tạo phiếu mới.</p>}
     {ready && !statement && canFinalize && !paymentPending && <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirm(true)}>Chốt phiếu PT</Button>}
     {ready && !statement && !canFinalize && <p className="text-xs text-muted-foreground">Cần Owner chốt phiếu PT trước khi ghi nhận chi.</p>}

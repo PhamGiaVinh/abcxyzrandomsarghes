@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {parsePtStatementDetails} from '../../src/lib/ptStatementDetails.ts';
+assert.equal(process.env.PGHOST,'127.0.0.1');
+assert.equal(process.env.PGDATABASE,'vinpoker_ops_pt_installment');
+const packets=JSON.parse(readFileSync(join(process.env.RUNNER_TEMP,'pt-installment-client-packets.json'),'utf8'));
+const partial=parsePtStatementDetails(packets.partial,packets.expected);
+const complete=parsePtStatementDetails(packets.complete,packets.expected);
+assert.deepEqual([partial.paid_total_vnd,partial.remaining_vnd,partial.payments.length],[2000000,3000000,1]);
+assert.deepEqual([complete.paid_total_vnd,complete.remaining_vnd,complete.payments.length],[5000000,0,2]);
+assert.equal(complete.dealer_name,'PT HTTP TEST dealer');
+assert.ok(complete.lines.length>0);
+console.log('ACTUAL_HTTP_PACKETS_PASS_REAL_CLIENT_PARSER');
