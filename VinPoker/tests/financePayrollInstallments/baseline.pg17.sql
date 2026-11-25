@@ -21,8 +21,7 @@ SELECT '18000000-0000-4000-8000-000000000051',day::date,'checked_out','checked_o
 FROM generate_series('2026-11-01'::date,'2026-11-05'::date,interval '1 day') AS days(day);
 SET LOCAL ROLE authenticated;
 DO $proof$
-DECLARE before_payment jsonb; after_payment jsonb; original_statement jsonb;
-  finalized jsonb; payment jsonb; replay jsonb; v_statement_id uuid;
+DECLARE before_payment jsonb; after_payment jsonb; finalized jsonb; v_statement_id uuid;
 BEGIN
   before_payment := public.get_club_pt_wages('18000000-0000-4000-8000-000000000001')->'dealers'->0;
   IF before_payment->>'balance_vnd' IS DISTINCT FROM '5000000'
@@ -33,14 +32,33 @@ BEGIN
   v_statement_id := (finalized->>'statement_id')::uuid;
   IF v_statement_id IS NULL OR finalized->>'net_amount_vnd' IS DISTINCT FROM '5000000'
   THEN RAISE EXCEPTION 'fixture_statement_not_finalized'; END IF;
-  SELECT to_jsonb(s) INTO original_statement FROM public.dealer_payroll_statements s WHERE id=v_statement_id;
   after_payment := public.get_club_pt_wages('18000000-0000-4000-8000-000000000001')->'dealers'->0;
   IF after_payment->>'balance_vnd' IS DISTINCT FROM '0' THEN RAISE EXCEPTION 'finalized_interval_not_reserved'; END IF;
+  PERFORM set_config('test.pt_statement_id',v_statement_id::text,true);
+END
+$proof$;
+RESET ROLE;
+-- Observe storage as the isolated fixture owner; do not widen application grants.
+CREATE TEMP TABLE pt_statement_before AS
+SELECT to_jsonb(s) AS snapshot FROM public.dealer_payroll_statements s
+WHERE id=current_setting('test.pt_statement_id')::uuid;
+SET LOCAL ROLE authenticated;
+DO $payment$
+DECLARE payment jsonb; replay jsonb; v_statement_id uuid:=current_setting('test.pt_statement_id')::uuid;
+BEGIN
   payment := public.pay_finalized_part_time_payroll_statement(v_statement_id,'bank','TEST FULL PAYMENT','pt-installment-baseline-full','TEST existing full-only API');
   replay := public.pay_finalized_part_time_payroll_statement(v_statement_id,'bank','TEST FULL PAYMENT','pt-installment-baseline-full','TEST existing full-only API');
   IF payment->>'amount_vnd' IS DISTINCT FROM '5000000' OR payment->>'idempotent' IS DISTINCT FROM 'false'
     OR replay->>'payment_id' IS DISTINCT FROM payment->>'payment_id' OR replay->>'idempotent' IS DISTINCT FROM 'true'
   THEN RAISE EXCEPTION 'existing_full_payment_behavior_changed'; END IF;
+END
+$payment$;
+RESET ROLE;
+DO $storage$
+DECLARE v_statement_id uuid:=current_setting('test.pt_statement_id')::uuid;
+  original_statement jsonb;
+BEGIN
+  SELECT snapshot INTO STRICT original_statement FROM pt_statement_before;
   IF (SELECT count(*) FROM public.dealer_pt_wage_payments WHERE dealer_id='18000000-0000-4000-8000-000000000051') <> 1
     OR (SELECT sum(amount_vnd) FROM public.dealer_pt_wage_payments WHERE dealer_id='18000000-0000-4000-8000-000000000051') <> 5000000
   THEN RAISE EXCEPTION 'existing_full_payment_ledger_wrong'; END IF;
@@ -53,7 +71,6 @@ BEGIN
     RAISE EXCEPTION 'original_statement_was_rewritten';
   END IF;
 END
-$proof$;
-RESET ROLE;
+$storage$;
 ROLLBACK;
 SELECT 'CURRENT_PT_FULL_ONLY_5M_SNAPSHOT_RESERVED_SINGLE_PAYMENT_PASS_NOT_INSTALLMENT_QUALIFICATION' AS result;
