@@ -16,6 +16,11 @@ DO $$ BEGIN
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.get_club_finance_summary(timestamptz,timestamptz,uuid)'::regprocedure)
     IS DISTINCT FROM 'e6388bd6fc1a1e07141ff0775385a606'
   THEN RAISE EXCEPTION 'PT_INSTALLMENT_SUMMARY_SOURCE_DRIFT'; END IF;
+  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.get_part_time_payroll_statement_status_v1(uuid,uuid,uuid)'::regprocedure)
+    IS DISTINCT FROM 'c60a3e9eb07c88ced3b0c1c5f5fc5fbe'
+    OR (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.get_dealer_payroll_statement(uuid)'::regprocedure)
+    IS DISTINCT FROM 'cb89ab61460df145c0731806f29da523'
+  THEN RAISE EXCEPTION 'PT_INSTALLMENT_STATEMENT_READER_SOURCE_DRIFT'; END IF;
 END $$;
 
 CREATE TABLE public.finance_pt_installment_rollout_v1 (
@@ -294,11 +299,28 @@ LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=''
 AS $$ DECLARE s public.dealer_payroll_statements%rowtype; paid numeric; payments jsonb; BEGIN
   SELECT * INTO s FROM public.dealer_payroll_statements WHERE id=p_statement_id AND statement_kind='part_time_settlement';
   IF NOT FOUND THEN RAISE EXCEPTION 'PT_INSTALLMENT_STATEMENT_NOT_FOUND' USING ERRCODE='P0002'; END IF;
-  PERFORM public._assert_dealer_payroll_statement_actor(s.club_id);
+  -- Accountants read only this exact club's payment facts. Other readers use
+  -- the established statement policy, including the exact linked recipient.
+  -- Mutation authorization continues to use _assert_dealer_payroll_statement_actor.
+  IF NOT EXISTS(SELECT FROM public.club_accountants WHERE club_id=s.club_id AND user_id=auth.uid()) THEN
+    PERFORM public.get_dealer_payroll_statement(s.id);
+  END IF;
+  IF EXISTS(SELECT FROM public.dealer_pt_wage_payments WHERE statement_id=s.id
+    AND (club_id IS DISTINCT FROM s.club_id OR dealer_id IS DISTINCT FROM s.dealer_id)) THEN
+    RAISE EXCEPTION 'PT_INSTALLMENT_PAYMENT_SCOPE_INVALID' USING ERRCODE='55000'; END IF;
   SELECT coalesce(sum(amount_vnd),0),coalesce(jsonb_agg(jsonb_build_object('payment_id',id,'amount_vnd',amount_vnd,
     'paid_at',paid_at,'payment_method',payment_method,'payment_reference',payment_reference) ORDER BY created_at,id),'[]'::jsonb)
-    INTO paid,payments FROM public.dealer_pt_wage_payments WHERE statement_id=s.id AND voided_at IS NULL;
+    INTO paid,payments FROM public.dealer_pt_wage_payments
+    WHERE statement_id=s.id AND club_id=s.club_id AND dealer_id=s.dealer_id AND voided_at IS NULL;
+  IF paid>s.net_amount_vnd OR (s.state IN ('voided','replaced') AND paid<>0) THEN
+    RAISE EXCEPTION 'PT_INSTALLMENT_STATUS_INVALID_TOTALS' USING ERRCODE='22023'; END IF;
   RETURN jsonb_build_object('statement_id',s.id,'statement_hash',s.statement_hash,'state',s.state,
+    'club_id',s.club_id,'dealer_id',s.dealer_id,'dealer_name',s.dealer_snapshot->>'full_name',
+    'club_name',s.club_snapshot->>'club_name','finalized_at',s.finalized_at,'as_of',now(),
+    'gross_amount_vnd',s.gross_amount_vnd,'deduction_amount_vnd',s.deduction_amount_vnd,
+    'lines',coalesce((SELECT jsonb_agg(jsonb_build_object('line_no',l.line_no,'label',l.label,
+      'quantity',l.quantity,'unit',l.unit,'unit_rate_vnd',l.unit_rate_vnd,'amount_vnd',l.amount_vnd) ORDER BY l.line_no)
+      FROM public.dealer_payroll_statement_lines l WHERE l.statement_id=s.id),'[]'::jsonb),
     'approved_amount_vnd',s.net_amount_vnd,'paid_total_vnd',paid,
     'remaining_vnd',CASE WHEN s.state IN ('voided','replaced') THEN 0 ELSE s.net_amount_vnd-paid END,'payments',payments);
 END $$;
@@ -334,4 +356,32 @@ DO $summary$ DECLARE def text; needle text; replacement text; BEGIN
   $body$;
   EXECUTE replace(def,needle,replacement);
 END $summary$;
+
+-- Existing operator status must not infer zero cash from a still-null final link.
+-- Preserve all original role/club/dealer/request filters; add canonical totals only.
+DO $status$ DECLARE def text; needle text; replacement text; BEGIN
+  SELECT pg_get_functiondef('public.get_part_time_payroll_statement_status_v1(uuid,uuid,uuid)'::regprocedure) INTO def;
+  needle:='DECLARE s public.dealer_payroll_statements%ROWTYPE;';
+  IF (length(def)-length(replace(def,needle,'')))/length(needle)<>1 THEN
+    RAISE EXCEPTION 'PT_INSTALLMENT_STATUS_DECLARATION_DRIFT'; END IF;
+  def:=replace(def,needle,needle||' paid bigint;');
+  needle:='IF NOT FOUND THEN RETURN NULL;END IF;';
+  IF (length(def)-length(replace(def,needle,'')))/length(needle)<>1 THEN
+    RAISE EXCEPTION 'PT_INSTALLMENT_STATUS_READ_SEAM_DRIFT'; END IF;
+  replacement:=needle||$read$
+  SELECT coalesce(sum(amount_vnd),0) INTO paid FROM public.dealer_pt_wage_payments
+    WHERE statement_id=s.id AND dealer_id=s.dealer_id AND club_id=s.club_id AND voided_at IS NULL;
+  IF paid>s.net_amount_vnd OR (s.state IN ('voided','replaced') AND paid<>0) THEN
+    RAISE EXCEPTION 'PT_INSTALLMENT_STATUS_INVALID_TOTALS' USING ERRCODE='22023'; END IF;
+  $read$;
+  def:=replace(def,needle,replacement);
+  needle:='''payment_id'',s.pt_wage_payment_id,''statement_hash'',s.statement_hash';
+  IF (length(def)-length(replace(def,needle,'')))/length(needle)<>1 THEN
+    RAISE EXCEPTION 'PT_INSTALLMENT_STATUS_RETURN_SEAM_DRIFT'; END IF;
+  replacement:=needle||$totals$,
+    'installments_adopted',EXISTS(SELECT FROM public.finance_pt_installment_plans_v1 WHERE statement_id=s.id),
+    'paid_total_vnd',paid,'remaining_vnd',CASE WHEN s.state IN ('voided','replaced') THEN 0 ELSE s.net_amount_vnd-paid END
+  $totals$;
+  EXECUTE replace(def,needle,replacement);
+END $status$;
 COMMIT;

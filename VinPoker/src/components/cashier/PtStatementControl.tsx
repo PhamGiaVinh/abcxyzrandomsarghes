@@ -139,21 +139,25 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
       if (!alive.current) return;
       clearPtStatementPayment(sessionStorage, intent);
       setStatement(paid); setPaymentPending(null); setPayConfirm(false); onFinalized();
-    } catch {
-      if (alive.current) setError('Chưa xác minh được khoản chi. Giữ nguyên yêu cầu và đối chiếu trước khi chi thêm.');
+    } catch (cause) {
+      if (alive.current) setError(cause instanceof Error && cause.message==='PT_PAYMENT_MOVED_TO_INSTALLMENTS'
+        ? 'Phiếu đã chuyển sang trả nhiều đợt. Kiểm tra lịch sử chi trước khi ghi nhận khoản tiếp theo.'
+        : 'Chưa xác minh được khoản chi. Giữ nguyên yêu cầu và đối chiếu trước khi chi thêm.');
     } finally {
       inFlight.current = false; if (alive.current) setBusy(false);
     }
   }
 
   const active = statement && !['voided', 'replaced'].includes(statement.state);
+  const paidTotal=statement?.paid_total_vnd ?? (statement?.payment_id ? statement.net_amount_vnd : 0);
+  const remaining=statement?.remaining_vnd ?? (statement?.payment_id ? 0 : statement?.net_amount_vnd ?? 0);
   return <div className="mt-3 space-y-2 border-t border-border pt-3">
-    {active && <div role="status" className="space-y-1 text-xs"><p>Phiếu đã chốt: {formatVND(statement.net_amount_vnd)} · {statement.payment_id ? 'Đã ghi nhận chi' : 'Chưa chi'}</p>
-      <p>Đã chi: {formatVND(statement.payment_id ? statement.net_amount_vnd : 0)} · Còn phải trả: {formatVND(statement.payment_id ? 0 : statement.net_amount_vnd)}</p>
+    {active && <div role="status" className="space-y-1 text-xs"><p>Phiếu đã chốt: {formatVND(statement.net_amount_vnd)} · {remaining===0 ? 'Đã ghi nhận chi' : paidTotal>0 ? 'Đang chi nhiều đợt' : 'Chưa chi'}</p>
+      <p>Đã chi: {formatVND(paidTotal)} · Còn phải trả: {formatVND(remaining)}</p>
       {statement.payment_id && <p className="break-all">Mã chứng từ: {statement.payment_id}</p>}
     </div>}
     {active && statement.payment_id && canFinalize && !paymentPending && <Button size="sm" variant="outline" disabled={busy || !ready} onClick={() => { setNextPeriod(true); setConfirm(true); }}>Chốt kỳ PT tiếp theo</Button>}
-    {active && !statement.payment_id && statement.net_amount_vnd > 0 && !paymentPending && <Button size="sm" disabled={busy || !ready} onClick={() => setPayConfirm(true)}>Phát lương và tất toán</Button>}
+    {active && !statement.payment_id && !statement.installments_adopted && statement.net_amount_vnd > 0 && !paymentPending && <Button size="sm" disabled={busy || !ready} onClick={() => setPayConfirm(true)}>Phát lương và tất toán</Button>}
     {paymentPending && <Button size="sm" variant="outline" disabled={busy || !ready} onClick={() => void pay()}>Kiểm tra khoản chi PT đã lưu</Button>}
     {error && !confirm && !payConfirm && <p role="alert" className="text-xs text-destructive">{error}</p>}
     {!ready && <Button size="sm" variant="outline" disabled={busy} onClick={() => void refresh()}>Tải lại phiếu PT</Button>}

@@ -11,6 +11,13 @@ const intent = (): PtStatementPaymentIntent => ({ actorId: actor, method: 'cash'
   } });
 beforeEach(() => sessionStorage.clear());
 describe('finalized PT payment boundary', () => {
+  it('stops an old retained full-payment intent when the server has adopted installments', async () => {
+    const i=retainPtStatementPayment(sessionStorage,intent());
+    const rpc=vi.fn(async()=>({data:{...i.statement,installments_adopted:true,paid_total_vnd:50000,remaining_vnd:86792},error:null}));
+    await expect(submitPtStatementPayment(rpc,i,()=>true)).rejects.toThrow('PT_PAYMENT_MOVED_TO_INSTALLMENTS');
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(loadPtStatementPayment(sessionStorage,actor,club,dealer)?.key).toBe(i.key);
+  });
   it('recovers a committed lost response from the same immutable statement without a second write', async () => {
     const i = retainPtStatementPayment(sessionStorage, intent()); let paid = false;
     const rpc = vi.fn(async (name: string) => {

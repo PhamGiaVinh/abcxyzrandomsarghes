@@ -4,8 +4,25 @@ import { waitForManualPlayerResponse } from './floorManualPlayerIntent';
 export const ptStatementReceiptSchema = z.object({
   statement_id: z.string().uuid(), request_id: z.string().uuid(), club_id: z.string().uuid(),
   dealer_id: z.string().uuid(), state: z.enum(['finalized', 'pdf_rendered', 'delivery_failed', 'sent', 'voided', 'replaced']),
-  net_amount_vnd: z.number().int().nonnegative(), finalized_at: z.string().datetime({ offset: true }),
+  net_amount_vnd: z.number().int().nonnegative().safe(), finalized_at: z.string().datetime({ offset: true }),
   payment_id: z.string().uuid().nullable(), statement_hash: z.string().regex(/^[a-f0-9]{64}$/),
+  installments_adopted: z.boolean().optional(),
+  paid_total_vnd: z.number().int().nonnegative().safe().optional(),
+  remaining_vnd: z.number().int().nonnegative().safe().optional(),
+}).superRefine((row,ctx)=>{
+  const values=[row.installments_adopted,row.paid_total_vnd,row.remaining_vnd];
+  if(values.every(v=>v===undefined)) return; // unchanged legacy server contract
+  if(typeof row.installments_adopted!=='boolean' || typeof row.paid_total_vnd!=='number'
+    || typeof row.remaining_vnd!=='number' || !Number.isSafeInteger(row.net_amount_vnd)
+    || !Number.isSafeInteger(row.paid_total_vnd) || !Number.isSafeInteger(row.remaining_vnd)) {
+    ctx.addIssue({code:z.ZodIssueCode.custom,message:'PT_STATEMENT_PAYMENT_TOTALS_INVALID'});return;
+  }
+  const cancelled=['voided','replaced'].includes(row.state);
+  if(row.paid_total_vnd>row.net_amount_vnd || row.remaining_vnd>row.net_amount_vnd
+    || (cancelled ? row.remaining_vnd!==0 || row.paid_total_vnd!==0
+      : BigInt(row.paid_total_vnd)+BigInt(row.remaining_vnd)!==BigInt(row.net_amount_vnd))) {
+    ctx.addIssue({code:z.ZodIssueCode.custom,message:'PT_STATEMENT_PAYMENT_TOTALS_INVALID'});
+  }
 });
 export type PtStatementReceipt = z.infer<typeof ptStatementReceiptSchema>;
 const intentSchema = z.object({
@@ -13,7 +30,7 @@ const intentSchema = z.object({
   method: z.enum(['cash', 'bank']), reference: z.string().trim().max(200).nullable(),
   key: z.string().uuid(),
 }).strict().refine(x => x.statement.net_amount_vnd > 0 && x.statement.payment_id === null
-  && !['voided', 'replaced'].includes(x.statement.state));
+  && !['voided', 'replaced'].includes(x.statement.state) && x.statement.installments_adopted!==true);
 export type PtStatementPaymentIntent = z.infer<typeof intentSchema>;
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
 type Rpc = (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
@@ -68,6 +85,7 @@ export async function submitPtStatementPayment(rpc: Rpc, value: PtStatementPayme
   const before = await read();
   if (!isCurrent()) throw Error('PT_PAYMENT_ACTOR_CHANGED');
   if (before.payment_id) return before;
+  if (before.installments_adopted) throw Error('PT_PAYMENT_MOVED_TO_INSTALLMENTS');
   let paymentId: string | null = null;
   let failure: unknown = null;
   try {

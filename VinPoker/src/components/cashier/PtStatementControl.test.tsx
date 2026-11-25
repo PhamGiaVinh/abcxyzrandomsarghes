@@ -14,6 +14,16 @@ const key = () => `vinpoker:pt-statement:v1:${state.actor}:${club}:${dealer}`;
 beforeEach(() => { sessionStorage.clear(); state.actor = '11111111-1111-4111-8111-111111111111'; state.rpc.mockReset(); });
 
 describe('cashier pays the finalized PT statement', () => {
+  it('shows server-confirmed partial cash and remaining debt without exposing full payment', async () => {
+    state.rpc.mockResolvedValue({data:{...receipt('55555555-5555-4555-8555-555555555555'),net_amount_vnd:5000000,
+      installments_adopted:true,paid_total_vnd:2000000,remaining_vnd:3000000},error:null});
+    render(<PtStatementControl {...props()} canFinalize={false}/>);
+    const status=await screen.findByRole('status');
+    expect(status).toHaveTextContent(/Đã chi: 2\.000\.000/);
+    expect(status).toHaveTextContent(/Còn phải trả: 3\.000\.000/);
+    expect(screen.queryByRole('button',{name:'Phát lương và tất toán'})).not.toBeInTheDocument();
+    expect(state.rpc.mock.calls.some(([name])=>name.startsWith('pay_'))).toBe(false);
+  });
   it('lets the cashier pay a frozen statement and reconciles a lost response without calling the legacy balance API', async () => {
     const frozen = receipt('55555555-5555-4555-8555-555555555555');
     let paid: string | null = null;
