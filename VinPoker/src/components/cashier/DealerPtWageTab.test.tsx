@@ -84,6 +84,32 @@ describe("DealerPtWageTab policy control", () => {
     expect(screen.queryByText('Chưa có dealer part-time đang hoạt động')).toBeNull();
   });
 
+  it.each([
+    {amount_vnd:null,paid_at:'2026-11-25T15:00:00Z'},
+    {amount_vnd:0.5,paid_at:'2026-11-25T15:00:00Z'},
+    {amount_vnd:1000,paid_at:'invalid'},
+    'invalid',
+  ])('rejects invalid last-payment evidence: %j', async lastPayment => {
+    testState.rpc.mockResolvedValue({data:{club_id:'club-1',as_of:'2026-11-25T15:00:00Z',dealers:[{
+      dealer_id:'dealer-1',full_name:'INVALID PAYMENT',hourly_rate_vnd:60000,
+      accrued_minutes:1,balance_vnd:1000,last_reset_at:null,current_shift_open:false,
+      current_shift_start:null,last_payment:lastPayment,
+    }]},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead/>);
+    await screen.findByText('Không xác minh được số tiền lương PT.');
+    expect(screen.queryByText('INVALID PAYMENT')).toBeNull();
+  });
+
+  it('rejects a total that overflows even when each dealer balance is safe', async () => {
+    testState.rpc.mockResolvedValue({data:{club_id:'club-1',as_of:'2026-11-25T15:00:00Z',dealers:
+      ['1','2'].map(id=>({dealer_id:id,full_name:`OVERFLOW ${id}`,hourly_rate_vnd:60000,
+        accrued_minutes:1,balance_vnd:Number.MAX_SAFE_INTEGER,last_reset_at:null,
+        current_shift_open:false,current_shift_start:null,last_payment:null}))},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead/>);
+    await screen.findByText('Không xác minh được số tiền lương PT.');
+    expect(screen.queryByText('OVERFLOW 1')).toBeNull();
+  });
+
   it('uses the statement flow for a cashier and never offers the legacy balance payment when statements are enabled', async () => {
     testState.auth = { isAdmin: false, isClubAdmin: false, isClubOwner: false };
     testState.rpc.mockImplementation(async name => ({ data: name === 'get_club_pt_wages' ? { dealers: [{

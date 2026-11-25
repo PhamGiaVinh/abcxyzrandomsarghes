@@ -112,7 +112,7 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly: requestedRea
 
   const [dealers, setDealers] = useState<PtDealer[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setError] = useState<string | null>(null);
   const [clubAccrualMode, setClubAccrualMode] = useState<string | null>(null);
   const [standbyAccrualEnabled, setStandbyAccrualEnabled] = useState(false);
   const [globalPolicyReady, setGlobalPolicyReady] = useState(false);
@@ -167,7 +167,12 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly: requestedRea
         throw new Error('Không xác minh được dữ liệu lương part-time.');
       }
       if (financeRead && response.dealers.some(dealer =>
-        !Number.isSafeInteger(dealer.hourly_rate_vnd) || !Number.isSafeInteger(dealer.balance_vnd))) {
+        !Number.isSafeInteger(dealer.hourly_rate_vnd) || !Number.isSafeInteger(dealer.balance_vnd)
+        || (dealer.last_payment !== null && (
+          typeof dealer.last_payment !== 'object' || Array.isArray(dealer.last_payment)
+          || !Number.isSafeInteger(dealer.last_payment?.amount_vnd) || dealer.last_payment.amount_vnd < 0
+          || typeof dealer.last_payment.paid_at !== 'string'
+          || !Number.isFinite(Date.parse(dealer.last_payment.paid_at)))))) {
         throw new Error('Không xác minh được số tiền lương PT.');
       }
       if (sequence !== fetchSequenceRef.current) return;
@@ -240,6 +245,11 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly: requestedRea
   };
 
   const totalUnpaid = dealers.reduce((s, d) => s + liveBalance(d), 0);
+  // An individually valid snapshot can overflow after summing or live projection.
+  // Hide all amounts rather than formatting an imprecise total as verified VND.
+  const error = loadError ?? (financeRead && (!Number.isSafeInteger(totalUnpaid)
+    || dealers.some(dealer => !Number.isSafeInteger(liveBalance(dealer))))
+    ? 'Không xác minh được số tiền lương PT.' : null);
   const workingCount = dealers.filter((d) => d.current_shift_open).length;
 
   const openPay = (d: PtDealer) => {
