@@ -33,6 +33,15 @@ import StaffSalaryChot from "./StaffSalaryChot";
 export default function AccountantDashboard() {
   const { loading, authError, user, isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const reportDateRange = searchParams.has("from") || searchParams.has("to")
+    ? {from: searchParams.get("from") ?? "", to: searchParams.get("to") ?? ""}
+    : undefined;
+  const clearReportDateRange = () => setSearchParams(previous => {
+    const next = new URLSearchParams(previous);
+    next.delete("from");
+    next.delete("to");
+    return next;
+  });
   const requestedTab = searchParams.get("tab");
   const activeTab = requestedTab === "expenses" || requestedTab === "report" ? requestedTab : "salary";
   const source = staffSalarySource();
@@ -172,7 +181,10 @@ export default function AccountantDashboard() {
 
         <TabsContent value="expenses">
           {activeClub && expensesAvailable ? (
-            <ClubExpenses embedded scopedClubId={activeClub.id} />
+            <ClubExpenses embedded scopedClubId={activeClub.id}
+              dateRange={reportDateRange}
+              onClearDateRange={clearReportDateRange}
+            />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
           )}
@@ -181,13 +193,8 @@ export default function AccountantDashboard() {
         <TabsContent value="report" className="space-y-3">
           {activeClub && financeAvailable ? (
             <AccountantFinanceTab clubId={activeClubId}
-              dateRange={searchParams.has("from") || searchParams.has("to") ? {from: searchParams.get("from") ?? "", to: searchParams.get("to") ?? ""} : undefined}
-              onClearDateRange={() => setSearchParams(previous => {
-                const next = new URLSearchParams(previous);
-                next.delete("from");
-                next.delete("to");
-                return next;
-              })}
+              dateRange={reportDateRange}
+              onClearDateRange={clearReportDateRange}
             />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
