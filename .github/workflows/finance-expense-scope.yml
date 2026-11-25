@@ -64,6 +64,8 @@ jobs:
       - name: Exercise same-key intents on independent connections with an observed lock barrier
         working-directory: VinPoker
         run: bash tests/financeExpenses/scope.concurrent.sh "$RUNNER_TEMP/finance-expense-race"
+      - name: Verify actual HTTP intents flow through to the expense report
+        run: node VinPoker/tests/financeExpenses/scope.http.mjs
       - name: Verify rollback restores original RPC source
         run: |
           set -euo pipefail
