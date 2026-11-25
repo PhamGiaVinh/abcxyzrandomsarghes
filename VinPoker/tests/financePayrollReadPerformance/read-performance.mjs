@@ -30,6 +30,13 @@ function fingerprint(){return sql(`SELECT md5(jsonb_build_object(
  )::text)`);}
 const samples=[];
 let before,start,elapsedMs=0,fixture,terminalError;
+async function waitUntil(target) {
+  // Node truncates fractional timer delays. Recheck the monotonic deadline;
+  // never weaken the full30minute qualification window with a tolerance.
+  while(performance.now()<target) {
+    await new Promise(resolve=>setTimeout(resolve,Math.max(1,Math.ceil(target-performance.now()))));
+  }
+}
 async function read(name,args,token,timeoutMs=5000){
   const r=await fetch(`${api}/rpc/${name}`,{method:'POST',signal:AbortSignal.timeout(timeoutMs),
     headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify(args)});
@@ -82,7 +89,7 @@ try {
   await Promise.all(readers.map(async(token,actor)=>{
     for(let slot=0;slot<slots;slot++) {
       const scheduled=start+slot*paceMs;
-      await new Promise(resolve=>setTimeout(resolve,Math.max(0,scheduled-performance.now())));
+      await waitUntil(scheduled);
       const kind=slot%2===0?'report':'statement',monthIndex=(actor+Math.floor(slot/2))%12;
       const began=performance.now();
       if(began>start+durationMs+10000) {
@@ -98,7 +105,7 @@ try {
     }
   }));
   // Last scheduled request is at29m55s. Keep the actual observation open30m.
-  await new Promise(resolve=>setTimeout(resolve,Math.max(0,start+durationMs-performance.now())));
+  await waitUntil(start+durationMs);
   elapsedMs=performance.now()-start;
 } catch(e){terminalError=e.name;console.error('PT_READ_PERFORMANCE_FAILED',e.message.replaceAll(secret,'[REDACTED]'));}
 finally {

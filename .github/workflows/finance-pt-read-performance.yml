@@ -11,7 +11,7 @@ jobs:
   pt-read-performance:
     if: >-
       github.event.action == 'labeled' &&
-      github.event.label.name == 'qualify-pt-read-performance' &&
+      (github.event.label.name == 'qualify-pt-read-performance' || github.event.label.name == 'diagnose-pt-report-cold-start') &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -67,14 +67,21 @@ jobs:
           psql -X -v ON_ERROR_STOP=1 -f supabase/pending-migrations/finance_pt_installments_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/financePayrollReadPerformance/read-performance.seed.sql
       - name: Observe twenty distinct readers through real RPC for thirty minutes
+        if: github.event.label.name == 'qualify-pt-read-performance'
         working-directory: VinPoker
         run: node tests/financePayrollReadPerformance/read-performance.mjs
+      - name: Diagnose cold report connections and JIT using ON OFF ON cohorts
+        if: github.event.label.name == 'diagnose-pt-report-cold-start'
+        working-directory: VinPoker
+        run: node tests/financePayrollReadPerformance/cold-report-diagnostic.mjs
       - name: Upload aggregate and synthetic sample evidence only
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: pt-read-performance-sanitized
-          path: ${{ runner.temp }}/pt-read-performance.json
+          path: |
+            ${{ runner.temp }}/pt-read-performance.json
+            ${{ runner.temp }}/pt-read-trace-*.txt
           if-no-files-found: warn
           retention-days: 30
       - name: Remove runner-local schema artifact
