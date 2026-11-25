@@ -95,3 +95,5 @@ it('marks missing FT policy estimates unavailable rather than exporting a zero',
 it('waits for delayed club roles before deciding report access',()=>{
  f.rolesLoading=true;mount();expect(screen.getByRole('status')).toHaveTextContent('Đang xác minh quyền CLB');
 });
+
+it('discloses PT as an included payroll subtotal and does not invent missing expense evidence',()=>{f.summary=dealerSummary();mount();const costs=screen.getByRole('region',{name:'Chi phí đã ghi nhận'});expect(within(costs).getByText('Trong lương: PT đã chi')).toBeVisible();expect(within(costs).getAllByText('Chưa có dữ liệu')).toHaveLength(2);expect(within(costs).getByText(/không cộng thêm lần nữa/)).toBeVisible();});

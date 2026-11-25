@@ -1,6 +1,6 @@
 import { useOperationalCapabilities } from "@/hooks/useOperationalCapabilities";
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { BarChart3, Calculator, ReceiptText, Table2, Wallet } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -32,6 +32,9 @@ import StaffSalaryChot from "./StaffSalaryChot";
  */
 export default function AccountantDashboard() {
   const { loading, authError, user, isAdmin } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const activeTab = requestedTab === "expenses" || requestedTab === "report" ? requestedTab : "salary";
   const source = staffSalarySource();
   const access = useOperationalCapabilities();
   const gateOk = !loading && !access.loading && !access.error && !!user && access.allows("accountant");
@@ -75,7 +78,7 @@ export default function AccountantDashboard() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-display text-2xl text-primary inline-flex items-center gap-2">
               <Calculator className="w-6 h-6" />
-              Đối soát
+              {activeTab === "salary" ? "Lương" : activeTab === "expenses" ? "Sổ chi phí" : "Đối soát"}
             </h1>
             <Badge variant="outline" className="text-[10px]">
               {activeClub?.role === "accountant" ? "KẾ TOÁN CLB" : activeClub?.role === "owner" ? "CHỦ CLB" : "ADMIN"}
@@ -104,7 +107,7 @@ export default function AccountantDashboard() {
       </header>
 
       {clubsQuery.isError && <PendingDbNotice state="network_error" />}
-      <Tabs key={JSON.stringify([user.id, activeClubId, activeClub?.role])} defaultValue="salary" className="space-y-4">
+      <Tabs key={JSON.stringify([user.id, activeClubId, activeClub?.role])} value={activeTab} onValueChange={tab => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set("tab", tab); return next; })} className="space-y-4">
         <TabsList className="flex flex-wrap h-auto">
           <TabsTrigger value="salary" className="gap-1.5">
             <Wallet className="w-4 h-4" />
