@@ -1,0 +1,203 @@
+name: PT standalone reads 355 protected migration
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/finance-pt-355-protected-apply.yml
+      - VinPoker/scripts/ops/finance-pt-355-protected-apply*.mjs
+      - VinPoker/scripts/ops/floor-37-47-protected-apply.mjs
+      - VinPoker/scripts/ops/ops-1359-release-gate.mjs
+      - VinPoker/tests/financePayrollReadRelease/release355.native.mjs
+  workflow_dispatch:
+    inputs:
+      recovery_run_id:
+        description: Successful encrypted backup and isolated restore run
+        required: true
+        type: string
+      confirmation:
+        description: APPLY_PT_355 followed by the exact source SHA
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  checks: read
+  pull-requests: read
+
+concurrency:
+  group: vinpoker-production-database-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_SHA: 4f4097b0d2972cb02a1a2433768f7f06d721d964
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {path: runner}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ env.RELEASE_SHA }}', path: release}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Verify exact migration and atomic wrapper
+        working-directory: runner/VinPoker
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/release/VinPoker
+        run: |
+          node scripts/ops/finance-pt-355-protected-apply.mjs verify-source
+          node --test scripts/ops/finance-pt-355-protected-apply.test.mjs
+      - name: Verify protected dispatch and source checks
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONFIRM_PT_355: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/main
+          test "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          test "$GITHUB_TRIGGERING_ACTOR" = "$GITHUB_REPOSITORY_OWNER"
+          test "$CONFIRM_PT_355" = "APPLY_PT_355_$RELEASE_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/environments/dealer-swing-production-critical" |
+            jq -e '.protection_rules | any(.type == "required_reviewers" and (.reviewers | length > 0))' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/pulls/1801" |
+            jq -e --arg sha "$RELEASE_SHA" '.state=="open" and .base.ref=="main" and .head.sha==$sha' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45705655804" |
+            jq -e '.conclusion=="success" and .head_sha=="4f4097b0d2972cb02a1a2433768f7f06d721d964" and .event=="pull_request"' >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45651278424" |
+            jq -e '.conclusion=="success" and .head_sha=="c9dba24211152ddf5f010a46d0afab118cfbf482" and .event=="workflow_dispatch"' >/dev/null
+          checks="$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/check-runs?per_page=100")"
+          for name in standalone-read collision-guard release-runner-postgres-17 'Floor V3 catalog and promotion preflight'; do
+            jq -e --arg name "$name" '[.check_runs[] | select(.name==$name and .app.slug=="github-actions")] | max_by(.id) | .conclusion=="success"' <<<"$checks" >/dev/null
+          done
+      - name: Verify one original-schema load run and recompute raw qualification
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: runner/VinPoker
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/release/VinPoker
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45703657531" |
+            jq -e '.conclusion=="success" and .event=="pull_request" and .head_sha=="f2ef7ad92adfe1aa097856b3da65307f7b401852" and .path==".github/workflows/finance-pt-statement-read-load.yml"' >/dev/null
+          artifact="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/45703657531/artifacts" |
+            jq -ce '[.artifacts[]|select(.name=="pt-standalone-read-load-sanitized" and .expired==false and .size_in_bytes>0)] |
+              if length==1 then .[0] else error("load artifact missing") end')"
+          id="$(jq -r .id <<<"$artifact")"
+          digest="$(jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))' <<<"$artifact")"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" >"$RUNNER_TEMP/pt355-load.zip"
+          test "$(sha256sum "$RUNNER_TEMP/pt355-load.zip" | cut -d ' ' -f1)" = "${digest#sha256:}"
+          test "$(unzip -Z1 "$RUNNER_TEMP/pt355-load.zip")" = pt-standalone-read-load.json
+          unzip -p "$RUNNER_TEMP/pt355-load.zip" pt-standalone-read-load.json >"$RUNNER_TEMP/pt355-load.json"
+          LOAD_EVIDENCE_PATH="$RUNNER_TEMP/pt355-load.json" node scripts/ops/finance-pt-355-protected-apply.mjs verify-load
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: vinpoker_ops_pt355_release
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vinpoker_ops_pt355_release"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_pt355_release
+      CAPTURE_RUN: '45651278424'
+      CAPTURE_SHA: 'c9dba24211152ddf5f010a46d0afab118cfbf482'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {path: runner}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ env.RELEASE_SHA }}', path: release}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Verify captured schema provenance and restore only an empty loopback DB
+        working-directory: runner/VinPoker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CAPTURE_RUN" > "$RUNNER_TEMP/pt355-capture.json"
+          jq -e --arg sha "$CAPTURE_SHA" --arg owner "$GITHUB_REPOSITORY_OWNER" '
+            .conclusion=="success" and .head_sha==$sha and .head_branch=="main" and
+            .event=="workflow_dispatch" and .actor.login==$owner and
+            .path==".github/workflows/capture-live-public-schema.yml"' "$RUNNER_TEMP/pt355-capture.json" >/dev/null
+          export SCHEMA_ARTIFACT_DIR="$RUNNER_TEMP/pt355-schema"
+          gh run download "$CAPTURE_RUN" -R "$GITHUB_REPOSITORY" -n live-public-schema -D "$SCHEMA_ARTIFACT_DIR"
+          node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
+          test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
+          node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Execute the exact atomic SQL and receipt on isolated PostgreSQL
+        working-directory: runner/VinPoker
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/release/VinPoker
+        run: node tests/financePayrollReadRelease/release355.native.mjs
+      - name: Remove runner-local schema artifact
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/pt355-schema"
+  apply:
+    if: github.event_name == 'workflow_dispatch'
+    needs: [qualify, native]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    environment: dealer-swing-production-critical
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {path: runner}
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ env.RELEASE_SHA }}', path: release}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Verify backup run and download only the restore receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$RECOVERY_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/pulls/1801" |
+            jq -e --arg sha "$RELEASE_SHA" '.state=="open" and .base.ref=="main" and .head.sha==$sha' >/dev/null
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID")"
+          workflow="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/floor-v3-recovery-backup.yml" --jq .id)"
+          jq -e --argjson workflow "$workflow" --arg owner "$GITHUB_REPOSITORY_OWNER" '
+            .workflow_id==$workflow and .event=="workflow_dispatch" and .status=="completed" and
+            .conclusion=="success" and .head_branch=="main" and
+            .actor.login==$owner and .triggering_actor.login==$owner' <<<"$run" >/dev/null
+          artifact="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RECOVERY_RUN_ID/artifacts" |
+            jq -ce --arg name "floor-v3-restore-verification-$RECOVERY_RUN_ID" '
+              [.artifacts[]|select(.name==$name and .expired==false and .size_in_bytes>0)] |
+              if length==1 then .[0] else error("restore artifact missing") end')"
+          id="$(jq -r .id <<<"$artifact")"
+          digest="$(jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))' <<<"$artifact")"
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" >"$RUNNER_TEMP/pt355-recovery.zip"
+          test "$(sha256sum "$RUNNER_TEMP/pt355-recovery.zip" | cut -d ' ' -f1)" = "${digest#sha256:}"
+          test "$(unzip -Z1 "$RUNNER_TEMP/pt355-recovery.zip")" = recovery-verification.json
+          unzip -p "$RUNNER_TEMP/pt355-recovery.zip" recovery-verification.json >"$RUNNER_TEMP/pt355-recovery.json"
+          printf 'RECOVERY_BASE_SHA=%s\n' "$(jq -er '.head_sha | select(test("^[a-f0-9]{40}$"))' <<<"$run")" >>"$GITHUB_ENV"
+          printf 'RECOVERY_RECEIPT_PATH=%s/pt355-recovery.json\n' "$RUNNER_TEMP" >>"$GITHUB_ENV"
+      - name: Apply only PT read migration 355 and verify receipt and definitions
+        working-directory: runner/VinPoker
+        env:
+          RELEASE_SOURCE_ROOT: ${{ github.workspace }}/release/VinPoker
+          SOURCE_CHECKOUT_SHA: ${{ env.RELEASE_SHA }}
+          INITIAL_ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          CONFIRM_PT_355: ${{ inputs.confirmation }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          PGHOST: aws-1-ap-southeast-2.pooler.supabase.com
+          PGPORT: '5432'
+          PGUSER: postgres.orlesggcjamwuknxwcpk
+          PGDATABASE: postgres
+          PGSSLMODE: require
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: node scripts/ops/finance-pt-355-protected-apply.mjs apply
