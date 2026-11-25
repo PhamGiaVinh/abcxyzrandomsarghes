@@ -1,8 +1,9 @@
 BEGIN;
--- PENDING, not promoted or applied. Harden the existing signature without
+-- Owner-gated candidate, not applied. Harden the existing signature without
 -- changing saved expenses, accounting periods, approvals or payment behavior.
 -- Rollback: restore the exact pre-apply pg_get_functiondef and metadata captured
--- by the controlled runbook; never remove or rewrite expenses created meanwhile.
+-- by the controlled runbook in a reviewed forward migration; preserve the 354
+-- receipt and never remove or rewrite expenses created meanwhile.
 DO $guard$
 BEGIN
   IF (SELECT md5(prosrc) FROM pg_catalog.pg_proc

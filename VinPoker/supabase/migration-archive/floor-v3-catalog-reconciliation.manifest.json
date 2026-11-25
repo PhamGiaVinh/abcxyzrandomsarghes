@@ -10205,6 +10205,12 @@
       "filename": "20270128000351_tracker_bb_ante_settlement_v1.sql",
       "sha256": "54821b77d5033cf64d7244653954d0a43793281276626cab77939f478ce363bd",
       "domain": "tracker-bb-ante"
+    },
+    {
+      "version": "20270128000354",
+      "filename": "20270128000354_finance_expense_scope_idempotency.sql",
+      "sha256": "4c7615860dba50225a6507f6b2db378f417701a3968bb0063414bdad1ac62632",
+      "domain": "finance-expense-scope-idempotency"
     }
   ],
   "floorActiveAllowlist": [

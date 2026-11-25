@@ -4,7 +4,7 @@ on:
     paths:
       - '.github/workflows/finance-expense-scope.yml'
       - 'VinPoker/tests/financeExpenses/**'
-      - 'VinPoker/supabase/pending-migrations/20270128000354_finance_expense_scope_idempotency.sql'
+      - 'VinPoker/supabase/migrations/20270128000354_finance_expense_scope_idempotency.sql'
 permissions:
   actions: read
   contents: read
@@ -58,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           psql -X -At -v ON_ERROR_STOP=1 -c "SELECT pg_get_functiondef('public.record_club_expense(uuid,public.expense_category,bigint,timestamptz,text,text,text,uuid,uuid,text,uuid,text)'::regprocedure)" > "$RUNNER_TEMP/expense-reader-original.sql"
-          psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/20270128000354_finance_expense_scope_idempotency.sql
+          psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/migrations/20270128000354_finance_expense_scope_idempotency.sql
       - name: Verify valid adjustments, exact retries, rejection without writes and revoked roles
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financeExpenses/scope.candidate.sql
       - name: Exercise same-key intents on independent connections with an observed lock barrier
