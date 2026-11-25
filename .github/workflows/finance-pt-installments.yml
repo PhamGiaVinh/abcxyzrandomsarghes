@@ -6,7 +6,6 @@ on:
       - 'VinPoker/tests/financePayrollInstallments/**'
       - 'VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql'
       - 'VinPoker/supabase/pending-migrations/finance_pt_intent_resolution_v1.sql'
-      - 'VinPoker/supabase/pending-migrations/finance_pt_recipient_history_v1.sql'
       - 'VinPoker/src/lib/ptStatement*'
       - 'VinPoker/src/components/cashier/PtStatement*'
       - 'VinPoker/src/components/dealer-app/salary/DealerSalaryScreen*'
@@ -43,6 +42,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with: {node-version: 22}
+      - name: Checkout independently qualified readers without importing future writer changes
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '4f4097b0d2972cb02a1a2433768f7f06d721d964', path: read-release, persist-credentials: false}
       - name: Verify capture provenance and restore schema on loopback
         working-directory: VinPoker
         env:
@@ -59,6 +61,16 @@ jobs:
           export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
           test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
           node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Install exact independent read package first on isolated schema
+        working-directory: VinPoker
+        run: |
+          set -euo pipefail
+          sql=../read-release/VinPoker/supabase/migrations/20270128000355_finance_pt_statement_reads_v1.sql
+          test "$(sha256sum "$sql" | cut -d ' ' -f1)" = 871cd603ba0dc81818c15c044e41bc6ad003ccca74d01cb1ebb142ebd39c71cc
+          psql -X -v ON_ERROR_STOP=1 -f "$sql"
+      - name: Refuse missing or changed independent readers before any writer schema change
+        working-directory: VinPoker
+        run: bash tests/financePayrollInstallments/readers.preflight.sh "$RUNNER_TEMP/pt-readers-preflight"
       - name: Refuse drifted legacy indexes without partial migration
         working-directory: VinPoker
         run: bash tests/financePayrollInstallments/installments.preflight.sh "$RUNNER_TEMP/pt-preflight"
@@ -69,11 +81,6 @@ jobs:
         run: bash tests/financePayrollInstallments/intent-resolution.preflight.sh "$RUNNER_TEMP/pt-resolution-preflight"
       - name: Install pending read-only intent resolution extension
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/finance_pt_intent_resolution_v1.sql
-      - name: Refuse recipient history against changed detail reader
-        working-directory: VinPoker
-        run: bash tests/financePayrollInstallments/recipient-history.preflight.sh "$RUNNER_TEMP/pt-recipient-preflight"
-      - name: Install pending read-only recipient history entry
-        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/finance_pt_recipient_history_v1.sql
       - name: Verify old retained intent resolution before considering installment activation
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/intent-resolution.pg17.sql
       - name: Verify legacy full-payment behavior after affected insert guard changes

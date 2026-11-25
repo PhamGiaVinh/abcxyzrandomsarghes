@@ -40,6 +40,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with: {node-version: 22}
+      - name: Checkout exact independent reader dependency
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '4f4097b0d2972cb02a1a2433768f7f06d721d964', path: read-release, persist-credentials: false}
       - name: Check qualification refuses short missing duplicate timeout and slow samples
         working-directory: VinPoker
         run: node --test tests/financePayrollReadPerformance/qualification.test.mjs
@@ -64,6 +67,9 @@ jobs:
         working-directory: VinPoker
         run: |
           set -euo pipefail
+          readers=../read-release/VinPoker/supabase/migrations/20270128000355_finance_pt_statement_reads_v1.sql
+          test "$(sha256sum "$readers" | cut -d ' ' -f1)" = 871cd603ba0dc81818c15c044e41bc6ad003ccca74d01cb1ebb142ebd39c71cc
+          psql -X -v ON_ERROR_STOP=1 -f "$readers"
           psql -X -v ON_ERROR_STOP=1 -f supabase/pending-migrations/finance_pt_installments_v1.sql
           psql -X -v ON_ERROR_STOP=1 -f tests/financePayrollReadPerformance/read-performance.seed.sql
       - name: Observe twenty distinct readers through real RPC for thirty minutes
