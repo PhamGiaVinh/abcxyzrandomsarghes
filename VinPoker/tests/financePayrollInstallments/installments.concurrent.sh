@@ -7,7 +7,7 @@ mkdir -p "$out"
 db() { psql -XqAt -v ON_ERROR_STOP=1 "$@"; }
 # Reuse the same real earnings/finalizer setup as the sequential acceptance case.
 # Stop before its pay block; the preceding transaction remains open on this connection.
-sed '/^DO \$pay\$/,$d' tests/financePayrollInstallments/installments.pg17.sql > "$out/setup.sql"
+printf '%s\n' '\ir tests/financePayrollInstallments/installments.seed.sql' > "$out/setup.sql"
 cat >> "$out/setup.sql" <<'SQL'
 SELECT public.approve_pt_statement_installments_v1(current_setting('test.pt_statement_id')::uuid,
  current_setting('test.pt_statement_hash'),'18000000-0000-4000-8000-000000000092','TEST owner approves 5M budget');

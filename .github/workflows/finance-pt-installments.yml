@@ -56,6 +56,8 @@ jobs:
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/baseline.pg17.sql
       - name: Verify immutable 5M statement with 2M and 3M installments
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/installments.pg17.sql
+      - name: Verify owner-only cancellation of an untouched adopted plan
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/installments.lifecycle.sql
       - name: Verify two independent writers cannot overspend the same remaining 3M
         working-directory: VinPoker
         run: bash tests/financePayrollInstallments/installments.concurrent.sh "$RUNNER_TEMP/pt-installment-race"
