@@ -74,12 +74,16 @@ jobs:
       - name: Verify adoption legacy payment void and waiting revocation races
         working-directory: VinPoker
         run: bash tests/financePayrollInstallments/installments.competing-writers.sh "$RUNNER_TEMP/pt-competing-writers"
-      - name: Verify actual PostgREST finalize approve installment and revoked operator flow
-        working-directory: VinPoker
-        run: node tests/financePayrollInstallments/installments.http.mjs
       - name: Install locked application dependencies without postinstall browser downloads
         working-directory: VinPoker
         run: npm ci --ignore-scripts --no-audit --fund=false
+      - name: Install pinned browser for isolated real RPC presentation verification
+        working-directory: VinPoker
+        run: npx playwright install --with-deps chromium
+      - name: Verify actual browser PostgREST DB and revoked operator flow
+        working-directory: VinPoker
+        env: {PT_BROWSER_PROOF: 'true'}
+        run: node tests/financePayrollInstallments/installments.http.mjs
       - name: Verify real HTTP packets against the application client boundary
         working-directory: VinPoker
         run: node --experimental-strip-types tests/financePayrollInstallments/verify-client-contract.mjs

@@ -46,6 +46,17 @@ function fingerprint() {
     'plans',(SELECT jsonb_agg(to_jsonb(p) ORDER BY statement_id) FROM public.finance_pt_installment_plans_v1 p)
   )::text)`);
 }
+function verifyBrowser(context) {
+  if(process.env.PT_BROWSER_PROOF!=='true') return;
+  const before=fingerprint();
+  const r=spawnSync(process.execPath,['tests/financePayrollInstallments/verify-http-browser.mjs'],{
+    encoding:'utf8',input:JSON.stringify(context),timeout:120000,
+  });
+  assert.equal(r.status,0,`isolated browser read failed: ${(r.stderr ?? '').replaceAll(context.token,'[REDACTED]')}`);
+  assert.equal(fingerprint(),before,'browser read/revocation changed financial facts');
+  assert.match(r.stdout,/PT_REAL_BROWSER_RPC_DB_DESKTOP_MOBILE_READ_PASS/);
+  console.log('PT_REAL_BROWSER_RPC_DB_DESKTOP_MOBILE_READ_PASS',context.paymentCount);
+}
 try {
   sql(`DO $$ BEGIN
     IF current_database()<>'vinpoker_ops_pt_installment' THEN RAISE EXCEPTION 'isolated_database_required'; END IF;
@@ -104,6 +115,10 @@ try {
   assert.equal(partialReport.cost.ptWagePaid,beforeCash.cost.ptWagePaid+2000000);
   const partial=fingerprint();
   const partialDetails=await success('get_pt_statement_installments_v1',{p_statement_id:statementId},ownerJwt);
+  const browserBinding={statement_id:statementId,statement_hash:JSON.parse(original).statement_hash,
+    club_id:club,dealer_id:dealer,net_amount_vnd:5000000};
+  verifyBrowser({actor:cashier,token:cashierJwt,binding:browserBinding,
+    paid:'2.000.000',remaining:'3.000.000',paymentCount:1,verifyRevocation:false});
   for(const deniedJwt of [token(undefined),token('18000000-0000-4000-8000-000000000013')]) {
     const denied=await rpc('record_pt_statement_installment_v1',{...first,p_amount_vnd:1},deniedJwt);
     assert.equal(denied.status,403);assert.equal(denied.data.code,'42501');
@@ -137,6 +152,8 @@ try {
   assert.deepEqual([last.amount_vnd,last.paid_total_vnd,last.remaining_vnd,last.idempotent],[3000000,5000000,0,false]);
   const complete=await success('get_pt_statement_installments_v1',{p_statement_id:statementId},ownerJwt);
   assert.equal(complete.payments.length,2);assert.equal(complete.paid_total_vnd,5000000);assert.equal(complete.remaining_vnd,0);
+  verifyBrowser({actor:cashier,token:cashierJwt,binding:browserBinding,
+    paid:'5.000.000',remaining:'0',paymentCount:2,verifyRevocation:true});
   const completeReport=await success('get_club_finance_summary_v2',period,ownerJwt);
   assert.equal(completeReport.dealerLive.ptFinalizedUnpaidBalance,beforeCash.dealerLive.ptFinalizedUnpaidBalance-5000000);
   assert.equal(completeReport.cost.ptWagePaid,beforeCash.cost.ptWagePaid+5000000);

@@ -6,7 +6,8 @@ WITH statements AS (
   LEFT JOIN LATERAL (
     SELECT sum(p.amount_vnd) FILTER(WHERE p.voided_at IS NULL) paid,
       count(*) FILTER(WHERE p.club_id IS DISTINCT FROM s.club_id OR p.dealer_id IS DISTINCT FROM s.dealer_id) bad_scope,
-      count(*) FILTER(WHERE p.voided_at IS NULL AND (p.amount_vnd<=0 OR p.amount_vnd>9007199254740991 OR p.paid_at IS NULL)) bad_payment
+      count(*) FILTER(WHERE p.voided_at IS NULL AND (p.amount_vnd<=0 OR p.amount_vnd>9007199254740991
+        OR p.paid_at IS NULL OR NOT isfinite(p.paid_at))) bad_payment
     FROM public.dealer_pt_wage_payments p WHERE p.statement_id=s.id
   ) p ON true
   WHERE s.statement_kind='part_time_settlement'
@@ -14,7 +15,7 @@ WITH statements AS (
   SELECT count(*) bad_lines FROM public.dealer_payroll_statement_lines l
   JOIN statements s ON s.id=l.statement_id
   WHERE l.line_no<=0 OR nullif(btrim(l.label),'') IS NULL
-    OR (l.quantity IS NOT NULL AND l.quantity<0)
+    OR (l.quantity IS NOT NULL AND (l.quantity<0 OR l.quantity::text IN ('NaN','Infinity','-Infinity')))
     OR (l.unit_rate_vnd IS NOT NULL AND (l.unit_rate_vnd<0 OR l.unit_rate_vnd>9007199254740991))
     OR abs(l.amount_vnd::numeric)>9007199254740991
 )
@@ -23,7 +24,8 @@ SELECT jsonb_build_object(
   'statement_count',count(*),
   'supported_state_count',count(*) FILTER(WHERE state IN ('finalized','pdf_rendered','delivery_failed','sent','voided','replaced')),
   'invalid_identity_count',count(*) FILTER(WHERE statement_hash !~ '^[a-f0-9]{64}$' OR statement_hash IS NULL
-    OR nullif(btrim(dealer_snapshot->>'full_name'),'') IS NULL OR nullif(btrim(club_snapshot->>'club_name'),'') IS NULL OR finalized_at IS NULL),
+    OR nullif(btrim(dealer_snapshot->>'full_name'),'') IS NULL OR nullif(btrim(club_snapshot->>'club_name'),'') IS NULL
+    OR finalized_at IS NULL OR NOT isfinite(finalized_at)),
   'invalid_money_count',count(*) FILTER(WHERE net_amount_vnd<0 OR gross_amount_vnd<0 OR deduction_amount_vnd<0
     OR greatest(net_amount_vnd,gross_amount_vnd,deduction_amount_vnd)>9007199254740991
     OR gross_amount_vnd::numeric-deduction_amount_vnd<>net_amount_vnd),
