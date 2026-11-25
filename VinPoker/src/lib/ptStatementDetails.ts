@@ -35,3 +35,42 @@ export function parsePtStatementDetails(value:unknown,expected:PtStatementBindin
   }
   return row;
 }
+
+const cursorSchema=z.object({finalized_at:z.string().datetime({offset:true}),statement_id:z.string().uuid()});
+const historyRow=bindingSchema.extend({finalized_at:z.string().datetime({offset:true}),
+  state:schema.shape.state,paid_total_vnd:money,remaining_vnd:money});
+const historySchema=z.object({club_id:z.string().uuid(),dealer_id:z.string().uuid(),
+  as_of:z.string().datetime({offset:true}),items:z.array(historyRow).max(20),next_cursor:cursorSchema.nullable()});
+export type PtStatementCursor=z.infer<typeof cursorSchema>;
+export type PtStatementHistory=z.infer<typeof historySchema>;
+// PostgreSQL timestamps retain microseconds; Date.parse alone loses their order.
+function timestampOrder(value:string):bigint {
+  const fraction=value.match(/\.(\d+)/)?.[1]??'';
+  return BigInt(Date.parse(value))*1000000n+BigInt(fraction.padEnd(9,'0').slice(3,9));
+}
+
+/** Check server totals and page identity; this does not calculate earned wages. */
+export function parsePtStatementHistory(value:unknown,expected:{club_id:string;dealer_id:string},before:PtStatementCursor|null):PtStatementHistory {
+  const page=historySchema.parse(value);
+  if(page.club_id!==expected.club_id || page.dealer_id!==expected.dealer_id) throw Error('PT_HISTORY_SCOPE_INVALID');
+  let prior=before;
+  const ids=new Set<string>();
+  for(const item of page.items) {
+    const cancelled=['voided','replaced'].includes(item.state);
+    if(item.club_id!==expected.club_id || item.dealer_id!==expected.dealer_id || ids.has(item.statement_id)
+      || (cancelled ? item.paid_total_vnd!==0 || item.remaining_vnd!==0
+        : BigInt(item.paid_total_vnd)+BigInt(item.remaining_vnd)!==BigInt(item.net_amount_vnd))) {
+      throw Error('PT_HISTORY_FACTS_INVALID');
+    }
+    if(prior && (timestampOrder(item.finalized_at)>timestampOrder(prior.finalized_at)
+      || (timestampOrder(item.finalized_at)===timestampOrder(prior.finalized_at) && item.statement_id>=prior.statement_id))) {
+      throw Error('PT_HISTORY_ORDER_INVALID');
+    }
+    ids.add(item.statement_id);prior=item;
+  }
+  if(page.next_cursor && (page.items.length!==20 || !prior
+    || page.next_cursor.statement_id!==prior.statement_id || page.next_cursor.finalized_at!==prior.finalized_at)) {
+    throw Error('PT_HISTORY_CURSOR_INVALID');
+  }
+  return page;
+}

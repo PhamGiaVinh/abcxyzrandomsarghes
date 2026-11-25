@@ -15,6 +15,8 @@ import {
   ptWageRatePerSecondVnd,
 } from "@/lib/dealerPtWagePresentation";
 import { Skeleton } from "@/components/ui/skeleton";
+import {FEATURES} from '@/lib/featureFlags';
+import {DealerPtStatementHistory} from './DealerPtStatementHistory';
 
 /**
  * Dealer Mobile App — "Lương của tôi" (my salary), READ-ONLY.
@@ -27,7 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
  * The generated client types can lag the controlled database contract, so these RPCs are called
  * via the untyped client (same pattern as useDealerLink / useDealerPayroll's
  * save_payroll_period). The whole screen is reached only when the route gate
- * (FEATURES.dealerSelfSalary, default OFF) is on.
+ * (FEATURES.dealerSelfSalary) is on. Frozen PT history has its own default-OFF gate.
  */
 
 const GOLD = "#E6B84C";
@@ -119,10 +121,10 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
   const readGeneration = useRef(0);
   useEffect(() => () => { readGeneration.current += 1; }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (background=false) => {
     if (!dealerId || !isDealer || linkLoading) return;
     const generation = ++readGeneration.current;
-    setLoading(true);
+    if(!background) setLoading(true);
     setError(null);
     try {
       if (source === "mock") {
@@ -162,6 +164,7 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
       }
     } catch (e: unknown) {
       if (generation !== readGeneration.current) return;
+      setPt(null);setFt(null);
       const message = e instanceof Error ? e.message
         : e && typeof e === "object" && "message" in e && typeof e.message === "string" ? e.message : "Lỗi tải lương";
       setError(message === "tracker_context_read_timeout" ? "Quá thời gian tải lương. Vui lòng thử lại." : message);
@@ -174,7 +177,7 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
   // tick the display every 1s; resync PT from the server every 60s
   useEffect(() => {
     const tick = setInterval(() => setNowMs(Date.now()), 1000);
-    const resync = setInterval(() => { if (empType === "part_time") load(); }, 60000);
+    const resync = setInterval(() => { if (empType === "part_time") void load(true); }, 60000);
     return () => { clearInterval(tick); clearInterval(resync); };
   }, [empType, load]);
 
@@ -184,6 +187,8 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
       <p className="text-[12px] text-muted-foreground mb-3">
         {dealer?.clubName ? `${dealer.clubName} · ` : ""}{dealer?.fullName ?? t("dealer.salary.you", "Bạn")}
       </p>
+      {source==='live' && FEATURES.financePtStatementDetails && !linkLoading && isDealer && dealerId && dealer?.clubId
+        && <DealerPtStatementHistory clubId={dealer.clubId} dealerId={dealerId}/>}
     </>
   );
 

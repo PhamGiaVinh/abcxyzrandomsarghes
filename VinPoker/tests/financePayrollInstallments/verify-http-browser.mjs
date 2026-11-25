@@ -43,18 +43,48 @@ try {
       failures.push('unexpected_external_request');return route.abort();
     });
     if(input.salaryOnly) {
+      const suffix=input.historicalMode?`-${input.historicalMode}`:'';
       await page.goto(`${base}/tests/financePayrollInstallments/http.employee.preview.html`);
       const history=page.getByRole('region',{name:'Lịch sử thanh toán lương PT',exact:true});
-      await history.getByText(/Chuyển khoản/).waitFor();
-      await history.getByText(/2\.000\.000/).waitFor();
-      if(input.paymentCount===1) assert.equal(await history.getByText(/Tiền mặt/).count(),0);
-      else {await history.getByText(/Tiền mặt/).waitFor();await history.getByText(/3\.000\.000/).waitFor();}
+      if(!input.historicalMode) {
+        await history.getByText(/Chuyển khoản/).waitFor();
+        await history.getByText(/2\.000\.000/).waitFor();
+        if(input.paymentCount===1) assert.equal(await history.getByText(/Tiền mặt/).count(),0);
+        else {await history.getByText(/Tiền mặt/).waitFor();await history.getByText(/3\.000\.000/).waitFor();}
+      } else if(input.historicalMode==='inactive') await page.getByRole('alert').waitFor();
+      else await page.getByText('Chưa chốt bảng lương tháng này',{exact:true}).waitFor();
+      const finalized=page.getByRole('region',{name:'Phiếu lương PT đã chốt',exact:true});
+      const expectedRemaining=input.paymentCount===1?'3.000.000':'0';
+      const expectedPaid=input.paymentCount===1?'2.000.000':'5.000.000';
+      await finalized.getByRole('listitem',{name:`Phiếu ${input.binding.statement_id}`,exact:true}).waitFor();
+      await finalized.locator('dl').getByText(`${expectedRemaining} ₫`,{exact:true}).waitFor();
+      assert.ok(reads.some(r=>r.name==='list_my_pt_statements_v1' && r.status===200));
       assert.ok(reads.some(r=>r.name==='get_my_pt_wage' && r.status===200));
-      assert.ok(reads.every(r=>r.name==='get_my_pt_wage'),'employee attempted a privileged or financial writer');
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'employee page overflows');
-      assert.ok(await history.evaluate(el=>el.scrollWidth<=el.clientWidth),'employee history overflows');
+      if(!input.historicalMode) assert.ok(await history.evaluate(el=>el.scrollWidth<=el.clientWidth),'employee history overflows');
+      assert.ok(await finalized.evaluate(el=>el.scrollWidth<=el.clientWidth),'employee finalized history overflows');
       await page.evaluate(()=>document.fonts.ready);
-      await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-employee.png`),fullPage:true});
+      await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-employee${suffix}.png`),fullPage:true});
+      await finalized.getByRole('button',{name:`Xem phiếu ${input.binding.statement_id}`,exact:true}).click();
+      const dialog=page.getByRole('dialog');
+      await dialog.getByLabel('Đã chốt',{exact:true}).getByText(/5\.000\.000/).waitFor();
+      await dialog.getByLabel('Còn phải trả',{exact:true}).getByText(`${expectedRemaining} ₫`,{exact:true}).waitFor();
+      await dialog.getByLabel('Đã ghi nhận chi',{exact:true}).getByText(`${expectedPaid} ₫`,{exact:true}).waitFor();
+      assert.ok(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth),'employee payslip overflows');
+      await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-employee-payslip${suffix}.png`),fullPage:true});
+      // Real link revocation in the same browser session must remove this list
+      // and its open detail. Metadata is restored for the next viewport.
+      sql(`UPDATE public.dealers SET user_id=NULL WHERE id='${input.binding.dealer_id}'`);
+      try {
+        await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+        await dialog.waitFor({state:'hidden'});
+        await finalized.getByRole('alert').waitFor();
+        assert.ok(reads.some(r=>r.name==='list_my_pt_statements_v1' && r.status===403));
+        assert.equal(await finalized.getByRole('listitem').count(),0,'revoked finalized money remains');
+        await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-employee-revoked${suffix}.png`),fullPage:true});
+      } finally {sql(`UPDATE public.dealers SET user_id='${input.actor}' WHERE id='${input.binding.dealer_id}'`);}
+      assert.ok(reads.every(r=>['get_my_pt_wage','get_my_dealer_payroll','list_my_pt_statements_v1','get_pt_statement_installments_v1'].includes(r.name)),
+        'employee attempted a privileged or financial writer');
       assert.deepEqual(failures,[]);await page.close();continue;
     }
     await page.goto(`${base}/tests/financePayrollInstallments/http.preview.html`);

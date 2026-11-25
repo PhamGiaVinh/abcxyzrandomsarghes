@@ -101,6 +101,22 @@ try {
   const employee='18000000-0000-4000-8000-000000000013';
   sql(`INSERT INTO auth.users(id) VALUES('${employee}');UPDATE public.dealers SET user_id='${employee}' WHERE id='${dealer}';`);
   const employeeJwt=token(employee);
+  const selfListBody={p_club_id:club,p_dealer_id:dealer};
+  async function verifySelfList(paid,remaining) {
+    const before=fingerprint();
+    const list=await success('list_my_pt_statements_v1',selfListBody,employeeJwt);
+    assert.equal(list.items.length,1);assert.equal(list.next_cursor,null);
+    assert.deepEqual([list.items[0].statement_id,list.items[0].net_amount_vnd,list.items[0].paid_total_vnd,list.items[0].remaining_vnd],
+      [statementId,5000000,paid,remaining]);
+    assert.equal(fingerprint(),before,'recipient discovery changed financial facts');
+  }
+  await verifySelfList(0,5000000);
+  assert.equal((await rpc('list_my_pt_statements_v1',selfListBody,cashierJwt)).status,403);
+  assert.equal((await rpc('list_my_pt_statements_v1',selfListBody,ownerJwt)).status,403);
+  assert.equal((await rpc('list_my_pt_statements_v1',{...selfListBody,p_club_id:'18000000-0000-4000-8000-000000000002'},employeeJwt)).status,403);
+  for(const anonymous of [undefined,token(employee,'anon')]) {
+    assert.ok([401,403,404].includes((await rpc('list_my_pt_statements_v1',selfListBody,anonymous)).status));
+  }
   const detail=await success('get_pt_statement_installments_v1',{p_statement_id:statementId},ownerJwt);
   const period=JSON.parse(sql(`SELECT jsonb_build_object(
     'p_from_date',date_trunc('month',now() at time zone 'Asia/Ho_Chi_Minh')::date,
@@ -114,6 +130,7 @@ try {
   const first={...binding,p_amount_vnd:2000000,p_payment_method:'bank',p_payment_reference:'TEST HTTP part 1',
     p_request_id:'18000000-0000-4000-8000-000000000083',p_note:'TEST HTTP 2M'};
   const p=await success('record_pt_statement_installment_v1',first,ownerJwt);
+  await verifySelfList(2000000,3000000);
   assert.deepEqual([p.amount_vnd,p.paid_total_vnd,p.remaining_vnd,p.idempotent],[2000000,2000000,3000000,false]);
   const partialReport=await success('get_club_finance_summary_v2',period,ownerJwt);
   assert.equal(partialReport.dealerLive.ptFinalizedUnpaidBalance,beforeCash.dealerLive.ptFinalizedUnpaidBalance-2000000);
@@ -168,12 +185,29 @@ try {
   assert.equal(fingerprint(),partial,'revoked payment changed canonical cash');
   sql(`INSERT INTO public.club_cashiers SELECT * FROM json_populate_record(NULL::public.club_cashiers,$row$${member}$row$::json)`);
   const last=await success('record_pt_statement_installment_v1',remainder,cashierJwt);
+  await verifySelfList(5000000,0);
   assert.deepEqual([last.amount_vnd,last.paid_total_vnd,last.remaining_vnd,last.idempotent],[3000000,5000000,0,false]);
   const complete=await success('get_pt_statement_installments_v1',{p_statement_id:statementId},ownerJwt);
   assert.equal(complete.payments.length,2);assert.equal(complete.paid_total_vnd,5000000);assert.equal(complete.remaining_vnd,0);
   verifyBrowser({actor:cashier,token:cashierJwt,binding:browserBinding,
     paid:'5.000.000',remaining:'0',paymentCount:2,verifyRevocation:true,oldIntent});
   verifyBrowser({actor:employee,token:employeeJwt,binding:browserBinding,salaryOnly:true,paymentCount:2});
+  for(const historicalMode of ['inactive','full_time']) {
+    const prior=sql(`SELECT row_to_json(d)::text FROM public.dealers d WHERE id='${dealer}'`);
+    const immutable=fingerprint();
+    try {
+      sql(`SET request.jwt.claim.sub='${owner}';UPDATE public.dealers
+        SET status='${historicalMode==='inactive'?'inactive':'active'}',employment_type='${historicalMode==='full_time'?'full_time':'part_time'}'
+        WHERE id='${dealer}';`);
+      await verifySelfList(5000000,0);
+      verifyBrowser({actor:employee,token:employeeJwt,binding:browserBinding,salaryOnly:true,paymentCount:2,historicalMode});
+      assert.equal(fingerprint(),immutable,'recipient employment status changed frozen financial facts');
+    } finally {
+      const original=JSON.parse(prior);
+      assert.ok(['active','inactive'].includes(original.status));assert.equal(original.employment_type,'part_time');
+      sql(`SET request.jwt.claim.sub='${owner}';UPDATE public.dealers SET status='${original.status}',employment_type='part_time' WHERE id='${dealer}';`);
+    }
+  }
   const completeReport=await success('get_club_finance_summary_v2',period,ownerJwt);
   assert.equal(completeReport.dealerLive.ptFinalizedUnpaidBalance,beforeCash.dealerLive.ptFinalizedUnpaidBalance-5000000);
   assert.equal(completeReport.cost.ptWagePaid,beforeCash.cost.ptWagePaid+5000000);
