@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { z } from "zod";
+import { useAuth } from "@/hooks/useAuth";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,55 +32,83 @@ interface Props {
   clubId: string;
 }
 
-export const ClubBankAccountManager = ({ clubId }: Props) => {
+const accountPacket=z.object({
+  id:z.string().uuid(),club_id:z.string().uuid(),account_type:z.literal('escrow'),
+  bank_name:z.string(),bank_bin:z.string().nullable(),account_number:z.string(),account_holder:z.string(),
+  qr_code_url:z.string().nullable(),notes:z.string().nullable(),is_active:z.boolean(),
+});
+const savedPacket=z.object({id:z.string().uuid(),club_id:z.string().uuid(),account_type:z.literal('escrow')});
+const emptyForm=()=>({bank_name:'',bank_bin:null as string|null,account_number:'',account_holder:'',qr_code_url:null as string|null,notes:'',is_active:true});
+export const ClubBankAccountManager=({clubId}:Props)=>{
+  const {user,session,loading,isAdmin,isClubAdmin,isClubOwner,isCashier,isAccountant}=useAuth();
+  if(loading)return <Card className="p-4" role="status">Đang xác minh phiên đăng nhập…</Card>;
+  if(!user?.id||!session?.access_token)return <Card className="p-4" role="alert">Đăng nhập để xem cấu hình tài khoản của CLB.</Card>;
+  const scope=JSON.stringify([user.id,sessionReadEpoch(session),clubId,isAdmin,isClubAdmin,isClubOwner,isCashier,isAccountant]);
+  return <ScopedBankAccount key={scope} clubId={clubId}/>;
+};
+function ScopedBankAccount({clubId}:Props){
   const [acc, setAcc] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [readError,setReadError]=useState(false);
+  const alive=useRef(true),generation=useRef(0),saveFlight=useRef(false),uploadFlight=useRef(false);
   const [form, setForm] = useState({
     bank_name: "", bank_bin: null as string | null, account_number: "", account_holder: "",
     qr_code_url: null as string | null, notes: "", is_active: true,
   });
 
-  const load = async () => {
-    setLoading(true);
-    const { data } = await supabase
+  const load = useCallback(async () => {
+    const request=++generation.current;
+    setLoading(true);setReadError(false);setAcc(null);setForm(emptyForm());
+    try{
+    if(!z.string().uuid().safeParse(clubId).success)throw Error('invalid club');
+    const { data,error } = await supabase
       .from("platform_bank_accounts")
-      .select("*")
+      .select("id,club_id,account_type,bank_name,bank_bin,account_number,account_holder,qr_code_url,notes,is_active")
       .eq("club_id", clubId)
       .eq("account_type", "escrow")
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
-    if (data) {
-      setAcc(data as any);
+    if(!alive.current||request!==generation.current)return;
+    if(error)throw Error('read refused');
+    if (data!==null) {
+      // Runtime Zod validation is authoritative; this project disables strict
+      // null checks, which otherwise makes inferred object keys appear optional.
+      const account=accountPacket.parse(data) as Account;
+      if(account.club_id!==clubId)throw Error('wrong club');
+      setAcc(account);
       setForm({
-        bank_name: data.bank_name,
-        bank_bin: (data as { bank_bin?: string | null }).bank_bin ?? null,
-        account_number: data.account_number,
-        account_holder: data.account_holder,
-        qr_code_url: data.qr_code_url,
-        notes: data.notes ?? "",
-        is_active: data.is_active,
+        bank_name: account.bank_name,
+        bank_bin: account.bank_bin,
+        account_number: account.account_number,
+        account_holder: account.account_holder,
+        qr_code_url: account.qr_code_url,
+        notes: account.notes ?? "",
+        is_active: account.is_active,
       });
     } else {
       setAcc(null);
       setForm({ bank_name: "", bank_bin: null, account_number: "", account_holder: "", qr_code_url: null, notes: "", is_active: true });
     }
-    setLoading(false);
-  };
+    }catch{
+      if(alive.current&&request===generation.current){setReadError(true);setAcc(null);setForm(emptyForm());}
+    }finally{if(alive.current&&request===generation.current)setLoading(false);}
+  },[clubId]);
 
-  useEffect(() => { load(); }, [clubId]);
+  useEffect(() => {alive.current=true;void load();return()=>{alive.current=false;};}, [load]);
 
   const uploadQR = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.files?.[0];
-    if (!raw) return;
+    const input=e.currentTarget,raw = input.files?.[0];
+    if (!raw||uploadFlight.current||saveFlight.current||loading||readError) return;
     if (!["image/jpeg", "image/png", "image/webp"].includes(raw.type)) {
       toast.error("Chỉ JPG/PNG/WEBP"); return;
     }
-    setUploading(true);
+    uploadFlight.current=true;setUploading(true);
     try {
       const file = await compressImage(raw, { maxEdge: 800, quality: 0.85 });
+      if(!alive.current)return;
       const ext = file.type === "image/png" ? "png" : "jpg";
       // First folder MUST be the bare club id: the bank-qr-codes storage RLS policy
       // checks (storage.foldername(name))[1] IN clubs.id::text for owner_id=auth.uid().
@@ -85,60 +116,51 @@ export const ClubBankAccountManager = ({ clubId }: Props) => {
       const path = `${clubId}/${Date.now()}.${ext}`;
       const { error } = await supabase.storage.from("bank-qr-codes")
         .upload(path, file, { contentType: file.type, cacheControl: "3600", upsert: false });
+      if(!alive.current)return;
       if (error) throw error;
       const { data: pub } = supabase.storage.from("bank-qr-codes").getPublicUrl(path);
       setForm((f) => ({ ...f, qr_code_url: pub.publicUrl }));
       toast.success("Đã tải QR");
-    } catch (e: any) {
-      toast.error(e.message ?? "Upload lỗi");
+    } catch {
+      if(alive.current)toast.error("Không tải được QR. Kiểm tra lại quyền và kết nối.");
     } finally {
-      setUploading(false);
-      e.target.value = "";
+      uploadFlight.current=false;if(alive.current)setUploading(false);
+      input.value = "";
     }
   };
 
-  const save = async () => {
-    if (!form.bank_name.trim() || !form.account_number.trim() || !form.account_holder.trim()) {
-      toast.error("Vui lòng điền đầy đủ tên ngân hàng, số tài khoản và chủ tài khoản"); return;
+  const save=async()=>{
+    if(saveFlight.current||uploadFlight.current||loading||readError||!alive.current)return;
+    const snapshot={...form},account=acc;
+    if(!snapshot.bank_name.trim()||!snapshot.account_number.trim()||!snapshot.account_holder.trim()){
+      toast.error('Vui lòng điền đầy đủ tên ngân hàng, số tài khoản và chủ tài khoản');return;
     }
-    setSaving(true);
-    const payload = {
-      bank_name: form.bank_name.trim(),
-      account_number: form.account_number.trim(),
-      account_holder: form.account_holder.trim(),
-      qr_code_url: form.qr_code_url,
-      notes: form.notes || null,
-      is_active: form.is_active,
-      account_type: "escrow",
-      club_id: clubId,
-    };
-    let savedId = acc?.id;
-    let saveErr: { message: string } | null = null;
-    if (acc) {
-      const { error } = await supabase.from("platform_bank_accounts").update(payload).eq("id", acc.id);
-      saveErr = error;
-    } else {
-      const { data, error } = await supabase.from("platform_bank_accounts").insert(payload).select("id").maybeSingle();
-      saveErr = error;
-      savedId = (data as { id?: string } | null)?.id;
-    }
-    if (saveErr) { setSaving(false); toast.error(saveErr.message); return; }
-    // bank_bin (VietQR Stage 2) is written SEPARATELY + best-effort so the base account save is
-    // unaffected if the bank_bin column hasn't been applied yet (the dynamic QR just falls back to the
-    // free-text bank-name map until then). Once the migration is live, re-saving persists the BIN.
-    if (savedId) {
-      const { error: binErr } = await supabase
-        .from("platform_bank_accounts")
-        .update({ bank_bin: form.bank_bin || null } as never)
-        .eq("id", savedId);
-      if (binErr) console.warn("bank_bin not saved (Stage-2 column may be unapplied):", binErr.message);
-    }
-    setSaving(false);
-    toast.success(acc ? "Đã cập nhật" : "Đã tạo tài khoản");
-    load();
+    saveFlight.current=true;setSaving(true);
+    try{
+      if(account&&(account.club_id!==clubId||account.account_type!=='escrow'))throw Error('wrong account');
+      const payload={bank_name:snapshot.bank_name.trim(),bank_bin:snapshot.bank_bin||null,
+        account_number:snapshot.account_number.trim(),account_holder:snapshot.account_holder.trim(),
+        qr_code_url:snapshot.qr_code_url,notes:snapshot.notes||null,is_active:snapshot.is_active,account_type:'escrow'};
+      const query=account
+        ?supabase.from('platform_bank_accounts').update(payload).eq('id',account.id).eq('club_id',clubId).eq('account_type','escrow')
+        :supabase.from('platform_bank_accounts').insert({...payload,club_id:clubId});
+      const {data,error}=await query.select('id,club_id,account_type').maybeSingle();
+      if(!alive.current)return;
+      if(error)throw Error('save refused');
+      const saved=savedPacket.parse(data);
+      if(saved.club_id!==clubId||(account&&saved.id!==account.id))throw Error('save not confirmed');
+      toast.success(account?'Đã cập nhật':'Đã tạo tài khoản');await load();
+    }catch{
+      if(alive.current){setReadError(true);setAcc(null);setForm(emptyForm());toast.error('Chưa xác minh được kết quả lưu. Kiểm tra lại trước khi ghi tiếp.');}
+    }finally{saveFlight.current=false;if(alive.current)setSaving(false);}
   };
 
-  if (loading) return <Card className="p-4"><Loader2 className="w-5 h-5 animate-spin text-primary" /></Card>;
+  if (loading) return <Card className="p-4" role="status"><Loader2 className="w-5 h-5 animate-spin text-primary" /><span className="sr-only">Đang tải tài khoản CLB</span></Card>;
+
+  if(readError)return <Card role="alert" className="p-4 space-y-3 text-sm">
+    <p>Chưa xác minh được tài khoản nhận tiền của CLB. Không tạo hoặc sửa tài khoản khi chưa tải lại thành công.</p>
+    <Button variant="outline" onClick={()=>void load()}>Kiểm tra lại</Button>
+  </Card>;
 
   const knownBins = new Set(VN_BANKS.map((b) => b.bin));
   const bankSelectValue = form.bank_bin && knownBins.has(form.bank_bin) ? form.bank_bin : "other";
@@ -153,9 +175,10 @@ export const ClubBankAccountManager = ({ clubId }: Props) => {
         Áp dụng cho: <b>đăng ký giải</b> & <b>stake</b>. Player sẽ chuyển khoản trực tiếp vào tài khoản này của CLB.
       </p>
 
+      <fieldset disabled={saving||uploading} className="min-w-0 space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <Label>Ngân hàng *</Label>
+          <Label htmlFor={`bank-select-${clubId}`}>Ngân hàng *</Label>
           <Select
             value={bankSelectValue}
             onValueChange={(v) => {
@@ -164,7 +187,7 @@ export const ClubBankAccountManager = ({ clubId }: Props) => {
               if (b) setForm({ ...form, bank_name: b.shortName, bank_bin: b.bin });
             }}
           >
-            <SelectTrigger><SelectValue placeholder="Chọn ngân hàng" /></SelectTrigger>
+            <SelectTrigger id={`bank-select-${clubId}`}><SelectValue placeholder="Chọn ngân hàng" /></SelectTrigger>
             <SelectContent>
               {VN_BANKS.map((b) => (
                 <SelectItem key={b.bin} value={b.bin}>{b.shortName} · {b.bin}</SelectItem>
@@ -173,23 +196,23 @@ export const ClubBankAccountManager = ({ clubId }: Props) => {
             </SelectContent>
           </Select>
           {bankSelectValue === "other" && (
-            <Input className="mt-2" value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} placeholder="VD: Vietcombank" />
+            <Input aria-label="Tên ngân hàng" className="mt-2" value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} placeholder="VD: Vietcombank" />
           )}
           {bankSelectValue !== "other" && (
             <p className="text-[10px] text-muted-foreground mt-1">Mã QR VietQR động sẽ dùng mã ngân hàng này.</p>
           )}
         </div>
         <div>
-          <Label>Số tài khoản *</Label>
-          <Input value={form.account_number} onChange={(e) => setForm({ ...form, account_number: e.target.value })} />
+          <Label htmlFor={`bank-number-${clubId}`}>Số tài khoản *</Label>
+          <Input id={`bank-number-${clubId}`} value={form.account_number} onChange={(e) => setForm({ ...form, account_number: e.target.value })} />
         </div>
         <div className="md:col-span-2">
-          <Label>Chủ tài khoản *</Label>
-          <Input value={form.account_holder} onChange={(e) => setForm({ ...form, account_holder: e.target.value })} />
+          <Label htmlFor={`bank-holder-${clubId}`}>Chủ tài khoản *</Label>
+          <Input id={`bank-holder-${clubId}`} value={form.account_holder} onChange={(e) => setForm({ ...form, account_holder: e.target.value })} />
         </div>
         <div className="md:col-span-2">
-          <Label>Ghi chú (không bắt buộc)</Label>
-          <Textarea rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+          <Label htmlFor={`bank-notes-${clubId}`}>Ghi chú (không bắt buộc)</Label>
+          <Textarea id={`bank-notes-${clubId}`} rows={2} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
         </div>
       </div>
 
@@ -215,11 +238,12 @@ export const ClubBankAccountManager = ({ clubId }: Props) => {
       </div>
 
       <div className="flex justify-end">
-        <Button onClick={save} disabled={saving} className="gradient-neon text-primary-foreground">
+        <Button onClick={save} disabled={saving || uploading} className="gradient-neon text-primary-foreground min-h-11">
           {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
           Lưu
         </Button>
       </div>
+      </fieldset>
     </Card>
   );
 };
