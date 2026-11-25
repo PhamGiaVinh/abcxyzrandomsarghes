@@ -41,6 +41,16 @@ BEGIN
     OR jsonb_array_length(d->'payments')<>1 THEN RAISE EXCEPTION 'detail_lost_partial_debt'; END IF;
   IF public.get_club_pt_wages('18000000-0000-4000-8000-000000000001')->'dealers'->0->>'balance_vnd' IS DISTINCT FROM '0'
     THEN RAISE EXCEPTION 'partial_payment_released_reserved_interval'; END IF;
+  d:=public.get_club_finance_summary_v2('2026-11-01','2026-11-30','18000000-0000-4000-8000-000000000001');
+  IF d->'dealerLive'->>'ptFinalizedUnpaidBalance' IS DISTINCT FROM '3000000'
+    OR d->'dealerLive'->>'ptTotalUnpaid' IS DISTINCT FROM '3000000'
+    OR d->'cost'->>'ptWagePaid' IS DISTINCT FROM '2000000' THEN
+    RAISE EXCEPTION 'report_did_not_separate_actual_2M_paid_from_current_3M_debt'; END IF;
+  d:=public.get_club_finance_summary_v2('2026-10-01','2026-10-31','18000000-0000-4000-8000-000000000001');
+  IF d->'dealerLive'->>'scope' IS DISTINCT FROM 'current_outstanding'
+    OR d->'dealerLive'->>'ptFinalizedUnpaidBalance' IS DISTINCT FROM '3000000'
+    OR d->'cost'->>'ptWagePaid' IS DISTINCT FROM '0' THEN
+    RAISE EXCEPTION 'report_period_filter_changed_current_debt_or_included_future_cash'; END IF;
 END $pay$;
 RESET ROLE;
 DO $independent$ DECLARE s uuid:=current_setting('test.pt_statement_id')::uuid; p public.dealer_pt_wage_payments%rowtype; BEGIN
