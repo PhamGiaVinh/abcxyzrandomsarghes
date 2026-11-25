@@ -71,6 +71,50 @@ try{
   await page.screenshot({path:join(evidence,`bank-${width}-write-denied.png`),fullPage:true,animations:'disabled'});
   assert.deepEqual(failures,[]);await page.close();
  }
+
+ // Recover a committed create after its response is lost, including a stale
+ // empty recovery read. Retrying the exact id must conflict, never add a row.
+ for(const width of [320,375,414,768,1280]){
+  const club=id(1000+width),owner=id(10000+width);
+  sql(`INSERT INTO auth.users(id) VALUES('${owner}');
+   INSERT INTO public.profiles(user_id,display_name) VALUES('${owner}','TEST recovery owner ${width}');
+   INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES('${club}','${owner}','TEST create recovery ${width}','TEST','approved')`);
+  const page=await browser.newPage({viewport:{width,height:900},reducedMotion:'reduce'});
+  await page.addInitScript(value=>{window.__bankInput=value;},{...packet,clubA:club});
+  const posts=[];let lostOnce=false,staleOnce=false;
+  await page.route('**/rest/v1/platform_bank_accounts?**',async route=>{
+   const request=route.request(),url=new URL(request.url());
+   if(request.method()==='POST'){
+    posts.push(request.postDataJSON());
+    if(!lostOnce){lostOnce=true;const response=await route.fetch();assert.ok(response.ok(),'first create must really commit');
+     return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'synthetic lost committed acknowledgement'})});}
+   }
+   if(lostOnce&&!staleOnce&&request.method()==='GET'&&url.searchParams.get('id')===`eq.${posts[0].id}`){
+    staleOnce=true;return route.fulfill({status:200,contentType:'application/json',body:'[]'});
+   }
+   return route.continue();
+  });
+  await page.goto(base+'/tests/financeBankScope/http.preview.html');
+  await page.getByLabel('Tên ngân hàng',{exact:true}).fill('TEST new receiving bank');
+  await page.getByLabel('Số tài khoản *',{exact:true}).fill('333333333');
+  await page.getByLabel('Chủ tài khoản *',{exact:true}).fill('TEST new owner');
+  await page.getByRole('button',{name:'Lưu',exact:true}).click();await page.getByRole('alert').waitFor();
+  assert.equal(posts.length,1);assert.match(posts[0].id,/^[a-f0-9-]{36}$/);
+  assert.equal(sql(`SELECT count(*) FROM public.platform_bank_accounts WHERE club_id='${club}'`),'1');
+  await page.reload();await page.getByLabel('Số tài khoản *',{exact:true}).waitFor();
+  assert.equal(await page.getByLabel('Số tài khoản *',{exact:true}).inputValue(),'333333333');
+  assert.ok(await page.getByLabel('Số tài khoản *',{exact:true}).isDisabled());assert.ok(staleOnce);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:join(evidence,`bank-${width}-create-pending.png`),fullPage:true,animations:'disabled'});
+  await page.getByRole('button',{name:'Thử lại cùng yêu cầu',exact:true}).click();
+  await page.getByText('Đã lưu',{exact:true}).waitFor();await page.getByRole('button',{name:'Lưu',exact:true}).waitFor();
+  assert.equal(posts.length,2);assert.deepEqual(posts[0],posts[1]);
+  assert.equal(sql(`SELECT count(*) FROM public.platform_bank_accounts WHERE club_id='${club}'`),'1');
+  assert.equal(sql(`SELECT account_number FROM public.platform_bank_accounts WHERE id='${posts[0].id}'`),'333333333');
+  assert.equal(await page.evaluate(key=>sessionStorage.getItem(key),`vinpoker:bank-create:v1:${input.admin}:${club}`),null);
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await page.screenshot({path:join(evidence,`bank-${width}-create-recovered.png`),fullPage:true,animations:'disabled'});await page.close();
+ }
  const beforeFailure=snapshot(),page=await browser.newPage({viewport:{width:320,height:900}});
  await page.addInitScript(value=>{window.__bankInput=value;},packet);
  await page.route('**/rest/v1/platform_bank_accounts?**',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'synthetic delivery failure'})}));
@@ -78,7 +122,7 @@ try{
  await page.screenshot({path:join(evidence,'bank-320-read-failed.png'),fullPage:true,animations:'disabled'});assert.equal(snapshot(),beforeFailure);await page.close();
  assert.equal(sql('SELECT count(*) FROM public.dealer_pt_wage_payments'),'0');assert.equal(sql('SELECT count(*) FROM public.club_expenses'),'0');
  writeFileSync(join(evidence,'verification.json'),JSON.stringify({sourceSha:process.env.SOURCE_SHA,widths:[320,375,414,768,1280],actualPostgrest:true,lateReadIgnored:true,scopedAtomicUpdate:true,
-  rlsOwnerCrossClubWriteDenied:true,readFailureNoCreate:true,hostedAuthentication:false,productionMutation:false,productionCapacityClaim:false,scope:'isolated receiving-bank configuration UI; no outgoing source-account or drawer/payment integration',fixtureDigest:createHash('sha256').update(snapshot()).digest('hex')}));
+  sameCreateIdAfterLostAckAndReload:true,duplicateIdRecoveredWithoutOverwrite:true,oneDatabaseRowPerRetriedCreate:true,rlsOwnerCrossClubWriteDenied:true,readFailureNoCreate:true,hostedAuthentication:false,productionMutation:false,productionCapacityClaim:false,scope:'isolated receiving-bank configuration UI; no outgoing source-account or drawer/payment integration',fixtureDigest:createHash('sha256').update(snapshot()).digest('hex')}));
  console.log('BANK_SCOPE_REAL_HTTP_DB_FIVE_VIEWPORTS_ATOMIC_BIN_RLS_DENY_READ_ERROR_PASS');
 }catch(e){const message=String(e.message).replaceAll(packet.adminToken,'[REDACTED]').replaceAll(packet.ownerToken,'[REDACTED]').replaceAll(secret,'[REDACTED]');console.error('BANK_SCOPE_ISOLATED_FAIL',message);process.exitCode=1;}
 finally{await browser?.close();await server?.close();spawnSync('docker',['rm','--force',container],{stdio:'ignore'});}

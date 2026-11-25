@@ -38,20 +38,41 @@ const accountPacket=z.object({
   qr_code_url:z.string().nullable(),notes:z.string().nullable(),is_active:z.boolean(),
 });
 const savedPacket=z.object({id:z.string().uuid(),club_id:z.string().uuid(),account_type:z.literal('escrow')});
+const createPacket=z.object({version:z.literal(1),actor:z.string().min(1),club:z.string().uuid(),
+  id:z.string().uuid(),payload:accountPacket.omit({id:true,club_id:true}).strict()}).strict();
+type CreateIntent=z.infer<typeof createPacket>;
+const accountColumns='id,club_id,account_type,bank_name,bank_bin,account_number,account_holder,qr_code_url,notes,is_active';
+const samePayload=(account:Account,intent:CreateIntent)=>Object.entries(intent.payload).every(([key,value])=>account[key as keyof Account]===value);
 const emptyForm=()=>({bank_name:'',bank_bin:null as string|null,account_number:'',account_holder:'',qr_code_url:null as string|null,notes:'',is_active:true});
 export const ClubBankAccountManager=({clubId}:Props)=>{
   const {user,session,loading,isAdmin,isClubAdmin,isClubOwner,isCashier,isAccountant}=useAuth();
   if(loading)return <Card className="p-4" role="status">Đang xác minh phiên đăng nhập…</Card>;
   if(!user?.id||!session?.access_token)return <Card className="p-4" role="alert">Đăng nhập để xem cấu hình tài khoản của CLB.</Card>;
   const scope=JSON.stringify([user.id,sessionReadEpoch(session),clubId,isAdmin,isClubAdmin,isClubOwner,isCashier,isAccountant]);
-  return <ScopedBankAccount key={scope} clubId={clubId}/>;
+  return <ScopedBankAccount key={scope} clubId={clubId} actor={user.id}/>;
 };
-function ScopedBankAccount({clubId}:Props){
+function ScopedBankAccount({clubId,actor}:Props&{actor:string}){
   const [acc, setAcc] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [readError,setReadError]=useState(false);
+  const [pending,setPending]=useState<CreateIntent|null>(null);
+  const journalKey=`vinpoker:bank-create:v1:${actor}:${clubId}`;
+  const readIntent=useCallback(()=>{
+    const raw=sessionStorage.getItem(journalKey);
+    if(raw===null)return null;
+    const intent=createPacket.parse(JSON.parse(raw));
+    if(intent.actor!==actor||intent.club!==clubId)throw Error('create scope invalid');
+    return intent;
+  },[journalKey,actor,clubId]);
+  const clearIntent=useCallback((intent:CreateIntent)=>{
+    const current=readIntent();
+    if(current&&JSON.stringify(current)!==JSON.stringify(intent))throw Error('create journal changed');
+    sessionStorage.removeItem(journalKey);
+    if(sessionStorage.getItem(journalKey)!==null)throw Error('create journal not cleared');
+    setPending(null);
+  },[readIntent,journalKey]);
   const alive=useRef(true),generation=useRef(0),saveFlight=useRef(false),uploadFlight=useRef(false);
   const [form, setForm] = useState({
     bank_name: "", bank_bin: null as string | null, account_number: "", account_holder: "",
@@ -63,14 +84,13 @@ function ScopedBankAccount({clubId}:Props){
     setLoading(true);setReadError(false);setAcc(null);setForm(emptyForm());
     try{
     if(!z.string().uuid().safeParse(clubId).success)throw Error('invalid club');
-    const { data,error } = await supabase
+    const intent=readIntent();setPending(intent);
+    const query = supabase
       .from("platform_bank_accounts")
-      .select("id,club_id,account_type,bank_name,bank_bin,account_number,account_holder,qr_code_url,notes,is_active")
+      .select(accountColumns)
       .eq("club_id", clubId)
-      .eq("account_type", "escrow")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+      .eq("account_type", "escrow");
+    const {data,error}=await (intent?query.eq('id',intent.id):query.order('created_at',{ascending:true}).limit(1)).maybeSingle();
     if(!alive.current||request!==generation.current)return;
     if(error)throw Error('read refused');
     if (data!==null) {
@@ -78,6 +98,10 @@ function ScopedBankAccount({clubId}:Props){
       // null checks, which otherwise makes inferred object keys appear optional.
       const account=accountPacket.parse(data) as Account;
       if(account.club_id!==clubId)throw Error('wrong club');
+      if(intent){
+        if(account.id!==intent.id||!samePayload(account,intent))throw Error('create receipt differs');
+        clearIntent(intent);
+      }
       setAcc(account);
       setForm({
         bank_name: account.bank_name,
@@ -90,12 +114,12 @@ function ScopedBankAccount({clubId}:Props){
       });
     } else {
       setAcc(null);
-      setForm({ bank_name: "", bank_bin: null, account_number: "", account_holder: "", qr_code_url: null, notes: "", is_active: true });
+      setForm(intent?{...intent.payload,notes:intent.payload.notes??''} as ReturnType<typeof emptyForm>:emptyForm());
     }
     }catch{
       if(alive.current&&request===generation.current){setReadError(true);setAcc(null);setForm(emptyForm());}
     }finally{if(alive.current&&request===generation.current)setLoading(false);}
-  },[clubId]);
+  },[clubId,readIntent,clearIntent]);
 
   useEffect(() => {alive.current=true;void load();return()=>{alive.current=false;};}, [load]);
 
@@ -141,14 +165,34 @@ function ScopedBankAccount({clubId}:Props){
       const payload={bank_name:snapshot.bank_name.trim(),bank_bin:snapshot.bank_bin||null,
         account_number:snapshot.account_number.trim(),account_holder:snapshot.account_holder.trim(),
         qr_code_url:snapshot.qr_code_url,notes:snapshot.notes||null,is_active:snapshot.is_active,account_type:'escrow'};
+      let intent:CreateIntent|null=null;
+      if(!account){
+        intent=readIntent();
+        if(intent&&Object.entries(intent.payload).some(([key,value])=>payload[key as keyof typeof payload]!==value))throw Error('pending create differs');
+        intent=intent??createPacket.parse({version:1,actor,club:clubId,id:crypto.randomUUID(),payload});
+        sessionStorage.setItem(journalKey,JSON.stringify(intent));
+        if(sessionStorage.getItem(journalKey)!==JSON.stringify(intent))throw Error('create journal unavailable');
+        setPending(intent);
+      }
       const query=account
         ?supabase.from('platform_bank_accounts').update(payload).eq('id',account.id).eq('club_id',clubId).eq('account_type','escrow')
-        :supabase.from('platform_bank_accounts').insert({...payload,club_id:clubId});
-      const {data,error}=await query.select('id,club_id,account_type').maybeSingle();
+        :supabase.from('platform_bank_accounts').insert({...payload,id:intent!.id,club_id:clubId});
+      let {data,error}=await query.select('id,club_id,account_type').maybeSingle();
       if(!alive.current)return;
+      // A previous identical INSERT may have committed despite a missing ACK.
+      // Never upsert/overwrite: recover only our exact id and verified contents.
+      if(intent&&error?.code==='23505'){
+        const recovered=await supabase.from('platform_bank_accounts').select(accountColumns)
+          .eq('id',intent.id).eq('club_id',clubId).eq('account_type','escrow').maybeSingle();
+        if(!alive.current)return;
+        const verified=accountPacket.parse(recovered.data) as Account;
+        if(recovered.error||verified.id!==intent.id||verified.club_id!==clubId||!samePayload(verified,intent))throw Error('create recovery unverified');
+        data=verified;error=null;
+      }
       if(error)throw Error('save refused');
       const saved=savedPacket.parse(data);
-      if(saved.club_id!==clubId||(account&&saved.id!==account.id))throw Error('save not confirmed');
+      if(saved.club_id!==clubId||saved.id!==(account?.id??intent?.id))throw Error('save not confirmed');
+      if(intent)clearIntent(intent);
       toast.success(account?'Đã cập nhật':'Đã tạo tài khoản');await load();
     }catch{
       if(alive.current){setReadError(true);setAcc(null);setForm(emptyForm());toast.error('Chưa xác minh được kết quả lưu. Kiểm tra lại trước khi ghi tiếp.');}
@@ -175,7 +219,8 @@ function ScopedBankAccount({clubId}:Props){
         Áp dụng cho: <b>đăng ký giải</b> & <b>stake</b>. Player sẽ chuyển khoản trực tiếp vào tài khoản này của CLB.
       </p>
 
-      <fieldset disabled={saving||uploading} className="min-w-0 space-y-3">
+      {pending&&<p role="status" className="text-sm break-words">Yêu cầu tạo trước chưa được xác minh. Giữ nguyên nội dung và thử lại cùng yêu cầu để tránh tạo trùng tài khoản.</p>}
+      <fieldset disabled={saving||uploading||!!pending} className="min-w-0 space-y-3">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <Label htmlFor={`bank-select-${clubId}`}>Ngân hàng *</Label>
@@ -237,13 +282,13 @@ function ScopedBankAccount({clubId}:Props){
         <Switch checked={form.is_active} onCheckedChange={(v) => setForm({ ...form, is_active: v })} />
       </div>
 
+      </fieldset>
       <div className="flex justify-end">
         <Button onClick={save} disabled={saving || uploading} className="gradient-neon text-primary-foreground min-h-11">
           {saving ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Save className="w-4 h-4 mr-1" />}
-          Lưu
+          {pending?'Thử lại cùng yêu cầu':'Lưu'}
         </Button>
       </div>
-      </fieldset>
     </Card>
   );
 };

@@ -20,7 +20,7 @@ vi.mock('@/integrations/supabase/client',()=>({supabase:{
   const perform=()=>{
    if(mode==='read')return state.reads.shift()??Promise.resolve({data:null,error:null});
    state.writes.push({mode,payload,where:{...where}});
-   return state.nextWrite??Promise.resolve({data:{id:where.id??'18000000-0000-4000-8000-000000000099',club_id:where.club_id??payload.club_id,account_type:'escrow'},error:null});
+   return state.nextWrite??Promise.resolve({data:{id:where.id??payload.id??'18000000-0000-4000-8000-000000000099',club_id:where.club_id??payload.club_id,account_type:'escrow'},error:null});
   };
   const builder:QueryMock={select:()=>builder,eq:(k:string,v:string)=>{where[k]=v;return builder;},order:()=>builder,limit:()=>builder,
    update:(p:Record<string,unknown>)=>{mode='update';payload=p;return builder;},insert:(p:Record<string,unknown>)=>{mode='insert';payload=p;return builder;},
@@ -33,7 +33,7 @@ const row=(club=a,number='111111111')=>({id:club===a?'18000000-0000-4000-8000-00
  bank_name:'TEST Bank',bank_bin:'970436',account_number:number,account_holder:'TEST owner',qr_code_url:null,notes:null,is_active:true,account_type:'escrow'});
 const response=(data:unknown):Reply=>({data,error:null});
 function deferred<T=Reply>(){let resolve!:(r:T)=>void;const promise=new Promise<T>(r=>{resolve=r;});return {promise,resolve};}
-beforeEach(()=>{state.auth={user:{id:'synthetic-owner'},session:{access_token:'synthetic-one'},loading:false};state.reads=[];state.writes=[];state.nextWrite=null;vi.clearAllMocks();});
+beforeEach(()=>{sessionStorage.clear();state.auth={user:{id:'synthetic-owner'},session:{access_token:'synthetic-one'},loading:false};state.reads=[];state.writes=[];state.nextWrite=null;vi.clearAllMocks();});
 afterEach(cleanup);
 describe('CLB-scoped receiving bank configuration',()=>{
  it('ignores a late account from the previous club',async()=>{
@@ -84,4 +84,65 @@ describe('CLB-scoped receiving bank configuration',()=>{
   await act(async()=>compressed.resolve(new File(['compressed'],'qr.png',{type:'image/png'})));
   expect(state.upload).not.toHaveBeenCalled();
  });
+});
+
+async function fillNewAccount(){
+ await screen.findByLabelText('Số tài khoản *');
+ fireEvent.change(screen.getByLabelText('Tên ngân hàng'),{target:{value:'TEST new bank'}});
+ fireEvent.change(screen.getByLabelText('Số tài khoản *'),{target:{value:'123456789'}});
+ fireEvent.change(screen.getByLabelText('Chủ tài khoản *'),{target:{value:'TEST new owner'}});
+}
+it('restores the same create intent after an unknown outcome and remount, rather than making another account',async()=>{
+ state.nextWrite=Promise.resolve({data:null,error:Error('lost acknowledgement')});
+ const view=render(<ClubBankAccountManager clubId={a}/>);await fillNewAccount();
+ fireEvent.click(screen.getByRole('button',{name:/^Lưu$/}));await screen.findByRole('alert');
+ expect(state.writes).toHaveLength(1);expect(state.writes[0].payload.id).toMatch(/^[a-f0-9-]{36}$/);
+ const originalId=state.writes[0].payload.id;view.unmount();
+ render(<ClubBankAccountManager clubId={a}/>);await screen.findByDisplayValue('123456789');
+ expect((screen.getByLabelText('Số tài khoản *') as HTMLInputElement).matches(':disabled')).toBe(true);
+ state.nextWrite=Promise.resolve(response({id:originalId,club_id:a,account_type:'escrow'}));
+ fireEvent.click(screen.getByRole('button',{name:'Thử lại cùng yêu cầu'}));await waitFor(()=>expect(state.writes).toHaveLength(2));
+ expect(state.writes[1].payload).toEqual(state.writes[0].payload);
+});
+it('does not create when durable request storage is unavailable',async()=>{
+ render(<ClubBankAccountManager clubId={a}/>);await fillNewAccount();
+ vi.spyOn(Storage.prototype,'setItem').mockImplementation(()=>{throw Error('storage unavailable');});
+ fireEvent.click(screen.getByRole('button',{name:/^Lưu$/}));await waitFor(()=>expect(state.error).toHaveBeenCalled());
+ expect(state.writes).toHaveLength(0);vi.restoreAllMocks();
+});
+it('does not confirm a different returned account id for a create',async()=>{
+ state.nextWrite=Promise.resolve(response({id:row().id,club_id:a,account_type:'escrow'}));
+ render(<ClubBankAccountManager clubId={a}/>);await fillNewAccount();
+ fireEvent.click(screen.getByRole('button',{name:/^Lưu$/}));await screen.findByRole('alert');expect(state.success).not.toHaveBeenCalled();
+});
+
+it('recovers only the exact committed create and clears its journal after remount',async()=>{
+ state.nextWrite=Promise.resolve({data:null,error:Error('lost')});const view=render(<ClubBankAccountManager clubId={a}/>);await fillNewAccount();
+ fireEvent.click(screen.getByRole('button',{name:/^Lưu$/}));await screen.findByRole('alert');
+ const created=state.writes[0].payload;view.unmount();state.reads=[Promise.resolve(response(created))];
+ render(<ClubBankAccountManager clubId={a}/>);await screen.findByDisplayValue('123456789');
+ expect(sessionStorage.getItem('vinpoker:bank-create:v1:synthetic-owner:'+a)).toBeNull();expect(state.writes).toHaveLength(1);
+});
+it('refuses an id collision with different bank details instead of overwriting it',async()=>{
+ state.nextWrite=Promise.resolve({data:null,error:Error('lost')});const view=render(<ClubBankAccountManager clubId={a}/>);await fillNewAccount();
+ fireEvent.click(screen.getByRole('button',{name:/^Lưu$/}));await screen.findByRole('alert');
+ const created=state.writes[0].payload;view.unmount();render(<ClubBankAccountManager clubId={a}/>);await screen.findByDisplayValue('123456789');
+ state.nextWrite=Promise.resolve({data:null,error:{code:'23505'}});state.reads=[Promise.resolve(response({...created,account_number:'DIFFERENT'}))];
+ fireEvent.click(screen.getByRole('button',{name:'Thử lại cùng yêu cầu'}));await screen.findByRole('alert');
+ expect(state.success).not.toHaveBeenCalled();expect(state.writes.every(w=>w.mode==='insert')).toBe(true);
+ expect(sessionStorage.getItem('vinpoker:bank-create:v1:synthetic-owner:'+a)).not.toBeNull();
+});
+it('recovers an exact duplicate-id INSERT without overwriting the committed row',async()=>{
+ state.nextWrite=Promise.resolve({data:null,error:Error('lost')});const view=render(<ClubBankAccountManager clubId={a}/>);await fillNewAccount();
+ fireEvent.click(screen.getByRole('button',{name:/^Lưu$/}));await screen.findByRole('alert');const created=state.writes[0].payload;
+ view.unmount();render(<ClubBankAccountManager clubId={a}/>);await screen.findByDisplayValue('123456789');
+ state.nextWrite=Promise.resolve({data:null,error:{code:'23505'}});state.reads=[Promise.resolve(response(created)),Promise.resolve(response(created))];
+ fireEvent.click(screen.getByRole('button',{name:'Thử lại cùng yêu cầu'}));await waitFor(()=>expect(state.success).toHaveBeenCalledTimes(1));
+ expect(state.writes).toHaveLength(2);expect(state.writes.every(w=>w.mode==='insert')).toBe(true);
+ expect(sessionStorage.getItem('vinpoker:bank-create:v1:synthetic-owner:'+a)).toBeNull();
+});
+it('fails closed on a corrupt create journal without discarding its recovery identity',async()=>{
+ const key='vinpoker:bank-create:v1:synthetic-owner:'+a;sessionStorage.setItem(key,'corrupt');
+ render(<ClubBankAccountManager clubId={a}/>);await screen.findByRole('alert');
+ expect(state.writes).toHaveLength(0);expect(sessionStorage.getItem(key)).toBe('corrupt');
 });
