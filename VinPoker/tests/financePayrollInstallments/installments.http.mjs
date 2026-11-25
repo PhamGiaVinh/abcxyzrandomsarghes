@@ -84,6 +84,11 @@ try {
   assert.match(statementId,/^[a-f0-9-]{36}$/);
   const original=sql(`SELECT (to_jsonb(s)-'pt_wage_payment_id')::text FROM public.dealer_payroll_statements s WHERE id='${statementId}'`);
   const detail=await success('get_pt_statement_installments_v1',{p_statement_id:statementId},ownerJwt);
+  const period=JSON.parse(sql(`SELECT jsonb_build_object(
+    'p_from_date',date_trunc('month',now() at time zone 'Asia/Ho_Chi_Minh')::date,
+    'p_to_date',(date_trunc('month',now() at time zone 'Asia/Ho_Chi_Minh')+interval '1 month -1 day')::date,
+    'p_club_id','${club}')`));
+  const beforeCash=await success('get_club_finance_summary_v2',period,ownerJwt);
   const binding={p_statement_id:statementId,p_expected_hash:detail.statement_hash};
   await success('approve_pt_statement_installments_v1',{
     ...binding,p_request_id:'18000000-0000-4000-8000-000000000082',p_reason:'TEST HTTP owner approval',
@@ -92,6 +97,9 @@ try {
     p_request_id:'18000000-0000-4000-8000-000000000083',p_note:'TEST HTTP 2M'};
   const p=await success('record_pt_statement_installment_v1',first,ownerJwt);
   assert.deepEqual([p.amount_vnd,p.paid_total_vnd,p.remaining_vnd,p.idempotent],[2000000,2000000,3000000,false]);
+  const partialReport=await success('get_club_finance_summary_v2',period,ownerJwt);
+  assert.equal(partialReport.dealerLive.ptFinalizedUnpaidBalance,beforeCash.dealerLive.ptFinalizedUnpaidBalance-2000000);
+  assert.equal(partialReport.cost.ptWagePaid,beforeCash.cost.ptWagePaid+2000000);
   const partial=fingerprint();
   for(const deniedJwt of [token(undefined),token('18000000-0000-4000-8000-000000000013')]) {
     const denied=await rpc('record_pt_statement_installment_v1',{...first,p_amount_vnd:1},deniedJwt);
@@ -126,6 +134,9 @@ try {
   assert.deepEqual([last.amount_vnd,last.paid_total_vnd,last.remaining_vnd,last.idempotent],[3000000,5000000,0,false]);
   const complete=await success('get_pt_statement_installments_v1',{p_statement_id:statementId},ownerJwt);
   assert.equal(complete.payments.length,2);assert.equal(complete.paid_total_vnd,5000000);assert.equal(complete.remaining_vnd,0);
+  const completeReport=await success('get_club_finance_summary_v2',period,ownerJwt);
+  assert.equal(completeReport.dealerLive.ptFinalizedUnpaidBalance,beforeCash.dealerLive.ptFinalizedUnpaidBalance-5000000);
+  assert.equal(completeReport.cost.ptWagePaid,beforeCash.cost.ptWagePaid+5000000);
   assert.equal(sql(`SELECT count(*)||':'||sum(amount_vnd)||':'||sum(minutes_paid) FROM public.dealer_pt_wage_payments WHERE statement_id='${statementId}'`),'2:5000000:6000');
   assert.equal(sql(`SELECT (to_jsonb(s)-'pt_wage_payment_id')::text FROM public.dealer_payroll_statements s WHERE id='${statementId}'`),original);
   console.log('PT_HTTP_FINALIZE_APPROVE_2M_RETRY_DENY_REVOKE_3M_IMMUTABLE_5M_PASS');

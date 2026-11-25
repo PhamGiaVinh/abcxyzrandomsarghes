@@ -41,12 +41,16 @@ BEGIN
     OR jsonb_array_length(d->'payments')<>1 THEN RAISE EXCEPTION 'detail_lost_partial_debt'; END IF;
   IF public.get_club_pt_wages('18000000-0000-4000-8000-000000000001')->'dealers'->0->>'balance_vnd' IS DISTINCT FROM '0'
     THEN RAISE EXCEPTION 'partial_payment_released_reserved_interval'; END IF;
-  d:=public.get_club_finance_summary_v2('2026-11-01','2026-11-30','18000000-0000-4000-8000-000000000001');
+  d:=public.get_club_finance_summary_v2(date_trunc('month',now() at time zone 'Asia/Ho_Chi_Minh')::date,
+    (date_trunc('month',now() at time zone 'Asia/Ho_Chi_Minh')+interval '1 month -1 day')::date,
+    '18000000-0000-4000-8000-000000000001');
   IF d->'dealerLive'->>'ptFinalizedUnpaidBalance' IS DISTINCT FROM '3000000'
     OR d->'dealerLive'->>'ptTotalUnpaid' IS DISTINCT FROM '3000000'
     OR d->'cost'->>'ptWagePaid' IS DISTINCT FROM '2000000' THEN
     RAISE EXCEPTION 'report_did_not_separate_actual_2M_paid_from_current_3M_debt'; END IF;
-  d:=public.get_club_finance_summary_v2('2026-10-01','2026-10-31','18000000-0000-4000-8000-000000000001');
+  d:=public.get_club_finance_summary_v2((date_trunc('month',now() at time zone 'Asia/Ho_Chi_Minh')-interval '1 month')::date,
+    date_trunc('month',now() at time zone 'Asia/Ho_Chi_Minh')::date-1,
+    '18000000-0000-4000-8000-000000000001');
   IF d->'dealerLive'->>'scope' IS DISTINCT FROM 'current_outstanding'
     OR d->'dealerLive'->>'ptFinalizedUnpaidBalance' IS DISTINCT FROM '3000000'
     OR d->'cost'->>'ptWagePaid' IS DISTINCT FROM '0' THEN
@@ -72,6 +76,16 @@ DO $independent$ DECLARE s uuid:=current_setting('test.pt_statement_id')::uuid; 
     UPDATE public.dealer_pt_wage_payments SET voided_at=now(),voided_by=paid_by WHERE statement_id=s;
     RAISE EXCEPTION 'installment_void_erased_paid_money';
   EXCEPTION WHEN SQLSTATE '55000' THEN NULL; END;
+  -- Isolated corruption injection: prove the report refuses overpaid source data
+  -- rather than clamping a negative liability to zero. The subtransaction restores
+  -- both this TEST row and the guard when the expected exception is caught.
+  BEGIN
+    ALTER TABLE public.dealer_pt_wage_payments DISABLE TRIGGER trg_finance_pt_installment_payment_guard;
+    p.amount_vnd:=4000000;
+    INSERT INTO public.dealer_pt_wage_payments SELECT p.*;
+    PERFORM public.get_club_finance_summary_v2('2026-11-01','2026-11-30','18000000-0000-4000-8000-000000000001');
+    RAISE EXCEPTION 'corrupt_overpaid_statement_reported_as_valid';
+  EXCEPTION WHEN SQLSTATE '22023' THEN NULL; END;
 END $independent$;
 UPDATE public.finance_pt_installment_rollout_v1 SET enabled=false;
 SET LOCAL ROLE authenticated;

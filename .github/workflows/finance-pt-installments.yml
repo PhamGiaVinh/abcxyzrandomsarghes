@@ -63,6 +63,9 @@ jobs:
         run: bash tests/financePayrollInstallments/installments.concurrent.sh "$RUNNER_TEMP/pt-installment-race"
       - name: Verify cashier scope and revoked membership do not mutate finance rows
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/installments.authorization.sql
+      - name: Verify adoption legacy payment void and waiting revocation races
+        working-directory: VinPoker
+        run: bash tests/financePayrollInstallments/installments.competing-writers.sh "$RUNNER_TEMP/pt-competing-writers"
       - name: Verify actual PostgREST finalize approve installment and revoked operator flow
         working-directory: VinPoker
         run: node tests/financePayrollInstallments/installments.http.mjs
