@@ -54,6 +54,9 @@ jobs:
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql
       - name: Verify immutable 5M statement with 2M and 3M installments
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/installments.pg17.sql
+      - name: Verify two independent writers cannot overspend the same remaining 3M
+        working-directory: VinPoker
+        run: bash tests/financePayrollInstallments/installments.concurrent.sh "$RUNNER_TEMP/pt-installment-race"
       - name: Remove runner-local schema artifact
         if: always()
         run: rm -rf -- "$RUNNER_TEMP/pt-installment-schema"
