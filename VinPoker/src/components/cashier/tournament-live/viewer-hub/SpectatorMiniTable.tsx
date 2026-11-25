@@ -46,15 +46,18 @@ export function SpectatorMiniTable({ table, appearance, onPlayerSelect }: { tabl
       const showCards = player.isFolded === false && (table.trackerState === 'live' || (table.trackerState === 'last_completed' && player.holeCards.length > 0));
       const action = player.isFolded ? 'fold' : player.isAllIn ? 'all_in' : player.lastAction?.actionType;
       return <div key={`${player.playerId}:${player.entryNumber}`} className="spectator-mini-seat" style={position} data-seat-number={seatNumber} data-folded={Boolean(player.isFolded)} title={player.name}>
-        {onPlayerSelect && <button type="button" aria-label={`Thống kê ${player.name}`} onClick={() => onPlayerSelect(player.playerId)} className="absolute inset-0 z-10 min-h-11 min-w-11 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" />}
-        <div className="spectator-mini-portrait">
+        <div className="spectator-mini-portrait z-[1]">
+          {onPlayerSelect && <button type="button" aria-label={`Thống kê ${player.name}`} onClick={() => onPlayerSelect(player.playerId)} className="absolute inset-0 z-10 min-h-11 min-w-11 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" />}
           <div className="spectator-mini-avatar">{player.avatarUrl ? <img src={player.avatarUrl} alt="" /> : player.name.slice(0, 2).toUpperCase()}</div>
           {showCards && <div className="spectator-mini-holes" data-revealed={player.holeCards.length > 0} aria-label={t('tableAppearance.playerCards', { name: player.name })}>
             {[0, 1].map(index => player.holeCards?.[index] ? <PokerCard key={index} card={player.holeCards[index]} size="xs" className="spectator-mini-hole-card" /> : table.trackerState === 'live' ? <CardBack key={index} size="xs" className="spectator-mini-hole-card" /> : null)}
           </div>}
           {button}
         </div>
-        <div className="spectator-mini-plate"><div className="spectator-mini-name">{player.name}</div><div className="spectator-mini-stack tracker-num">{amount(player.stack)}</div></div>
+        <button type="button" className="spectator-mini-plate block w-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          aria-label={player.name + " · Chip / BB"} onClick={toggleViewerAmountUnit}>
+          <div className="spectator-mini-name">{player.name}</div><div className="spectator-mini-stack tracker-num">{amount(player.stack)}</div>
+        </button>
         <span className="spectator-mini-status" data-action={action}>{action && table.trackerState === 'live' && !action.startsWith('post_') ? <>{action.split('_').join('-').toUpperCase()}{!player.isFolded && (player.lastAction?.amount ?? 0) > 0 ? ` ${amount(player.lastAction!.amount)}` : ''}</> : ' '}</span>
       </div>;
     })}

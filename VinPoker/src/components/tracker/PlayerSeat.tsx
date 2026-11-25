@@ -23,9 +23,14 @@ export function PlayerSeatPortrait({ name, photo, seat, style, children }: Portr
   </div>;
 }
 
-export function PlayerSeatPlate({ seat, name, title, children }: {
-  seat: number; name: string; title: string; children: ReactNode;
+export function PlayerSeatPlate({ seat, name, title, children, onClick }: {
+  seat: number; name: string; title: string; children: ReactNode; onClick?: () => void;
 }) {
+  if (onClick) return <button type="button" className="tracker-seat-plate cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    title={title} aria-label={name + " · Chip / BB"} onClick={onClick}>
+    <div className="tracker-seat-name"><span className="tracker-seat-number">{seat}</span>{name}</div>
+    {children}
+  </button>;
   return <div className="tracker-seat-plate" title={title}>
     <div className="tracker-seat-name"><span className="tracker-seat-number">{seat}</span>{name}</div>
     {children}

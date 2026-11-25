@@ -1029,13 +1029,14 @@ export function LiveFelt({
           // is byte-identical. The selection frame sits on the OUTER wrapper and
           // is emerald — distinct from the to-act accent ring on the avatar.
           const isSelected = selectedSeat != null && seat.seat_number === selectedSeat;
-          const interactiveCls = onSeatClick ? " cursor-pointer" : "";
+          const portraitClick = viewerAmountUnit ? onSeatClick : undefined;
+          const interactiveCls = onSeatClick && !viewerAmountUnit ? " cursor-pointer" : "";
           const selectedCls = isSelected
             ? ` rounded-2xl ring-2 ring-emerald-400 ring-offset-2 ${
                 viewerLayout ? "ring-offset-black" : "ring-offset-[hsl(var(--poker-felt-dark))]"
               } shadow-[0_0_16px_rgba(16,185,129,0.55)]`
             : "";
-          const interactiveProps = onSeatClick
+          const interactiveProps = onSeatClick && !viewerAmountUnit
             ? {
                 role: "button" as const,
                 tabIndex: 0,
@@ -1089,6 +1090,10 @@ export function LiveFelt({
                     ◀ {t("liveHub.felt.toAct", "chờ")}
                   </div>
                 )}
+                <div className={viewerAmountUnit ? "relative z-[1]" : "contents"}>
+                {portraitClick && <button type="button" aria-label={seat.display_name}
+                  onClick={() => portraitClick(seat.seat_number)}
+                  className="absolute inset-0 z-10 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" />}
                 {unified ? <PlayerSeatPortrait name={seat.display_name} photo={seat.avatar_url} seat={seat.seat_number} style={avatarStyle}>
                   <div className="tracker-seat-position">{isButtonSeat ? <b aria-label="Dealer">D</b> : seat.position && <span>{seat.position}</span>}</div>
                 </PlayerSeatPortrait> : (
@@ -1134,8 +1139,10 @@ export function LiveFelt({
                   )}
                 </div>
                 )}
+                </div>
                 {unified ? (
-                  <PlayerSeatPlate name={seat.display_name} seat={seat.seat_number} title={`${seat.display_name} · ${displayedStack(seat)}`}>
+                  <PlayerSeatPlate name={seat.display_name} seat={seat.seat_number} title={`${seat.display_name} · ${displayedStack(seat)}`}
+                    onClick={viewerAmountUnit ? toggleViewerAmountUnit : undefined}>
                     {stackAmount}
                   </PlayerSeatPlate>
                 ) : viewerLayout ? (
@@ -1145,6 +1152,16 @@ export function LiveFelt({
                   // level) with chips demoted to a smaller secondary line. formatBB null
                   // (no blind level) → chips render alone exactly as today: never a fake BB.
                   <div
+                    role={viewerAmountUnit ? "button" : undefined}
+                    tabIndex={viewerAmountUnit ? 0 : undefined}
+                    aria-label={viewerAmountUnit ? seat.display_name + " · Chip / BB" : undefined}
+                    onClick={viewerAmountUnit ? toggleViewerAmountUnit : undefined}
+                    onKeyDown={viewerAmountUnit ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        toggleViewerAmountUnit();
+                      }
+                    } : undefined}
                     className={`mt-1 flex max-w-full flex-col items-center rounded-md px-1.5 py-[3px] leading-none`}
                     title={`${seat.display_name} · ${displayedStack(seat)}`}
                     style={{ background: "rgba(3,5,8,0.9)", border: "1px solid hsl(var(--primary) / 0.28)", boxShadow: "0 1px 3px rgba(0,0,0,0.6)" }}

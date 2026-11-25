@@ -18,6 +18,13 @@ it('opens the clicked public player separately from whole-table navigation',asyn
   fireEvent.click(screen.getByRole('button',{name:'Thống kê Player hud'}));
   expect(await screen.findByRole('dialog')).toHaveTextContent('HUD player-hud');expect(onView).not.toHaveBeenCalled();
   expect(view.container.querySelector('button button')).toBeNull();
+  fireEvent.click(screen.getByRole('button',{name:'Player hud · Chip / BB'}));
+  expect(view.container.querySelector('.spectator-mini-pot')).toHaveTextContent('1.000');
+  expect(view.container.querySelector('.spectator-mini-stack')).toHaveTextContent('2.000');
+  expect(onView).not.toHaveBeenCalled();
+  expect(screen.getByRole('dialog')).toHaveTextContent('HUD player-hud');
+  fireEvent.click(screen.getByRole('button',{name:'Player hud · Chip / BB'}));
+  expect(view.container.querySelector('.spectator-mini-pot')).toHaveTextContent('5 BB');
   fireEvent.click(screen.getByRole('button',{name:'Xem Bàn hud'}));expect(onView).toHaveBeenCalledWith('hud');
 });
 
