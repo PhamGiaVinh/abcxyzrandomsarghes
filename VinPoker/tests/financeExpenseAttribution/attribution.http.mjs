@@ -26,7 +26,7 @@ try{
   });
   await page.goto(base+'/tests/financeExpenseAttribution/http.preview.html');await page.waitForFunction(()=>document.getElementById('total')?.textContent!=='Chưa xác minh');
   await page.getByLabel('Số tiền',{exact:true}).fill('100000');await page.getByLabel('Ngày',{exact:true}).fill('2026-11-25');await page.getByLabel('Mô tả',{exact:true}).fill(`TEST tournament expense ${width}`);
-  await page.getByLabel('Phạm vi khoản chi',{exact:true}).selectOption('tournament');await page.getByRole('option',{name:'Attribution TEST tour A',exact:true}).waitFor();
+  await page.getByLabel('Phạm vi khoản chi',{exact:true}).selectOption('tournament');await page.getByRole('option',{name:'Attribution TEST tour A',exact:true}).waitFor({state:'attached'});
   assert.equal(await page.getByRole('option',{name:'Attribution TEST tour B',exact:true}).count(),0);
   await page.getByLabel('Giải nhận chi phí',{exact:true}).selectOption(id(71));await page.getByLabel('Đường dẫn chứng từ (nếu có)',{exact:true}).fill(`https://example.test/receipt-${width}.pdf`);
   await page.getByRole('button',{name:'Ghi chi phí',exact:true}).click();await page.getByRole('alert').waitFor();assert.equal(posts.length,1);
@@ -39,7 +39,7 @@ try{
   assert.equal(await recordedTour.getByRole('link',{name:'Mở giải đã liên kết',exact:true}).getAttribute('href'),'/tournament/'+id(71));
   assert.equal(await recordedTour.getByRole('link',{name:'Xem chứng từ',exact:true}).getAttribute('href'),`https://example.test/receipt-${width}.pdf`);
   assert.equal(sql(`SELECT count(*) FROM public.club_expenses WHERE idempotency_key='${posts[0].p_idempotency_key}' AND tournament_id='${id(71)}' AND series_id IS NULL AND attachment_url='https://example.test/receipt-${width}.pdf'`),'1');
-  await page.getByLabel('Phạm vi khoản chi',{exact:true}).selectOption('series');await page.getByRole('option',{name:'Attribution TEST series A',exact:true}).waitFor();await page.getByLabel('Series nhận chi phí',{exact:true}).selectOption(id(61));
+  await page.getByLabel('Phạm vi khoản chi',{exact:true}).selectOption('series');await page.getByRole('option',{name:'Attribution TEST series A',exact:true}).waitFor({state:'attached'});await page.getByLabel('Series nhận chi phí',{exact:true}).selectOption(id(61));
   await page.getByLabel('Số tiền',{exact:true}).fill('200000');await page.getByLabel('Mô tả',{exact:true}).fill(`TEST series expense ${width}`);await page.getByRole('button',{name:'Ghi chi phí',exact:true}).click();
   total+=200000;await page.waitForFunction(value=>document.getElementById('total')?.textContent===String(value),total);
   const recordedSeries=page.locator('li').filter({hasText:`TEST series expense ${width}`});
