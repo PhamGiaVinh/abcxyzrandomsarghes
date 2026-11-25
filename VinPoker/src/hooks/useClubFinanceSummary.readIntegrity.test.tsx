@@ -21,6 +21,7 @@ function packet(net=0,q=scope) {
 function deferred(){let resolve!:(value:unknown)=>void;const promise=new Promise(resolvePromise=>{resolve=resolvePromise;});return {promise,resolve};}
 const scope={from:'2026-10-01',to:'2026-10-14',clubFilter:'all'};
 describe('finance read integrity',()=>{
+ it('preserves server cost categories and authoritative net',async()=>{const p=packet(-700);fixture.rpc.mockResolvedValue({data:{...p,cost:{...p.cost,payrollNet:200,clubExpenses:500,ptWagePaid:200}},error:null});const {result,unmount}=renderHook(()=>useClubFinanceSummary(scope));await waitFor(()=>expect(result.current.loading).toBe(false));expect(result.current.summary?.cost).toMatchObject({clubExpenses:500,ptWagePaid:200,payrollNet:200});expect(result.current.summary?.net).toBe(-700);unmount();});
  it('keeps a late successful read hidden after logout and recovers only with the next session',async()=>{
   const stale=deferred();fixture.rpc.mockResolvedValueOnce({data:packet(7),error:null}).mockReturnValueOnce(stale.promise);
   const {result,rerender,unmount}=renderHook(()=>useClubFinanceSummary(scope));
