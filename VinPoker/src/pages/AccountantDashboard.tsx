@@ -1,6 +1,7 @@
+import { financeAccountantPaths, financeAccountantTab } from "@/lib/financeNavigation";
 import { useOperationalCapabilities } from "@/hooks/useOperationalCapabilities";
 import { useCallback, useEffect, useState } from "react";
-import { Navigate, useSearchParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { BarChart3, Calculator, ReceiptText, Table2, Wallet } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -42,8 +43,15 @@ export default function AccountantDashboard() {
     next.delete("to");
     return next;
   });
-  const requestedTab = searchParams.get("tab");
-  const activeTab = requestedTab === "expenses" || requestedTab === "report" ? requestedTab : "salary";
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeTab = financeAccountantTab(location.pathname, location.search);
+  const selectTask = (tab: string) => {
+    if (!(tab in financeAccountantPaths)) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("tab");
+    navigate({pathname: financeAccountantPaths[tab as keyof typeof financeAccountantPaths], search: next.toString()});
+  };
   const source = staffSalarySource();
   const access = useOperationalCapabilities();
   const gateOk = !loading && !access.loading && !access.error && !!user && access.allows("accountant");
@@ -121,7 +129,7 @@ export default function AccountantDashboard() {
       </header>
 
       {clubsQuery.isError && <PendingDbNotice state="network_error" />}
-      <Tabs key={JSON.stringify([user.id, activeClubId, activeClub?.role])} value={activeTab} onValueChange={tab => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set("tab", tab); return next; })} className="space-y-4">
+      <Tabs key={JSON.stringify([user.id, activeClubId, activeClub?.role])} value={activeTab} onValueChange={selectTask} className="space-y-4">
         <TabsList className="flex flex-wrap h-auto">
           <TabsTrigger value="salary" className="gap-1.5">
             <Wallet className="w-4 h-4" />

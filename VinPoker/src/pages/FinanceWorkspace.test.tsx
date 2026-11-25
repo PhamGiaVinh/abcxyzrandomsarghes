@@ -14,6 +14,10 @@ function mount(path="/finance"){
  return render(<MemoryRouter initialEntries={[path]}><Routes>
   <Route element={<FinanceWorkspace/>}>
    <Route path="/finance" element={null}/>
+   <Route path="/finance/overview" element={<p>Report page</p>}/>
+   <Route path="/finance/transactions" element={<p>Counter page</p>}/>
+   <Route path="/finance/payroll" element={<p>Accountant page</p>}/>
+   <Route path="/finance/reconciliation" element={<p>Accountant page</p>}/>
    <Route path="/cashier" element={<p>Counter page</p>}/>
    <Route path="/accountant" element={<p>Accountant page</p>}/>
    <Route path="/club/admin/finance" element={<p>Report page</p>}/>
@@ -57,8 +61,8 @@ it("shows a role read failure without sending the user home",()=>{
  expect(screen.queryByText("Home page")).toBeNull();
 });
 
-it("opens payroll directly and excludes demo reports",()=>{auth.isClubOwner=true;mount();expect(screen.getByRole("link",{name:"Lương"})).toHaveAttribute("href","/accountant?tab=salary");expect(screen.queryByRole("link",{name:"Các báo cáo đối soát hiện có"})).toBeNull();});
+it("opens payroll directly and excludes demo reports",()=>{auth.isClubOwner=true;mount();expect(screen.getByRole("link",{name:"Lương"})).toHaveAttribute("href","/finance/payroll");expect(screen.queryByRole("link",{name:"Các báo cáo đối soát hiện có"})).toBeNull();});
 
-it("marks only the selected accountant task as current",()=>{auth.isClubOwner=true;mount("/accountant?tab=report");expect(screen.getByRole("link",{name:"Đối soát"})).toHaveAttribute("aria-current","page");expect(screen.getByRole("link",{name:"Lương"})).not.toHaveAttribute("aria-current");});
+it("marks only the selected accountant task as current",()=>{auth.isClubOwner=true;mount("/finance/reconciliation");expect(screen.getByRole("link",{name:"Đối soát"})).toHaveAttribute("aria-current","page");expect(screen.getByRole("link",{name:"Lương"})).not.toHaveAttribute("aria-current");});
 
-it("carries the selected club and dates to another task without its old payment",()=>{auth.isClubOwner=true;mount("/club/admin/finance?club=B&from=2026-11-01&to=2026-11-25&payment_id=old");expect(screen.getByRole("link",{name:"Lương"})).toHaveAttribute("href","/accountant?tab=salary&club=B&from=2026-11-01&to=2026-11-25");});
+it("carries the selected club and dates to another task without its old payment",()=>{auth.isClubOwner=true;mount("/club/admin/finance?club=B&from=2026-11-01&to=2026-11-25&payment_id=old");expect(screen.getByRole("link",{name:"Lương"})).toHaveAttribute("href","/finance/payroll?club=B&from=2026-11-01&to=2026-11-25");});

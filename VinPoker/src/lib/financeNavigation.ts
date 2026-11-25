@@ -8,3 +8,16 @@ export function financeDestination(destination: string, currentSearch: string): 
   }
   return target.pathname + target.search;
 }
+
+export const financeAccountantPaths = {
+  salary: "/finance/payroll",
+  expenses: "/finance/expenses",
+  report: "/finance/reconciliation",
+} as const;
+
+export function financeAccountantTab(pathname: string, search: string) {
+  const route = Object.entries(financeAccountantPaths).find(([, path]) => path === pathname);
+  if (route) return route[0] as keyof typeof financeAccountantPaths;
+  const tab = new URLSearchParams(search).get("tab");
+  return tab === "expenses" || tab === "report" ? tab : "salary";
+}
