@@ -12,8 +12,14 @@ DO $$ BEGIN
       AND md5(p.prosrc)='191f8b9de02702a828a1628d73ba8658'
       AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.provolatile='s'
       AND p.proconfig=ARRAY['search_path=""']
-      AND p.proacl='{postgres=X/postgres,authenticated=X/postgres}'::aclitem[]) THEN
-    RAISE EXCEPTION 'PT_RECIPIENT_HISTORY_DETAIL_DRIFT'; END IF;
+      -- Existing detail inherits service_role EXECUTE from the captured
+      -- schema's postgres/public default ACL. This does not grant a new role.
+      AND p.proacl='{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}'::aclitem[]) THEN
+    RAISE EXCEPTION 'PT_RECIPIENT_HISTORY_DETAIL_DRIFT' USING DETAIL=(
+      SELECT jsonb_build_object('source_md5',md5(p.prosrc),'owner',pg_get_userbyid(p.proowner),
+        'security_definer',p.prosecdef,'volatility',p.provolatile,'config',p.proconfig,'acl',p.proacl)::text
+      FROM pg_catalog.pg_proc p WHERE p.oid='public.get_pt_statement_installments_v1(uuid)'::regprocedure);
+  END IF;
 END $$;
 CREATE FUNCTION public.list_my_pt_statements_v1(p_club_id uuid,p_dealer_id uuid,
   p_before_at timestamptz DEFAULT NULL,p_before_id uuid DEFAULT NULL)
