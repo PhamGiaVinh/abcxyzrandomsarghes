@@ -47,10 +47,12 @@ describe("LiveFelt committed-bet chip stack (viewerLayout)", () => {
       { player_id: "aq", total_bet: 30000, is_folded: false },
     ]);
     expect(layers.pots.length).toBeGreaterThan(1);
+    const onSeatClick = vi.fn();
     function ReplayFelt() {
       const unit = useViewerAmountUnit();
       return <TrackerViewerCardProvider><LiveFelt {...baseProps} viewerLayout compact portrait={portrait}
         potSize={layers.totalCommitted} potBreakdown={layers} viewerBigBlind={200} viewerAmountsInBB viewerAmountUnit={unit}
+        onSeatClick={onSeatClick}
         seats={[seat({ player_id: "jj", seat_number: 5, current_bet: 30000, total_committed: 30000, is_all_in: true })]}
       /></TrackerViewerCardProvider>;
     }
@@ -63,12 +65,18 @@ describe("LiveFelt committed-bet chip stack (viewerLayout)", () => {
       const center = within(screen.getByTestId("felt-total-pot"));
       const button = center.getByRole("button");
       expect(button.textContent).toBe("302,5 BB");
-      fireEvent.click(button);
+      const plate = screen.getByRole("button", { name: "P · Chip / BB" });
+      fireEvent.click(plate);
       expect(button.textContent).toBe("60.500");
+      expect(onSeatClick).not.toHaveBeenCalled();
       expect(document.querySelector('[data-tracker-bet="5"]')).toHaveTextContent("30.000");
       expect(window.localStorage.getItem("vinpoker.tracker.amount-unit")).toBe("chips");
-      fireEvent.click(button);
+      fireEvent.click(screen.getByRole("button", { name: "P", exact: true }));
+      expect(onSeatClick).toHaveBeenCalledExactlyOnceWith(5);
+      expect(button.textContent).toBe("60.500");
+      fireEvent.click(plate);
       expect(button.textContent).toBe("302,5 BB");
+      expect(document.querySelector("button button")).toBeNull();
     } finally {
       cleanup();
       window.localStorage.removeItem("vinpoker.tracker.amount-unit");
