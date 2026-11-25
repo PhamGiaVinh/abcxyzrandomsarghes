@@ -7,14 +7,17 @@ const testState = vi.hoisted(() => ({
   dealerId: 'dealer-1' as string|null,
   actor: 'actor-1' as string|null,
   session:{access_token:'salary-test-A'},
+  clubId: 'club',
+  details: false,
 }));
+vi.mock('@/lib/featureFlags',()=>({FEATURES:{get financePtStatementDetails(){return testState.details;}}}));
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({user:testState.actor?{id:testState.actor}:null,session:testState.session,loading:false})}));
 
 vi.mock("@/hooks/dealer/useDealerLink", () => ({
   useDealerLink: () => ({
     dealer: testState.dealerId?{
       dealerId: testState.dealerId,
-      clubId: 'club',
+      clubId: testState.clubId,
       clubName: "HSOP",
       fullName: "Dealer Demo",
     }:null,
@@ -36,6 +39,7 @@ describe("DealerSalaryScreen live PT balance", () => {
     vi.setSystemTime(new Date("2026-08-10T08:00:00.000Z"));
     testState.rpc.mockReset();
     testState.dealerId='dealer-1';testState.actor='actor-1';
+    testState.clubId='club';testState.details=false;
     testState.session={access_token:'salary-test-A'};
     testState.rpc.mockImplementation(async()=>({
       data: {
@@ -57,6 +61,60 @@ describe("DealerSalaryScreen live PT balance", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('shows finalized debt separately when unfinalized accrual is zero',async()=>{
+    testState.details=true;
+    testState.dealerId='18000000-0000-4000-8000-000000000052';
+    testState.clubId='18000000-0000-4000-8000-000000000001';
+    testState.rpc.mockImplementation(async(name)=>({error:null,data:name==='get_my_pt_wage'
+      ? {...closedPt,dealer_id:testState.dealerId,club_id:testState.clubId}
+      : {club_id:testState.clubId,dealer_id:testState.dealerId,as_of:'2026-08-10T08:00:00Z',next_cursor:null,
+        items:[{statement_id:'18000000-0000-4000-8000-000000000071',statement_hash:'a'.repeat(64),
+          club_id:testState.clubId,dealer_id:testState.dealerId,net_amount_vnd:5000000,
+          paid_total_vnd:2000000,remaining_vnd:3000000,state:'finalized',finalized_at:'2026-08-09T08:00:00Z'}]}}));
+    render(<DealerSalaryScreen/>);
+    await act(async()=>{await Promise.resolve();await Promise.resolve();await Promise.resolve();});
+    expect(screen.getByTestId('dealer-live-wage-balance')).toHaveTextContent('0');
+    expect(screen.getByRole('region',{name:'Phiếu lương PT đã chốt'})).toHaveTextContent('Còn phải trả');
+    expect(screen.getByRole('region',{name:'Phiếu lương PT đã chốt'})).toHaveTextContent('3.000.000');
+    expect(screen.getByRole('button',{name:/Xem phiếu/})).toBeInTheDocument();
+    expect(testState.rpc.mock.calls.some(([name])=>name==='list_my_pt_statements_v1')).toBe(true);
+    const original=testState.rpc.getMockImplementation()!;
+    testState.rpc.mockImplementation((name)=>name==='get_my_pt_wage'?new Promise(()=>{}):original(name));
+    await act(async()=>{await vi.advanceTimersByTimeAsync(60000);});
+    expect(screen.getByRole('region',{name:'Phiếu lương PT đã chốt'})).toHaveTextContent('3.000.000');
+  });
+
+  it.each(['inactive','full_time'])('keeps old PT statements reachable for a linked %s recipient',async(kind)=>{
+    testState.details=true;testState.dealerId='18000000-0000-4000-8000-000000000052';testState.clubId='18000000-0000-4000-8000-000000000001';
+    testState.rpc.mockImplementation(async(name)=>{
+      if(name==='get_my_pt_wage') return kind==='inactive'?{data:null,error:{message:'inactive dealer'}}
+        :{error:null,data:{...closedPt,dealer_id:testState.dealerId,club_id:testState.clubId,employment_type:'full_time'}};
+      if(name==='get_my_dealer_payroll')return {error:null,data:{dealer_id:testState.dealerId,has_data:false}};
+      return {error:null,data:{club_id:testState.clubId,dealer_id:testState.dealerId,as_of:'2026-08-10T08:00:00Z',next_cursor:null,
+        items:[{statement_id:'18000000-0000-4000-8000-000000000071',statement_hash:'a'.repeat(64),club_id:testState.clubId,
+          dealer_id:testState.dealerId,net_amount_vnd:5000000,paid_total_vnd:2000000,remaining_vnd:3000000,
+          state:'finalized',finalized_at:'2026-08-09T08:00:00Z'}]}};
+    });
+    render(<DealerSalaryScreen/>);
+    await act(async()=>{await Promise.resolve();await Promise.resolve();await Promise.resolve();});
+    expect(screen.getByRole('region',{name:'Phiếu lương PT đã chốt'})).toHaveTextContent('3.000.000');
+    expect(screen.getByRole('button',{name:/Xem phiếu/})).toBeInTheDocument();
+  });
+
+  it.each([
+    ['bank','Chuyển khoản'],['bank_transfer','Chuyển khoản'],['cash','Tiền mặt'],
+    ['manual_legacy','Chưa xác minh phương thức'],[null,'Chưa xác minh phương thức'],
+  ])('shows the recorded payment method %s without guessing cash',async(method,label)=>{
+    testState.rpc.mockResolvedValueOnce({data:{...closedPt,recent_payments:[{
+      amount_vnd:2000000,paid_at:'2026-08-09T10:00:00Z',payment_method:method,
+    }]},error:null});
+    render(<DealerSalaryScreen/>);
+    await act(async()=>{await Promise.resolve();await Promise.resolve();});
+    expect(screen.getByText(new RegExp(label!))).toBeInTheDocument();
+    if(method!=='cash')expect(screen.queryByText(/Tiền mặt/)).not.toBeInTheDocument();
+    expect(testState.rpc.mock.calls.every(([name])=>name==='get_my_pt_wage')).toBe(true);
   });
 
   it("re-renders the server-backed wage after one second", async () => {

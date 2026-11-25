@@ -15,6 +15,8 @@ import {
   ptWageRatePerSecondVnd,
 } from "@/lib/dealerPtWagePresentation";
 import { Skeleton } from "@/components/ui/skeleton";
+import {FEATURES} from '@/lib/featureFlags';
+import {DealerPtStatementHistory} from './DealerPtStatementHistory';
 
 /**
  * Dealer Mobile App — "Lương của tôi" (my salary), READ-ONLY.
@@ -27,7 +29,7 @@ import { Skeleton } from "@/components/ui/skeleton";
  * The generated client types can lag the controlled database contract, so these RPCs are called
  * via the untyped client (same pattern as useDealerLink / useDealerPayroll's
  * save_payroll_period). The whole screen is reached only when the route gate
- * (FEATURES.dealerSelfSalary, default OFF) is on.
+ * (FEATURES.dealerSelfSalary) is on. Frozen PT history has its own default-OFF gate.
  */
 
 const GOLD = "#E6B84C";
@@ -119,10 +121,10 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
   const readGeneration = useRef(0);
   useEffect(() => () => { readGeneration.current += 1; }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (background=false) => {
     if (!dealerId || !isDealer || linkLoading) return;
     const generation = ++readGeneration.current;
-    setLoading(true);
+    if(!background) setLoading(true);
     setError(null);
     try {
       if (source === "mock") {
@@ -162,6 +164,7 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
       }
     } catch (e: unknown) {
       if (generation !== readGeneration.current) return;
+      setPt(null);setFt(null);
       const message = e instanceof Error ? e.message
         : e && typeof e === "object" && "message" in e && typeof e.message === "string" ? e.message : "Lỗi tải lương";
       setError(message === "tracker_context_read_timeout" ? "Quá thời gian tải lương. Vui lòng thử lại." : message);
@@ -174,7 +177,7 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
   // tick the display every 1s; resync PT from the server every 60s
   useEffect(() => {
     const tick = setInterval(() => setNowMs(Date.now()), 1000);
-    const resync = setInterval(() => { if (empType === "part_time") load(); }, 60000);
+    const resync = setInterval(() => { if (empType === "part_time") void load(true); }, 60000);
     return () => { clearInterval(tick); clearInterval(resync); };
   }, [empType, load]);
 
@@ -184,6 +187,8 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
       <p className="text-[12px] text-muted-foreground mb-3">
         {dealer?.clubName ? `${dealer.clubName} · ` : ""}{dealer?.fullName ?? t("dealer.salary.you", "Bạn")}
       </p>
+      {source==='live' && FEATURES.financePtStatementDetails && !linkLoading && isDealer && dealerId && dealer?.clubId
+        && <DealerPtStatementHistory clubId={dealer.clubId} dealerId={dealerId}/>}
     </>
   );
 
@@ -246,7 +251,7 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
             <span className="text-[12px] text-muted-foreground">Part-time · {Math.round(rate / 1000)}K/h</span>
           </div>
           <div className="text-center my-4">
-            <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{t("dealer.salary.unpaidBalance", "Số dư chưa thanh toán")}</div>
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{t("dealer.salary.unfinalizedBalance", "Tạm tính chưa chốt phiếu")}</div>
             <div
               className="font-mono font-bold mt-1"
               style={{ color: GOLD, fontSize: 34 }}
@@ -284,7 +289,7 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
           <span className="text-[12px] text-muted-foreground">{t("dealer.salary.readOnly", "Chỉ xem — câu lạc bộ thực hiện chi trả & reset số dư.")}</span>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card divide-y divide-border">
+        <section aria-label="Lịch sử thanh toán lương PT" className="rounded-2xl border border-border bg-card divide-y divide-border">
           <div className="flex items-center gap-2 px-4 py-2.5">
             <History className="w-4 h-4 text-muted-foreground" />
             <span className="text-[13px] font-bold text-foreground">{t("dealer.salary.history", "Lịch sử thanh toán")}</span>
@@ -292,14 +297,17 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
           {history.length === 0 ? (
             <div className="px-4 py-3 text-[12px] text-muted-foreground">{t("dealer.salary.noHistory", "Chưa có lịch sử thanh toán")}</div>
           ) : history.map((h, i) => (
-            <div key={i} className="flex items-center justify-between px-4 py-3">
-              <span className="text-[13px] text-muted-foreground">
-                {new Date(h.paid_at).toLocaleDateString("vi-VN")}{h.payment_method ? ` · ${h.payment_method === "bank_transfer" ? "Chuyển khoản" : "Tiền mặt"}` : ""}
+            <div key={i} className="flex items-start justify-between gap-3 px-4 py-3">
+              <span className="min-w-0 text-[13px] text-muted-foreground">
+                {new Date(h.paid_at).toLocaleDateString("vi-VN")} · {h.payment_method === "bank" || h.payment_method === "bank_transfer"
+                  ? t("dealer.salary.methodBank", "Chuyển khoản")
+                  : h.payment_method === "cash" ? t("dealer.salary.methodCash", "Tiền mặt")
+                    : t("dealer.salary.methodUnknown", "Chưa xác minh phương thức")}
               </span>
-              <span className="font-mono text-[13px] font-bold text-foreground">{formatVND(h.amount_vnd)}</span>
+              <span className="shrink-0 whitespace-nowrap font-mono text-[13px] font-bold text-foreground">{formatVND(h.amount_vnd)}</span>
             </div>
           ))}
-        </div>
+        </section>
       </div>
     );
   }
