@@ -61,6 +61,11 @@ jobs:
         run: bash tests/financePayrollInstallments/installments.preflight.sh "$RUNNER_TEMP/pt-preflight"
       - name: Install pending extension on empty isolated schema only
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql
+      - name: Refuse resolution against changed foundation privileges or full-payment fence
+        working-directory: VinPoker
+        run: bash tests/financePayrollInstallments/intent-resolution.preflight.sh "$RUNNER_TEMP/pt-resolution-preflight"
+      - name: Install pending read-only intent resolution extension
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/finance_pt_intent_resolution_v1.sql
       - name: Verify old retained intent resolution before considering installment activation
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/intent-resolution.pg17.sql
       - name: Verify legacy full-payment behavior after affected insert guard changes

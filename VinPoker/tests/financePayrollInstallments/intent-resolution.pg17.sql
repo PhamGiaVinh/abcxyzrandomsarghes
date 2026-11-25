@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 \ir installments.seed.sql
 DO $$ BEGIN
-  IF to_regprocedure('public.resolve_pt_full_payment_intent_v1(uuid,text,uuid)') IS NULL THEN
+  IF to_regprocedure('public.resolve_pt_full_payment_intent_v1(uuid,text,text)') IS NULL THEN
     RAISE EXCEPTION 'PT_FULL_INTENT_RESOLUTION_MISSING: retained requests must not block future periods or impersonate installment receipts';
   END IF;
   BEGIN

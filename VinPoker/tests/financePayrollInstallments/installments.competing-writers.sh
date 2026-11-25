@@ -109,4 +109,15 @@ second="SELECT public.record_pt_statement_installment_v1('$sid','$hash',3000000,
 race revoke-while-waiting "$first" "$second" "$cashier" '42501:.*PAYROLL_STATEMENT_FORBIDDEN' true
 test "$(db -c "SELECT count(*)||':'||sum(amount_vnd) FROM public.dealer_pt_wage_payments WHERE statement_id='$sid'")" = 1:2000000
 test "$(db -c "SELECT status FROM public.dealer_pt_wage_settlements WHERE statement_id='$sid'")" = finalized
+seed 65
+resolution="SELECT public.resolve_pt_full_payment_intent_v1('$sid','$hash','18000000-0000-4000-8000-000000000195');"
+race full-before-intent-resolution "$full" "$resolution" "$owner" '55000:.*PT_INTENT_RESOLUTION_ADOPTION_REQUIRED'
+test "$(db -c "SELECT count(*)||':'||sum(amount_vnd) FROM public.dealer_pt_wage_payments WHERE statement_id='$sid'")" = 1:5000000
+
+seed 66
+resolution="SELECT public.resolve_pt_full_payment_intent_v1('$sid','$hash','18000000-0000-4000-8000-000000000196');"
+race revoke-resolution-while-waiting "$adopt" "$resolution" "$cashier" '42501:.*PAYROLL_STATEMENT_FORBIDDEN' true
+test "$(db -c "SELECT count(*) FROM public.dealer_pt_wage_payments WHERE statement_id='$sid'")" = 0
+test "$(db -c "SELECT count(*) FROM public.finance_pt_installment_plans_v1 WHERE statement_id='$sid'")" = 1
+
 echo PT_LEGACY_ADOPTION_VOID_WAITING_REVOCATION_RACES_PASS

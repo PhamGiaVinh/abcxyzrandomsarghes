@@ -66,6 +66,41 @@ export function clearPtStatementPayment(storage: Storage, intent: PtStatementPay
   if (storage.getItem(key) !== null) throw Error('PT_PAYMENT_STORAGE_UNAVAILABLE');
 }
 
+const resolutionSchema=z.object({resolution:z.literal('superseded_by_installments'),actor_id:z.string().uuid(),
+  statement_id:z.string().uuid(),statement_hash:z.string().regex(/^[a-f0-9]{64}$/),club_id:z.string().uuid(),dealer_id:z.string().uuid(),
+  intent_key:z.string().uuid(),approved_amount_vnd:z.number().int().positive().safe(),
+  legacy_payment_recorded:z.literal(false),approval_request_id:z.string().uuid()}).strict();
+
+/** Retire only a server-fenced, unrecorded full-pay intent. This is never a payment receipt. */
+export async function resolveSupersededPtPayment(rpc:Rpc,storage:Storage,value:PtStatementPaymentIntent,isCurrent:()=>boolean) {
+  const intent=intentSchema.parse(value),s=intent.statement;
+  if(!isCurrent()) throw Error('PT_PAYMENT_ACTOR_CHANGED');
+  if(JSON.stringify(loadPtStatementPayment(storage,intent.actorId,s.club_id,s.dealer_id))!==JSON.stringify(intent)) {
+    throw Error('PT_PAYMENT_INTENT_CHANGED');
+  }
+  const result=await waitForManualPlayerResponse(Promise.resolve(rpc('resolve_pt_full_payment_intent_v1',{
+    p_statement_id:s.statement_id,p_expected_hash:s.statement_hash,p_intent_key:intent.key,
+  })));
+  if(!isCurrent()) throw Error('PT_PAYMENT_ACTOR_CHANGED');
+  if(result.error) throw result.error;
+  const parsed=resolutionSchema.safeParse(result.data);
+  if(!parsed.success) throw Error('PT_PAYMENT_RESOLUTION_SCOPE_INVALID');
+  const proof=parsed.data;
+  if(proof.actor_id!==intent.actorId || proof.club_id!==s.club_id || proof.dealer_id!==s.dealer_id
+    || proof.statement_id!==s.statement_id || proof.statement_hash!==s.statement_hash
+    || proof.intent_key!==intent.key || proof.approved_amount_vnd!==s.net_amount_vnd) {
+    throw Error('PT_PAYMENT_RESOLUTION_SCOPE_INVALID');
+  }
+  const archiveKey=`vinpoker:pt-statement-payment-archive:v1:${intent.actorId}:${s.club_id}:${s.dealer_id}:${intent.key}`;
+  const serialized=JSON.stringify({version:1,intent,proof}),prior=storage.getItem(archiveKey);
+  if(prior!==null && prior!==serialized) throw Error('PT_PAYMENT_ARCHIVE_CONFLICT');
+  storage.setItem(archiveKey,serialized);
+  if(storage.getItem(archiveKey)!==serialized) throw Error('PT_PAYMENT_STORAGE_UNAVAILABLE');
+  if(!isCurrent()) throw Error('PT_PAYMENT_ACTOR_CHANGED');
+  clearPtStatementPayment(storage,intent);
+  return proof;
+}
+
 /** Recover legacy full-payment statements only; installment markers are not full-request receipts. */
 export async function submitPtStatementPayment(rpc: Rpc, value: PtStatementPaymentIntent, isCurrent: () => boolean): Promise<PtStatementReceipt> {
   const intent = intentSchema.parse(value), expected = intent.statement;

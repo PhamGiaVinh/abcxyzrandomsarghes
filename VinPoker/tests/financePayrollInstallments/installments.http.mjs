@@ -115,6 +115,14 @@ try {
   assert.equal(partialReport.cost.ptWagePaid,beforeCash.cost.ptWagePaid+2000000);
   const partial=fingerprint();
   const partialDetails=await success('get_pt_statement_installments_v1',{p_statement_id:statementId},ownerJwt);
+  const resolution=await success('resolve_pt_full_payment_intent_v1',{
+    ...binding,p_intent_key:'18000000-0000-4000-8000-000000000185'},cashierJwt);
+  assert.deepEqual([resolution.resolution,resolution.actor_id,resolution.statement_id,resolution.intent_key,
+    resolution.approved_amount_vnd,resolution.legacy_payment_recorded,resolution.payment_id],
+    ['superseded_by_installments',cashier,statementId,'18000000-0000-4000-8000-000000000185',5000000,false,undefined]);
+  const recordedResolution=await rpc('resolve_pt_full_payment_intent_v1',{...binding,p_intent_key:first.p_request_id},cashierJwt);
+  assert.equal(recordedResolution.status,400);assert.equal(recordedResolution.data.code,'22023');
+  assert.equal(fingerprint(),partial,'old intent resolution mutated financial rows');
   const browserBinding={statement_id:statementId,statement_hash:JSON.parse(original).statement_hash,
     club_id:club,dealer_id:dealer,net_amount_vnd:5000000};
   verifyBrowser({actor:cashier,token:cashierJwt,binding:browserBinding,
