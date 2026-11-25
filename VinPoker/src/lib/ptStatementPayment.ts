@@ -4,8 +4,25 @@ import { waitForManualPlayerResponse } from './floorManualPlayerIntent';
 export const ptStatementReceiptSchema = z.object({
   statement_id: z.string().uuid(), request_id: z.string().uuid(), club_id: z.string().uuid(),
   dealer_id: z.string().uuid(), state: z.enum(['finalized', 'pdf_rendered', 'delivery_failed', 'sent', 'voided', 'replaced']),
-  net_amount_vnd: z.number().int().nonnegative(), finalized_at: z.string().datetime({ offset: true }),
+  net_amount_vnd: z.number().int().nonnegative().safe(), finalized_at: z.string().datetime({ offset: true }),
   payment_id: z.string().uuid().nullable(), statement_hash: z.string().regex(/^[a-f0-9]{64}$/),
+  installments_adopted: z.boolean().optional(),
+  paid_total_vnd: z.number().int().nonnegative().safe().optional(),
+  remaining_vnd: z.number().int().nonnegative().safe().optional(),
+}).superRefine((row,ctx)=>{
+  const values=[row.installments_adopted,row.paid_total_vnd,row.remaining_vnd];
+  if(values.every(v=>v===undefined)) return; // unchanged legacy server contract
+  if(typeof row.installments_adopted!=='boolean' || typeof row.paid_total_vnd!=='number'
+    || typeof row.remaining_vnd!=='number' || !Number.isSafeInteger(row.net_amount_vnd)
+    || !Number.isSafeInteger(row.paid_total_vnd) || !Number.isSafeInteger(row.remaining_vnd)) {
+    ctx.addIssue({code:z.ZodIssueCode.custom,message:'PT_STATEMENT_PAYMENT_TOTALS_INVALID'});return;
+  }
+  const cancelled=['voided','replaced'].includes(row.state);
+  if(row.paid_total_vnd>row.net_amount_vnd || row.remaining_vnd>row.net_amount_vnd
+    || (cancelled ? row.remaining_vnd!==0 || row.paid_total_vnd!==0
+      : BigInt(row.paid_total_vnd)+BigInt(row.remaining_vnd)!==BigInt(row.net_amount_vnd))) {
+    ctx.addIssue({code:z.ZodIssueCode.custom,message:'PT_STATEMENT_PAYMENT_TOTALS_INVALID'});
+  }
 });
 export type PtStatementReceipt = z.infer<typeof ptStatementReceiptSchema>;
 const intentSchema = z.object({
@@ -13,7 +30,7 @@ const intentSchema = z.object({
   method: z.enum(['cash', 'bank']), reference: z.string().trim().max(200).nullable(),
   key: z.string().uuid(),
 }).strict().refine(x => x.statement.net_amount_vnd > 0 && x.statement.payment_id === null
-  && !['voided', 'replaced'].includes(x.statement.state));
+  && !['voided', 'replaced'].includes(x.statement.state) && x.statement.installments_adopted!==true);
 export type PtStatementPaymentIntent = z.infer<typeof intentSchema>;
 type Storage = Pick<globalThis.Storage, 'getItem' | 'setItem' | 'removeItem'>;
 type Rpc = (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
@@ -49,7 +66,42 @@ export function clearPtStatementPayment(storage: Storage, intent: PtStatementPay
   if (storage.getItem(key) !== null) throw Error('PT_PAYMENT_STORAGE_UNAVAILABLE');
 }
 
-/** A paid, same-hash statement is authoritative even when the write response was lost. */
+const resolutionSchema=z.object({resolution:z.literal('superseded_by_installments'),actor_id:z.string().uuid(),
+  statement_id:z.string().uuid(),statement_hash:z.string().regex(/^[a-f0-9]{64}$/),club_id:z.string().uuid(),dealer_id:z.string().uuid(),
+  intent_key:z.string().uuid(),approved_amount_vnd:z.number().int().positive().safe(),
+  legacy_payment_recorded:z.literal(false),approval_request_id:z.string().uuid()}).strict();
+
+/** Retire only a server-fenced, unrecorded full-pay intent. This is never a payment receipt. */
+export async function resolveSupersededPtPayment(rpc:Rpc,storage:Storage,value:PtStatementPaymentIntent,isCurrent:()=>boolean) {
+  const intent=intentSchema.parse(value),s=intent.statement;
+  if(!isCurrent()) throw Error('PT_PAYMENT_ACTOR_CHANGED');
+  if(JSON.stringify(loadPtStatementPayment(storage,intent.actorId,s.club_id,s.dealer_id))!==JSON.stringify(intent)) {
+    throw Error('PT_PAYMENT_INTENT_CHANGED');
+  }
+  const result=await waitForManualPlayerResponse(Promise.resolve(rpc('resolve_pt_full_payment_intent_v1',{
+    p_statement_id:s.statement_id,p_expected_hash:s.statement_hash,p_intent_key:intent.key,
+  })));
+  if(!isCurrent()) throw Error('PT_PAYMENT_ACTOR_CHANGED');
+  if(result.error) throw result.error;
+  const parsed=resolutionSchema.safeParse(result.data);
+  if(!parsed.success) throw Error('PT_PAYMENT_RESOLUTION_SCOPE_INVALID');
+  const proof=parsed.data;
+  if(proof.actor_id!==intent.actorId || proof.club_id!==s.club_id || proof.dealer_id!==s.dealer_id
+    || proof.statement_id!==s.statement_id || proof.statement_hash!==s.statement_hash
+    || proof.intent_key!==intent.key || proof.approved_amount_vnd!==s.net_amount_vnd) {
+    throw Error('PT_PAYMENT_RESOLUTION_SCOPE_INVALID');
+  }
+  const archiveKey=`vinpoker:pt-statement-payment-archive:v1:${intent.actorId}:${s.club_id}:${s.dealer_id}:${intent.key}`;
+  const serialized=JSON.stringify({version:1,intent,proof}),prior=storage.getItem(archiveKey);
+  if(prior!==null && prior!==serialized) throw Error('PT_PAYMENT_ARCHIVE_CONFLICT');
+  storage.setItem(archiveKey,serialized);
+  if(storage.getItem(archiveKey)!==serialized) throw Error('PT_PAYMENT_STORAGE_UNAVAILABLE');
+  if(!isCurrent()) throw Error('PT_PAYMENT_ACTOR_CHANGED');
+  clearPtStatementPayment(storage,intent);
+  return proof;
+}
+
+/** Recover legacy full-payment statements only; installment markers are not full-request receipts. */
 export async function submitPtStatementPayment(rpc: Rpc, value: PtStatementPaymentIntent, isCurrent: () => boolean): Promise<PtStatementReceipt> {
   const intent = intentSchema.parse(value), expected = intent.statement;
   const read = async () => {
@@ -67,6 +119,7 @@ export async function submitPtStatementPayment(rpc: Rpc, value: PtStatementPayme
   };
   const before = await read();
   if (!isCurrent()) throw Error('PT_PAYMENT_ACTOR_CHANGED');
+  if (before.installments_adopted) throw Error('PT_PAYMENT_MOVED_TO_INSTALLMENTS');
   if (before.payment_id) return before;
   let paymentId: string | null = null;
   let failure: unknown = null;
@@ -82,6 +135,7 @@ export async function submitPtStatementPayment(rpc: Rpc, value: PtStatementPayme
     paymentId = paid.payment_id;
   } catch (cause) { failure = cause; }
   const after = await read();
+  if (after.installments_adopted) throw Error('PT_PAYMENT_MOVED_TO_INSTALLMENTS');
   if (!after.payment_id || (paymentId && paymentId !== after.payment_id)) throw failure ?? Error('PT_PAYMENT_UNVERIFIED');
   return after;
 }

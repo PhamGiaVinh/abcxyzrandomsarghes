@@ -1,0 +1,131 @@
+name: PT installment isolated PostgreSQL
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/finance-pt-installments.yml'
+      - 'VinPoker/tests/financePayrollInstallments/**'
+      - 'VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql'
+      - 'VinPoker/supabase/pending-migrations/finance_pt_intent_resolution_v1.sql'
+      - 'VinPoker/supabase/pending-migrations/finance_pt_recipient_history_v1.sql'
+      - 'VinPoker/src/lib/ptStatement*'
+      - 'VinPoker/src/components/cashier/PtStatement*'
+      - 'VinPoker/src/components/dealer-app/salary/DealerSalaryScreen*'
+      - 'VinPoker/src/components/dealer-app/salary/DealerPtStatementHistory*'
+      - 'VinPoker/src/lib/featureFlags.ts'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  pt-starting-state:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: vinpoker_ops_pt_installment
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -d vinpoker_ops_pt_installment"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_pt_installment
+      CAPTURE_RUN: '45651278424'
+      CAPTURE_SHA: 'c9dba24211152ddf5f010a46d0afab118cfbf482'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Verify capture provenance and restore schema on loopback
+        working-directory: VinPoker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CAPTURE_RUN" > "$RUNNER_TEMP/pt-installment-capture.json"
+          jq -e --arg sha "$CAPTURE_SHA" --arg owner "$GITHUB_REPOSITORY_OWNER"             '.conclusion == "success" and .head_sha == $sha and .head_branch == "main" and
+             .event == "workflow_dispatch" and .actor.login == $owner and
+             .path == ".github/workflows/capture-live-public-schema.yml"'             "$RUNNER_TEMP/pt-installment-capture.json" > /dev/null
+          export SCHEMA_ARTIFACT_DIR="$RUNNER_TEMP/pt-installment-schema"
+          gh run download "$CAPTURE_RUN" -R "$GITHUB_REPOSITORY" -n live-public-schema -D "$SCHEMA_ARTIFACT_DIR"
+          node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
+          test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
+          node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Refuse drifted legacy indexes without partial migration
+        working-directory: VinPoker
+        run: bash tests/financePayrollInstallments/installments.preflight.sh "$RUNNER_TEMP/pt-preflight"
+      - name: Install pending extension on empty isolated schema only
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql
+      - name: Refuse resolution against changed foundation privileges or full-payment fence
+        working-directory: VinPoker
+        run: bash tests/financePayrollInstallments/intent-resolution.preflight.sh "$RUNNER_TEMP/pt-resolution-preflight"
+      - name: Install pending read-only intent resolution extension
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/finance_pt_intent_resolution_v1.sql
+      - name: Refuse recipient history against changed detail reader
+        working-directory: VinPoker
+        run: bash tests/financePayrollInstallments/recipient-history.preflight.sh "$RUNNER_TEMP/pt-recipient-preflight"
+      - name: Install pending read-only recipient history entry
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/finance_pt_recipient_history_v1.sql
+      - name: Verify old retained intent resolution before considering installment activation
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/intent-resolution.pg17.sql
+      - name: Verify legacy full-payment behavior after affected insert guard changes
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/baseline.pg17.sql
+      - name: Verify immutable 5M statement with 2M and 3M installments
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/installments.pg17.sql
+      - name: Verify owner-only cancellation of an untouched adopted plan
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/installments.lifecycle.sql
+      - name: Verify two independent writers cannot overspend the same remaining 3M
+        working-directory: VinPoker
+        run: bash tests/financePayrollInstallments/installments.concurrent.sh "$RUNNER_TEMP/pt-installment-race"
+      - name: Verify cashier scope and revoked membership do not mutate finance rows
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/installments.authorization.sql
+      - name: Verify recipient scope and deterministic history pagination without finance mutations
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/recipient-history.pg17.sql
+      - name: Verify adoption legacy payment void and waiting revocation races
+        working-directory: VinPoker
+        run: bash tests/financePayrollInstallments/installments.competing-writers.sh "$RUNNER_TEMP/pt-competing-writers"
+      - name: Install locked application dependencies without postinstall browser downloads
+        working-directory: VinPoker
+        run: npm ci --ignore-scripts --no-audit --fund=false
+      - name: Install pinned browser for isolated real RPC presentation verification
+        working-directory: VinPoker
+        run: npx playwright install --with-deps chromium
+      - name: Verify actual browser PostgREST DB and revoked operator flow
+        working-directory: VinPoker
+        env: {PT_BROWSER_PROOF: 'true'}
+        run: node tests/financePayrollInstallments/installments.http.mjs
+      - name: Verify real HTTP packets against the application client boundary
+        working-directory: VinPoker
+        run: node --experimental-strip-types tests/financePayrollInstallments/verify-client-contract.mjs
+      - name: Verify affected operator details and full-payment compatibility
+        working-directory: VinPoker
+        run: npx vitest run src/lib/ptStatementPayment.test.ts src/lib/ptStatementDetails.test.ts src/components/cashier/PtStatementControl.test.tsx src/components/cashier/PtStatementDetailsDialog.test.tsx src/components/dealer-app/salary/DealerSalaryScreen.test.tsx src/components/dealer-app/salary/DealerPtStatementHistory.test.tsx --maxWorkers=1 --minWorkers=1
+      - name: Check actual application and tooling references
+        working-directory: VinPoker
+        env: {NODE_OPTIONS: '--max-old-space-size=4096'}
+        run: npx tsc -b --pretty false
+      - name: Build the reviewed application
+        working-directory: VinPoker
+        env: {NODE_OPTIONS: '--max-old-space-size=4096'}
+        run: npm run build
+      - name: Remove runner-local schema artifact
+        if: always()
+        run: |
+          rm -rf -- "$RUNNER_TEMP/pt-installment-schema"
+          rm -f -- "$RUNNER_TEMP/pt-installment-client-packets.json"
+      - name: Upload synthetic browser verification images only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pt-browser-rpc-sanitized
+          path: ${{ runner.temp }}/pt-browser-evidence/*.png
+          if-no-files-found: warn
+          retention-days: 30

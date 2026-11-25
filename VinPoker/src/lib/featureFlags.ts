@@ -1353,6 +1353,8 @@ export const FEATURES = {
    * after the B1 migrations (20261028000000/01) are applied live + types regenerated.
    */
   salaryTabV2: true,
+  /** Read-only PT statement/payment history. Keep dark until its scoped RPC and TEST UAT are qualified. */
+  financePtStatementDetails: false,
   /**
    * Immutable FT payroll statements for clubs beyond the HSOP canary. Keep OFF
    * through source merge and TEST-club UAT; the server rollout remains the
