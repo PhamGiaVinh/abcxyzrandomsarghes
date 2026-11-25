@@ -32,9 +32,9 @@ its result must not update/toast/reload the new scope.
 
 ## Still open
 
-- Creation after a lost acknowledgement, concurrent creation across tabs, and
-  historical multiple escrow accounts need their own server identity/revision
-  policy. This patch does not claim idempotent creation or resolve old duplicates.
+- Independent creation across tabs and historical multiple escrow accounts still
+  need a server uniqueness/selection policy. Stable intent IDs deduplicate retries
+  of the SAME create; they do not mean one account per CLB.
 - Already submitted Storage uploads may finish; no automatic object deletion.
 - QR contents are manually supplied, not proof the encoded destination matches
   typed account details or a verified bank statement.
@@ -44,3 +44,22 @@ its result must not update/toast/reload the new scope.
 
 This changes financial routing configuration and stays owner-gated despite no DB
 migration. No source test, screenshot or CI job implies production acceptance.
+
+## Create recovery extension
+
+Before a first INSERT, the authenticated actor/CLB editor durably saves an exact
+UUID and payload in sessionStorage. No access token is saved. Unknown outcomes
+keep that identity. On remount/recheck only that exact scoped ID is read; an
+empty read restores the same draft with fields locked and an explicit retry.
+Retry INSERT reuses the primary key. A23505 response is recovered only after
+reading and comparing that ID, CLB, type and every requested field; no upsert or
+overwrite. Corrupt/unavailable storage and mismatched receipts fail closed.
+An independently created request in another tab can still create another row;
+this extension does not invent a one-active-account rule or repair old duplicates.
+
+The affected real-browser qualifier now also executes a committed INSERT whose
+response is replaced by503, reloads the component with one stale empty read,
+retries into an actual primary-key conflict, and recovers the original row.
+All five widths assert identical POST payload/ID, exactly one database row,
+cleared journal, visible controls and no horizontal overflow. This is isolated
+configuration proof, not canonical hosted authentication or outgoing financing.
