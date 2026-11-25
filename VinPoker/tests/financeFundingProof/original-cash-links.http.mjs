@@ -6,7 +6,8 @@ import {join} from 'node:path';
 assert.equal(process.env.PGHOST,'127.0.0.1');assert.equal(process.env.PGDATABASE,'vinpoker_ops_funding_proof');assert.ok(process.env.RUNNER_TEMP);
 const api='http://127.0.0.1:3015',container='finance-original-funding-proof',secret=randomBytes(48).toString('hex');
 const id=n=>`19000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
-function command(p,args,options={}){const r=spawnSync(p,args,{encoding:'utf8',...options});assert.equal(r.status,0,'Isolated funding SQL/setup failed');return r.stdout.trim();}
+function command(p,args,options={}){const r=spawnSync(p,args,{encoding:'utf8',...options});
+ if(r.status!==0){const detail=p==='psql'?String(r.stderr??'').replaceAll(secret,'[REDACTED]').slice(0,1500):'non-SQL setup failure';throw Error(`Isolated funding setup: ${detail}`);}return r.stdout.trim();}
 const sql=q=>command('psql',['-XqAt','-v','ON_ERROR_STOP=1','-c',q]);
 function token(sub){const enc=o=>Buffer.from(JSON.stringify(o)).toString('base64url');const body=enc({alg:'HS256',typ:'JWT'})+'.'+enc({sub,role:'authenticated',exp:Math.floor(Date.now()/1000)+600});return body+'.'+createHmac('sha256',secret).update(body).digest('base64url');}
 async function rpc(name,body,actor){const r=await fetch(`${api}/rpc/${name}`,{method:'POST',signal:AbortSignal.timeout(10000),headers:{'Content-Type':'application/json',Authorization:`Bearer ${token(actor)}`},body:JSON.stringify(body)});assert.equal(r.status,200,`${name}: HTTP not successful`);const data=await r.json();assert.equal(data.error,undefined,`${name}: application refusal`);return data;}
@@ -22,6 +23,7 @@ try{
  command('docker',['run','--detach','--name',container,'--network','host','-e','PGRST_DB_URI','-e','PGRST_DB_SCHEMAS','-e','PGRST_DB_ANON_ROLE','-e','PGRST_JWT_SECRET','-e','PGRST_SERVER_HOST','-e','PGRST_SERVER_PORT','postgrest/postgrest:v13.0.7'],{env:{...process.env,PGRST_DB_URI:'postgres://authenticator@127.0.0.1:5432/vinpoker_ops_funding_proof',PGRST_DB_SCHEMAS:'public',PGRST_DB_ANON_ROLE:'anon',PGRST_JWT_SECRET:secret,PGRST_SERVER_HOST:'127.0.0.1',PGRST_SERVER_PORT:'3015'}});
  let ready=false;for(let i=0;i<60;i++){try{if((await fetch(api,{signal:AbortSignal.timeout(500)})).status<500){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,500));}assert.ok(ready);
  for(const [index,kind] of ['pt_cash','pt_bank','expense_cash_paid','expense_unpaid','expense_bank_paid'].entries()){
+  console.log('FUNDING_ORIGINAL_CASE',kind);
   const club=id(100+index),owner=id(200+index),cashier=id(300+index),employee=id(400+index),dealer=id(500+index);
   sql(`INSERT INTO auth.users(id) VALUES('${owner}'),('${cashier}'),('${employee}');
    INSERT INTO public.profiles(user_id,display_name) VALUES('${owner}','TEST funding owner'),('${cashier}','TEST funding cashier'),('${employee}','TEST funding employee');
