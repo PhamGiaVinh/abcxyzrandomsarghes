@@ -61,6 +61,8 @@ interface PtDealer {
 }
 
 interface PtWageResponse {
+  club_id?: string;
+  as_of?: string;
   dealers?: PtDealer[];
   accrual_mode?: string | null;
   standby_accrual_enabled?: boolean;
@@ -75,6 +77,7 @@ interface Props {
   clubIds: string[];
   clubs: ClubRow[];
   readOnly?: boolean;
+  financeRead?: boolean;
   finalizeStatements?: boolean;
   ownerClubIds?: string[];
 }
@@ -101,14 +104,15 @@ function fmtHMS(ms: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-export default function DealerPtWageTab({ clubIds, clubs, readOnly = false, finalizeStatements = false, ownerClubIds }: Props) {
+export default function DealerPtWageTab({ clubIds, clubs, readOnly: requestedReadOnly = false, financeRead = false, finalizeStatements = false, ownerClubIds }: Props) {
   const { isAdmin, isClubAdmin, isClubOwner } = useAuth();
+  const readOnly = requestedReadOnly || financeRead;
   const [clubFilter, setClubFilter] = useState<string>(clubIds[0] ?? "");
   const activeClubId = clubFilter || clubIds[0] || "";
 
   const [dealers, setDealers] = useState<PtDealer[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setError] = useState<string | null>(null);
   const [clubAccrualMode, setClubAccrualMode] = useState<string | null>(null);
   const [standbyAccrualEnabled, setStandbyAccrualEnabled] = useState(false);
   const [globalPolicyReady, setGlobalPolicyReady] = useState(false);
@@ -148,15 +152,28 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false, fina
     if (snapshotClubRef.current !== activeClubId) setLoading(true);
     setError(null);
     try {
-      const { data, error: rpcError } = await observeTrackerContextRead(db.rpc("get_club_pt_wages", { p_club_id: activeClubId }));
+      const { data, error: rpcError } = await observeTrackerContextRead(db.rpc(financeRead ? "get_finance_dealer_pt_wages_v1" : "get_club_pt_wages", { p_club_id: activeClubId }));
       if (rpcError) throw rpcError;
       const response = data as PtWageResponse;
+      if (financeRead && (!response || response.club_id !== activeClubId
+        || typeof response.as_of !== "string" || !Number.isFinite(Date.parse(response.as_of)))) {
+        throw new Error('Không xác minh được phạm vi lương PT.');
+      }
       if (!response || typeof response !== 'object' || Array.isArray(response) || !Array.isArray(response.dealers)
         || response.dealers.some(d => !d || typeof d !== 'object' || Array.isArray(d)
           || typeof d.dealer_id !== 'string' || !d.dealer_id || typeof d.full_name !== 'string'
           || [d.hourly_rate_vnd,d.accrued_minutes,d.balance_vnd].some(n=>typeof n!=='number'||!Number.isFinite(n)||n<0)
           || typeof d.current_shift_open !== 'boolean')) {
         throw new Error('Không xác minh được dữ liệu lương part-time.');
+      }
+      if (financeRead && response.dealers.some(dealer =>
+        !Number.isSafeInteger(dealer.hourly_rate_vnd) || !Number.isSafeInteger(dealer.balance_vnd)
+        || (dealer.last_payment !== null && (
+          typeof dealer.last_payment !== 'object' || Array.isArray(dealer.last_payment)
+          || !Number.isSafeInteger(dealer.last_payment?.amount_vnd) || dealer.last_payment.amount_vnd < 0
+          || typeof dealer.last_payment.paid_at !== 'string'
+          || !Number.isFinite(Date.parse(dealer.last_payment.paid_at)))))) {
+        throw new Error('Không xác minh được số tiền lương PT.');
       }
       if (sequence !== fetchSequenceRef.current) return;
       snapshotClubRef.current = activeClubId;
@@ -174,11 +191,11 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false, fina
     } finally {
       if (sequence === fetchSequenceRef.current) setLoading(false);
     }
-  }, [activeClubId]);
+  }, [activeClubId, financeRead]);
 
   const fetchGlobalPolicy = useCallback(async () => {
     const sequence = ++globalPolicySequenceRef.current;
-    if (!isAdmin) {
+    if (!isAdmin || financeRead) {
       setGlobalPolicyReady(false);
       setGlobalFutureClubEnabled(false);
       setGlobalPolicyLoading(false);
@@ -203,7 +220,7 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false, fina
     } finally {
       if (sequence === globalPolicySequenceRef.current) setGlobalPolicyLoading(false);
     }
-  }, [isAdmin]);
+  }, [isAdmin, financeRead]);
 
   useEffect(() => {
     const stop = startLiveReportRefresh(fetchData);
@@ -228,6 +245,11 @@ export default function DealerPtWageTab({ clubIds, clubs, readOnly = false, fina
   };
 
   const totalUnpaid = dealers.reduce((s, d) => s + liveBalance(d), 0);
+  // An individually valid snapshot can overflow after summing or live projection.
+  // Hide all amounts rather than formatting an imprecise total as verified VND.
+  const error = loadError ?? (financeRead && (!Number.isSafeInteger(totalUnpaid)
+    || dealers.some(dealer => !Number.isSafeInteger(liveBalance(dealer))))
+    ? 'Không xác minh được số tiền lương PT.' : null);
   const workingCount = dealers.filter((d) => d.current_shift_open).length;
 
   const openPay = (d: PtDealer) => {

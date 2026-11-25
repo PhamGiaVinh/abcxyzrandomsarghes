@@ -1,0 +1,116 @@
+name: Finance payroll read scope PostgreSQL
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/finance-payroll-read.yml'
+      - 'VinPoker/tests/financePayroll/**'
+      - 'VinPoker/supabase/pending-migrations/20270128000353_finance_dealer_pt_read_v1.sql'
+permissions:
+  actions: read
+  contents: read
+jobs:
+  accountant-pt-read:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: finance_payroll_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create isolated fixture database
+        run: |
+          PGDATABASE=postgres createdb finance_payroll_test
+          psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/fixtures/setup.sql
+          psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/fixtures/livePtRead.sql
+      - name: Reproduce existing accountant denial
+        run: psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/ptRead.baseline.sql
+      - name: Install candidate only on isolated fixture
+        run: psql -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/20270128000353_finance_dealer_pt_read_v1.sql
+      - name: Verify endpoint collision is refused
+        run: |
+          if psql -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/20270128000353_finance_dealer_pt_read_v1.sql > "$RUNNER_TEMP/pt-read-collision.log" 2>&1; then
+            echo "Expected candidate collision refusal"
+            exit 1
+          fi
+          grep -q finance_pt_read_target_exists "$RUNNER_TEMP/pt-read-collision.log"
+      - name: Verify scope, parity, revocation and rollback
+        run: psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/ptRead.candidate.sql
+      - name: Verify source drift is refused before creating endpoint
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "CREATE OR REPLACE FUNCTION public.get_club_pt_wages(p_club_id uuid) RETURNS jsonb LANGUAGE sql STABLE AS 'SELECT NULL::jsonb';"
+          if psql -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/20270128000353_finance_dealer_pt_read_v1.sql > "$RUNNER_TEMP/pt-read-drift.log" 2>&1; then
+            echo "Expected source drift refusal"
+            exit 1
+          fi
+          grep -q finance_pt_read_source_drift "$RUNNER_TEMP/pt-read-drift.log"
+          psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/fixtures/livePtRead.sql
+          test "$(psql -Atqc "SELECT to_regprocedure('public.get_finance_dealer_pt_wages_v1(uuid)') IS NULL")" = t
+
+  captured-calculator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: vinpoker_ops_finance_pt
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vinpoker_ops_finance_pt"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_finance_pt
+      CAPTURE_RUN: '45651278424'
+      CAPTURE_SHA: 'c9dba24211152ddf5f010a46d0afab118cfbf482'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify protected capture provenance and restore schema on loopback
+        working-directory: VinPoker
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CAPTURE_RUN" > "$RUNNER_TEMP/finance-capture.json"
+          jq -e --arg sha "$CAPTURE_SHA" --arg owner "$GITHUB_REPOSITORY_OWNER" \
+            '.conclusion == "success" and .head_sha == $sha and .head_branch == "main" and
+             .event == "workflow_dispatch" and .actor.login == $owner and
+             .path == ".github/workflows/capture-live-public-schema.yml"' \
+            "$RUNNER_TEMP/finance-capture.json" > /dev/null
+          export SCHEMA_ARTIFACT_DIR="$RUNNER_TEMP/finance-pt-schema"
+          gh run download "$CAPTURE_RUN" -R "$GITHUB_REPOSITORY" -n live-public-schema -D "$SCHEMA_ARTIFACT_DIR"
+          node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
+          test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
+          node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Seed TEST actors and prove existing denial with real calculator dependencies
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/currentSchema.seed.sql
+      - name: Install exact candidate on captured schema only
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/20270128000353_finance_dealer_pt_read_v1.sql
+      - name: Verify actual earned wages, scope, revocation and unchanged ledger
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/currentSchema.verify.sql
+      - name: Verify actual PostgREST authentication and club authorization over HTTP
+        run: node VinPoker/tests/financePayroll/ptRead.http.mjs
+      - name: Remove runner-local schema artifact
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/finance-pt-schema"

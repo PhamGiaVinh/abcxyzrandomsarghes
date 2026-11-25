@@ -1,3 +1,4 @@
+import { FinanceDealerPtWages } from "@/components/accountant/FinanceDealerPtWages";
 import { financeAccountantPaths, financeAccountantTab } from "@/lib/financeNavigation";
 import { useOperationalCapabilities } from "@/hooks/useOperationalCapabilities";
 import { useCallback, useEffect, useState } from "react";
@@ -66,7 +67,9 @@ export default function AccountantDashboard() {
   }), [setSearchParams]);
   const [showStaffSettings, setShowStaffSettings] = useState(false);
   const [showFnbDetails, setShowFnbDetails] = useState(false);
-  const [salaryView, setSalaryView] = useState<"staff" | "dealer">("staff");
+  const [salaryView, setSalaryView] = useState<"staff" | "dealer" | "dealer_pt">("staff");
+  const salaryChoices: Array<"staff" | "dealer" | "dealer_pt"> = FEATURES.financeDealerPtRead
+    ? ["staff", "dealer", "dealer_pt"] : ["staff", "dealer"];
   const activeClub = clubId !== null ? clubs.find((club) => club.id === clubId) : clubs[0];
   const activeClubId = activeClub?.id ?? null;
   const { caps } = useAccountantCapabilities(FEATURES.accountantWorkspace ? activeClubId : null);
@@ -153,7 +156,7 @@ export default function AccountantDashboard() {
               : <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />)}
           </details>
           <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
-            {(["staff", "dealer"] as const).map((v) => (
+            {salaryChoices.map((v) => (
               <button
                 key={v}
                 type="button"
@@ -164,7 +167,7 @@ export default function AccountantDashboard() {
                 )}
               >
                 {v === "staff" ? <Wallet className="w-3.5 h-3.5" /> : <Table2 className="w-3.5 h-3.5" />}
-                {v === "staff" ? "Nhân viên" : "Dealer"}
+                {v === "staff" ? "Nhân viên" : v === "dealer_pt" ? "Dealer PT" : "Dealer"}
               </button>
             ))}
           </div>
@@ -175,6 +178,9 @@ export default function AccountantDashboard() {
             ) : (
               <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
             )
+          ) : salaryView === "dealer_pt" ? (
+            activeClub && FEATURES.financeDealerPtRead ? <FinanceDealerPtWages club={activeClub} />
+              : <p role="status">Phần lương PT chưa được mở.</p>
           ) : activeClub && dealerAvailable ? (
             <DealerPayrollTab
               clubIds={[activeClub.id]}

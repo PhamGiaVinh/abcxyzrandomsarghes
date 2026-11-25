@@ -44,6 +44,87 @@ describe("DealerPtWageTab policy control", () => {
     });
   });
 
+  it('uses the scoped finance endpoint and rejects another club response',async()=>{
+    testState.auth={isAdmin:false,isClubAdmin:false,isClubOwner:false};
+    testState.rpc.mockResolvedValue({data:{club_id:'other-club',as_of:'2026-11-25T15:00:00Z',dealers:[]},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead readOnly/>);
+    await screen.findByText('Không xác minh được phạm vi lương PT.');
+    expect(testState.rpc.mock.calls.some(([name])=>name==='get_finance_dealer_pt_wages_v1')).toBe(true);
+    expect(screen.queryByText('Chưa có dealer part-time đang hoạt động')).toBeNull();
+  });
+
+  it('forces the finance reader to remain read-only even for an administrator',async()=>{
+    testState.rpc.mockResolvedValue({data:{club_id:'club-1',as_of:'2026-11-25T15:00:00Z',dealers:[{
+      dealer_id:'33333333-3333-4333-8333-333333333333',full_name:'FINANCE PT',hourly_rate_vnd:60000,
+      accrued_minutes:1,balance_vnd:1000,last_reset_at:null,current_shift_open:false,current_shift_start:null,last_payment:null,
+    }]},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead readOnly={false} finalizeStatements/>);
+    await screen.findByText('FINANCE PT');
+    expect(testState.rpc.mock.calls.every(([name])=>name==='get_finance_dealer_pt_wages_v1')).toBe(true);
+    expect(screen.queryByRole('button',{name:'Thanh toán'})).toBeNull();
+    expect(screen.queryByRole('button',{name:'Chốt phiếu PT'})).toBeNull();
+  });
+
+  it.each([0.5, Number.MAX_SAFE_INTEGER + 1])('rejects an unrepresentable VND balance in the finance view: %s', async balance => {
+    testState.rpc.mockResolvedValue({data:{club_id:'club-1',as_of:'2026-11-25T15:00:00Z',dealers:[{
+      dealer_id:'dealer-1',full_name:'INVALID PT',hourly_rate_vnd:60000,
+      accrued_minutes:1,balance_vnd:balance,last_reset_at:null,current_shift_open:false,
+      current_shift_start:null,last_payment:null,
+    }]},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead/>);
+    await screen.findByText('Không xác minh được số tiền lương PT.');
+    expect(screen.queryByText('INVALID PT')).toBeNull();
+    expect(screen.queryByText('Tổng tạm tính chưa chốt')).toBeNull();
+  });
+
+  it.each([undefined, 'not-a-timestamp'])('rejects an unverifiable server snapshot time: %s', async asOf => {
+    testState.rpc.mockResolvedValue({data:{club_id:'club-1',as_of:asOf,dealers:[]},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead/>);
+    await screen.findByText('Không xác minh được phạm vi lương PT.');
+    expect(screen.queryByText('Chưa có dealer part-time đang hoạt động')).toBeNull();
+  });
+
+  it.each([
+    {amount_vnd:null,paid_at:'2026-11-25T15:00:00Z'},
+    {amount_vnd:0.5,paid_at:'2026-11-25T15:00:00Z'},
+    {amount_vnd:1000,paid_at:'invalid'},
+    'invalid',
+  ])('rejects invalid last-payment evidence: %j', async lastPayment => {
+    testState.rpc.mockResolvedValue({data:{club_id:'club-1',as_of:'2026-11-25T15:00:00Z',dealers:[{
+      dealer_id:'dealer-1',full_name:'INVALID PAYMENT',hourly_rate_vnd:60000,
+      accrued_minutes:1,balance_vnd:1000,last_reset_at:null,current_shift_open:false,
+      current_shift_start:null,last_payment:lastPayment,
+    }]},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead/>);
+    await screen.findByText('Không xác minh được số tiền lương PT.');
+    expect(screen.queryByText('INVALID PAYMENT')).toBeNull();
+  });
+
+  it('rejects a total that overflows even when each dealer balance is safe', async () => {
+    testState.rpc.mockResolvedValue({data:{club_id:'club-1',as_of:'2026-11-25T15:00:00Z',dealers:
+      ['1','2'].map(id=>({dealer_id:id,full_name:`OVERFLOW ${id}`,hourly_rate_vnd:60000,
+        accrued_minutes:1,balance_vnd:Number.MAX_SAFE_INTEGER,last_reset_at:null,
+        current_shift_open:false,current_shift_start:null,last_payment:null}))},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead/>);
+    await screen.findByText('Không xác minh được số tiền lương PT.');
+    expect(screen.queryByText('OVERFLOW 1')).toBeNull();
+  });
+
+  it('stops presenting amounts when a live estimate crosses the safe VND limit', async () => {
+    vi.useFakeTimers();
+    testState.rpc.mockResolvedValue({data:{club_id:'club-1',as_of:'2026-11-25T15:00:00Z',dealers:[{
+      dealer_id:'dealer-1',full_name:'NEAR LIMIT',hourly_rate_vnd:60000,
+      accrued_minutes:1,balance_vnd:Number.MAX_SAFE_INTEGER-1,last_reset_at:null,
+      current_shift_open:true,current_shift_start:'2026-11-25T14:00:00Z',last_payment:null,
+    }]},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead/>);
+    await act(async()=>vi.advanceTimersByTimeAsync(1));
+    expect(screen.getByText('NEAR LIMIT')).toBeInTheDocument();
+    await act(async()=>vi.advanceTimersByTimeAsync(1000));
+    expect(screen.getByText('Không xác minh được số tiền lương PT.')).toBeInTheDocument();
+    expect(screen.queryByText('NEAR LIMIT')).toBeNull();
+  });
+
   it('uses the statement flow for a cashier and never offers the legacy balance payment when statements are enabled', async () => {
     testState.auth = { isAdmin: false, isClubAdmin: false, isClubOwner: false };
     testState.rpc.mockImplementation(async name => ({ data: name === 'get_club_pt_wages' ? { dealers: [{

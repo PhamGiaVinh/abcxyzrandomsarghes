@@ -1353,6 +1353,8 @@ export const FEATURES = {
    * after the B1 migrations (20261028000000/01) are applied live + types regenerated.
    */
   salaryTabV2: true,
+  /** Pending finance PT reader requires its reviewed server release and TEST verification. */
+  financeDealerPtRead: false,
   /**
    * Immutable FT payroll statements for clubs beyond the HSOP canary. Keep OFF
    * through source merge and TEST-club UAT; the server rollout remains the
