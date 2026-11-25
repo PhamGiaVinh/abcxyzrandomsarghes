@@ -7,9 +7,10 @@ DO $$ BEGIN
     AND to_regprocedure('public.list_my_pt_statements_v1(uuid,uuid,timestamptz,uuid)') IS NULL THEN RETURN; END IF;
   IF (SELECT count(*) FROM pg_catalog.pg_proc p WHERE
     ((p.oid=to_regprocedure('public.get_pt_statement_installments_v1(uuid)') AND md5(p.prosrc)='191f8b9de02702a828a1628d73ba8658'
-        AND p.proargnames=ARRAY['p_statement_id'] AND p.pronargdefaults=0)
+        AND p.proargnames=ARRAY['p_statement_id'] AND p.pronargdefaults=0 AND p.proargdefaults IS NULL)
       OR (p.oid=to_regprocedure('public.list_my_pt_statements_v1(uuid,uuid,timestamptz,uuid)') AND md5(p.prosrc)='5788d4c196fba4cd5bae989f858d155c'
-        AND p.proargnames=ARRAY['p_club_id','p_dealer_id','p_before_at','p_before_id'] AND p.pronargdefaults=2))
+        AND p.proargnames=ARRAY['p_club_id','p_dealer_id','p_before_at','p_before_id'] AND p.pronargdefaults=2
+        AND pg_get_expr(p.proargdefaults,0)='NULL::timestamp with time zone, NULL::uuid'))
     AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.provolatile='s'
     AND p.prokind='f' AND NOT p.proretset AND p.prorettype='jsonb'::regtype
     AND NOT p.proisstrict AND NOT p.proleakproof AND p.proparallel='u'

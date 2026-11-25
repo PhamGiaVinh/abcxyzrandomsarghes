@@ -15,7 +15,7 @@ Qualified SQL (UTF-8, CRLF/lone CR normalized to LF):
 | File | SHA-256 |
 | --- | --- |
 | `finance_pt_statement_reads_v1.sql` | `871cd603ba0dc81818c15c044e41bc6ad003ccca74d01cb1ebb142ebd39c71cc` |
-| `finance_pt_statement_reads_v1.rollback.sql` | `be33baffa4c3a968e63bb56eab49152befde0b84c34c023c87b32adaf8ab5750` |
+| `finance_pt_statement_reads_v1.rollback.sql` | `b0f8ee8b014c0acca79738d8f676a2b3f74cf994e812bdbcdd3d86d8ea457bc4` |
 
 Expected function body MD5: detail `191f8b9de02702a828a1628d73ba8658`;
 history `5788d4c196fba4cd5bae989f858d155c`.
