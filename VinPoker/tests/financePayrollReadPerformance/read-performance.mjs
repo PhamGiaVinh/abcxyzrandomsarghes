@@ -29,7 +29,7 @@ function fingerprint(){return sql(`SELECT md5(jsonb_build_object(
  'settlements',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.dealer_pt_wage_settlements s)
  )::text)`);}
 const samples=[];
-let before,start,elapsedMs=0,fixture,terminalError;
+let before,start,elapsedMs=0,fixture,terminalError,effectiveLoginConfig;
 async function waitUntil(target) {
   // Node truncates fractional timer delays. Recheck the monotonic deadline;
   // never weaken the full30minute qualification window with a tolerance.
@@ -44,9 +44,17 @@ async function read(name,args,token,timeoutMs=5000){
 }
 try {
   sql(`ALTER ROLE authenticator LOGIN NOINHERIT NOSUPERUSER; GRANT authenticated,anon TO authenticator;
+    -- Match verified production config only in this disposable login role.
+    -- ProductionPG17.6 uses configuration-fileJIT=OFF with no auth role override.
+    ALTER ROLE authenticator SET jit='off';
     CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $auth$
       SELECT coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),
         nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid $auth$;`);
+  effectiveLoginConfig=JSON.parse(command('psql',['-XqAt','-U','authenticator','-c',
+    "SELECT jsonb_build_object('role',current_user,'version',current_setting('server_version'),'jit',current_setting('jit'),'jit_above_cost',current_setting('jit_above_cost'),'jit_inline_above_cost',current_setting('jit_inline_above_cost'),'jit_optimize_above_cost',current_setting('jit_optimize_above_cost'))"]));
+  assert.equal(effectiveLoginConfig.role,'authenticator');assert.equal(effectiveLoginConfig.jit,'off');
+  assert.equal(effectiveLoginConfig.jit_above_cost,'100000');
+  assert.equal(effectiveLoginConfig.jit_inline_above_cost,'500000');assert.equal(effectiveLoginConfig.jit_optimize_above_cost,'500000');
   fixture=JSON.parse(sql(`SELECT jsonb_build_object(
     'statement_id',(SELECT id FROM public.dealer_payroll_statements LIMIT 1),
     'documents',(SELECT count(*) FROM public.club_expenses),
@@ -115,7 +123,9 @@ finally {
     documents:fixture?.documents,months:fixture?.months.length,financialFactsUnchanged:unchanged,terminalError});
   const evidence={scope:'isolated read RPC performance only; not UI latency, payment writer, hosted capacity or TC6 qualification',
     qualification:qualified,sourceSha:process.env.SOURCE_SHA,durationMs,elapsedMs,actors,slots,paceMs,
-    documents:fixture?.documents,months:fixture?.months.length,pool:10,financialFactsUnchanged:unchanged,
+    documents:fixture?.documents,months:fixture?.months.length,pool:10,effectiveLoginConfig,
+    environmentReference:'Production read-only pg_settings and auth role/database override audit2026-11-26; PG17.6,jitOFF; isolated PGminor/hardware differ',
+    productionCapacityClaim:false,fullIntegrationQualification:false,financialFactsUnchanged:unchanged,
     terminalError,results,samples};
   writeFileSync(join(process.env.RUNNER_TEMP,'pt-read-performance.json'),JSON.stringify(evidence));
   console.log('PT_READ_PERFORMANCE_RESULT',JSON.stringify({qualification:qualified,elapsedMs,results,financialFactsUnchanged:unchanged}));
