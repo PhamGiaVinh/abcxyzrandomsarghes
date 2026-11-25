@@ -14,7 +14,12 @@ try {await server.listen();browser=await chromium.launch({headless:true});for(co
   await page.goto(`${base}/tests/financePayrollReadRelease/${input.salaryOnly?'http.employee.preview.html':'http.preview.html'}`);
   const scope=input.salaryOnly?page.getByRole('region',{name:'Phiếu lương PT đã chốt',exact:true}):page.locator('main');
   const expectedPaid=input.paid?'5.000.000':'0',expectedDebt=input.paid?'0':'5.000.000';
-  if(input.salaryOnly){await scope.getByRole('listitem',{name:`Phiếu ${input.binding.statement_id}`,exact:true}).waitFor();await scope.locator('dl').getByText(`${expectedDebt} ₫`,{exact:true}).waitFor();
+  if(input.salaryOnly){
+    await scope.getByRole('listitem',{name:`Phiếu ${input.binding.statement_id}`,exact:true}).waitFor();
+    // Unpaid approval and debt are both5M; select the semantic term/value pair,
+    // not an arbitrary first occurrence of an otherwise identical amount.
+    const debt=scope.locator('dl > div').filter({has:page.getByText('Còn phải trả',{exact:true})});
+    await debt.getByText(`${expectedDebt} ₫`,{exact:true}).waitFor();
     if(input.historicalMode==='inactive')await page.getByRole('alert').waitFor();
     else if(input.historicalMode==='full_time')await page.getByText('Chưa chốt bảng lương tháng này',{exact:true}).waitFor();
     else if(input.paid)await page.getByRole('region',{name:'Lịch sử thanh toán lương PT'}).getByText(/Chuyển khoản/).waitFor();
