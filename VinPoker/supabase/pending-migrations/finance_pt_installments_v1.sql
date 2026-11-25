@@ -13,6 +13,9 @@ DO $$ BEGIN
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.pay_finalized_part_time_payroll_statement(uuid,text,text,text,text)'::regprocedure)
     IS DISTINCT FROM 'aef6ec6ce2d1db9fe44ed43bf8bd4d08'
   THEN RAISE EXCEPTION 'PT_INSTALLMENT_FULL_PAYMENT_SOURCE_DRIFT'; END IF;
+  IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.get_club_finance_summary(timestamptz,timestamptz,uuid)'::regprocedure)
+    IS DISTINCT FROM 'e6388bd6fc1a1e07141ff0775385a606'
+  THEN RAISE EXCEPTION 'PT_INSTALLMENT_SUMMARY_SOURCE_DRIFT'; END IF;
 END $$;
 
 CREATE TABLE public.finance_pt_installment_rollout_v1 (
@@ -46,6 +49,9 @@ CREATE UNIQUE INDEX dealer_pt_wage_payments_statement_uq
 CREATE UNIQUE INDEX dealer_pt_wage_installment_request_uq
   ON public.dealer_pt_wage_payments(club_id,installment_request_id)
   WHERE installment_request_id IS NOT NULL;
+-- Statement aggregation must retain an index covering both legacy and installment rows.
+CREATE INDEX dealer_pt_wage_payments_statement_lookup_idx
+  ON public.dealer_pt_wage_payments(statement_id) WHERE statement_id IS NOT NULL;
 ALTER TABLE public.dealer_pt_wage_payments ADD CONSTRAINT pt_installment_statement_required
   CHECK(installment_request_id IS NULL OR statement_id IS NOT NULL);
 
@@ -306,4 +312,26 @@ END $$;
 REVOKE ALL ON FUNCTION public._reject_pt_installment_plan_mutation_v1() FROM PUBLIC,anon,authenticated,service_role;
 CREATE TRIGGER trg_finance_pt_plan_immutable BEFORE UPDATE OR DELETE ON public.finance_pt_installment_plans_v1
   FOR EACH ROW EXECUTE FUNCTION public._reject_pt_installment_plan_mutation_v1();
+
+-- Preserve the existing authorization, date contract, cash rows and report structure.
+-- Only current finalized debt changes: the immutable approved amount minus actual
+-- nonvoided payments for this exact statement/dealer/club, independent of selected period.
+DO $summary$ DECLARE def text; needle text; replacement text; BEGIN
+  SELECT pg_get_functiondef('public.get_club_finance_summary(timestamptz,timestamptz,uuid)'::regprocedure) INTO def;
+  needle:='select coalesce(sum(s.amount_vnd),0) into v_dealer_pt_finalized';
+  IF (length(def)-length(replace(def,needle,'')))/length(needle)<>1 THEN
+    RAISE EXCEPTION 'PT_INSTALLMENT_SUMMARY_PATCH_SEAM_DRIFT'; END IF;
+  replacement:=$body$
+  if exists(select 1 from public.dealer_pt_wage_settlements s
+    where s.club_id=any(v_club_ids) and s.status='finalized'
+      and s.amount_vnd < coalesce((select sum(w.amount_vnd) from public.dealer_pt_wage_payments w
+        where w.statement_id=s.statement_id and w.club_id=s.club_id and w.dealer_id=s.dealer_id and w.voided_at is null),0)) then
+    raise exception 'finance_pt_installment_invalid_remaining' using errcode='22023';
+  end if;
+  select coalesce(sum(s.amount_vnd-coalesce((select sum(w.amount_vnd)
+    from public.dealer_pt_wage_payments w where w.statement_id=s.statement_id
+      and w.club_id=s.club_id and w.dealer_id=s.dealer_id and w.voided_at is null),0)),0) into v_dealer_pt_finalized
+  $body$;
+  EXECUTE replace(def,needle,replacement);
+END $summary$;
 COMMIT;
