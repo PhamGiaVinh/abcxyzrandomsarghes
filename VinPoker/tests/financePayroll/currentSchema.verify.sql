@@ -3,6 +3,16 @@ BEGIN;
 DO $$ BEGIN
   IF current_database() <> 'vinpoker_ops_finance_pt' THEN RAISE EXCEPTION 'isolated_database_required'; END IF;
 END $$;
+CREATE TEMP VIEW finance_pt_current_state AS
+SELECT jsonb_build_object(
+  'dealers', (SELECT jsonb_agg(to_jsonb(d) ORDER BY id) FROM public.dealers d),
+  'attendance', (SELECT jsonb_agg(to_jsonb(a) ORDER BY id) FROM public.dealer_attendance a),
+  'rates', (SELECT jsonb_agg(to_jsonb(r) ORDER BY id) FROM public.dealer_pt_wage_rate_history r),
+  'payments', (SELECT jsonb_agg(to_jsonb(p) ORDER BY id) FROM public.dealer_pt_wage_payments p),
+  'settlements', (SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM public.dealer_pt_wage_settlements s),
+  'earned', public._pt_wage_balance('17950000-0000-4000-8000-000000000051')
+) AS snapshot;
+CREATE TEMP TABLE finance_pt_before AS SELECT snapshot FROM finance_pt_current_state;
 -- No product calculation/permission/RLS doubles: execute the captured calculator
 -- and dependencies with the restore helper's isolated auth-context shim.
 -- This qualifies this fixture, not every payroll writer or hosted Auth/HTTP.
@@ -42,15 +52,20 @@ DO $$ BEGIN
   END;
 END $$;
 RESET ROLE;
-ROLLBACK;
--- All reads must leave the original earned amount, attendance and payment
--- ledger unchanged. Membership deletion above was rolled back too.
+-- Compare contents BEFORE rollback, so an unexpected write cannot disappear.
+-- Membership deletion is intentional and checked separately below.
 DO $$ BEGIN
-  IF (SELECT count(*) FROM public.club_accountants) <> 1
-    OR (SELECT count(*) FROM public.dealers) <> 3
-    OR (SELECT count(*) FROM public.dealer_attendance) <> 1
-    OR EXISTS(SELECT FROM public.dealer_pt_wage_payments)
-    OR EXISTS(SELECT FROM public.dealer_pt_wage_settlements)
+  IF (SELECT snapshot FROM finance_pt_current_state) IS DISTINCT FROM
+     (SELECT snapshot FROM finance_pt_before)
   THEN RAISE EXCEPTION 'reader_mutated_fixture'; END IF;
+  IF EXISTS(SELECT FROM public.club_accountants) THEN
+    RAISE EXCEPTION 'revocation_fixture_not_exercised';
+  END IF;
+END $$;
+ROLLBACK;
+DO $$ BEGIN
+  IF (SELECT count(*) FROM public.club_accountants) <> 1 THEN
+    RAISE EXCEPTION 'membership_rollback_failed';
+  END IF;
 END $$;
 SELECT 'CAPTURED_SCHEMA_REAL_CALCULATOR_SCOPE_REVOCATION_PASS' AS result;
