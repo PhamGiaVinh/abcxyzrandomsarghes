@@ -246,7 +246,7 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
             <span className="text-[12px] text-muted-foreground">Part-time · {Math.round(rate / 1000)}K/h</span>
           </div>
           <div className="text-center my-4">
-            <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{t("dealer.salary.unpaidBalance", "Số dư chưa thanh toán")}</div>
+            <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{t("dealer.salary.unfinalizedBalance", "Tạm tính chưa chốt phiếu")}</div>
             <div
               className="font-mono font-bold mt-1"
               style={{ color: GOLD, fontSize: 34 }}
@@ -284,7 +284,7 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
           <span className="text-[12px] text-muted-foreground">{t("dealer.salary.readOnly", "Chỉ xem — câu lạc bộ thực hiện chi trả & reset số dư.")}</span>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card divide-y divide-border">
+        <section aria-label="Lịch sử thanh toán lương PT" className="rounded-2xl border border-border bg-card divide-y divide-border">
           <div className="flex items-center gap-2 px-4 py-2.5">
             <History className="w-4 h-4 text-muted-foreground" />
             <span className="text-[13px] font-bold text-foreground">{t("dealer.salary.history", "Lịch sử thanh toán")}</span>
@@ -292,14 +292,17 @@ function ScopedDealerSalaryScreen({link}:{link:UseDealerLinkResult}) {
           {history.length === 0 ? (
             <div className="px-4 py-3 text-[12px] text-muted-foreground">{t("dealer.salary.noHistory", "Chưa có lịch sử thanh toán")}</div>
           ) : history.map((h, i) => (
-            <div key={i} className="flex items-center justify-between px-4 py-3">
-              <span className="text-[13px] text-muted-foreground">
-                {new Date(h.paid_at).toLocaleDateString("vi-VN")}{h.payment_method ? ` · ${h.payment_method === "bank_transfer" ? "Chuyển khoản" : "Tiền mặt"}` : ""}
+            <div key={i} className="flex items-start justify-between gap-3 px-4 py-3">
+              <span className="min-w-0 text-[13px] text-muted-foreground">
+                {new Date(h.paid_at).toLocaleDateString("vi-VN")} · {h.payment_method === "bank" || h.payment_method === "bank_transfer"
+                  ? t("dealer.salary.methodBank", "Chuyển khoản")
+                  : h.payment_method === "cash" ? t("dealer.salary.methodCash", "Tiền mặt")
+                    : t("dealer.salary.methodUnknown", "Chưa xác minh phương thức")}
               </span>
-              <span className="font-mono text-[13px] font-bold text-foreground">{formatVND(h.amount_vnd)}</span>
+              <span className="shrink-0 whitespace-nowrap font-mono text-[13px] font-bold text-foreground">{formatVND(h.amount_vnd)}</span>
             </div>
           ))}
-        </div>
+        </section>
       </div>
     );
   }

@@ -59,6 +59,20 @@ describe("DealerSalaryScreen live PT balance", () => {
     vi.useRealTimers();
   });
 
+  it.each([
+    ['bank','Chuyển khoản'],['bank_transfer','Chuyển khoản'],['cash','Tiền mặt'],
+    ['manual_legacy','Chưa xác minh phương thức'],[null,'Chưa xác minh phương thức'],
+  ])('shows the recorded payment method %s without guessing cash',async(method,label)=>{
+    testState.rpc.mockResolvedValueOnce({data:{...closedPt,recent_payments:[{
+      amount_vnd:2000000,paid_at:'2026-08-09T10:00:00Z',payment_method:method,
+    }]},error:null});
+    render(<DealerSalaryScreen/>);
+    await act(async()=>{await Promise.resolve();await Promise.resolve();});
+    expect(screen.getByText(new RegExp(label!))).toBeInTheDocument();
+    if(method!=='cash')expect(screen.queryByText(/Tiền mặt/)).not.toBeInTheDocument();
+    expect(testState.rpc.mock.calls.every(([name])=>name==='get_my_pt_wage')).toBe(true);
+  });
+
   it("re-renders the server-backed wage after one second", async () => {
     render(<DealerSalaryScreen />);
 

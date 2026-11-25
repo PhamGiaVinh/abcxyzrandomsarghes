@@ -9,7 +9,7 @@ assert.equal(process.env.PGDATABASE,'vinpoker_ops_pt_installment');
 assert.ok(process.env.RUNNER_TEMP,'explicit disposable browser evidence directory required');
 // Ephemeral TEST JWT comes through stdin, never command arguments, files, or logs.
 const input=JSON.parse(readFileSync(0,'utf8'));
-assert.equal(input.actor,'18000000-0000-4000-8000-000000000012');
+assert.equal(input.actor,input.salaryOnly?'18000000-0000-4000-8000-000000000013':'18000000-0000-4000-8000-000000000012');
 assert.equal(input.binding.club_id,'18000000-0000-4000-8000-000000000001');
 function sql(query){
   const r=spawnSync('psql',['-X','-At','-v','ON_ERROR_STOP=1','-c',query],{encoding:'utf8'});
@@ -42,6 +42,21 @@ try {
       if(u.startsWith(base) || u.startsWith('data:')) return route.continue();
       failures.push('unexpected_external_request');return route.abort();
     });
+    if(input.salaryOnly) {
+      await page.goto(`${base}/tests/financePayrollInstallments/http.employee.preview.html`);
+      const history=page.getByRole('region',{name:'Lịch sử thanh toán lương PT',exact:true});
+      await history.getByText(/Chuyển khoản/).waitFor();
+      await history.getByText(/2\.000\.000/).waitFor();
+      if(input.paymentCount===1) assert.equal(await history.getByText(/Tiền mặt/).count(),0);
+      else {await history.getByText(/Tiền mặt/).waitFor();await history.getByText(/3\.000\.000/).waitFor();}
+      assert.ok(reads.some(r=>r.name==='get_my_pt_wage' && r.status===200));
+      assert.ok(reads.every(r=>r.name==='get_my_pt_wage'),'employee attempted a privileged or financial writer');
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'employee page overflows');
+      assert.ok(await history.evaluate(el=>el.scrollWidth<=el.clientWidth),'employee history overflows');
+      await page.evaluate(()=>document.fonts.ready);
+      await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-employee.png`),fullPage:true});
+      assert.deepEqual(failures,[]);await page.close();continue;
+    }
     await page.goto(`${base}/tests/financePayrollInstallments/http.preview.html`);
     const control=page.getByRole('region',{name:'Điều khiển phiếu PT TEST',exact:true});
     if(input.oldIntent) {

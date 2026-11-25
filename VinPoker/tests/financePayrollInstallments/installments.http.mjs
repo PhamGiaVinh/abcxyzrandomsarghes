@@ -96,6 +96,11 @@ try {
   const statementId=finalized.statement_id;
   assert.match(statementId,/^[a-f0-9-]{36}$/);
   const original=sql(`SELECT (to_jsonb(s)-'pt_wage_payment_id')::text FROM public.dealer_payroll_statements s WHERE id='${statementId}'`);
+  // A distinct linked recipient keeps self-salary read rights separate from
+  // cashier membership; later cashier revocation must still deny operator RPCs.
+  const employee='18000000-0000-4000-8000-000000000013';
+  sql(`INSERT INTO auth.users(id) VALUES('${employee}');UPDATE public.dealers SET user_id='${employee}' WHERE id='${dealer}';`);
+  const employeeJwt=token(employee);
   const detail=await success('get_pt_statement_installments_v1',{p_statement_id:statementId},ownerJwt);
   const period=JSON.parse(sql(`SELECT jsonb_build_object(
     'p_from_date',date_trunc('month',now() at time zone 'Asia/Ho_Chi_Minh')::date,
@@ -131,6 +136,8 @@ try {
       club_id:club,dealer_id:dealer,state:originalSnapshot.state,net_amount_vnd:5000000,finalized_at:originalSnapshot.finalized_at,payment_id:null}};
   verifyBrowser({actor:cashier,token:cashierJwt,binding:browserBinding,
     paid:'2.000.000',remaining:'3.000.000',paymentCount:1,verifyRevocation:false,oldIntent});
+  verifyBrowser({actor:employee,token:employeeJwt,binding:browserBinding,salaryOnly:true,paymentCount:1});
+  assert.equal((await rpc('get_my_pt_wage',{p_dealer_id:dealer},cashierJwt)).status,403,'cashier must not impersonate employee self read');
   for(const deniedJwt of [token(undefined),token('18000000-0000-4000-8000-000000000013')]) {
     const denied=await rpc('record_pt_statement_installment_v1',{...first,p_amount_vnd:1},deniedJwt);
     assert.equal(denied.status,403);assert.equal(denied.data.code,'42501');
@@ -166,6 +173,7 @@ try {
   assert.equal(complete.payments.length,2);assert.equal(complete.paid_total_vnd,5000000);assert.equal(complete.remaining_vnd,0);
   verifyBrowser({actor:cashier,token:cashierJwt,binding:browserBinding,
     paid:'5.000.000',remaining:'0',paymentCount:2,verifyRevocation:true,oldIntent});
+  verifyBrowser({actor:employee,token:employeeJwt,binding:browserBinding,salaryOnly:true,paymentCount:2});
   const completeReport=await success('get_club_finance_summary_v2',period,ownerJwt);
   assert.equal(completeReport.dealerLive.ptFinalizedUnpaidBalance,beforeCash.dealerLive.ptFinalizedUnpaidBalance-5000000);
   assert.equal(completeReport.cost.ptWagePaid,beforeCash.cost.ptWagePaid+5000000);
