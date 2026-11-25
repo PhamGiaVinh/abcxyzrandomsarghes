@@ -63,6 +63,9 @@ jobs:
         run: bash tests/financePayrollInstallments/installments.concurrent.sh "$RUNNER_TEMP/pt-installment-race"
       - name: Verify cashier scope and revoked membership do not mutate finance rows
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/installments.authorization.sql
+      - name: Verify actual PostgREST finalize approve installment and revoked operator flow
+        working-directory: VinPoker
+        run: node tests/financePayrollInstallments/installments.http.mjs
       - name: Remove runner-local schema artifact
         if: always()
         run: rm -rf -- "$RUNNER_TEMP/pt-installment-schema"
