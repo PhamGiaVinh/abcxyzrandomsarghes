@@ -7,7 +7,6 @@ import { TvStatsBar } from "./TvStatsBar";
 import { TvBreakOverlay } from "./TvBreakOverlay";
 import { TvTicker } from "./TvTicker";
 import { TvBroadcastBoard } from './TvBroadcastBoard';
-import { TvLevelSound } from './TvLevelSound';
 
 /**
  * Pure presentational 16:9 TV layout. Receives one TvData prop —
@@ -15,13 +14,11 @@ import { TvLevelSound } from './TvLevelSound';
  * Below the lg breakpoint the three middle columns stack for tablets.
  */
 export function TvClockScreen({ data }: { data: TvData }) {
-  const soundControl = <TvLevelSound data={data} />;
   // Existing clock gate and break lifecycle remain intact; only the broadcast
   // composition changes. All countdown values still come from the server anchor.
   if (FEATURES.tournamentClockV2 && !data.isBreak) {
     return (
       <div className="grid min-h-screen w-full place-items-center bg-black">
-        {soundControl}
         <TvBroadcastBoard data={data} />
       </div>
     );
@@ -29,7 +26,6 @@ export function TvClockScreen({ data }: { data: TvData }) {
 
   return (
     <div className="flex h-full min-h-screen w-full flex-col bg-background text-foreground">
-      {soundControl}
       <TvHeader data={data} />
       {data.isBreak ? (
         <TvBreakOverlay data={data} />
