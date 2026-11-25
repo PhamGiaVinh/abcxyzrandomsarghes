@@ -223,3 +223,17 @@ it('observes another operator paying the statement without a remount or manual r
   expect(state.rpc.mock.calls.some(([name])=>name==='pay_finalized_part_time_payroll_statement')).toBe(false);
  }finally{view.unmount();vi.useRealTimers();}
 });
+
+it('hides previously loaded payroll facts when the same-session status read is refused',async()=>{
+ vi.useFakeTimers();let revoked=false;
+ state.rpc.mockImplementation(async()=>revoked?{data:null,error:{code:'42501'}}
+   :{data:receipt('55555555-5555-4555-8555-555555555555'),error:null});
+ const view=render(<PtStatementControl {...props()}/>);
+ try{
+  await act(async()=>vi.advanceTimersByTimeAsync(1));expect(screen.getByRole('status')).toHaveTextContent('102.478');
+  revoked=true;await act(async()=>vi.advanceTimersByTimeAsync(5000));
+  expect(screen.queryByText(/Phiếu đã chốt:/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button',{name:'Phát lương và tất toán'})).not.toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent(/Chưa xác minh/);
+ }finally{view.unmount();vi.useRealTimers();}
+});

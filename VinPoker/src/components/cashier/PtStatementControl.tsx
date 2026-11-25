@@ -64,7 +64,10 @@ function ScopedControl({ clubId, dealerId, dealerName, actorId, onFinalized, can
       if (!alive.current) return;
       setStatement(row); setReady(true); setError(null);
     } catch {
-      if (alive.current) setError('Chưa xác minh được phiếu PT. Hãy tải lại trước khi chốt.');
+      if (alive.current) {
+        setStatement(null);setDetailsOpen(false);setPayConfirm(false);setConfirm(false);
+        setError('Chưa xác minh được phiếu PT. Hãy tải lại trước khi chốt.');
+      }
     }
   }
 

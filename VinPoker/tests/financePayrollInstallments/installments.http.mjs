@@ -125,8 +125,12 @@ try {
   assert.equal(fingerprint(),partial,'old intent resolution mutated financial rows');
   const browserBinding={statement_id:statementId,statement_hash:JSON.parse(original).statement_hash,
     club_id:club,dealer_id:dealer,net_amount_vnd:5000000};
+  const originalSnapshot=JSON.parse(original);
+  const oldIntent={actorId:cashier,key:'18000000-0000-4000-8000-000000000185',method:'cash',reference:null,
+    statement:{statement_id:statementId,statement_hash:originalSnapshot.statement_hash,request_id:originalSnapshot.request_id,
+      club_id:club,dealer_id:dealer,state:originalSnapshot.state,net_amount_vnd:5000000,finalized_at:originalSnapshot.finalized_at,payment_id:null}};
   verifyBrowser({actor:cashier,token:cashierJwt,binding:browserBinding,
-    paid:'2.000.000',remaining:'3.000.000',paymentCount:1,verifyRevocation:false});
+    paid:'2.000.000',remaining:'3.000.000',paymentCount:1,verifyRevocation:false,oldIntent});
   for(const deniedJwt of [token(undefined),token('18000000-0000-4000-8000-000000000013')]) {
     const denied=await rpc('record_pt_statement_installment_v1',{...first,p_amount_vnd:1},deniedJwt);
     assert.equal(denied.status,403);assert.equal(denied.data.code,'42501');
@@ -161,7 +165,7 @@ try {
   const complete=await success('get_pt_statement_installments_v1',{p_statement_id:statementId},ownerJwt);
   assert.equal(complete.payments.length,2);assert.equal(complete.paid_total_vnd,5000000);assert.equal(complete.remaining_vnd,0);
   verifyBrowser({actor:cashier,token:cashierJwt,binding:browserBinding,
-    paid:'5.000.000',remaining:'0',paymentCount:2,verifyRevocation:true});
+    paid:'5.000.000',remaining:'0',paymentCount:2,verifyRevocation:true,oldIntent});
   const completeReport=await success('get_club_finance_summary_v2',period,ownerJwt);
   assert.equal(completeReport.dealerLive.ptFinalizedUnpaidBalance,beforeCash.dealerLive.ptFinalizedUnpaidBalance-5000000);
   assert.equal(completeReport.cost.ptWagePaid,beforeCash.cost.ptWagePaid+5000000);

@@ -1,7 +1,8 @@
 import {createClient} from '@supabase/supabase-js';
 import type {PtStatementBinding} from '../../src/lib/ptStatementDetails';
+import type {PtStatementPaymentIntent} from '../../src/lib/ptStatementPayment';
 declare global {
-  interface Window {__ptHttp:{actor:string;token:string;binding:PtStatementBinding}}
+  interface Window {__ptHttp:{actor:string;token:string;binding:PtStatementBinding;oldIntent?:PtStatementPaymentIntent}}
 }
 const context=window.__ptHttp;
 if(location.hostname!=='127.0.0.1' || !context) throw Error('ISOLATED_PT_BROWSER_REQUIRED');
