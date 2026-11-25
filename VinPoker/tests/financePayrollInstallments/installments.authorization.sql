@@ -52,10 +52,39 @@ INSERT INTO public.club_accountants(club_id,user_id) VALUES
  ('18000000-0000-4000-8000-000000000001','18000000-0000-4000-8000-000000000012');
 SET LOCAL ROLE authenticated;
 DO $$ BEGIN
+  IF public.get_pt_statement_installments_v1(current_setting('test.pt_statement_id')::uuid)->>'club_id'
+    IS DISTINCT FROM '18000000-0000-4000-8000-000000000001' THEN
+    RAISE EXCEPTION 'exact_club_accountant_cannot_read_payment_history'; END IF;
   BEGIN
     PERFORM public.record_pt_statement_installment_v1(current_setting('test.pt_statement_id')::uuid,
       current_setting('test.pt_statement_hash'),1,'cash',NULL,'18000000-0000-4000-8000-000000000099','TEST accountant cannot pay');
     RAISE EXCEPTION 'accountant_membership_granted_payment';
+  EXCEPTION WHEN SQLSTATE '42501' THEN NULL; END;
+END $$;
+RESET ROLE;
+INSERT INTO auth.users(id) VALUES ('18000000-0000-4000-8000-000000000014'),('18000000-0000-4000-8000-000000000015');
+UPDATE public.dealers SET user_id='18000000-0000-4000-8000-000000000014' WHERE id='18000000-0000-4000-8000-000000000051';
+INSERT INTO public.dealers(id,club_id,user_id,full_name,status,employment_type,hourly_rate_vnd) VALUES
+ ('18000000-0000-4000-8000-000000000055','18000000-0000-4000-8000-000000000001','18000000-0000-4000-8000-000000000015','Other TEST dealer','active','part_time',50000);
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub='18000000-0000-4000-8000-000000000014';
+DO $$ DECLARE d jsonb; BEGIN
+  d:=public.get_pt_statement_installments_v1(current_setting('test.pt_statement_id')::uuid);
+  IF d->>'dealer_id' IS DISTINCT FROM '18000000-0000-4000-8000-000000000051'
+    OR d->>'dealer_name' IS DISTINCT FROM 'PT installment TEST dealer'
+    OR d->>'paid_total_vnd' IS DISTINCT FROM '5000000' OR jsonb_array_length(d->'payments')<>2 THEN
+    RAISE EXCEPTION 'recipient_cannot_read_own_exact_frozen_payslip_and_payments'; END IF;
+  BEGIN
+    PERFORM public.record_pt_statement_installment_v1(current_setting('test.pt_statement_id')::uuid,
+      current_setting('test.pt_statement_hash'),1,'cash',NULL,'18000000-0000-4000-8000-000000000099','TEST recipient cannot pay self');
+    RAISE EXCEPTION 'recipient_received_payment_permission';
+  EXCEPTION WHEN SQLSTATE '42501' THEN NULL; END;
+END $$;
+SET LOCAL request.jwt.claim.sub='18000000-0000-4000-8000-000000000015';
+DO $$ BEGIN
+  BEGIN
+    PERFORM public.get_pt_statement_installments_v1(current_setting('test.pt_statement_id')::uuid);
+    RAISE EXCEPTION 'other_dealer_read_someone_elses_payment_history';
   EXCEPTION WHEN SQLSTATE '42501' THEN NULL; END;
 END $$;
 RESET ROLE;

@@ -39,6 +39,11 @@ BEGIN
   d:=public.get_pt_statement_installments_v1(s);
   IF d->>'approved_amount_vnd' IS DISTINCT FROM '5000000' OR d->>'remaining_vnd' IS DISTINCT FROM '3000000'
     OR jsonb_array_length(d->'payments')<>1 THEN RAISE EXCEPTION 'detail_lost_partial_debt'; END IF;
+  d:=public.get_part_time_payroll_statement_status_v1('18000000-0000-4000-8000-000000000001',
+    '18000000-0000-4000-8000-000000000051','18000000-0000-4000-8000-000000000091');
+  IF d->>'paid_total_vnd' IS DISTINCT FROM '2000000' OR d->>'remaining_vnd' IS DISTINCT FROM '3000000'
+    OR d->>'installments_adopted' IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'operator_status_still_hides_partial_payments'; END IF;
   IF public.get_club_pt_wages('18000000-0000-4000-8000-000000000001')->'dealers'->0->>'balance_vnd' IS DISTINCT FROM '0'
     THEN RAISE EXCEPTION 'partial_payment_released_reserved_interval'; END IF;
   d:=public.get_club_finance_summary_v2(date_trunc('month',now() at time zone 'Asia/Ho_Chi_Minh')::date,
