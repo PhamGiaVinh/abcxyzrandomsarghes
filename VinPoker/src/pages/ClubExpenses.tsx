@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import {ExpenseAttributionFields,ExpenseAttributionSummary,type ExpenseAttribution} from '@/components/ExpenseAttributionFields';
 
 function monthBounds(monthKey: string): { from: string; to: string } {
   const [year, month] = monthKey.split("-").map(Number);
@@ -50,7 +51,7 @@ export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: bo
   const [monthKey, setMonthKey] = useState(currentMonthKey);
   const { from, to } = useMemo(() => monthBounds(monthKey), [monthKey]);
   const clubsQuery = useExpenseClubs(source, allowed);
-  const clubs = clubsQuery.isError ? [] : clubsQuery.data ?? [];
+  const clubs = useMemo(()=>clubsQuery.isError?[]:clubsQuery.data??[],[clubsQuery.isError,clubsQuery.data]);
   const activeClubId = scopedClubId === undefined
     ? (clubs.some(c=>c.id===clubId) ? clubId : clubs[0]?.id ?? null)
     : clubs.find((club) => club.id === scopedClubId)?.id ?? null;
@@ -80,7 +81,7 @@ export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: bo
             </Badge>
           </div>
           <p className="text-[12px] text-muted-foreground max-w-2xl">
-            Ghi chi phí vận hành thủ công của CLB. Ledger append-only: sửa sai bằng dòng điều chỉnh, không edit/xóa dòng cũ.
+            Ghi và theo dõi chi phí vận hành của CLB, giữ lại lịch sử để đối soát.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -169,6 +170,7 @@ export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: bo
                         </div>
                         <p className="text-[12px] text-muted-foreground truncate">{row.description || "Không có mô tả"}</p>
                         <p className="text-[11px] text-muted-foreground">{formatShortDate(row.incurredAt)}</p>
+                        <ExpenseAttributionSummary row={{tournamentId:row.tournamentId??undefined,seriesId:row.seriesId??undefined,attachmentUrl:row.attachmentUrl??undefined}}/>
                       </div>
                       <div className={row.amountVnd < 0 ? "text-right font-bold tabular-nums text-red-400" : "text-right font-bold tabular-nums text-foreground"}>
                         {formatVND(row.amountVnd)}
@@ -181,6 +183,7 @@ export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: bo
           </div>
 
           <ExpenseEntryForm
+            clubId={activeClubId!}
             key={`${source}:${activeClubId}:${monthKey}:${recordExpense.contextKey}`}
             disabled={!activeClubId||!summary||expensesQuery.isError}
             pending={recordExpense.isPending}
@@ -215,13 +218,15 @@ function parseExpenseAmount(input: string): number | null {
   return Number.isSafeInteger(amount) ? amount : null;
 }
 
-function ExpenseEntryForm({
+export function ExpenseEntryForm({
+  clubId,
   disabled,
   pending,
   preview,
   onSubmit,
   initialInput,
 }: {
+  clubId: string;
   disabled: boolean;
   pending: boolean;
   preview: boolean;
@@ -234,6 +239,8 @@ function ExpenseEntryForm({
   const [paymentStatus, setPaymentStatus] = useState<ExpensePaymentStatus>(initialInput?.paymentStatus??"unpaid");
   const [paymentSource, setPaymentSource] = useState<ExpensePaymentSource | "none">(initialInput?.paymentSource??"none");
   const [description, setDescription] = useState(initialInput?.description??"");
+  const [attribution,setAttribution]=useState<ExpenseAttribution>({tournamentId:initialInput?.tournamentId,seriesId:initialInput?.seriesId,attachmentUrl:initialInput?.attachmentUrl});
+  const [attributionReady,setAttributionReady]=useState(!initialInput?.tournamentId&&!initialInput?.seriesId);
   const [submitting,setSubmitting]=useState(false),[formError,setFormError]=useState<string|null>(null);
   const locked=useRef(false),mounted=useRef(true);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
@@ -246,7 +253,7 @@ function ExpenseEntryForm({
         </span>
         <div>
           <h2 className="text-sm font-bold text-foreground">Ghi chi phí</h2>
-          <p className="text-[12px] text-muted-foreground">Một lần submit = một dòng ledger mới.</p>
+          <p className="text-[12px] text-muted-foreground">Ghi một khoản chi, giữ lại lịch sử và chứng từ.</p>
         </div>
       </div>
 
@@ -255,7 +262,7 @@ function ExpenseEntryForm({
         onSubmit={async(event) => {
           event.preventDefault();
           const amountVnd = parseExpenseAmount(amount);
-          if(disabled||pending||locked.current||amountVnd === null||!amountVnd)return;
+          if(disabled||pending||locked.current||!attributionReady||amountVnd === null||!amountVnd||!event.currentTarget.checkValidity())return;
           locked.current=true;setSubmitting(true);setFormError(null);
           try{await onSubmit({
             category,
@@ -264,13 +271,14 @@ function ExpenseEntryForm({
             description: description.trim() || undefined,
             paymentStatus,
             paymentSource: paymentSource === "none" ? null : paymentSource,
+            ...attribution,
           });
           if(mounted.current){setAmount("");setDescription("");}
           }catch(error){if(mounted.current)setFormError(error instanceof Error?error.message:'Chưa xác minh được kết quả ghi chi phí.');}
           finally{locked.current=false;if(mounted.current)setSubmitting(false);}
         }}
       >
-        <fieldset disabled={pending||submitting} className="space-y-3 min-w-0">
+        <fieldset disabled={pending||submitting||!!initialInput} className="space-y-3 min-w-0">
         {initialInput&&<p className="text-sm text-amber-400">Có lần ghi chưa xác minh. Nội dung đã được giữ lại để thử lại cùng giao dịch.</p>}
         {formError&&<p role="alert" className="text-sm text-destructive">{formError}</p>}
         <div className="space-y-1.5">
@@ -326,11 +334,14 @@ function ExpenseEntryForm({
           <Textarea id="expense-description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ví dụ: in poster, mua vật tư..." />
         </div>
 
-        <Button type="submit" className="w-full" disabled={disabled || pending || submitting || parseExpenseAmount(amount) === null || !parseExpenseAmount(amount)}>
+        {(FEATURES.clubExpenseAttribution||attribution.tournamentId||attribution.seriesId||attribution.attachmentUrl)&&
+         <ExpenseAttributionFields clubId={clubId} value={attribution} onChange={setAttribution} locked={!!initialInput} onReadyChange={setAttributionReady}/>}
+        </fieldset>
+
+        <Button type="submit" className="w-full min-h-11" disabled={disabled || pending || submitting || !attributionReady || parseExpenseAmount(amount) === null || !parseExpenseAmount(amount)}>
           <Landmark className="w-4 h-4 mr-1.5" />
           {preview ? "Ghi preview" : "Ghi chi phí"}
         </Button>
-        </fieldset>
       </form>
     </Card>
   );

@@ -32,7 +32,10 @@ const expensePacket = z.object({
   total_vnd:amount,paid_vnd:amount,unpaid_vnd:amount,by_category:z.record(category,amount),
 });
 const recordInput=z.object({category,amountVnd:amount.refine(v=>v!==0),incurredAt:timestamp,
-  description:z.string().optional(),paymentStatus:z.enum(['paid','unpaid']),paymentSource:z.enum(['cash','bank']).nullable().optional()});
+  description:z.string().optional(),paymentStatus:z.enum(['paid','unpaid']),paymentSource:z.enum(['cash','bank']).nullable().optional(),
+  tournamentId:z.string().uuid().optional(),seriesId:z.string().uuid().optional(),
+  attachmentUrl:z.string().url().refine(value=>{const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password;}).optional(),
+}).refine(value=>!(value.tournamentId&&value.seriesId),'Chọn một phạm vi cho khoản chi.');
 const recordIntent=z.object({version:z.literal(1),actor:z.string().min(1),club:z.string().min(1),requestId:z.string().uuid(),input:recordInput});
 const recordReceipt=z.object({status:z.literal('ok'),expense_id:z.string().uuid(),idempotent:z.boolean()});
 const unknownExpense='Chưa xác minh được kết quả ghi. Giữ nguyên nội dung để thử lại cùng mã giao dịch; không ghi lại bằng dòng mới.';
@@ -95,7 +98,7 @@ export function useClubExpenses(source: ClubExpenseSource, clubId: string | null
       if(!Number.isFinite(Date.parse(from))||!Number.isFinite(Date.parse(to))||Date.parse(from)>=Date.parse(to))throw Error('EXPENSE_PERIOD_INVALID');
       if (!clubId) return summarize("", from, to, []);
       if (source === "mock") return readMockExpenses(clubId, from, to);
-      const { data, error } = await observeTrackerContextRead((supabase.rpc as any)("get_club_expenses", {
+      const { data, error } = await observeTrackerContextRead(supabase.rpc("get_club_expenses", {
         p_club_id: clubId,
         p_from: from,
         p_to: to,
@@ -151,13 +154,18 @@ export function useRecordClubExpense(source: ClubExpenseSource, clubId: string |
       description?: string;
       paymentStatus: ExpensePaymentStatus;
       paymentSource?: ExpensePaymentSource | null;
+      tournamentId?: string;
+      seriesId?: string;
+      attachmentUrl?: string;
     }) => {
       let timer:ReturnType<typeof setTimeout>|undefined;
       let ownsFlight=false;
       try{
       assertContext();
       if(inFlight.current)throw Error('Đang xác minh lần ghi trước.');
-      const verified=recordInput.parse(input);
+      const validation=recordInput.safeParse(input);
+      if(!validation.success)throw Error('Kiểm tra số tiền, ngày, phạm vi khoản chi và đường dẫn chứng từ HTTPS.');
+      const verified=validation.data;
       if (source === "mock") return {...mockRecordExpense({ clubId, ...verified } as Parameters<typeof mockRecordExpense>[0]),context};
       if(store.error)throw Error('Không đọc được mã giao dịch đang chờ. Chưa gửi lần ghi mới.');
       const stored=sessionStorage.getItem(store.key);
@@ -174,9 +182,9 @@ export function useRecordClubExpense(source: ClubExpenseSource, clubId: string |
         p_description: value.description || null,
         p_payment_status: value.paymentStatus,
         p_payment_source: value.paymentSource ?? null,
-        p_tournament_id: null,
-        p_series_id: null,
-        p_attachment_url: null,
+        p_tournament_id: value.tournamentId ?? null,
+        p_series_id: value.seriesId ?? null,
+        p_attachment_url: value.attachmentUrl ?? null,
         p_adjusts_id: null,
       });
       const fresh=!store.intent;
@@ -186,22 +194,23 @@ export function useRecordClubExpense(source: ClubExpenseSource, clubId: string |
       if(sessionStorage.getItem(store.key)!==JSON.stringify(intent))throw Error('Không lưu được mã giao dịch. Chưa gửi lần ghi mới.');
       store.intent=intent;inFlight.current=true;ownsFlight=true;
       const {data,error}=await Promise.race([
-        Promise.resolve((supabase.rpc as any)('record_club_expense',{...args(verified),p_idempotency_key:intent.requestId})) as Promise<{data:unknown;error:any}>,
+        Promise.resolve(supabase.rpc('record_club_expense',{...args(verified),p_idempotency_key:intent.requestId})) as Promise<{data:unknown;error:{code?:string;message?:string}|null}>,
         new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error(unknownExpense)),20_000);}),
       ]).catch(()=>{throw Error(unknownExpense);});
       assertContext();
       if(error){
-        const rejected=['42501','P0001','22P02','22003','23505','23503','23514'].includes(error.code);
+        const rejected=['42501','P0001','22P02','22003','23505','23503','23514'].includes(error.code??'');
         if(fresh&&rejected)clearIntent(intent);
         throw Error(rejected?error.message??'Không thể ghi chi phí.':unknownExpense);
       }
-      if(data&&typeof data==='object'&&!Array.isArray(data)&&typeof (data as any).error==='string'){
-        if(!(data as any).error.trim()||(data as any).status==='ok'||(data as any).expense_id)throw Error(unknownExpense);
+      const packet=data&&typeof data==='object'&&!Array.isArray(data)?data as Record<string,unknown>:null;
+      if(packet&&typeof packet.error==='string'){
+        if(!packet.error.trim()||packet.status==='ok'||packet.expense_id)throw Error(unknownExpense);
         if(fresh)clearIntent(intent);
-        throw Error((data as any).detail??(data as any).error);
+        throw Error(typeof packet.detail==='string'?packet.detail:packet.error);
       }
       const receipt=recordReceipt.safeParse(data);
-      if(!receipt.success||(data as any).error!=null)throw Error(unknownExpense);
+      if(!receipt.success||packet?.error!=null)throw Error(unknownExpense);
       clearIntent(intent,true);
       return {...receipt.data,context};
       }catch(error){throw Object.assign(Error(error instanceof Error?error.message:unknownExpense),{context});}
@@ -212,11 +221,12 @@ export function useRecordClubExpense(source: ClubExpenseSource, clubId: string |
       toast.success(source === "mock" ? "Đã ghi dòng preview." : "Đã ghi chi phí.");
       queryClient.invalidateQueries({ queryKey });
     },
-    onError: (error: any) => {if(active.current===error.context)toast.error(error?.message ?? "Không thể ghi chi phí.");},
+    onError: (error:Error&{context?:typeof context}) => {if(active.current===error.context)toast.error(error.message ?? "Không thể ghi chi phí.");},
   });
   const pending=store.intent?.input;
   return {...mutation,pendingInput:pending?{category:pending.category,amountVnd:pending.amountVnd,incurredAt:pending.incurredAt,
-      description:pending.description,paymentStatus:pending.paymentStatus,paymentSource:pending.paymentSource}:null,contextKey:scope,
+      description:pending.description,paymentStatus:pending.paymentStatus,paymentSource:pending.paymentSource,
+      tournamentId:pending.tournamentId,seriesId:pending.seriesId,attachmentUrl:pending.attachmentUrl}:null,contextKey:scope,
     mutate:(...args:Parameters<typeof mutation.mutate>)=>{assertContext();return mutation.mutate(...args);},
     mutateAsync:(...args:Parameters<typeof mutation.mutateAsync>)=>{
       try{assertContext();}catch(error){return Promise.reject(error);}
