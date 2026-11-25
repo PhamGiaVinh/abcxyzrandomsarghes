@@ -64,14 +64,15 @@ try {
       if(!input.historicalMode) assert.ok(await history.evaluate(el=>el.scrollWidth<=el.clientWidth),'employee history overflows');
       assert.ok(await finalized.evaluate(el=>el.scrollWidth<=el.clientWidth),'employee finalized history overflows');
       await page.evaluate(()=>document.fonts.ready);
-      await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-employee${suffix}.png`),fullPage:true});
+      await page.screenshot({animations:'disabled',path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-employee${suffix}.png`),fullPage:true});
       await finalized.getByRole('button',{name:`Xem phiếu ${input.binding.statement_id}`,exact:true}).click();
       const dialog=page.getByRole('dialog');
       await dialog.getByLabel('Đã chốt',{exact:true}).getByText(/5\.000\.000/).waitFor();
       await dialog.getByLabel('Còn phải trả',{exact:true}).getByText(`${expectedRemaining} ₫`,{exact:true}).waitFor();
       await dialog.getByLabel('Đã ghi nhận chi',{exact:true}).getByText(`${expectedPaid} ₫`,{exact:true}).waitFor();
       assert.ok(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth),'employee payslip overflows');
-      await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-employee-payslip${suffix}.png`),fullPage:true});
+      await page.screenshot({animations:'disabled',path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-employee-payslip${suffix}.png`),fullPage:true});
+      assert.equal(await dialog.evaluate(el=>getComputedStyle(el).opacity),'1','captured payslip is still mid-animation');
       // Real link revocation in the same browser session must remove this list
       // and its open detail. Metadata is restored for the next viewport.
       sql(`UPDATE public.dealers SET user_id=NULL WHERE id='${input.binding.dealer_id}'`);
@@ -81,7 +82,7 @@ try {
         await finalized.getByRole('alert').waitFor();
         assert.ok(reads.some(r=>r.name==='list_my_pt_statements_v1' && r.status===403));
         assert.equal(await finalized.getByRole('listitem').count(),0,'revoked finalized money remains');
-        await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-employee-revoked${suffix}.png`),fullPage:true});
+        await page.screenshot({animations:'disabled',path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-employee-revoked${suffix}.png`),fullPage:true});
       } finally {sql(`UPDATE public.dealers SET user_id='${input.actor}' WHERE id='${input.binding.dealer_id}'`);}
       assert.ok(reads.every(r=>['get_my_pt_wage','get_my_dealer_payroll','list_my_pt_statements_v1','get_pt_statement_installments_v1'].includes(r.name)),
         'employee attempted a privileged or financial writer');
@@ -95,7 +96,7 @@ try {
       assert.ok(await control.evaluate(el=>el.scrollWidth<=el.clientWidth),'pending operator panel overflows');
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'pending operator page overflows');
       await page.evaluate(()=>document.fonts.ready);
-      await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-pending.png`),fullPage:true});
+      await page.screenshot({animations:'disabled',path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-pending.png`),fullPage:true});
       await resolveButton.click();
       await control.getByText(/Yêu cầu cũ đã lưu để đối chiếu/).waitFor();
       assert.ok(reads.some(r=>r.name==='resolve_pt_full_payment_intent_v1' && r.status===200),'no actual server nonpayment proof');
@@ -110,7 +111,7 @@ try {
       if(input.paymentCount===2) await control.getByRole('button',{name:'Chốt kỳ PT tiếp theo'}).waitFor();
       else assert.equal(await control.getByRole('button',{name:'Chốt kỳ PT tiếp theo'}).count(),0);
       assert.ok(await control.evaluate(el=>el.scrollWidth<=el.clientWidth),'archived operator panel overflows');
-      await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-archived.png`),fullPage:true});
+      await page.screenshot({animations:'disabled',path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-archived.png`),fullPage:true});
     }
     await page.getByRole('button',{name:'Xem phiếu & lịch sử chi'}).click();
     const dialog=page.getByRole('dialog');
@@ -138,7 +139,7 @@ try {
         await control.getByRole('alert').waitFor();
         assert.ok(reads.some(r=>r.name==='get_part_time_payroll_statement_status_v1' && r.status===403),'revoked status reader was not denied by actual RPC');
         assert.equal(await control.getByText(/Phiếu đã chốt:/).count(),0,'stale payroll control after revocation');
-        await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-revoked.png`),fullPage:true});
+        await page.screenshot({animations:'disabled',path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-revoked.png`),fullPage:true});
       } finally {
         sql(`INSERT INTO public.club_cashiers SELECT * FROM json_populate_record(NULL::public.club_cashiers,$row$${member}$row$::json)`);
       }
