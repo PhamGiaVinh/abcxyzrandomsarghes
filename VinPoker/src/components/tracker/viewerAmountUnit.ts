@@ -35,6 +35,6 @@ export function toggleViewerAmountUnit() {
   window.dispatchEvent(new Event(changed));
 }
 
-export function useViewerAmountUnit() {
-  return useSyncExternalStore(subscribe, getUnit, () => "bb");
+export function useViewerAmountUnit(): ViewerAmountUnit {
+  return useSyncExternalStore<ViewerAmountUnit>(subscribe, getUnit, () => "bb");
 }
