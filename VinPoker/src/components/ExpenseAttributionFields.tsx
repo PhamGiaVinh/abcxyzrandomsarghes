@@ -59,6 +59,8 @@ export function ExpenseAttributionFields({clubId,value,onChange,locked=false,onR
      {resultRows.slice(0,50).map(row=><option value={row.id} key={row.id}>{row.name}</option>)}
     </select>
    </div>
+   {selected&&z.string().uuid().safeParse(selected).success&&<a className="inline-flex min-h-11 items-center text-sm text-primary underline underline-offset-2" target="_blank" rel="noopener noreferrer"
+    href={requestedKind==='tournament'?`/tournament/${selected}`:`/series/${selected}`}>Mở {requestedKind==='tournament'?'giải':'series'} đã chọn</a>}
    {ready&&result?.error&&<p role="alert" className="text-sm text-destructive">Chưa xác minh được danh sách. Không chọn dữ liệu từ CLB khác; đổi phạm vi rồi thử lại.</p>}
    {ready&&!result?.error&&resultRows.length===0&&<p className="text-xs text-muted-foreground">Không tìm thấy tên phù hợp trong CLB này.</p>}
    {resultRows.length>50&&<p className="text-xs text-muted-foreground">Có hơn 50 kết quả; nhập thêm tên để thu hẹp.</p>}

@@ -81,7 +81,7 @@ export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: bo
             </Badge>
           </div>
           <p className="text-[12px] text-muted-foreground max-w-2xl">
-            Ghi chi phí vận hành thủ công của CLB. Ledger append-only: sửa sai bằng dòng điều chỉnh, không edit/xóa dòng cũ.
+            Ghi và theo dõi chi phí vận hành của CLB, giữ lại lịch sử để đối soát.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -253,7 +253,7 @@ export function ExpenseEntryForm({
         </span>
         <div>
           <h2 className="text-sm font-bold text-foreground">Ghi chi phí</h2>
-          <p className="text-[12px] text-muted-foreground">Một lần submit = một dòng ledger mới.</p>
+          <p className="text-[12px] text-muted-foreground">Ghi một khoản chi, giữ lại lịch sử và chứng từ.</p>
         </div>
       </div>
 

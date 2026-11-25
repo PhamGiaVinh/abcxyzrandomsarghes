@@ -32,6 +32,7 @@ try{
   await page.getByRole('button',{name:'Ghi chi phí',exact:true}).click();await page.getByRole('alert').waitFor();assert.equal(posts.length,1);
   await page.reload();await page.getByLabel('Số tiền',{exact:true}).waitFor();assert.equal(await page.getByLabel('Số tiền',{exact:true}).inputValue(),'100000');assert.equal(await page.getByLabel('Giải nhận chi phí',{exact:true}).inputValue(),id(71));
   assert.equal(await page.getByLabel('Đường dẫn chứng từ (nếu có)',{exact:true}).inputValue(),`https://example.test/receipt-${width}.pdf`);
+  assert.equal(await page.getByRole('link',{name:'Mở giải đã chọn',exact:true}).getAttribute('href'),'/tournament/'+id(71));
   await page.screenshot({path:join(folder,`expense-${width}-pending.png`),fullPage:true,animations:'disabled'});
   await page.getByRole('button',{name:'Ghi chi phí',exact:true}).click();await page.getByText('Đã ghi',{exact:true}).waitFor();assert.equal(posts.length,2);assert.deepEqual(posts[0],posts[1]);total+=100000;
   await page.waitForFunction(value=>document.getElementById('total')?.textContent===String(value),total);

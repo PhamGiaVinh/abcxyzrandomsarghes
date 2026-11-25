@@ -28,6 +28,7 @@ it('does not revive a late target read after switching club',async()=>{
 it('restores an unresolved link read-only without replacing it with an empty selection',()=>{
  render(<ExpenseAttributionFields clubId={club} value={{tournamentId:tour,attachmentUrl:'https://example.test/evidence.pdf'}} onChange={()=>{}} locked/>);
  expect((screen.getByLabelText('Giải nhận chi phí') as HTMLSelectElement).value).toBe(tour);expect(f.from).not.toHaveBeenCalled();
+ expect(screen.getByRole('link',{name:'Mở giải đã chọn'}).getAttribute('href')).toBe('/tournament/'+tour);
  expect((screen.getByLabelText('Đường dẫn chứng từ (nếu có)') as HTMLInputElement).disabled).toBe(true);
 });
 
