@@ -111,3 +111,11 @@ jobs:
         run: |
           rm -rf -- "$RUNNER_TEMP/pt-installment-schema"
           rm -f -- "$RUNNER_TEMP/pt-installment-client-packets.json"
+      - name: Upload synthetic browser verification images only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pt-browser-rpc-sanitized
+          path: ${{ runner.temp }}/pt-browser-evidence/*.png
+          if-no-files-found: warn
+          retention-days: 30

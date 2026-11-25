@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
+import {readFileSync,mkdirSync} from 'node:fs';
+import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createServer} from 'vite';
 import {chromium} from 'playwright';
 assert.equal(process.env.PGHOST,'127.0.0.1');
 assert.equal(process.env.PGDATABASE,'vinpoker_ops_pt_installment');
+assert.ok(process.env.RUNNER_TEMP,'explicit disposable browser evidence directory required');
 // Ephemeral TEST JWT comes through stdin, never command arguments, files, or logs.
 const input=JSON.parse(readFileSync(0,'utf8'));
 assert.equal(input.actor,'18000000-0000-4000-8000-000000000012');
@@ -14,6 +16,8 @@ function sql(query){
   assert.equal(r.status,0,'isolated browser SQL control failed');return r.stdout.trim();
 }
 const base='http://127.0.0.1:23862';
+const evidenceDirectory=join(process.env.RUNNER_TEMP,'pt-browser-evidence');
+mkdirSync(evidenceDirectory,{recursive:true});
 const server=await createServer({configFile:'tests/financePayrollInstallments/http.vite.config.ts'});
 let browser;
 try {
@@ -41,7 +45,13 @@ try {
     await page.goto(`${base}/tests/financePayrollInstallments/http.preview.html`);
     const control=page.getByRole('region',{name:'Điều khiển phiếu PT TEST',exact:true});
     if(input.oldIntent) {
-      await control.getByRole('button',{name:'Lưu đối chiếu yêu cầu chi cũ'}).click();
+      const resolveButton=control.getByRole('button',{name:'Lưu đối chiếu yêu cầu chi cũ'});
+      await resolveButton.waitFor();
+      assert.ok(await control.evaluate(el=>el.scrollWidth<=el.clientWidth),'pending operator panel overflows');
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'pending operator page overflows');
+      await page.evaluate(()=>document.fonts.ready);
+      await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-pending.png`),fullPage:true});
+      await resolveButton.click();
       await control.getByText(/Yêu cầu cũ đã lưu để đối chiếu/).waitFor();
       assert.ok(reads.some(r=>r.name==='resolve_pt_full_payment_intent_v1' && r.status===200),'no actual server nonpayment proof');
       const saved=await page.evaluate(()=>{
@@ -54,6 +64,8 @@ try {
       assert.equal(saved.proof.legacy_payment_recorded,false);assert.equal(saved.proof.intent_key,input.oldIntent.key);
       if(input.paymentCount===2) await control.getByRole('button',{name:'Chốt kỳ PT tiếp theo'}).waitFor();
       else assert.equal(await control.getByRole('button',{name:'Chốt kỳ PT tiếp theo'}).count(),0);
+      assert.ok(await control.evaluate(el=>el.scrollWidth<=el.clientWidth),'archived operator panel overflows');
+      await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-archived.png`),fullPage:true});
     }
     await page.getByRole('button',{name:'Xem phiếu & lịch sử chi'}).click();
     const dialog=page.getByRole('dialog');
@@ -81,6 +93,7 @@ try {
         await control.getByRole('alert').waitFor();
         assert.ok(reads.some(r=>r.name==='get_part_time_payroll_statement_status_v1' && r.status===403),'revoked status reader was not denied by actual RPC');
         assert.equal(await control.getByText(/Phiếu đã chốt:/).count(),0,'stale payroll control after revocation');
+        await page.screenshot({path:join(evidenceDirectory,`pt-${input.paymentCount}-${width}-revoked.png`),fullPage:true});
       } finally {
         sql(`INSERT INTO public.club_cashiers SELECT * FROM json_populate_record(NULL::public.club_cashiers,$row$${member}$row$::json)`);
       }
