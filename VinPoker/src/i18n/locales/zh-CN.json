@@ -1,4 +1,5 @@
 {
+  "trackerPotDetails": "详情",
   "tv": {"levelSoundOn":"提示音已开启","levelSoundOff":"开启提示音"},
   "clubDetailRead": {"error":"无法加载俱乐部资料，请重试。","retry":"重新加载","loading":"正在加载俱乐部资料…"},
   "rankingReview": {"title":"场务确认名次","note":"只能在同一手牌淘汰组内交换名次。此确认不会结束赛事，也不会记录奖金支付。","storage":"无法安全读取或保存请求。请重新加载页面，核对之前的请求后再继续。","readError":"无法核实名次列表。请重新加载后再确认。","unknown":"结果尚未核实。原请求已保留以供核对，请勿创建新请求。","changed":"数据或条件已变化，此请求被拒绝。请检查最新名次。","recorded":"名次确认已记录，正在刷新赛事结束状态。","historical":"已核对旧请求，但其来源已变化。请检查并重新确认当前名次。","loading":"正在核实名次…","pending":"尚未核实的请求已保留，请勿发送新请求。","check":"核对已保存的请求","retrySame":"重发同一已保存请求","reload":"重新加载名次","notReady":"确认需要唯一获胜者，以及完整的手牌和淘汰顺序证据。","approved":"确认回执已保存，赛事结束条件仍会另行检查。","up":"将{{name}}在组内排名上调","down":"将{{name}}在组内排名下调","confirm":"确认场务选择的顺序","group":"同一手牌淘汰组 {{group}}","reference":"参赛记录编号 {{reference}}"},

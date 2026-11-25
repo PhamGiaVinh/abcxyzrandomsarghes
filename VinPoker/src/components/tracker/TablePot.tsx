@@ -21,7 +21,7 @@ export function TablePot({ total, layers, formatAmount, onAmountClick, amountUni
   </> : amount;
   const detail = <Popover>
     <PopoverTrigger asChild>{onAmountClick
-      ? <button type="button" className="pointer-events-auto min-h-11 px-1 text-xs underline">{t("liveHub.felt.potDetails", "Chi tiết")}</button>
+      ? <button type="button" className="pointer-events-auto min-h-11 min-w-11 px-1 text-xs underline">{t("trackerPotDetails")}</button>
       : <button type="button" className="tracker-pot-total tracker-pot-button">{groups}</button>}
     </PopoverTrigger>
     <PopoverContent className="w-60 space-y-2" collisionPadding={12}>
