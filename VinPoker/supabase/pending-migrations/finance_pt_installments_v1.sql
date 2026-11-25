@@ -6,6 +6,24 @@
 BEGIN;
 SET LOCAL lock_timeout='5s';
 SET LOCAL statement_timeout='30s';
+-- Readers belong to the independently qualified read-only release355. Never
+-- recreate/replace them as a side effect of adopting installment writers.
+DO $readers$ BEGIN
+ IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE n.nspname='public' AND p.proname IN ('get_pt_statement_installments_v1','list_my_pt_statements_v1')) IS DISTINCT FROM 2
+ OR (SELECT count(*) FROM pg_proc p WHERE
+  ((p.oid=to_regprocedure('public.get_pt_statement_installments_v1(uuid)') AND md5(p.prosrc)='191f8b9de02702a828a1628d73ba8658'
+    AND p.proargnames=ARRAY['p_statement_id'] AND p.pronargdefaults=0 AND p.proargdefaults IS NULL)
+   OR (p.oid=to_regprocedure('public.list_my_pt_statements_v1(uuid,uuid,timestamptz,uuid)') AND md5(p.prosrc)='5788d4c196fba4cd5bae989f858d155c'
+    AND p.proargnames=ARRAY['p_club_id','p_dealer_id','p_before_at','p_before_id'] AND p.pronargdefaults=2
+    AND pg_get_expr(p.proargdefaults,0)='NULL::timestamp with time zone, NULL::uuid'))
+  AND pg_get_userbyid(p.proowner)='postgres' AND p.prosecdef AND p.provolatile='s'
+  AND p.prokind='f' AND NOT p.proretset AND p.prorettype='jsonb'::regtype
+  AND NOT p.proisstrict AND NOT p.proleakproof AND p.proparallel='u'
+  AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql')
+  AND p.proconfig=ARRAY['search_path=""'] AND p.proacl='{postgres=X/postgres,authenticated=X/postgres}'::aclitem[]) IS DISTINCT FROM 2
+ THEN RAISE EXCEPTION 'PT_INSTALLMENT_RELEASED_READERS_REQUIRED';END IF;
+END $readers$;
 -- Serialize the index preimage check with DDL on the canonical payment table.
 -- A matching name alone is insufficient: never drop an unrelated/weakened index.
 LOCK TABLE public.dealer_pt_wage_payments IN ACCESS EXCLUSIVE MODE;
@@ -305,39 +323,6 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION public.record_pt_statement_installment_v1(uuid,text,bigint,text,text,uuid,text) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.record_pt_statement_installment_v1(uuid,text,bigint,text,text,uuid,text) TO authenticated;
-
-CREATE FUNCTION public.get_pt_statement_installments_v1(p_statement_id uuid) RETURNS jsonb
-LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=''
-AS $$ DECLARE s public.dealer_payroll_statements%rowtype; paid numeric; payments jsonb; BEGIN
-  SELECT * INTO s FROM public.dealer_payroll_statements WHERE id=p_statement_id AND statement_kind='part_time_settlement';
-  IF NOT FOUND THEN RAISE EXCEPTION 'PT_INSTALLMENT_STATEMENT_NOT_FOUND' USING ERRCODE='P0002'; END IF;
-  -- Accountants read only this exact club's payment facts. Other readers use
-  -- the established statement policy, including the exact linked recipient.
-  -- Mutation authorization continues to use _assert_dealer_payroll_statement_actor.
-  IF NOT EXISTS(SELECT FROM public.club_accountants WHERE club_id=s.club_id AND user_id=auth.uid()) THEN
-    PERFORM public.get_dealer_payroll_statement(s.id);
-  END IF;
-  IF EXISTS(SELECT FROM public.dealer_pt_wage_payments WHERE statement_id=s.id
-    AND (club_id IS DISTINCT FROM s.club_id OR dealer_id IS DISTINCT FROM s.dealer_id)) THEN
-    RAISE EXCEPTION 'PT_INSTALLMENT_PAYMENT_SCOPE_INVALID' USING ERRCODE='55000'; END IF;
-  SELECT coalesce(sum(amount_vnd),0),coalesce(jsonb_agg(jsonb_build_object('payment_id',id,'amount_vnd',amount_vnd,
-    'paid_at',paid_at,'payment_method',payment_method,'payment_reference',payment_reference) ORDER BY created_at,id),'[]'::jsonb)
-    INTO paid,payments FROM public.dealer_pt_wage_payments
-    WHERE statement_id=s.id AND club_id=s.club_id AND dealer_id=s.dealer_id AND voided_at IS NULL;
-  IF paid>s.net_amount_vnd OR (s.state IN ('voided','replaced') AND paid<>0) THEN
-    RAISE EXCEPTION 'PT_INSTALLMENT_STATUS_INVALID_TOTALS' USING ERRCODE='22023'; END IF;
-  RETURN jsonb_build_object('statement_id',s.id,'statement_hash',s.statement_hash,'state',s.state,
-    'club_id',s.club_id,'dealer_id',s.dealer_id,'dealer_name',s.dealer_snapshot->>'full_name',
-    'club_name',s.club_snapshot->>'club_name','finalized_at',s.finalized_at,'as_of',now(),
-    'gross_amount_vnd',s.gross_amount_vnd,'deduction_amount_vnd',s.deduction_amount_vnd,
-    'lines',coalesce((SELECT jsonb_agg(jsonb_build_object('line_no',l.line_no,'label',l.label,
-      'quantity',l.quantity,'unit',l.unit,'unit_rate_vnd',l.unit_rate_vnd,'amount_vnd',l.amount_vnd) ORDER BY l.line_no)
-      FROM public.dealer_payroll_statement_lines l WHERE l.statement_id=s.id),'[]'::jsonb),
-    'approved_amount_vnd',s.net_amount_vnd,'paid_total_vnd',paid,
-    'remaining_vnd',CASE WHEN s.state IN ('voided','replaced') THEN 0 ELSE s.net_amount_vnd-paid END,'payments',payments);
-END $$;
-REVOKE ALL ON FUNCTION public.get_pt_statement_installments_v1(uuid) FROM PUBLIC,anon;
-GRANT EXECUTE ON FUNCTION public.get_pt_statement_installments_v1(uuid) TO authenticated;
 
 CREATE FUNCTION public._reject_pt_installment_plan_mutation_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path='' AS $$ BEGIN
