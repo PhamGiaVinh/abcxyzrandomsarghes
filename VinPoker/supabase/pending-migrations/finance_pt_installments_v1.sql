@@ -201,10 +201,16 @@ AS $$ DECLARE sid uuid; paid numeric; approved bigint; link uuid; BEGIN
   IF NOT FOUND THEN RETURN new; END IF;
   SELECT coalesce(sum(amount_vnd),0) INTO paid FROM public.dealer_pt_wage_payments WHERE statement_id=sid;
   IF TG_TABLE_NAME='dealer_payroll_statements' THEN
+    IF new.state IN ('voided','replaced') AND new.state IS DISTINCT FROM old.state THEN
+      PERFORM public._assert_dealer_payroll_statement_finalizer(new.club_id);
+    END IF;
     IF paid>0 AND (new.state IN ('voided','replaced') OR new.replaced_by_statement_id IS NOT NULL) THEN
       RAISE EXCEPTION 'PT_INSTALLMENT_PAID_DEBT_CANNOT_BE_VOIDED' USING ERRCODE='55000'; END IF;
     IF new.pt_wage_payment_id IS DISTINCT FROM old.pt_wage_payment_id THEN link:=new.pt_wage_payment_id; END IF;
   ELSE
+    IF new.status='voided' AND new.status IS DISTINCT FROM old.status THEN
+      PERFORM public._assert_dealer_payroll_statement_finalizer(new.club_id);
+    END IF;
     IF paid>0 AND new.status='voided' THEN
       RAISE EXCEPTION 'PT_INSTALLMENT_PAID_DEBT_CANNOT_BE_VOIDED' USING ERRCODE='55000'; END IF;
     IF new.status='paid' AND old.status<>'paid' THEN link:=new.payment_id; END IF;
@@ -286,8 +292,9 @@ AS $$ DECLARE s public.dealer_payroll_statements%rowtype; paid numeric; payments
   SELECT coalesce(sum(amount_vnd),0),coalesce(jsonb_agg(jsonb_build_object('payment_id',id,'amount_vnd',amount_vnd,
     'paid_at',paid_at,'payment_method',payment_method,'payment_reference',payment_reference) ORDER BY created_at,id),'[]'::jsonb)
     INTO paid,payments FROM public.dealer_pt_wage_payments WHERE statement_id=s.id AND voided_at IS NULL;
-  RETURN jsonb_build_object('statement_id',s.id,'statement_hash',s.statement_hash,'approved_amount_vnd',s.net_amount_vnd,
-    'paid_total_vnd',paid,'remaining_vnd',s.net_amount_vnd-paid,'payments',payments);
+  RETURN jsonb_build_object('statement_id',s.id,'statement_hash',s.statement_hash,'state',s.state,
+    'approved_amount_vnd',s.net_amount_vnd,'paid_total_vnd',paid,
+    'remaining_vnd',CASE WHEN s.state IN ('voided','replaced') THEN 0 ELSE s.net_amount_vnd-paid END,'payments',payments);
 END $$;
 REVOKE ALL ON FUNCTION public.get_pt_statement_installments_v1(uuid) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.get_pt_statement_installments_v1(uuid) TO authenticated;

@@ -30,8 +30,10 @@ END $$;
 RESET ROLE;
 -- A same-session cashier loses access as soon as its exact club membership is removed.
 DELETE FROM public.club_cashiers WHERE user_id='18000000-0000-4000-8000-000000000012';
+INSERT INTO auth.users(id) VALUES ('18000000-0000-4000-8000-000000000013');
+INSERT INTO public.profiles(user_id,display_name) VALUES ('18000000-0000-4000-8000-000000000013','Second TEST club owner');
 INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES
- ('18000000-0000-4000-8000-000000000002','18000000-0000-4000-8000-000000000011','PT second TEST club','TEST','approved');
+ ('18000000-0000-4000-8000-000000000002','18000000-0000-4000-8000-000000000013','PT second TEST club','TEST','approved');
 INSERT INTO public.club_cashiers(club_id,user_id) VALUES
  ('18000000-0000-4000-8000-000000000002','18000000-0000-4000-8000-000000000012');
 SET LOCAL ROLE authenticated;

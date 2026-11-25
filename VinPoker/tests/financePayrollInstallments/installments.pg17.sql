@@ -1,4 +1,17 @@
 \ir installments.seed.sql
+RESET ROLE;
+UPDATE public.finance_pt_installment_rollout_v1 SET enabled=false;
+SET LOCAL ROLE authenticated;
+DO $$ BEGIN
+  BEGIN
+    PERFORM public.approve_pt_statement_installments_v1(current_setting('test.pt_statement_id')::uuid,
+      current_setting('test.pt_statement_hash'),'18000000-0000-4000-8000-000000000092','TEST owner approves 5M budget');
+    RAISE EXCEPTION 'disabled_adoption_accepted';
+  EXCEPTION WHEN SQLSTATE '55000' THEN NULL; END;
+END $$;
+RESET ROLE;
+UPDATE public.finance_pt_installment_rollout_v1 SET enabled=true;
+SET LOCAL ROLE authenticated;
 DO $pay$
 DECLARE s uuid:=current_setting('test.pt_statement_id')::uuid; h text:=current_setting('test.pt_statement_hash');
   a jsonb; p jsonb; r jsonb; d jsonb;
