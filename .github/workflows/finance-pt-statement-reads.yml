@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/finance-pt-statement-reads.yml'
       - 'VinPoker/supabase/pending-migrations/finance_pt_statement_reads_v1*'
+      - 'VinPoker/supabase/migrations/20270128000355_finance_pt_statement_reads_v1.sql'
       - 'VinPoker/tests/financePayrollReadRelease/**'
       - 'VinPoker/src/components/cashier/PtStatement*'
       - 'VinPoker/src/components/dealer-app/salary/Dealer*'
@@ -55,7 +56,8 @@ jobs:
         run: |
           set -euo pipefail
           psql -XAt -v ON_ERROR_STOP=1 -f tests/financePayrollReadRelease/catalog-fingerprint.sql > "$RUNNER_TEMP/pt-read-catalog-before"
-          psql -X -v ON_ERROR_STOP=1 -f supabase/pending-migrations/finance_pt_statement_reads_v1.sql
+          diff --strip-trailing-cr supabase/pending-migrations/finance_pt_statement_reads_v1.sql supabase/migrations/20270128000355_finance_pt_statement_reads_v1.sql
+          psql -X -v ON_ERROR_STOP=1 -f supabase/migrations/20270128000355_finance_pt_statement_reads_v1.sql
           test "$(psql -XAt -v ON_ERROR_STOP=1 -f tests/financePayrollReadRelease/catalog-fingerprint.sql)" = "$(cat "$RUNNER_TEMP/pt-read-catalog-before")"
       - name: Install locked application and pinned browser
         working-directory: VinPoker
