@@ -22,6 +22,17 @@ assert.equal(before.functionHash,'ec4209e4c6e11503ecd4e52c5d4be0ee');
 assert.equal(before.readerHash,'15d1b9d63df67e34ee1d999adc7ffe08');
 assert.equal(before.uniqueIndexValid,true);assert.equal(before.anonymousExecute,false);
 assert.deepEqual(before.executors,['authenticated','postgres','service_role']);
+// A matching name/column list on a different table is not expense protection.
+sql(`DROP INDEX public.uq_club_expenses_idem;
+CREATE TABLE public.expense354_index_decoy(club_id uuid,idempotency_key text);
+CREATE UNIQUE INDEX uq_club_expenses_idem ON public.expense354_index_decoy(club_id,idempotency_key)
+  WHERE idempotency_key IS NOT NULL;`);
+assert.equal(catalog().uniqueIndexValid,false,'same-named foreign-table index bypassed expense gate');
+sql(`DROP INDEX public.uq_club_expenses_idem;
+DROP TABLE public.expense354_index_decoy;
+CREATE UNIQUE INDEX uq_club_expenses_idem ON public.club_expenses(club_id,idempotency_key)
+  WHERE idempotency_key IS NOT NULL;`);
+assert.deepEqual(catalog(),before);
 const atomic=prepareExpense354(process.env.RELEASE_SOURCE_ROOT);
 sql(atomic);
 const receipt=JSON.parse(sql(receiptSql({version:'20270128000354',name:'finance_expense_scope_idempotency',
