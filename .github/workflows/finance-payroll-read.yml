@@ -109,6 +109,8 @@ jobs:
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/20270128000353_finance_dealer_pt_read_v1.sql
       - name: Verify actual earned wages, scope, revocation and unchanged ledger
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/currentSchema.verify.sql
+      - name: Verify actual PostgREST authentication and club authorization over HTTP
+        run: node VinPoker/tests/financePayroll/ptRead.http.mjs
       - name: Remove runner-local schema artifact
         if: always()
         run: rm -rf -- "$RUNNER_TEMP/finance-pt-schema"
