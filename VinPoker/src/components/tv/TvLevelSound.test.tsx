@@ -1,11 +1,12 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 import { TvLevelSound } from './TvLevelSound';
 import type { TvData } from '@/types/tv';
 const audio = vi.hoisted(() => ({ enableTvLevelAudio: vi.fn(), playTvLevelChime: vi.fn() }));
 vi.mock('@/lib/sound', () => audio);
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 const data = { tournamentId: 't', currentLevel: { levelNumber: 1 }, isBreak: false, status: 'live' } as TvData;
+beforeEach(() => vi.clearAllMocks());
 it('plays once per confirmed transition after enabling, with no mount/reconnect/scope or mute chime', async () => {
  audio.enableTvLevelAudio.mockResolvedValue(true);
  const { rerender } = render(<TvLevelSound data={data} />);
@@ -29,4 +30,15 @@ it('keeps sound disabled when the browser cannot unlock audio', async () => {
  render(<TvLevelSound data={data} />);
  await act(async () => fireEvent.click(screen.getByRole('button')));
  expect(screen.getByRole('button')).toHaveAttribute('aria-pressed','false');
+});
+
+it('retains opt-in but does not replay a missed transition after a read outage', async () => {
+ audio.enableTvLevelAudio.mockResolvedValue(true);
+ const { rerender } = render(<TvLevelSound data={data} />);
+ await act(async () => fireEvent.click(screen.getByRole('button')));
+ rerender(<TvLevelSound data={null} />);
+ expect(screen.queryByRole('button')).not.toBeInTheDocument();
+ rerender(<TvLevelSound data={{ ...data, currentLevel: { ...data.currentLevel!, levelNumber: 2 } }} />);
+ expect(screen.getByRole('button')).toHaveAttribute('aria-pressed', 'true');
+ expect(audio.playTvLevelChime).not.toHaveBeenCalled();
 });

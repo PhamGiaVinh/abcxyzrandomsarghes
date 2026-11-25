@@ -3,21 +3,24 @@ import { useTranslation } from 'react-i18next';
 import type { TvData } from '@/types/tv';
 import { enableTvLevelAudio, playTvLevelChime } from '@/lib/sound';
 
-export function TvLevelSound({ data }: { data: TvData }) {
+export function TvLevelSound({ data }: { data: TvData | null }) {
   const { t } = useTranslation();
   const [enabled, setEnabled] = useState(false);
   const previous = useRef<{ tournament: string; level: string } | null>(null);
-  const tournament = data.tournamentId ?? data.tournamentName;
-  const level = data.currentLevel ? `${data.currentLevel.levelNumber}-${data.isBreak}` : null;
-  const terminal = data.status === 'finished' || data.status === 'cancelled';
+  const tournament = data?.tournamentId ?? data?.tournamentName;
+  const level = data?.currentLevel ? `${data.currentLevel.levelNumber}-${data.isBreak}` : null;
+  const terminal = data?.status === 'finished' || data?.status === 'cancelled';
   useEffect(() => {
     const last = previous.current;
-    previous.current = level ? { tournament, level } : null;
+    previous.current = level && tournament ? { tournament, level } : null;
     if (enabled && !terminal && level && last?.tournament === tournament && last.level !== level) {
       playTvLevelChime();
     }
   }, [tournament, level, enabled, terminal]);
 
+  // The route keeps this controller mounted while its clock scene reloads.
+  // Missing data clears the transition baseline, but never the user's audio opt-in.
+  if (!data) return null;
   return <button type="button" aria-pressed={enabled}
     className="absolute right-3 top-12 z-20 rounded-full border border-amber-200/40 bg-black/70 px-3 py-2 text-sm text-amber-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-200"
     onClick={async () => { if (enabled) setEnabled(false); else setEnabled(await enableTvLevelAudio()); }}>
