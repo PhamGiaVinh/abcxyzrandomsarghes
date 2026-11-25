@@ -1,0 +1,43 @@
+name: Finance payroll read scope PostgreSQL
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/finance-payroll-read.yml'
+      - 'VinPoker/tests/financePayroll/**'
+      - 'VinPoker/supabase/pending-migrations/20270128000353_finance_dealer_pt_read_v1.sql'
+permissions:
+  contents: read
+jobs:
+  accountant-pt-read:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: finance_payroll_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create isolated fixture database
+        run: |
+          PGDATABASE=postgres createdb finance_payroll_test
+          psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/fixtures/setup.sql
+          psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/fixtures/livePtRead.sql
+      - name: Reproduce existing accountant denial
+        run: psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/ptRead.baseline.sql
+      - name: Install candidate only on isolated fixture
+        run: psql -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/20270128000353_finance_dealer_pt_read_v1.sql
+      - name: Verify scope, parity, revocation and rollback
+        run: psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/ptRead.candidate.sql
