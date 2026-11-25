@@ -64,6 +64,7 @@ try {
     assert.equal(await dialog.getByRole('region',{name:'Lịch sử chi',exact:true}).locator('ol li').count(),input.paymentCount);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'browser page overflow');
     assert.ok(await dialog.evaluate(el=>el.scrollWidth<=el.clientWidth),'browser dialog overflow');
+    let dialogClosed=false;
     if(input.verifyRevocation) {
       const member=sql(`SELECT row_to_json(c)::text FROM public.club_cashiers c WHERE club_id='${input.binding.club_id}' AND user_id='${input.actor}'`);
       assert.ok(member);
@@ -73,6 +74,10 @@ try {
         await dialog.getByRole('alert').waitFor();
         assert.ok(reads.some(r=>r.name==='get_pt_statement_installments_v1' && r.status===403),'revoked detail reader was not denied by actual RPC');
         assert.equal(await dialog.getByLabel('Đã ghi nhận chi',{exact:true}).count(),0,'stale private amount remains after revocation');
+        // Radix deliberately aria-hides background regions while the modal is
+        // open. Close it before inspecting that operator region's accessible UI.
+        await dialog.getByRole('button',{name:'Đóng phiếu'}).click();
+        await dialog.waitFor({state:'hidden'});dialogClosed=true;
         await control.getByRole('alert').waitFor();
         assert.ok(reads.some(r=>r.name==='get_part_time_payroll_statement_status_v1' && r.status===403),'revoked status reader was not denied by actual RPC');
         assert.equal(await control.getByText(/Phiếu đã chốt:/).count(),0,'stale payroll control after revocation');
@@ -83,8 +88,10 @@ try {
     assert.deepEqual(failures,[]);
     assert.ok(reads.every(r=>['get_pt_statement_installments_v1','get_part_time_payroll_statement_status_v1','resolve_pt_full_payment_intent_v1'].includes(r.name)),
       'browser attempted a financial mutation');
-    await dialog.getByRole('button',{name:'Đóng phiếu'}).click();
-    await dialog.waitFor({state:'hidden'});
+    if(!dialogClosed) {
+      await dialog.getByRole('button',{name:'Đóng phiếu'}).click();
+      await dialog.waitFor({state:'hidden'});
+    }
     await page.close();
   }
   console.log('PT_REAL_BROWSER_RPC_DB_DESKTOP_MOBILE_READ_PASS');
