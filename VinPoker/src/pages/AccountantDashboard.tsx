@@ -1,6 +1,7 @@
+import { financeAccountantPaths, financeAccountantTab } from "@/lib/financeNavigation";
 import { useOperationalCapabilities } from "@/hooks/useOperationalCapabilities";
-import { useEffect, useState } from "react";
-import { Navigate, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { BarChart3, Calculator, ReceiptText, Table2, Wallet } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -33,25 +34,46 @@ import StaffSalaryChot from "./StaffSalaryChot";
 export default function AccountantDashboard() {
   const { loading, authError, user, isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedTab = searchParams.get("tab");
-  const activeTab = requestedTab === "expenses" || requestedTab === "report" ? requestedTab : "salary";
+  const reportDateRange = searchParams.has("from") || searchParams.has("to")
+    ? {from: searchParams.get("from") ?? "", to: searchParams.get("to") ?? ""}
+    : undefined;
+  const clearReportDateRange = () => setSearchParams(previous => {
+    const next = new URLSearchParams(previous);
+    next.delete("from");
+    next.delete("to");
+    return next;
+  });
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeTab = financeAccountantTab(location.pathname, location.search);
+  const selectTask = (tab: string) => {
+    if (!(tab in financeAccountantPaths)) return;
+    const next = new URLSearchParams(searchParams);
+    next.delete("tab");
+    navigate({pathname: financeAccountantPaths[tab as keyof typeof financeAccountantPaths], search: next.toString()});
+  };
   const source = staffSalarySource();
   const access = useOperationalCapabilities();
   const gateOk = !loading && !access.loading && !access.error && !!user && access.allows("accountant");
 
   const clubsQuery = useSalaryClubs(source, gateOk && FEATURES.accountantWorkspace);
   const clubs = clubsQuery.isError ? [] : clubsQuery.data ?? [];
-  const [clubId, setClubId] = useState("");
+  const clubId = searchParams.get("club");
+  const setClubId = useCallback((value: string) => setSearchParams(previous => {
+    const next = new URLSearchParams(previous);
+    next.set("club", value);
+    return next;
+  }), [setSearchParams]);
   const [showStaffSettings, setShowStaffSettings] = useState(false);
   const [showFnbDetails, setShowFnbDetails] = useState(false);
   const [salaryView, setSalaryView] = useState<"staff" | "dealer">("staff");
-  const activeClub = clubId ? clubs.find((club) => club.id === clubId) : clubs[0];
+  const activeClub = clubId !== null ? clubs.find((club) => club.id === clubId) : clubs[0];
   const activeClubId = activeClub?.id ?? null;
   const { caps } = useAccountantCapabilities(FEATURES.accountantWorkspace ? activeClubId : null);
 
   useEffect(() => {
-    if (!clubId && activeClubId) setClubId(activeClubId);
-  }, [clubId, activeClubId]);
+    if (clubId === null && activeClubId) setClubId(activeClubId);
+  }, [clubId, activeClubId, setClubId]);
 
   if (loading || access.loading) return <RouteLoader />;
   if (authError || access.error) return <p role="alert" className="p-6">Chưa xác minh được quyền nhân sự. Vui lòng tải lại trang.</p>;
@@ -107,7 +129,7 @@ export default function AccountantDashboard() {
       </header>
 
       {clubsQuery.isError && <PendingDbNotice state="network_error" />}
-      <Tabs key={JSON.stringify([user.id, activeClubId, activeClub?.role])} value={activeTab} onValueChange={tab => setSearchParams(previous => { const next = new URLSearchParams(previous); next.set("tab", tab); return next; })} className="space-y-4">
+      <Tabs key={JSON.stringify([user.id, activeClubId, activeClub?.role])} value={activeTab} onValueChange={selectTask} className="space-y-4">
         <TabsList className="flex flex-wrap h-auto">
           <TabsTrigger value="salary" className="gap-1.5">
             <Wallet className="w-4 h-4" />
@@ -167,7 +189,10 @@ export default function AccountantDashboard() {
 
         <TabsContent value="expenses">
           {activeClub && expensesAvailable ? (
-            <ClubExpenses embedded scopedClubId={activeClub.id} />
+            <ClubExpenses embedded scopedClubId={activeClub.id}
+              dateRange={reportDateRange}
+              onClearDateRange={clearReportDateRange}
+            />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
           )}
@@ -175,7 +200,10 @@ export default function AccountantDashboard() {
 
         <TabsContent value="report" className="space-y-3">
           {activeClub && financeAvailable ? (
-            <AccountantFinanceTab clubId={activeClubId} />
+            <AccountantFinanceTab clubId={activeClubId}
+              dateRange={reportDateRange}
+              onClearDateRange={clearReportDateRange}
+            />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
           )}

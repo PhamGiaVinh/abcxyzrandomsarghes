@@ -12,7 +12,11 @@ describe("legacy player-shell operator entry routing", () => {
     expect(app).toContain('const FloorDashboard = lazy(() => import("./pages/FloorDashboard"));');
     expect(app).toContain('const CashierDashboard = lazy(() => import("./pages/CashierDashboard"));');
     expect(app).toContain('<Route path="/floor" element={<FloorDashboard />} />');
-    expect(app).toContain('<Route path="/cashier" element={<CashierDashboard />} />');
+    expect(app).toContain('<Route path="/cashier" element={<FinanceLegacyRedirect />} />');
+    expect(app).toContain('<Route path="/finance/transactions" element={<CashierDashboard />} />');
+    const legacy = source("src/pages/FinanceLegacyRedirect.tsx");
+    expect(legacy).toContain('pathname === "/cashier" ? "/finance/transactions"');
+    expect(legacy).toContain('destination + search + hash');
     expect(app).not.toContain('<DocumentRedirect to="/ops/floor" />');
     expect(app).not.toContain('<DocumentRedirect to="/ops/cashier" />');
   });

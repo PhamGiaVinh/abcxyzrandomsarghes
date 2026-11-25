@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Navigate } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { formatVND } from "@/lib/format";
 import { exportToExcel } from "@/lib/exportExcel";
@@ -47,17 +47,30 @@ const tooltipStyle = {
 const ClubFinanceDashboard = () => {
   const { t } = useTranslation();
   const { isAdmin, isClubAdmin, isClubOwner, loading: authLoading, rolesLoading, authError, rolesError } = useAuth();
-  const [from, setFrom] = useState(rangeStartISO(30));
-  const [to, setTo] = useState(todayISO());
-  const [clubFilter, setClubFilter] = useState("all");
-  const [relativeRange,setRelativeRange]=useState<7|30|'month'|null>(30);
+  const [scope, setScope] = useSearchParams();
+  const from = scope.get("from") ?? rangeStartISO(30);
+  const to = scope.get("to") ?? todayISO();
+  const clubFilter = scope.get("club") ?? "all";
+  const patchScope = useCallback((patch: Record<string, string>) => {
+    setScope(previous => {
+      const next = new URLSearchParams(previous);
+      for (const [key, value] of Object.entries(patch)) next.set(key, value);
+      return next;
+    }, { replace: true });
+  }, [setScope]);
+  useEffect(() => {
+    if (!scope.has("from") && !scope.has("to")) patchScope({from, to});
+  }, [scope, from, to, patchScope]);
+  const setFrom = (value: string) => patchScope({from: value});
+  const setTo = (value: string) => patchScope({to: value});
+  const setClubFilter = (value: string) => patchScope({club: value});
+  const [relativeRange,setRelativeRange]=useState<7|30|'month'|null>(scope.has('from') || scope.has('to') ? null : 30);
   useEffect(()=>{
     if(relativeRange===null)return;
     return startLiveReportRefresh(async()=>{
-      setFrom(relativeRange==='month'?monthStartISO():rangeStartISO(relativeRange));
-      setTo(todayISO());
+      patchScope({from: relativeRange==='month'?monthStartISO():rangeStartISO(relativeRange), to: todayISO()});
     });
-  },[relativeRange]);
+  },[relativeRange, patchScope]);
 
   const { loading, error, clubs, summary, reload } = useClubFinanceSummary({ from, to, clubFilter });
 
@@ -175,9 +188,9 @@ const ClubFinanceDashboard = () => {
           </div>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-1 rounded-lg bg-muted/40 p-1">
-          <Button size="sm" variant={relativeRange===7?'secondary':'ghost'} aria-pressed={relativeRange===7} className="h-11 text-xs" onClick={() => { setRelativeRange(7);setFrom(rangeStartISO(7)); setTo(todayISO()); }}>7 ngày</Button>
-          <Button size="sm" variant={relativeRange===30?'secondary':'ghost'} aria-pressed={relativeRange===30} className="h-11 text-xs" onClick={() => { setRelativeRange(30);setFrom(rangeStartISO(30)); setTo(todayISO()); }}>30 ngày</Button>
-          <Button size="sm" variant={relativeRange==='month'?'secondary':'ghost'} aria-pressed={relativeRange==='month'} className="h-11 text-xs" onClick={() => { setRelativeRange('month');setFrom(monthStartISO()); setTo(todayISO()); }}>Tháng này</Button>
+          <Button size="sm" variant={relativeRange===7?'secondary':'ghost'} aria-pressed={relativeRange===7} className="h-11 text-xs" onClick={() => { setRelativeRange(7);patchScope({from: rangeStartISO(7), to: todayISO()}); }}>7 ngày</Button>
+          <Button size="sm" variant={relativeRange===30?'secondary':'ghost'} aria-pressed={relativeRange===30} className="h-11 text-xs" onClick={() => { setRelativeRange(30);patchScope({from: rangeStartISO(30), to: todayISO()}); }}>30 ngày</Button>
+          <Button size="sm" variant={relativeRange==='month'?'secondary':'ghost'} aria-pressed={relativeRange==='month'} className="h-11 text-xs" onClick={() => { setRelativeRange('month');patchScope({from: monthStartISO(), to: todayISO()}); }}>Tháng này</Button>
         </div>
         <details className="mt-3 text-xs">
           <summary className="flex cursor-pointer list-none min-h-11 items-center justify-between gap-2 py-1 text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">

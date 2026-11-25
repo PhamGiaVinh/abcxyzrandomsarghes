@@ -1,3 +1,4 @@
+import FinanceLegacyRedirect from "./pages/FinanceLegacyRedirect";
 import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
@@ -385,11 +386,16 @@ const App = () => {
                 <Route path="/club/admin" element={<ClubAdmin />} />
                 <Route element={<FinanceWorkspace />}>
                   <Route path="/finance" element={null} />
-                  <Route path="/club/admin/finance" element={<ClubFinanceDashboard />} />
+                  <Route path="/club/admin/finance" element={<FinanceLegacyRedirect />} />
+                  <Route path="/finance/overview" element={<ClubFinanceDashboard />} />
+                  <Route path="/finance/transactions" element={<CashierDashboard />} />
+                  <Route path="/finance/payroll" element={<AccountantDashboard />} />
+                  <Route path="/finance/expenses" element={<AccountantDashboard />} />
+                  <Route path="/finance/reconciliation" element={<AccountantDashboard />} />
                   <Route path="/club/admin/player-finance" element={<PlayerFinancialReport />} />
                   <Route path="/club/admin/accounting-control" element={<AccountingControl />} />
-                  <Route path="/accountant" element={<AccountantDashboard />} />
-                  <Route path="/cashier" element={<CashierDashboard />} />
+                  <Route path="/accountant" element={<FinanceLegacyRedirect />} />
+                  <Route path="/cashier" element={<FinanceLegacyRedirect />} />
                 </Route>
                 <Route path="/club/admin/expenses" element={<ClubExpenses />} />
                 <Route path="/club/admin/insurance" element={<DealerInsuranceProfiles />} />
