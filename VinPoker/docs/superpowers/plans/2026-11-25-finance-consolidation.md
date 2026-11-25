@@ -15,6 +15,8 @@ Owner-approved specification: TC0–TC6 in this conversation, 25 November 2026. 
 ## Delivery order and evidence
 
 - [ ] TC0: inspect live catalog, deployed source, flags, rights and every source-to-report mapping. Record plan/E-case definition mapping before evidence reuse.
+  - Live read-only catalog verified via official linked CLI on 25 November: finance v2 wrapper body MD5 f911ebb15f780e2b4e12b24cfecaa3d3 delegates to get_club_finance_summary, body MD5 e6388bd6fc1a1e07141ff0775385a606. The actual underlying cost expression includes PT payouts in payrollNet and exposes both PT and club expenses. Connector permission denial was not treated as a SQL result.
+  - Live club_expenses columns confirmed: amount/incurred_at, category, paid state/source, optional tournament/series/attachment/adjustment, idempotency key. No dedicated approval state, source account ID or installment table was established by this inspection; those capabilities still require a scoped catalog audit before designing migrations.
 - [ ] TC1: shared club/date context, canonical routes, four work areas, compatible legacy URLs, truthful cost breakdown, responsive runtime verification.
   - In progress: four navigation destinations, payroll/report/expense deep links, removal of demo-report shortcut, preservation of PT and club-expense fields from canonical RPC.
   - Source discovery: migration 310 explicitly says payrollNet INCLUDES ptWagePaid. PT must be labeled as a subtotal, never added again.
