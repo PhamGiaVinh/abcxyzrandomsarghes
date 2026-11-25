@@ -225,10 +225,12 @@ describe("ReplayScrubber B1 HUD (additive `hud` prop)", () => {
     );
 
     fireEvent.click(view.getByTitle("Phát"));
-    act(() => vi.advanceTimersByTime(verifiedHand.players.length * 400 + 600));
-    for (let step = 1; step < verifiedHand.actions.length; step += 1) {
-      act(() => vi.advanceTimersByTime(1_000));
-    }
+    // React schedules the next timer only after each frame renders.
+    act(() => vi.advanceTimersByTime(1_000)); // SB
+    act(() => vi.advanceTimersByTime(1_000)); // BB
+    act(() => vi.advanceTimersByTime(350)); // start dealing
+    act(() => vi.advanceTimersByTime(verifiedHand.players.length * 400 + 300)); // all-in
+    act(() => vi.advanceTimersByTime(1_000)); // call and showdown
     expect(onRunoutPresentation.mock.calls.at(-1)?.[0]).toMatchObject({ phase: "hole_hold", visibleBoardCount: 0 });
     act(() => vi.advanceTimersByTime(1_499));
     expect(onRunoutPresentation.mock.calls.at(-1)?.[0]).toMatchObject({ phase: "hole_hold" });

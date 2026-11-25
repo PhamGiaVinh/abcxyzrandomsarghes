@@ -70,7 +70,8 @@ import {
   type TableMotionEvent,
 } from "@/lib/tracker-poker/tableMotion";
 import { shouldCollectCommittedChips } from "@/lib/tracker-poker/livePotCollection";
-import { formatViewerBB, formatViewerChipAndBB, formatViewerChipCompact, resolveViewerHandBigBlind } from "@/lib/tracker-poker/viewerAmounts";
+import { useViewerAmountUnit, toggleViewerAmountUnit } from "@/components/tracker/viewerAmountUnit";
+import { formatViewerBB, formatViewerAmount, formatViewerChipCompact, resolveViewerHandBigBlind } from "@/lib/tracker-poker/viewerAmounts";
 import { fetchHandPlayerDisplay, handPlayersHasSnapshot } from "@/lib/tracker-poker/handPlayerNames";
 import { loadLatestLiveHand } from "./loadLatestLiveHand";
 import { resolveViewerIdentity } from "./viewer-hub/viewerIdentity";
@@ -1422,6 +1423,7 @@ function TournamentLiveViewContent({
   );
 
   const isReplay = mode === "replay";
+  const amountUnit = useViewerAmountUnit();
   const selectedReplayHand = useMemo(() => {
     if (!replayHand || !requestedReplayTarget) return replayHand;
     if (requestedReplayTarget.handId) {
@@ -2127,14 +2129,18 @@ function TournamentLiveViewContent({
           )}
           {headerAverageStack != null && (
             <span className="flex items-center gap-1">
-              <Layers className="w-3.5 h-3.5" /> AVG: {spectator ? (headerFormatBB(headerAverageStack) ?? "— BB") : formatStack(headerAverageStack)}
+              <Layers className="w-3.5 h-3.5" /> AVG: {spectator ? formatViewerAmount(headerAverageStack, isReplay ? replayBigBlind : bigBlind, amountUnit) : formatStack(headerAverageStack)}
             </span>
           )}
+          {spectator && <Button type="button" size="sm" variant="outline" onClick={toggleViewerAmountUnit}
+            className="min-h-11" aria-label="Chip / BB" aria-pressed={amountUnit === "bb"}>
+            {amountUnit === "bb" ? "BB" : "Chip"}
+          </Button>}
           {headerPotSize != null && (
             <span className="flex items-center gap-1">
               <Coins className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
               <span className="sr-only">{t("liveHub.felt.pot", "Pot")}</span>
-              <strong className="text-emerald-400 text-sm">{spectator ? formatViewerChipAndBB(tableDisplayState === "last_completed" && handPotMissing ? null : headerPotSize, isReplay ? replayBigBlind : bigBlind) : formatStack(headerPotSize)}</strong>
+              <strong className="text-emerald-400 text-sm">{spectator ? formatViewerAmount(tableDisplayState === "last_completed" && handPotMissing && !isReplay ? null : headerPotSize, isReplay ? replayBigBlind : bigBlind, amountUnit) : formatStack(headerPotSize)}</strong>
               {!spectator && headerPotSize > 0 && headerFormatBB(headerPotSize) && (
                 <span className="text-[10px] text-muted-foreground">({headerFormatBB(headerPotSize)})</span>
               )}
@@ -2285,6 +2291,7 @@ function TournamentLiveViewContent({
               viewerNeon={spectator && FEATURES.liveHandFeed}
               viewerLayout={spectator && FEATURES.liveViewerFeltV2}
               viewerAmountsInBB={spectator}
+              viewerAmountUnit={spectator ? amountUnit : undefined}
               viewerBigBlind={isReplay ? replayBigBlind : bigBlind}
               tableFx={spectator && FEATURES.liveTableFx && (isReplay || tableDisplayState !== "last_completed" || Boolean(livePayoutForHand))}
               chipPush={spectator && FEATURES.liveTableFx && (isReplay || tableDisplayState !== "last_completed") ? chipPush : null}
@@ -2325,6 +2332,7 @@ function TournamentLiveViewContent({
             <ReplayScrubber
               key={selectedReplayHand.hand_id ?? `hand-${selectedReplayHand.hand_number}`}
               hand={selectedReplayHand}
+              viewerAmountUnit={spectator ? amountUnit : undefined}
               onFrame={handleSelectedReplayFrame}
               hud={spectator && FEATURES.liveReplayHud}
               trackBets={spectator && FEATURES.liveFeltCompact}
@@ -2367,6 +2375,7 @@ function TournamentLiveViewContent({
             <ReplayScrubber
               key={selectedReplayHand.hand_id ?? `hand-${selectedReplayHand.hand_number}`}
               hand={selectedReplayHand}
+              viewerAmountUnit={spectator ? amountUnit : undefined}
               onFrame={handleSelectedReplayFrame}
               hud
               trackBets={FEATURES.liveFeltCompact}
