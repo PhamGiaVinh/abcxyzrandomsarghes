@@ -21,7 +21,11 @@ Owner-approved specification: TC0–TC6 in this conversation, 25 November 2026. 
   - In progress: four navigation destinations, payroll/report/expense deep links, removal of demo-report shortcut, preservation of PT and club-expense fields from canonical RPC.
   - Source discovery: migration 310 explicitly says payrollNet INCLUDES ptWagePaid. PT must be labeled as a subtotal, never added again.
   - Still owed: canonical route migration, shared scope across modules, full live/reponsive verification. Navigation changes alone do not complete TC1.
+  - Subsequent source package PR1794 implements canonical routes, full legacy query/hash redirects and shared CLB/date context. Its typecheck/build and affected CI passed at b8f1ef3f. Browser acceptance and production release remain unverified; this supersedes only the source gaps in the previous line.
 - [ ] TC2: check-in/work/rest → reviewed wage revision → approval → partial/full settlement → payslip → both reports. Reuse existing FT/PT writers; add server capability only after current schema inspection.
+  - PR1795 prepares a new scoped PT reader for club-assigned accountants; old reader/writers and saved amounts stay unchanged. The consumer is wired behind `financeDealerPtRead=false`, enforces read-only, and remounts by actor/session/club.
+  - At 89032c06: 27 local component/identity tests pass, including invalid payment evidence, late responses and unsafe totals. Independent read-only source review passed. PostgreSQL authorization fixture run45651137488 passed including admin parity/revocation and anonymous ACL. These are not full current-schema, HTTP or browser proof.
+  - Fresh schema-only capture45651278424 was explicitly approved by owner. A separate captured-calculator job now prepares verification of one closed hour at 60,000 VND, original-reader denial, exact club rights, revocation and unchanged payment ledger. Actual runtime result is still required. Partial payments and the rest of TC2 remain incomplete.
 - [ ] TC3: suppliers, expense approval, reimbursement, recurring drafts, installments, source accounts and prepayment schedules. Link event/series/attachments through actual mutation paths.
 - [ ] TC4: drawer/bank reconciliation, prize/escrow liabilities, close races, historical cutover balances and audited late adjustments.
 - [ ] TC5: source-backed Intelligence; upcoming obligations first, versioned out-of-sample forecasts second. Never train on facts unavailable when a prediction was issued.
@@ -47,3 +51,5 @@ Financial workload: 12 months, 100,000 documents, 20 concurrent operators, 30 mi
 Verify widths 320/375/414/768/1280. No overlap, lost controls or page-wide horizontal scrolling. Final journey covers opening shift/drawer, check-in, tournament entries, F&B, wages, expense approval/payment, prize payout, reconciliation, closing and owner Intelligence.
 
 Pin frontend/schema/RPC/Edge/flags/configuration and evidence validity. Encrypted backup plus isolated restore before critical apply; exact release gate and postchecks remain required. No completion claim until every mandatory test and verified-web requirement passes.
+
+Release status is recorded per package as SOURCE / PREVIEW / RELEASED / LIVE VERIFIED. PR1792 has a ready Preview on the canonical Vercel project, but authenticated TEST desktop/mobile acceptance awaits owner sign-in. No finance package is recorded as released or live-verified in this ledger. Never substitute the automatic Preview of the unrelated target-source Vercel project for the canonical project's deployment.
