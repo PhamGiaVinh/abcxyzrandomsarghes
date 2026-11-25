@@ -13,7 +13,7 @@ export interface ClubFinanceSummary {
     rake:number; rakeActual:number; rakeExpected:number; rakeVariance:number;
     rakeOnline:number; rakeOffline:number; rakeReentry:number; serviceFee:number; total:number; fnb:number;
   };
-  cost: {payrollNet:number; payrollGross:number; adjustments:number; fnbCogs:number; compCogs:number};
+  cost: {payrollNet:number; payrollGross:number; adjustments:number; clubExpenses?:number; ptWagePaid?:number; fnbCogs:number; compCogs:number};
   net:number; statusTotals:Record<PayrollStatusKey,number>; unpaidTotal:number; reconciledTotal:number;
   staffLive?:FinanceStaffLive;
   dealerLive?:FinanceDealerLive;
@@ -43,7 +43,7 @@ function parseSummary(value:unknown,query:FinanceQuery) {
       stakingArchive:r.stakingArchive??0,payoutFees:r.payoutFees,rake:r.rake,rakeActual:r.rakeActual??r.rake,
       rakeExpected:r.rakeExpected??r.rake,rakeVariance:r.rakeVariance??0,rakeOnline:r.rakeOnline??0,
       rakeOffline:r.rakeOffline??0,rakeReentry:r.rakeReentry??0,serviceFee:r.serviceFee??0,total:r.total,fnb:r.fnb??0},
-    cost:{payrollNet:c.payrollNet,payrollGross:c.payrollGross,adjustments:c.adjustments,fnbCogs:c.fnbCogs??0,compCogs:c.compCogs??0},
+    cost:{payrollNet:c.payrollNet,payrollGross:c.payrollGross,adjustments:c.adjustments,clubExpenses:c.clubExpenses,ptWagePaid:c.ptWagePaid,fnbCogs:c.fnbCogs??0,compCogs:c.compCogs??0},
     net,statusTotals,aging,unpaidTotal:financeNumber(data.unpaidTotal,'unpaidTotal'),reconciledTotal:financeNumber(data.reconciledTotal,'reconciledTotal'),
     fnbAvailable:Object.prototype.hasOwnProperty.call(r,'fnb')&&Object.prototype.hasOwnProperty.call(c,'fnbCogs')&&Object.prototype.hasOwnProperty.call(c,'compCogs'),
     ...(Object.prototype.hasOwnProperty.call(data,'staffLive')?{staffLive:parseFinanceStaffLive(data.staffLive)}:{}),

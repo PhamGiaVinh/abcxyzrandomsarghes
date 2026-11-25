@@ -23,3 +23,5 @@ it("keeps three work tabs and loads personnel settings only on demand",async()=>
  await waitFor(()=>expect(screen.getByText("Directory test-club")).toBeVisible());
  expect(screen.queryByText("FNB fixture")).toBeNull();
 });
+
+it.each([["report","Report fixture"],["expenses","Expense fixture"],["salary","Salary fixture"]])("opens requested %s work without another tab click",(tab,text)=>{render(<MemoryRouter initialEntries={["/accountant?tab="+tab]}><AccountantDashboard/></MemoryRouter>);expect(screen.getByText(text)).toBeVisible();});

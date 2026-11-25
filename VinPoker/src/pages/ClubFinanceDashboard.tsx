@@ -190,6 +190,15 @@ const ClubFinanceDashboard = () => {
           </div>
         </details>
       </section>
+      {summary && !error && <section aria-label="Chi phí đã ghi nhận" className="rounded-xl border border-border/70 bg-card p-4 space-y-2">
+        <h2 className="text-sm font-semibold">Chi phí đã ghi nhận</h2>
+        <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3 text-sm">
+          <div><dt className="text-muted-foreground">Lương đã lưu</dt><dd className="font-semibold">{formatVND(summary.cost.payrollNet)}</dd></div>
+          <div><dt className="text-muted-foreground">Trong lương: PT đã chi</dt><dd className="font-semibold">{summary.cost.ptWagePaid === undefined ? "Chưa có dữ liệu" : formatVND(summary.cost.ptWagePaid)}</dd></div>
+          <div><dt className="text-muted-foreground">Chi phí CLB</dt><dd className="font-semibold">{summary.cost.clubExpenses === undefined ? "Chưa có dữ liệu" : formatVND(summary.cost.clubExpenses)}</dd></div>
+        </dl>
+        <p className="text-xs text-muted-foreground">Lương PT đã chi nằm trong lương đã lưu, không cộng thêm lần nữa. Lương tạm tính nằm riêng.</p>
+      </section>}
       {error && (
         <Card className="p-4 border-destructive/40 bg-destructive/10 text-sm flex items-center gap-2">
           <AlertCircle className="w-4 h-4 text-destructive" /> {error === "finance_report_event_start_unavailable" ? t(financeReadErrorKey(new Error(error))) : error}
