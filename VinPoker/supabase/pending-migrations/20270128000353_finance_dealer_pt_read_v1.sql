@@ -1,3 +1,4 @@
+BEGIN;
 -- PENDING. Finance PT read-only access for the accountant assigned to the requested club.
 -- Preserves the current wage calculation and existing operator read privileges.
 -- Rollback before/after activation: remove this new endpoint after reverting its consumer.
@@ -14,7 +15,7 @@ BEGIN
 END
 $guard$;
 
-CREATE OR REPLACE FUNCTION public.get_finance_dealer_pt_wages_v1(p_club_id uuid)
+CREATE FUNCTION public.get_finance_dealer_pt_wages_v1(p_club_id uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
  STABLE SECURITY DEFINER
@@ -87,3 +88,5 @@ $function$;
 REVOKE ALL ON FUNCTION public.get_finance_dealer_pt_wages_v1(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.get_finance_dealer_pt_wages_v1(uuid) TO authenticated;
 COMMENT ON FUNCTION public.get_finance_dealer_pt_wages_v1(uuid) IS 'Read-only PT wage projection, including accountants assigned to this club. Source calculations unchanged.';
+
+COMMIT;

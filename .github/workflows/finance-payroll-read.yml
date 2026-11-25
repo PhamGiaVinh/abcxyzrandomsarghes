@@ -39,5 +39,22 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/ptRead.baseline.sql
       - name: Install candidate only on isolated fixture
         run: psql -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/20270128000353_finance_dealer_pt_read_v1.sql
+      - name: Verify endpoint collision is refused
+        run: |
+          if psql -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/20270128000353_finance_dealer_pt_read_v1.sql > "$RUNNER_TEMP/pt-read-collision.log" 2>&1; then
+            echo "Expected candidate collision refusal"
+            exit 1
+          fi
+          grep -q finance_pt_read_target_exists "$RUNNER_TEMP/pt-read-collision.log"
       - name: Verify scope, parity, revocation and rollback
         run: psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/ptRead.candidate.sql
+      - name: Verify source drift is refused before creating endpoint
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "CREATE OR REPLACE FUNCTION public.get_club_pt_wages(p_club_id uuid) RETURNS jsonb LANGUAGE sql STABLE AS 'SELECT NULL::jsonb';"
+          if psql -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/20270128000353_finance_dealer_pt_read_v1.sql > "$RUNNER_TEMP/pt-read-drift.log" 2>&1; then
+            echo "Expected source drift refusal"
+            exit 1
+          fi
+          grep -q finance_pt_read_source_drift "$RUNNER_TEMP/pt-read-drift.log"
+          psql -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayroll/fixtures/livePtRead.sql
+          test "$(psql -Atqc "SELECT to_regprocedure('public.get_finance_dealer_pt_wages_v1(uuid)') IS NULL")" = t

@@ -66,3 +66,10 @@ begin
   );
 end;
 $function$;
+
+-- Live prosrc contains CRLF. Recreate those exact captured bytes on Linux too.
+DO $restore_live_bytes$
+BEGIN
+  EXECUTE replace(replace(pg_get_functiondef('public.get_club_pt_wages(uuid)'::regprocedure), chr(13)||chr(10), chr(10)), chr(10), chr(13)||chr(10));
+END
+$restore_live_bytes$;
