@@ -35,6 +35,7 @@ SELECT json_build_object(
    FROM pg_proc p CROSS JOIN LATERAL aclexplode(p.proacl) x WHERE p.oid=to_regprocedure('${signature}') AND x.privilege_type='EXECUTE'),
  'anonymousExecute',has_function_privilege('anon',to_regprocedure('${signature}'),'EXECUTE'),
  'uniqueIndexValid',EXISTS(SELECT FROM pg_index i WHERE i.indexrelid=to_regclass('public.uq_club_expenses_idem')
+   AND i.indrelid='public.club_expenses'::regclass
    AND i.indisunique AND i.indisvalid AND i.indnkeyatts=2
    AND pg_get_indexdef(i.indexrelid,1,true)='club_id' AND pg_get_indexdef(i.indexrelid,2,true)='idempotency_key'
    AND pg_get_expr(i.indpred,i.indrelid)='(idempotency_key IS NOT NULL)')
