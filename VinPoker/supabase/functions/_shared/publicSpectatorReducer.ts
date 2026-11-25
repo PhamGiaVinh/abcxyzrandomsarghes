@@ -1,4 +1,5 @@
 import { reduceHand, type ActionRow } from "../../../src/lib/tracker-poker/handStateCore.ts";
+import { computePotBreakdown } from "../../../src/lib/tracker-poker/potEngine.ts";
 
 type PayoutItem = {
   fromPlace: number;
@@ -28,11 +29,12 @@ export function reducePublicSpectatorPayload(component: string, payload: unknown
 // Presentation only: replay the existing canonical reducer. Never settle a pot
 // or write the resulting stacks back to the business tables.
 function reduceLiveTable(value: unknown): unknown {
-  if (!isRecord(value) || value.trackerState !== "live") return value;
+  if (!isRecord(value) || !['live', 'last_completed'].includes(String(value.trackerState))) return value;
   const { actions, ...table } = value;
   const players = Array.isArray(table.players) ? table.players.filter(isRecord) : [];
   const key = (row: Record<string, unknown>) => `${row.playerId}:${row.entryNumber}`;
-  const unknown = () => ({ ...table, pot: null, players: players.map((p) => ({ ...p, stack: null, isFolded: undefined, isAllIn: undefined, lastAction: null })) });
+  const unknown = () => table.trackerState === 'last_completed' ? { ...table, potLayers: null }
+    : ({ ...table, pot: null, potLayers: null, players: players.map((p) => ({ ...p, stack: null, isFolded: undefined, isAllIn: undefined, lastAction: null })) });
   if (!players.length || !Array.isArray(actions) || players.some((p) =>
     !Number.isSafeInteger(p.startingStack) || Number(p.startingStack) < 0 || !Number.isInteger(p.entryNumber))) return unknown();
   const identities = new Set(players.map(key));
@@ -53,7 +55,21 @@ function reduceLiveTable(value: unknown): unknown {
     lastActions.set(action.player_id, { actionType: action.action_type, amount: action.action_amount });
   }
   const byIdentity = new Map(runtime.players.map((p) => [p.player_id, p]));
+  const antes = new Map<string, number>();
+  for (const action of canonical) if (action.action_type === 'post_ante') {
+    antes.set(action.player_id, (antes.get(action.player_id) ?? 0) + action.action_amount);
+  }
+  // Old publications need not carry the frozen rule. With actual ante actions,
+  // keep their aggregate rather than guessing whether an ante is dead money.
+  const potLayers = antes.size && typeof table.bigBlindAnteOnly !== 'boolean' ? null
+    : computePotBreakdown(runtime.players.map(player => ({ ...player,
+      big_blind_ante: table.bigBlindAnteOnly === true ? antes.get(player.player_id) ?? 0 : 0,
+    }))).pots.map(pot => pot.amount);
+  if (table.trackerState === 'last_completed') return { ...table,
+    potLayers: potLayers?.reduce((sum, amount) => sum + amount, 0) === table.pot ? potLayers : null,
+  };
   return { ...table, pot: runtime.players.reduce((total, p) => total + p.total_bet, 0),
+    potLayers,
     players: players.map((p) => ({ ...p, stack: byIdentity.get(key(p))?.stack ?? null, isFolded: byIdentity.get(key(p))?.is_folded ?? false, isAllIn: byIdentity.get(key(p))?.is_all_in ?? false, lastAction: lastActions.get(key(p)) ?? null })) };
 }
 

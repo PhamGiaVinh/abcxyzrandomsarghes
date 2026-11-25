@@ -43,6 +43,30 @@ describe("reducePublicSpectatorPayload", () => {
   });
 });
 
+it('projects main and every side layer on the server without changing committed chips', () => {
+  const payload={items:[{trackerState:'live',buttonSeat:1,players:[1000,400,1000].map((stack,i)=>({playerId:String(i),entryNumber:1,seatNumber:i+1,startingStack:stack})),actions:[1000,400,1000].map((amount,i)=>({playerId:String(i),entryNumber:1,street:'preflop',actionType:'all_in',amount,order:i+1}))}]};
+  const result=reducePublicSpectatorPayload('tables',payload) as {items:{pot:number;potLayers:number[]}[]};
+  expect(result.items[0].pot).toBe(2400);
+  expect(result.items[0].potLayers).toEqual([1200,1200]);
+});
+
+it('keeps dead BB ante in the main layer and does not guess a missing ante rule', () => {
+  const table={trackerState:'live',buttonSeat:1,bigBlindAnteOnly:true,players:[{playerId:'a',entryNumber:1,seatNumber:1,startingStack:1000},{playerId:'b',entryNumber:1,seatNumber:2,startingStack:1000}],actions:[
+    {playerId:'a',entryNumber:1,street:'preflop',actionType:'call',amount:200,order:1},
+    {playerId:'b',entryNumber:1,street:'preflop',actionType:'post_ante',amount:200,order:2},
+    {playerId:'b',entryNumber:1,street:'preflop',actionType:'post_bb',amount:200,order:3},
+  ]};
+  const project=(row:unknown)=>(reducePublicSpectatorPayload('tables',{items:[row]}) as {items:{pot:number;potLayers:number[]|null}[]}).items[0];
+  expect(project(table)).toMatchObject({pot:600,potLayers:[600]});
+  expect(project({...table,bigBlindAnteOnly:undefined})).toMatchObject({pot:600,potLayers:null});
+  const completed={...table,trackerState:'last_completed',pot:600,players:table.players.map((player,i)=>({...player,stack:i===0?1400:600}))};
+  const historical=project(completed);
+  expect(historical.potLayers).toEqual([600]);
+  expect(historical).toMatchObject({players:[{stack:1400},{stack:600}]});
+  expect(project({...completed,actions:undefined})).toMatchObject({pot:600,potLayers:null,players:[{stack:1400},{stack:600}]});
+  expect(project({...completed,bigBlindAnteOnly:false})).toMatchObject({pot:600,potLayers:null,players:[{stack:1400},{stack:600}]});
+});
+
 it("publishes each seat's last confirmed action and fold state without changing chip totals", () => {
   const players = [{ playerId: 'a', entryNumber: 1, seatNumber: 1, startingStack: 1000 }, { playerId: 'b', entryNumber: 1, seatNumber: 2, startingStack: 1000 }];
   const payload = { items: [{ tableId: '1', trackerState: 'live', buttonSeat: 1, players, actions: [

@@ -14,6 +14,8 @@ export function SpectatorMiniTable({ table, appearance, onPlayerSelect }: { tabl
   const { t } = useTranslation();
   const playersBySeat = new Map(table.players.map(player => [player.seatNumber, player]));
   const latestActor = table.latestAction ? table.players.find(player => player.playerId === table.latestAction?.playerId && player.entryNumber === table.latestAction.entryNumber) : null;
+  const mainPot = table.potLayers?.[0] ?? 0;
+  const sidePot = table.potLayers?.slice(1).reduce((total, value) => total + value, 0) ?? 0;
   const amount = (value: number | null | undefined) => {
     if (value == null) return '— BB';
     const bb = formatViewerBBOrUnavailable(value, table.bigBlind ?? 0);
@@ -28,7 +30,11 @@ export function SpectatorMiniTable({ table, appearance, onPlayerSelect }: { tabl
     <div className="spectator-mini-center">
       <TableLogo url={appearance?.logoUrl} />
       {stateLabel && <span className="spectator-mini-state">{stateLabel}</span>}
-      {table.pot != null ? (
+      {mainPot > 0 ? <div className="spectator-mini-pot-groups" data-testid="mini-pot-groups">
+        {[mainPot, sidePot].map((value, index) => value > 0 && <span key={index} className="spectator-mini-pot tracker-num" aria-label={index === 0 ? 'Cụm chip chính' : 'Cụm chip phụ'}>
+          <PotChips compact /><strong>{amount(value)}</strong>
+        </span>)}
+      </div> : table.pot != null ? (
         <span className="spectator-mini-pot tracker-num inline-flex items-center gap-1">
           {table.pot > 0 && <PotChips compact />}
           {formatViewerChipAndBB(table.pot, table.bigBlind)}

@@ -116,6 +116,10 @@ function ViewerRPTPreviewContent() {
     table.latestAction = { playerId: actor.playerId, entryNumber: 1, actionType, amount };
     table.pot = (table.pot ?? 0) + tick * (i + 1) * 300000;
   });
+  if (params.get('pots') === 'split') {
+    previewTables[0].pot = 19_500_000;
+    previewTables[0].potLayers = [15_000_000, 3_000_000, 1_500_000];
+  }
   const previewCatalog = params.get("tables") === "many"
     ? Array.from({ length: 8 }, (_, index) => ({
       tableId: index === 0 ? previewTables[0].tableId : `table-${index + 1}`,
