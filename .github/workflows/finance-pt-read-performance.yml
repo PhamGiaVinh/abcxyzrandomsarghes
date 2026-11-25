@@ -1,16 +1,18 @@
 name: PT payslip and finance report read performance
 on:
   pull_request:
-    paths:
-      - '.github/workflows/finance-pt-read-performance.yml'
-      - 'VinPoker/tests/financePayrollReadPerformance/**'
-      - 'VinPoker/tests/financePayrollInstallments/installments.seed.sql'
-      - 'VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql'
+    # PR paths use the entire three-dot PR diff, so paths would start another
+    # 30-minute run on every unrelated synchronize. Require deliberate opt-in.
+    types: [labeled]
 permissions:
   actions: read
   contents: read
 jobs:
   pt-read-performance:
+    if: >-
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'qualify-pt-read-performance' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     services:
