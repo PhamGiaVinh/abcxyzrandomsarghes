@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Banknote, CalendarDays, ClipboardList, Landmark,
 import { useAuth } from "@/hooks/useAuth";
 import { FEATURES } from "@/lib/featureFlags";
 import { formatShortDate, formatVND } from "@/lib/format";
-import { financeBusinessToday, assertFinanceCalendarRange } from "@/lib/financeSummaryRead";
+import { financeBusinessToday, financeCalendarInstants } from "@/lib/financeSummaryRead";
 import { clubExpensesSource } from "@/lib/clubExpenses/dataSource";
 import { EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABELS, type ExpenseCategory, type ExpensePaymentSource, type ExpensePaymentStatus } from "@/lib/clubExpenses/types";
 import { useExpenseClubs } from "@/hooks/clubExpenses/useExpenseClubs";
@@ -56,12 +56,7 @@ export default function ClubExpenses({ embedded, scopedClubId, dateRange, onClea
   const range = useMemo(() => {
     if (!dateRange) return {...monthBounds(monthKey), invalid: false};
     try {
-      assertFinanceCalendarRange(dateRange.from, dateRange.to);
-      return {
-        from: new Date(dateRange.from + "T00:00:00+07:00").toISOString(),
-        to: new Date(Date.parse(dateRange.to + "T00:00:00+07:00") + 86400000).toISOString(),
-        invalid: false,
-      };
+      return {...financeCalendarInstants(dateRange.from, dateRange.to), invalid: false};
     } catch {
       return {from: "", to: "", invalid: true};
     }
