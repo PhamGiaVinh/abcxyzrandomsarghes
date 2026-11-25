@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/finance-pt-installments.yml'
       - 'VinPoker/tests/financePayrollInstallments/**'
+      - 'VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql'
 permissions:
   actions: read
   contents: read
@@ -49,6 +50,8 @@ jobs:
           export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
           test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
           node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Install pending extension on empty isolated schema only
+        run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/supabase/pending-migrations/finance_pt_installments_v1.sql
       - name: Verify immutable 5M statement with 2M and 3M installments
         run: psql -X -v ON_ERROR_STOP=1 -f VinPoker/tests/financePayrollInstallments/installments.pg17.sql
       - name: Remove runner-local schema artifact
