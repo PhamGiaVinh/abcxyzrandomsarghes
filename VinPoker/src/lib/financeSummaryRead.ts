@@ -18,6 +18,15 @@ export function assertFinanceCalendarRange(from:string,to:string) {
   if(!valid(from)||!valid(to)||from>to)throw new Error('FINANCE_SUMMARY_INVALID: calendar range');
 }
 
+/** Inclusive Vietnam calendar days adapted to the timestamp readers' [from, to) contract. */
+export function financeCalendarInstants(from: string, to: string) {
+  assertFinanceCalendarRange(from, to);
+  return {
+    from: new Date(from + "T00:00:00+07:00").toISOString(),
+    to: new Date(Date.parse(to + "T00:00:00+07:00") + 86400000).toISOString(),
+  };
+}
+
 /** Verify the server query echo; never recompute the returned ledger totals. */
 export function assertFinanceCalendarScope(data:Record<string,unknown>,query:{from:string;to:string;clubId:string|null}) {
   const start=Date.parse(query.from+'T00:00:00+07:00');

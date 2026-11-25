@@ -68,6 +68,14 @@ export default function CashierDashboard() {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const section = (params.get("tab") as SectionKey) || "overview";
+  const reportDateRange = params.has("from") || params.has("to")
+    ? {from: params.get("from") ?? "", to: params.get("to") ?? ""} : undefined;
+  const clearReportDateRange = () => setParams(previous => {
+    const next = new URLSearchParams(previous);
+    next.delete("from");
+    next.delete("to");
+    return next;
+  });
 
   const [availableClubs, setClubs] = useState<ClubRow[] | null>(null);
   const requestedClub = params.get("club");
@@ -322,7 +330,7 @@ export default function CashierDashboard() {
             ? <TournamentPayoutTab clubIds={clubIds} />
             : <Card className="p-8 text-center text-sm text-muted-foreground">Chưa mở ghi nhận trả thưởng cho tài khoản này.</Card>)}
           {section === "members" && <MembersPanel clubIds={clubIds} clubs={clubs} />}
-          {section === "reports" && <ReportsPanel clubIds={clubIds} clubs={clubs} />}
+          {section === "reports" && <ReportsPanel clubIds={clubIds} clubs={clubs} dateRange={reportDateRange} onClearDateRange={clearReportDateRange} />}
           {section === "pt_wages" && (showPtWages
             ? <DealerPtWageTab key={JSON.stringify([userId, [...clubIds].sort()])} clubIds={clubIds} clubs={clubs} ownerClubIds={ownerClubIds} finalizeStatements />
             : <Card className="p-8 text-center text-sm text-muted-foreground">Tính năng này chưa được mở cho tài khoản của bạn.</Card>)}
@@ -1119,8 +1127,12 @@ function LookupTab({ clubIds }: { clubIds: string[] }) {
 /* REPORTS                                                         */
 /* ============================================================== */
 
-function ReportsPanel({ clubIds, clubs }: { clubIds: string[]; clubs: ClubRow[] }) {
-  return <RevenueReportTab clubIds={clubIds} clubs={clubs} />;
+function ReportsPanel({ clubIds, clubs, dateRange, onClearDateRange }: {
+  clubIds: string[]; clubs: ClubRow[];
+  dateRange?: {from: string; to: string};
+  onClearDateRange?: () => void;
+}) {
+  return <RevenueReportTab clubIds={clubIds} clubs={clubs} dateRange={dateRange} onClearDateRange={onClearDateRange} />;
 }
 
 /* ============================================================== */
