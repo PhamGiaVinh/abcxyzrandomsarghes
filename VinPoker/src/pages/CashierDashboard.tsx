@@ -69,7 +69,12 @@ export default function CashierDashboard() {
   const [params, setParams] = useSearchParams();
   const section = (params.get("tab") as SectionKey) || "overview";
 
-  const [clubs, setClubs] = useState<ClubRow[] | null>(null);
+  const [availableClubs, setClubs] = useState<ClubRow[] | null>(null);
+  const requestedClub = params.get("club");
+  const clubs = availableClubs === null ? null
+    : requestedClub && requestedClub !== "all"
+      ? availableClubs.filter(club => club.id === requestedClub)
+      : availableClubs;
   const [clubsError, setClubsError] = useState<string | null>(null);
   const [clubsForUserId, setClubsForUserId] = useState<string | null>(null);
   const [isClubOwner, setIsClubOwner] = useState(false);
@@ -186,6 +191,19 @@ export default function CashierDashboard() {
   if (clubs === null) {
     return <div className="container mx-auto p-6"><Skeleton className="h-96 rounded-xl" /></div>;
   }
+  if (requestedClub !== null && (requestedClub === "all" || !clubs.some(club => club.id === requestedClub))) {
+    return <Card role="alert" className="m-4 p-6 space-y-3">
+      <h1 className="text-lg font-semibold">Chọn CLB để làm việc tại quầy</h1>
+      <p className="text-sm text-muted-foreground">Vui lòng chọn một CLB trong danh sách đã xác minh cho tài khoản này.</p>
+      <div className="flex flex-wrap gap-2">{(availableClubs ?? []).map(club => (
+        <Button key={club.id} variant="outline" onClick={() => setParams(previous => {
+          const next = new URLSearchParams(previous);
+          next.set("club", club.id);
+          return next;
+        })}>{club.name}</Button>
+      ))}</div>
+    </Card>;
+  }
   if (clubs.length === 0 && !isAdmin) {
     return (
       <div className="container mx-auto p-6">
@@ -297,7 +315,7 @@ export default function CashierDashboard() {
         </aside>
 
         {/* Main */}
-        <main className="col-span-12 md:col-span-9 lg:col-span-10 min-w-0">
+        <main key={JSON.stringify([userId, clubIds])} className="col-span-12 md:col-span-9 lg:col-span-10 min-w-0">
           {section === "overview" && <OverviewPanel key={JSON.stringify([userId, isAdmin, [...clubIds].sort()])} clubIds={clubIds} onJump={setSection} />}
           {section === "staking" && <StakingPanel clubIds={clubIds} />}
           {section === "tournament_payouts" && (FEATURES.prizePayoutTracking && clubIds.length > 0

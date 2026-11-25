@@ -260,3 +260,9 @@ it("keeps secondary cashier tasks collapsed until requested",async()=>{
  fireEvent.click(toggle);
  expect(detail).toHaveAttribute("open");
 });
+
+describe('linked finance scope',()=>{beforeEach(()=>{mock.userId='cashier-a';mock.clubs=[{id:'club-a',name:'Club A'}];mock.scopeError=null;mock.clubError=null;mock.scopeRequest=null;mock.countRequest=null;mock.ptEnabled=false;});
+it('mounts PT work only for the explicitly selected authorized club',async()=>{mock.ptEnabled=true;mock.clubs=[{id:'club-a',name:'Club A'},{id:'club-b',name:'Club B'}];render(<MemoryRouter initialEntries={['/cashier?tab=pt_wages&club=club-b']}><CashierDashboard/></MemoryRouter>);expect(await screen.findByTestId('pt-workbench')).toHaveAttribute('data-clubs','club-b');});
+it.each(['other-club','all'])('blocks unresolved linked scope %s instead of mounting another club payroll',async(club)=>{mock.ptEnabled=true;render(<MemoryRouter initialEntries={['/cashier?tab=pt_wages&club='+club]}><CashierDashboard/></MemoryRouter>);expect(await screen.findByRole('alert')).toHaveTextContent('Chọn CLB');expect(screen.queryByTestId('pt-workbench')).toBeNull();});
+
+});
