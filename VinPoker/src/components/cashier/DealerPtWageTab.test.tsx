@@ -65,6 +65,25 @@ describe("DealerPtWageTab policy control", () => {
     expect(screen.queryByRole('button',{name:'Chốt phiếu PT'})).toBeNull();
   });
 
+  it.each([0.5, Number.MAX_SAFE_INTEGER + 1])('rejects an unrepresentable VND balance in the finance view: %s', async balance => {
+    testState.rpc.mockResolvedValue({data:{club_id:'club-1',as_of:'2026-11-25T15:00:00Z',dealers:[{
+      dealer_id:'dealer-1',full_name:'INVALID PT',hourly_rate_vnd:60000,
+      accrued_minutes:1,balance_vnd:balance,last_reset_at:null,current_shift_open:false,
+      current_shift_start:null,last_payment:null,
+    }]},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead/>);
+    await screen.findByText('Không xác minh được số tiền lương PT.');
+    expect(screen.queryByText('INVALID PT')).toBeNull();
+    expect(screen.queryByText('Tổng tạm tính chưa chốt')).toBeNull();
+  });
+
+  it.each([undefined, 'not-a-timestamp'])('rejects an unverifiable server snapshot time: %s', async asOf => {
+    testState.rpc.mockResolvedValue({data:{club_id:'club-1',as_of:asOf,dealers:[]},error:null});
+    render(<DealerPtWageTab clubIds={['club-1']} clubs={clubs} financeRead/>);
+    await screen.findByText('Không xác minh được phạm vi lương PT.');
+    expect(screen.queryByText('Chưa có dealer part-time đang hoạt động')).toBeNull();
+  });
+
   it('uses the statement flow for a cashier and never offers the legacy balance payment when statements are enabled', async () => {
     testState.auth = { isAdmin: false, isClubAdmin: false, isClubOwner: false };
     testState.rpc.mockImplementation(async name => ({ data: name === 'get_club_pt_wages' ? { dealers: [{

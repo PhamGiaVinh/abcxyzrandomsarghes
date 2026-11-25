@@ -35,6 +35,55 @@ DO $$ DECLARE result jsonb; BEGIN
   END;
 END $$;
 RESET ROLE;
+-- Exercise both existing global roles through the authenticated caller, not only
+-- as the database owner. Their projection must remain identical to the old API.
+INSERT INTO public.test_roles VALUES
+ ('00000000-0000-0000-0000-000000000061','super_admin'),
+ ('00000000-0000-0000-0000-000000000062','club_admin');
+SET LOCAL ROLE authenticated;
+DO $admin_parity$
+DECLARE actor uuid; club uuid; original jsonb; candidate jsonb;
+BEGIN
+  FOREACH actor IN ARRAY ARRAY[
+    '00000000-0000-0000-0000-000000000061'::uuid,
+    '00000000-0000-0000-0000-000000000062'::uuid]
+  LOOP
+    PERFORM set_config('request.jwt.claim.sub',actor::text,true);
+    FOREACH club IN ARRAY ARRAY[
+      '00000000-0000-0000-0000-000000000001'::uuid,
+      '00000000-0000-0000-0000-000000000002'::uuid]
+    LOOP
+      original := public.get_club_pt_wages(club);
+      candidate := public.get_finance_dealer_pt_wages_v1(club);
+      IF candidate IS NULL OR candidate IS DISTINCT FROM original THEN
+        RAISE EXCEPTION 'global_role_projection_changed';
+      END IF;
+    END LOOP;
+  END LOOP;
+END
+$admin_parity$;
+RESET ROLE;
+DELETE FROM public.test_roles;
+SET LOCAL ROLE authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000000062';
+DO $$ BEGIN
+  BEGIN
+    PERFORM public.get_finance_dealer_pt_wages_v1('00000000-0000-0000-0000-000000000001');
+    RAISE EXCEPTION 'revoked_global_role_visible';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END $$;
+RESET ROLE;
+SET LOCAL ROLE anon;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000000033';
+DO $$ BEGIN
+  BEGIN
+    PERFORM public.get_finance_dealer_pt_wages_v1('00000000-0000-0000-0000-000000000001');
+    RAISE EXCEPTION 'anonymous_claim_bypassed_acl';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+END $$;
+RESET ROLE;
 DO $missing_field$
 DECLARE original_calculator text; caught_message text;
 BEGIN
