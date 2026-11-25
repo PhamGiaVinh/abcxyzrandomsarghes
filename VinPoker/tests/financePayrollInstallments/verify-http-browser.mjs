@@ -33,7 +33,7 @@ try {
       }
     },input);
     const failures=[],reads=[];
-    page.on('pageerror',()=>failures.push('browser_runtime_error'));
+    page.on('pageerror',error=>failures.push(error.message.replaceAll(input.token,'[REDACTED]')));
     page.on('response',response=>{
       if(response.url().includes('/rest/v1/')) reads.push({name:response.url().split('/').at(-1),status:response.status()});
     });

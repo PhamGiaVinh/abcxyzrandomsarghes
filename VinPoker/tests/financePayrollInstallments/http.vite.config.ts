@@ -5,7 +5,11 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 const state=fileURLToPath(new URL('./http.preview-state.ts',import.meta.url));
 export default defineConfig({root:fileURLToPath(new URL('../../',import.meta.url)),envDir:false,
-  cacheDir:join(tmpdir(),'vinpoker-pt-http-browser'),plugins:[react()],resolve:{alias:[
+  cacheDir:join(tmpdir(),'vinpoker-pt-http-browser'),plugins:[react()],
+  // Prebundle both actual test surfaces. Scanning every app/fixture HTML with
+  // scoped Auth aliases imports unrelated AuthProviders and triggers reloads.
+  optimizeDeps:{entries:['tests/financePayrollInstallments/http.preview.html','tests/financePayrollInstallments/http.employee.preview.html']},
+  resolve:{alias:[
     {find:'@/hooks/useAuth',replacement:state},
     {find:'@/hooks/dealer/useDealerLink',replacement:state},
     {find:'@/integrations/supabase/client',replacement:state},
