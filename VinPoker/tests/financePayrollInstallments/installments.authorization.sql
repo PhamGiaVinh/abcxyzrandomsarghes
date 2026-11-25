@@ -36,6 +36,8 @@ INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES
  ('18000000-0000-4000-8000-000000000002','18000000-0000-4000-8000-000000000013','PT second TEST club','TEST','approved');
 INSERT INTO public.club_cashiers(club_id,user_id) VALUES
  ('18000000-0000-4000-8000-000000000002','18000000-0000-4000-8000-000000000012');
+INSERT INTO public.club_accountants(club_id,user_id) VALUES
+ ('18000000-0000-4000-8000-000000000002','18000000-0000-4000-8000-000000000012');
 SET LOCAL ROLE authenticated;
 DO $$ DECLARE s uuid:=current_setting('test.pt_statement_id')::uuid; h text:=current_setting('test.pt_statement_hash'); BEGIN
   BEGIN
@@ -62,6 +64,19 @@ DO $$ BEGIN
   EXCEPTION WHEN SQLSTATE '42501' THEN NULL; END;
 END $$;
 RESET ROLE;
+CREATE TEMP TABLE original_test_accountant AS SELECT * FROM public.club_accountants
+  WHERE club_id='18000000-0000-4000-8000-000000000001' AND user_id='18000000-0000-4000-8000-000000000012';
+DELETE FROM public.club_accountants WHERE club_id='18000000-0000-4000-8000-000000000001'
+  AND user_id='18000000-0000-4000-8000-000000000012';
+SET LOCAL ROLE authenticated;
+DO $$ BEGIN
+  BEGIN
+    PERFORM public.get_pt_statement_installments_v1(current_setting('test.pt_statement_id')::uuid);
+    RAISE EXCEPTION 'revoked_accountant_retained_payslip_read_via_other_club';
+  EXCEPTION WHEN SQLSTATE '42501' THEN NULL; END;
+END $$;
+RESET ROLE;
+INSERT INTO public.club_accountants SELECT * FROM original_test_accountant;
 INSERT INTO auth.users(id) VALUES ('18000000-0000-4000-8000-000000000014'),('18000000-0000-4000-8000-000000000015');
 UPDATE public.dealers SET user_id='18000000-0000-4000-8000-000000000014' WHERE id='18000000-0000-4000-8000-000000000051';
 INSERT INTO public.dealers(id,club_id,user_id,full_name,status,employment_type,hourly_rate_vnd) VALUES
