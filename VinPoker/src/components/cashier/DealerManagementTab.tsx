@@ -378,6 +378,7 @@ function DealerManagementSession({ clubIds, clubFilter }: DealerManagementTabPro
             )}
             {FEATURES.bulkSalaryApply && activeClubId && (
               <BulkSalaryDialog
+                key={activeClubId}
                 dealers={dealers.filter((d) => d.club_id === activeClubId)}
                 onDone={refetchDealers}
               />

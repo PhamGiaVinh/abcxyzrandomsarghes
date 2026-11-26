@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Banknote, Loader2, Search } from "lucide-react";
 import type { DealerRecord } from "@/hooks/useDealerManagement";
+import { waitForManualPlayerResponse } from "@/lib/floorManualPlayerIntent";
 
 // Bulk-apply salary to EXISTING dealers (owner 2026-07-07: dealers imported before
 // the batch-salary field existed have empty salary and show "—" — fixing them one
@@ -43,6 +44,9 @@ function ftSalaryRates(monthly: number, standardHours: number | null | undefined
   };
 }
 
+type SalaryRateKey = "monthly_salary_vnd" | "base_rate_vnd" | "hourly_rate_vnd";
+type SalaryTarget = { dealer: DealerRecord; rates: Partial<Record<SalaryRateKey, number>>; amount: number };
+
 export function BulkSalaryDialog({
   dealers,
   onDone,
@@ -59,8 +63,14 @@ export function BulkSalaryDialog({
   const [ftMonthlyInput, setFtMonthlyInput] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ confirmed: string[]; pending: string[] } | null>(null);
   const ptHelpId = useId();
   const ftHelpId = useId();
+  const pendingTargets = useRef(new Map<string, SalaryTarget>());
+  const savingRef = useRef(false);
+  const sessionGeneration = useRef(0);
+
+  useEffect(() => () => { sessionGeneration.current += 1; }, []);
 
   const hasSalary = (d: DealerRecord) =>
     d.employment_type === "part_time"
@@ -76,8 +86,12 @@ export function BulkSalaryDialog({
   }, [dealers, onlyMissing, search]);
 
   const selectedDealers = useMemo(
-    () => dealers.filter((d) => selected.has(d.id)),
-    [dealers, selected],
+    () => {
+      const available = new Map(dealers.map((dealer) => [dealer.id, dealer]));
+      for (const [id, target] of pendingTargets.current) available.set(id, target.dealer);
+      return [...available.values()].filter((dealer) => selected.has(dealer.id));
+    },
+    [dealers, selected, ptHourlyInput, ftMonthlyInput],
   );
   const selPt = selectedDealers.filter((d) => d.employment_type === "part_time");
   const selFt = selectedDealers.filter((d) => d.employment_type !== "part_time");
@@ -103,15 +117,20 @@ export function BulkSalaryDialog({
     setPtHourlyInput("");
     setFtMonthlyInput("");
     setSaving(false);
+    setResult(null);
+    pendingTargets.current.clear();
   };
 
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    pendingTargets.current.delete(id);
+    setResult(null);
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
+  };
 
   const selectAllVisible = () =>
     setSelected((prev) => {
@@ -121,59 +140,99 @@ export function BulkSalaryDialog({
     });
 
   const applyAll = async () => {
+    if (savingRef.current) return;
     setConfirmOpen(false);
     if (invalidAmount) return;
     if (willWritePt + willWriteFt === 0) {
       toast.error("Chưa chọn dealer hoặc chưa nhập mức lương.");
       return;
     }
+    savingRef.current = true;
+    const generation = sessionGeneration.current;
+    const isCurrent = () => generation === sessionGeneration.current;
     setSaving(true);
+    setResult(null);
     try {
-      let updated = 0;
-      const errors: string[] = [];
-
-      // PT: one grouped update — same hourly for the whole selection.
-      if (ptHourly && selPt.length > 0) {
-        const { error } = await supabase
-          .from("dealers")
-          .update({ hourly_rate_vnd: ptHourly, monthly_salary_vnd: 0 })
-          .in("id", selPt.map((d) => d.id));
-        if (error) errors.push(`PT: ${error.message}`);
-        else updated += selPt.length;
+      const confirmed = new Set<string>();
+      const pending: string[] = [];
+      const proposed: SalaryTarget[] = [
+        ...(ptHourly === null ? [] : selPt.map((dealer) => ({
+          dealer, rates: { hourly_rate_vnd: ptHourly, monthly_salary_vnd: 0 }, amount: ptHourly,
+        }))),
+        ...(ftMonthly === null ? [] : selFt.map((dealer) => ({
+          dealer, rates: ftSalaryRates(ftMonthly, dealer.standard_hours_per_shift), amount: ftMonthly,
+        }))),
+      ];
+      const targets = proposed.map((target) => {
+        const previous = pendingTargets.current.get(target.dealer.id);
+        if (previous && previous.amount === target.amount) return previous;
+        const captured = {...target, dealer: {...target.dealer}};
+        pendingTargets.current.set(target.dealer.id, captured);
+        return captured;
+      });
+      for (const { dealer, rates } of targets) {
+        if (!isCurrent()) return;
+        try {
+          const keys = Object.keys(rates) as SalaryRateKey[];
+          const fields = "id,club_id,employment_type,monthly_salary_vnd,base_rate_vnd,hourly_rate_vnd,standard_hours_per_shift";
+          const sameIdentity = (row: Partial<DealerRecord> | null) => !!row && row.id === dealer.id
+            && row.club_id === dealer.club_id && row.employment_type === dealer.employment_type
+            && (dealer.employment_type === "part_time" || row.standard_hours_per_shift === dealer.standard_hours_per_shift);
+          const matches = (row: Partial<DealerRecord> | null) => sameIdentity(row) && keys.every((key) => row![key] === rates[key]);
+          const current = await waitForManualPlayerResponse(supabase.from("dealers").select(fields)
+            .eq("club_id", dealer.club_id).eq("id", dealer.id).is("deleted_at", null).maybeSingle(), 15_000);
+          if (!isCurrent()) return;
+          if (current.error || !sameIdentity(current.data)) {
+            pending.push(dealer.full_name);
+            continue;
+          }
+          if (matches(current.data)) {
+            confirmed.add(dealer.id);
+            continue;
+          }
+          if (!keys.every((key) => current.data![key] === dealer[key])) {
+            pending.push(dealer.full_name);
+            continue;
+          }
+          let update = supabase.from("dealers").update(rates).eq("club_id", dealer.club_id).eq("id", dealer.id).is("deleted_at", null);
+          update = dealer.employment_type === null
+            ? update.is("employment_type", null) : update.eq("employment_type", dealer.employment_type);
+          for (const key of keys) {
+            const previous = dealer[key];
+            update = previous === null ? update.is(key, null) : update.eq(key, previous);
+          }
+          if (dealer.employment_type !== "part_time") {
+            const previous = dealer.standard_hours_per_shift;
+            update = previous === null ? update.is("standard_hours_per_shift", null) : update.eq("standard_hours_per_shift", previous);
+          }
+          const written = await waitForManualPlayerResponse(update.select(fields).maybeSingle(), 15_000);
+          if (!isCurrent()) return;
+          if (!written.error && matches(written.data)) confirmed.add(dealer.id);
+          else pending.push(dealer.full_name);
+        } catch {
+          if (!isCurrent()) return;
+          pending.push(dealer.full_name);
+        }
       }
 
-      // FT: derive base/hourly per the dealer's own standard hours (defaults 8),
-      // exactly like AddDealerDialog — group by hours so each group is one update.
-      if (ftMonthly && selFt.length > 0) {
-        const byHours = new Map<number, DealerRecord[]>();
-        for (const d of selFt) {
-          const h = d.standard_hours_per_shift && d.standard_hours_per_shift > 0
-            ? d.standard_hours_per_shift : 8;
-          byHours.set(h, [...(byHours.get(h) ?? []), d]);
-        }
-        for (const [hours, group] of byHours) {
-          const { error } = await supabase
-            .from("dealers")
-            .update(ftSalaryRates(ftMonthly, hours))
-            .in("id", group.map((d) => d.id));
-          if (error) errors.push(`FT (${hours}h): ${error.message}`);
-          else updated += group.length;
-        }
-      }
-
-      if (updated > 0) {
-        toast.success(`Đã áp lương cho ${updated} dealer`);
+      for (const id of confirmed) pendingTargets.current.delete(id);
+      setSelected((previous) => new Set([...previous].filter((id) => !confirmed.has(id))));
+      setResult({
+        confirmed: targets.filter(({ dealer }) => confirmed.has(dealer.id)).map(({ dealer }) => dealer.full_name),
+        pending,
+      });
+      if (confirmed.size > 0) {
+        toast.success(`Đã xác minh lương cho ${confirmed.size}/${targets.length} dealer`);
         onDone();
       }
-      if (errors.length) toast.error(errors.join(" · "));
-      if (updated > 0 && errors.length === 0) {
-        setOpen(false);
-        reset();
-      }
+      if (pending.length > 0) toast.error("Có dealer chưa xác minh được mức lương.");
     } catch (e: any) {
       toast.error(e?.message ?? "Lỗi áp lương");
     } finally {
-      setSaving(false);
+      if (isCurrent()) {
+        savingRef.current = false;
+        setSaving(false);
+      }
     }
   };
 
@@ -188,7 +247,7 @@ export function BulkSalaryDialog({
         <Banknote className="h-3.5 w-3.5 mr-1" /> Áp lương hàng loạt
       </Button>
 
-      <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
+      <Dialog open={open} onOpenChange={(o) => { if (savingRef.current) return; setOpen(o); if (!o) reset(); }}>
         <DialogContent className="max-w-lg bg-popover border border-border text-foreground max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>Áp lương hàng loạt</DialogTitle>
@@ -204,6 +263,7 @@ export function BulkSalaryDialog({
                 <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={search}
+                  disabled={saving}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Tìm tên dealer..."
                   className="h-8 pl-8 text-xs bg-card border-border"
@@ -211,6 +271,7 @@ export function BulkSalaryDialog({
               </div>
               <button
                 type="button"
+                disabled={saving}
                 onClick={() => setOnlyMissing((v) => !v)}
                 className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] transition-colors ${
                   onlyMissing
@@ -229,10 +290,10 @@ export function BulkSalaryDialog({
                 {selected.size > 0 && ` (${selPt.length} PT · ${selFt.length} FT)`}
               </span>
               <span className="flex gap-2">
-                <button className="text-primary hover:underline" onClick={selectAllVisible}>
+                <button disabled={saving} className="text-primary hover:underline" onClick={selectAllVisible}>
                   Chọn tất cả đang hiển thị
                 </button>
-                <button className="text-muted-foreground hover:underline" onClick={() => setSelected(new Set())}>
+                <button disabled={saving} className="text-muted-foreground hover:underline" onClick={() => { pendingTargets.current.clear(); setSelected(new Set()); setResult(null); }}>
                   Bỏ chọn
                 </button>
               </span>
@@ -248,7 +309,7 @@ export function BulkSalaryDialog({
                 )}
                 {visible.map((d) => (
                   <label key={d.id} className="flex cursor-pointer items-center gap-2 px-2 py-1.5 hover:bg-muted/30">
-                    <Checkbox checked={selected.has(d.id)} onCheckedChange={() => toggle(d.id)} />
+                    <Checkbox disabled={saving} checked={selected.has(d.id)} onCheckedChange={() => toggle(d.id)} />
                     <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">{d.full_name}</span>
                     <span className={`shrink-0 text-[11px] ${d.employment_type === "part_time" ? "text-warning" : "text-success"}`}>
                       {d.employment_type === "part_time" ? "PT" : "FT"}
@@ -268,9 +329,12 @@ export function BulkSalaryDialog({
               <div>
                 <div className="mb-1 text-[11px] text-muted-foreground">Lương giờ cho PT (VND/giờ)</div>
                 <Input
-                  type="text" inputMode="numeric"
+                  type="text" inputMode="numeric" disabled={saving}
                   aria-label="Lương giờ cho PT" aria-invalid={invalidPt} aria-describedby={ptHelpId} value={ptHourlyInput}
-                  onChange={(e) => setPtHourlyInput(e.target.value)}
+                  onChange={(e) => {
+                    for (const [id, target] of pendingTargets.current) if (target.dealer.employment_type === "part_time") pendingTargets.current.delete(id);
+                    setResult(null); setPtHourlyInput(e.target.value);
+                  }}
                   placeholder="VD: 100000"
                   className="h-9 text-sm bg-card border-border"
                 />
@@ -281,9 +345,12 @@ export function BulkSalaryDialog({
               <div>
                 <div className="mb-1 text-[11px] text-muted-foreground">Lương tháng cho FT (VND/tháng)</div>
                 <Input
-                  type="text" inputMode="numeric"
+                  type="text" inputMode="numeric" disabled={saving}
                   aria-label="Lương tháng cho FT" aria-invalid={invalidFt} aria-describedby={ftHelpId} value={ftMonthlyInput}
-                  onChange={(e) => setFtMonthlyInput(e.target.value)}
+                  onChange={(e) => {
+                    for (const [id, target] of pendingTargets.current) if (target.dealer.employment_type !== "part_time") pendingTargets.current.delete(id);
+                    setResult(null); setFtMonthlyInput(e.target.value);
+                  }}
                   placeholder="VD: 9000000"
                   className="h-9 text-sm bg-card border-border"
                 />
@@ -294,9 +361,15 @@ export function BulkSalaryDialog({
             </div>
           </div>
 
+          {result && (
+            <div role="status" className="text-xs">
+              {result.confirmed.length > 0 && <p>Đã xác minh: {result.confirmed.join(", ")}.</p>}
+              {result.pending.length > 0 && <p>Chưa xác minh: {result.pending.join(", ")}.</p>}
+            </div>
+          )}
           {/* Footer */}
           <div className="flex justify-end gap-2 border-t border-border pt-2">
-            <Button variant="outline" className="border-border" onClick={() => { setOpen(false); reset(); }}>
+            <Button disabled={saving} variant="outline" className="border-border" onClick={() => { setOpen(false); reset(); }}>
               Đóng
             </Button>
             <Button
