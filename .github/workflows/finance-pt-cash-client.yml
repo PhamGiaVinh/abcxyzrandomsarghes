@@ -1,0 +1,81 @@
+name: PT cash client recovery and additional writer qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/finance-pt-cash-client.yml'
+      - 'VinPoker/tests/financePtCashClient/**'
+permissions: {actions: read, contents: read}
+jobs:
+  cash-client:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env: {POSTGRES_HOST_AUTH_METHOD: trust, POSTGRES_DB: vinpoker_ops_pt_cash_client}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -d vinpoker_ops_pt_cash_client"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_pt_cash_client
+      PRODUCT_SHA: 'd7290d32b5410bb7c21053976e3e9c23ef98ad3f'
+      PRODUCT_RUN: '45729611481'
+      SQL_SHA256: '44106b5d3500dbb9c1b2f4d3a1feecfc6c83f1ff018266e1951f32d8b5eb2dcb'
+      SOURCE_SHA: '${{ github.event.pull_request.head.sha }}'
+      CAPTURE_RUN: '45651278424'
+      CAPTURE_SHA: 'c9dba24211152ddf5f010a46d0afab118cfbf482'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ github.event.pull_request.head.sha }}', persist-credentials: false, fetch-depth: 0}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Verify exact unchanged product and prior qualified dependency
+        working-directory: VinPoker
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          git diff --exit-code "$PRODUCT_SHA" HEAD -- src package.json package-lock.json vite.config.ts index.html ops.html supabase/pending-migrations/20261126001901_finance_pt_cash_drawer_link_v1.sql
+          echo "$SQL_SHA256  supabase/pending-migrations/20261126001901_finance_pt_cash_drawer_link_v1.sql" | sha256sum --check
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PRODUCT_RUN" > "$RUNNER_TEMP/prior-pt-cash-run.json"
+          jq -e --arg sha "$PRODUCT_SHA" '.conclusion=="success" and .head_sha==$sha and .path==".github/workflows/finance-pt-cash-drawer.yml"' "$RUNNER_TEMP/prior-pt-cash-run.json" >/dev/null
+          gh run download "$PRODUCT_RUN" -R "$GITHUB_REPOSITORY" -n pt-cash-drawer-qualification -D "$RUNNER_TEMP/prior-pt-cash-proof"
+          jq -e --arg sha "$PRODUCT_SHA" --arg sql "$SQL_SHA256" '.sourceSha==$sha and .migrationSha256==$sql and .actualPostgrest==true and .originalWritersCloseAndTriggersPreserved==true and .defaultOff==true and .productionMutation==false' "$RUNNER_TEMP/prior-pt-cash-proof/verification.json" >/dev/null
+      - name: Restore approved original schema to empty isolated database
+        working-directory: VinPoker
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CAPTURE_RUN" > "$RUNNER_TEMP/funding-capture.json"
+          jq -e --arg sha "$CAPTURE_SHA" --arg owner "$GITHUB_REPOSITORY_OWNER" '.conclusion=="success" and .head_sha==$sha and .head_branch=="main" and .event=="workflow_dispatch" and .actor.login==$owner and .path==".github/workflows/capture-live-public-schema.yml"' "$RUNNER_TEMP/funding-capture.json" >/dev/null
+          export SCHEMA_ARTIFACT_DIR="$RUNNER_TEMP/funding-schema"
+          gh run download "$CAPTURE_RUN" -R "$GITHUB_REPOSITORY" -n live-public-schema -D "$SCHEMA_ARTIFACT_DIR"
+          node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
+          test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
+          node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Install locked test dependencies and browser
+        working-directory: VinPoker
+        run: |
+          npm ci --ignore-scripts --no-audit --fund=false
+          npx playwright install --with-deps chromium
+      - name: Verify only additional daily writer and actual payment client recovery
+        working-directory: VinPoker
+        run: node tests/financePtCashClient/client.http.mjs
+      - name: Upload synthetic aggregate receipts and screenshots only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pt-cash-client-qualification
+          path: |
+            ${{ runner.temp }}/pt-cash-client/*.json
+            ${{ runner.temp }}/pt-cash-client/*.png
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove runner-local schema
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/funding-schema"
