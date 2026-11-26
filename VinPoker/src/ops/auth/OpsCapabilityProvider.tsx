@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { useOpsAuth } from "@/ops/auth/OpsAuthProvider";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import {
   loadOpsCapabilities,
   loadSuperAdminClubPage,
@@ -111,6 +112,9 @@ export function OpsCapabilityProvider({ children }: { children: ReactNode }) {
     }
 
     let cancelled = false;
+    let checking = false;
+    let activeRead: AbortController | null = null;
+    let metadataIds: string | null = null;
     // A verified same-actor refocus still reloads canonical capabilities, but
     // keeps the current workspace mounted until that result settles.
     if (verifiedScopeActor.current !== user.id) {
@@ -124,36 +128,53 @@ export function OpsCapabilityProvider({ children }: { children: ReactNode }) {
       setMetadataError(null);
     }
 
-    void (async () => {
+    const check = async () => {
+      if (cancelled || checking) return;
+      checking = true;
+      const controller = new AbortController();
+      activeRead = controller;
       try {
-        const loaded = await loadOpsCapabilities(rpcClient);
+        // The generated database types may precede the unified scope RPC. The
+        // actual Supabase RPC builder supports request cancellation.
+        type ScopeRequest = PromiseLike<{ data: unknown; error: { code?: string; message?: string } | null }> & {
+          abortSignal: (signal: AbortSignal) => ScopeRequest;
+        };
+        const cancellable = client as unknown as { rpc: (name: string, args?: Record<string, unknown>) => ScopeRequest };
+        const scopedRpc: OpsRpcClient = { rpc: (name, args) => Promise.resolve(cancellable.rpc(name, args).abortSignal(controller.signal)) };
+        const loaded = await observeTrackerContextRead(loadOpsCapabilities(scopedRpc));
         if (cancelled) return;
         verifiedScopeActor.current = user.id;
         setScopeActorId(user.id);
         setScopeError(null);
         setMetadataError(null);
-        setScope(loaded.scope);
+        const orderedScope = [...loaded.scope].sort((a, b) => a.club_id.localeCompare(b.club_id));
+        setScope(current => JSON.stringify(current) === JSON.stringify(orderedScope) ? current : orderedScope);
         setIsSuperAdmin(loaded.global.is_super_admin);
         setCapabilitySource(loaded.source);
 
-        const clubIds = [...new Set(loaded.scope.map((row) => row.club_id))];
+        const clubIds = orderedScope.map(row => row.club_id);
         setClubs((current) => current.filter((club) => clubIds.includes(club.id)));
         if (!clubIds.length) {
+          metadataIds = '';
           setLoading(false);
           return;
         }
+        const idKey = clubIds.join(',');
+        if (metadataIds === idKey) { setLoading(false); return; }
 
-        const metadataResult = await client.from("clubs").select("id,name").in("id", clubIds);
+        const metadataResult = await observeTrackerContextRead(client.from("clubs").select("id,name").in("id", clubIds).abortSignal(controller.signal));
         if (cancelled) return;
         if (metadataResult.error) {
           setMetadataError("Tên CLB tạm thời chưa tải được; quyền server vẫn được giữ nguyên.");
           setClubs([]);
         } else {
+          metadataIds = idKey;
           setClubs((metadataResult.data ?? []) as OpsClubMetadata[]);
         }
         setLoading(false);
       } catch {
         if (cancelled) return;
+        metadataIds = null;
         verifiedScopeActor.current = null;
         setScopeActorId(null);
         setScope([]);
@@ -162,11 +183,19 @@ export function OpsCapabilityProvider({ children }: { children: ReactNode }) {
         setClubs([]);
         setScopeError("Không tải được phạm vi vận hành. Hệ thống đã khóa quyền để bảo vệ CLB.");
         setLoading(false);
+      } finally {
+        controller.abort();
+        if (activeRead === controller) activeRead = null;
+        checking = false;
       }
-    })();
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 5000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
+      activeRead?.abort();
     };
   }, [authLoading, client, revision, rpcClient, user, verificationRevision]);
 
