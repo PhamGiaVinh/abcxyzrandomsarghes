@@ -1,0 +1,69 @@
+name: Payroll period browser and API qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/finance-payroll-period-native.yml'
+      - 'VinPoker/tests/financePayrollPeriod/**'
+permissions: {actions: read, contents: read}
+jobs:
+  payroll-period:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    services:
+      postgres:
+        image: postgres:17
+        env: {POSTGRES_HOST_AUTH_METHOD: trust, POSTGRES_DB: vinpoker_ops_payroll_period}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -d vinpoker_ops_payroll_period"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_payroll_period
+      SOURCE_SHA: '${{ github.event.pull_request.head.sha }}'
+      PRODUCT_SHA: '53754a6c0c059b7b2976f092f79fde4301e3e5ba'
+      PRODUCT_CI: '45725573487'
+      CAPTURE_RUN: '45651278424'
+      CAPTURE_SHA: 'c9dba24211152ddf5f010a46d0afab118cfbf482'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ github.event.pull_request.head.sha }}', persist-credentials: false, fetch-depth: 0}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Reuse only exact unchanged product CI and approved schema capture
+        working-directory: VinPoker
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          git diff --exit-code "$PRODUCT_SHA" HEAD -- src package.json package-lock.json vite.config.ts index.html ops.html
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$PRODUCT_CI" > "$RUNNER_TEMP/payroll-product-ci.json"
+          jq -e --arg sha "$PRODUCT_SHA" '.conclusion=="success" and .head_sha==$sha and .path==".github/workflows/finance-read-integrity.yml"' "$RUNNER_TEMP/payroll-product-ci.json" >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CAPTURE_RUN" > "$RUNNER_TEMP/payroll-capture.json"
+          jq -e --arg sha "$CAPTURE_SHA" --arg owner "$GITHUB_REPOSITORY_OWNER" '.conclusion=="success" and .head_sha==$sha and .head_branch=="main" and .event=="workflow_dispatch" and .actor.login==$owner and .path==".github/workflows/capture-live-public-schema.yml"' "$RUNNER_TEMP/payroll-capture.json" >/dev/null
+          export SCHEMA_ARTIFACT_DIR="$RUNNER_TEMP/payroll-period-schema"
+          gh run download "$CAPTURE_RUN" -R "$GITHUB_REPOSITORY" -n live-public-schema -D "$SCHEMA_ARTIFACT_DIR"
+          node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
+          test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
+          node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Install locked dependencies and browser
+        working-directory: VinPoker
+        run: |
+          npm ci --ignore-scripts --no-audit --fund=false
+          npx playwright install --with-deps chromium
+      - name: Verify actual payroll views and HTTP period scope
+        working-directory: VinPoker
+        run: node tests/financePayrollPeriod/period.http.mjs
+      - name: Upload synthetic receipts and screenshots only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payroll-period-browser
+          path: |
+            ${{ runner.temp }}/payroll-period-browser/*.json
+            ${{ runner.temp }}/payroll-period-browser/*.png
+          if-no-files-found: ignore
+          retention-days: 14
