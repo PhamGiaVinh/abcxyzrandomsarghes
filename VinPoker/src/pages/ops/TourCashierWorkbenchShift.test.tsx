@@ -321,6 +321,25 @@ describe("closed Cashier shift correction", () => {
       expect(screen.queryByText(/Thưởng đã chi từ két/)).not.toBeInTheDocument();
     }
   });
+  it.each(['verified','invalid'] as const)('shows only verified linked PT cash for the closed shift (%s)',async kind=>{
+    const normal=mock.rpc.getMockImplementation()!;
+    mock.rpc.mockImplementation((name,args)=>name==='cashier_shift_summary_v1'
+      ?Promise.resolve({data:{...summary(args.p_shift_id),totals:{...summary(args.p_shift_id).totals,dealer_pt_cash_out:kind==='verified'?5000000:null}},error:null})
+      :normal(name,args));
+    render(<TourCashierWorkbench/>);
+    if(kind==='verified')expect(await screen.findByText('Lương dealer PT có chứng từ chi từ két: 5.000.000 VND')).toBeVisible();
+    else {await screen.findByText(/Không đọc được ca vừa chốt/);expect(screen.queryByText(/Lương dealer PT có chứng từ/)).toBeNull();}
+  });
+  it.each(['verified','invalid','legacy'] as const)('shows only verified expense cash for the closed shift (%s)',async kind=>{
+    const normal=mock.rpc.getMockImplementation()!;
+    mock.rpc.mockImplementation((name,args)=>name==='cashier_shift_summary_v1'
+      ?Promise.resolve({data:{...summary(args.p_shift_id),totals:{...summary(args.p_shift_id).totals,...(kind==='legacy'?{}:{club_expense_cash_out:kind==='verified'?1000000:null})}},error:null})
+      :normal(name,args));
+    render(<TourCashierWorkbench/>);
+    if(kind==='verified')expect(await screen.findByText('Chi phí có chứng từ chi từ két: 1.000.000 VND')).toBeVisible();
+    else if(kind==='invalid'){await screen.findByText(/Không đọc được ca vừa chốt/);expect(screen.queryByText(/Chi phí có chứng từ chi từ két/)).toBeNull();}
+    else{await screen.findByText(/Điều chỉnh ghi bổ sung/);expect(screen.queryByText(/Chi phí có chứng từ chi từ két/)).toBeNull();}
+  });
 
   it('does not replace absent closed-shift counted cash or variance with zero',async()=>{
     mock.closedMoney={counted_cash:null,variance_cash:null};

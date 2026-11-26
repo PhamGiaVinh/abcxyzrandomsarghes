@@ -38,3 +38,22 @@ it("displays the drawer prize outflow from the server", async () => {
   expect(await screen.findByText("Thưởng đã chi từ két")).toBeVisible();
   expect(screen.getByText("125.000 VND")).toBeVisible();
 });
+it('shows the linked dealer PT cash outflow separately from refunds and profit',async()=>{
+ rpc.mockResolvedValue({data:{...response,cash_flow:{...response.cash_flow,dealer_pt_cash_out:5000000}},error:null});
+ render(<CashierCashflowPanel clubId="club-test" range={range}/>);
+ expect(await screen.findByText('Lương dealer PT có chứng từ chi từ két')).toBeVisible();
+ expect(screen.getByText('5.000.000 VND')).toBeVisible();
+ expect(screen.getByText(/không cộng các số này thêm lần nữa/i)).toBeVisible();
+});
+it('does not display an unverifiable linked cash wage as zero',async()=>{
+ rpc.mockResolvedValue({data:{...response,cash_flow:{...response.cash_flow,dealer_pt_cash_out:null}},error:null});
+ render(<CashierCashflowPanel clubId="club-test" range={range}/>);
+ expect(await screen.findByRole('alert')).toBeVisible();
+ expect(screen.queryByText('Lương dealer PT có chứng từ chi từ két')).toBeNull();
+});
+it.each([1000000,null])('requires a verified explicit expense cash outflow %s',async(value)=>{
+ rpc.mockResolvedValue({data:{...response,cash_flow:{...response.cash_flow,club_expense_cash_out:value}},error:null});
+ render(<CashierCashflowPanel clubId="club-test" range={range}/>);
+ if(value===null){expect(await screen.findByRole('alert')).toBeVisible();expect(screen.queryByText('Chi phí có chứng từ chi từ két')).toBeNull();}
+ else{expect(await screen.findByText('Chi phí có chứng từ chi từ két')).toBeVisible();expect(screen.getByText('1.000.000 VND')).toBeVisible();expect(screen.getByText(/không cộng các số này thêm lần nữa/i)).toBeVisible();}
+});

@@ -1,0 +1,444 @@
+{
+  "captureRun": 45735507414,
+  "captureSha": "3caba9506f2b45099f86ed3af129216b1ac6a083",
+  "expense354SqlSha256": "4c7615860dba50225a6507f6b2db378f417701a3968bb0063414bdad1ac62632",
+  "ptSqlSha256": "44106b5d3500dbb9c1b2f4d3a1feecfc6c83f1ff018266e1951f32d8b5eb2dcb",
+  "serverVersion": "17.12 (Debian 17.12-1.pgdg13+1)",
+  "catalog": {
+    "indexes": [
+      {
+        "name": "cashier_buyin_movements_pkey",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX cashier_buyin_movements_pkey ON public.cashier_buyin_movements USING btree (id)"
+      },
+      {
+        "name": "cashier_movement_bank_unique",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX cashier_movement_bank_unique ON public.cashier_buyin_movements USING btree (bank_transaction_id) WHERE (bank_transaction_id IS NOT NULL)"
+      },
+      {
+        "name": "cashier_movement_prize_payment_unique",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX cashier_movement_prize_payment_unique ON public.cashier_buyin_movements USING btree (prize_payment_id) WHERE (prize_payment_id IS NOT NULL)"
+      },
+      {
+        "name": "cashier_movement_registration_idx",
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "definition": "CREATE INDEX cashier_movement_registration_idx ON public.cashier_buyin_movements USING btree (registration_id, created_at)"
+      },
+      {
+        "name": "cashier_movement_request_unique",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX cashier_movement_request_unique ON public.cashier_buyin_movements USING btree (club_id, idempotency_key)"
+      },
+      {
+        "name": "cashier_movement_shift_idx",
+        "ready": true,
+        "valid": true,
+        "unique": false,
+        "definition": "CREATE INDEX cashier_movement_shift_idx ON public.cashier_buyin_movements USING btree (shift_id, method, direction)"
+      },
+      {
+        "name": "cashier_one_movement_per_pt_wage_payment",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX cashier_one_movement_per_pt_wage_payment ON public.cashier_buyin_movements USING btree (dealer_pt_wage_payment_id) WHERE (dealer_pt_wage_payment_id IS NOT NULL)"
+      },
+      {
+        "name": "cashier_refund_method_unique",
+        "ready": true,
+        "valid": true,
+        "unique": true,
+        "definition": "CREATE UNIQUE INDEX cashier_refund_method_unique ON public.cashier_buyin_movements USING btree (refund_id, method) WHERE (refund_id IS NOT NULL)"
+      }
+    ],
+    "triggers": [
+      {
+        "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "name": "cashier_movement_immutable",
+        "owner": "postgres",
+        "table": "cashier_buyin_movements",
+        "config": [
+          "search_path=public, pg_temp"
+        ],
+        "enabled": "O",
+        "definition": "CREATE TRIGGER cashier_movement_immutable BEFORE DELETE OR UPDATE ON public.cashier_buyin_movements FOR EACH ROW EXECUTE FUNCTION cashier_movement_immutable_v1()",
+        "source_md5": "7d502166c6b8d558dacdc7da40e77f25",
+        "security_definer": false
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "finance_verify_pt_cash_movement",
+        "owner": "postgres",
+        "table": "cashier_buyin_movements",
+        "config": [
+          "search_path=\"\""
+        ],
+        "enabled": "O",
+        "definition": "CREATE TRIGGER finance_verify_pt_cash_movement BEFORE INSERT ON public.cashier_buyin_movements FOR EACH ROW EXECUTE FUNCTION floor_private.verify_pt_cash_movement_v1()",
+        "source_md5": "34ca6fad22adc6673abd2cf12bf21ab0",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "multi_day_cashier_payout_fence_v1",
+        "owner": "postgres",
+        "table": "cashier_buyin_movements",
+        "config": [
+          "search_path=\"\""
+        ],
+        "enabled": "O",
+        "definition": "CREATE TRIGGER multi_day_cashier_payout_fence_v1 BEFORE INSERT ON public.cashier_buyin_movements FOR EACH ROW EXECUTE FUNCTION private.multi_day_payout_source_fence_v1()",
+        "source_md5": "1da6ba42509a0677f12276345d4ea36d",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "multi_day_movement_identity_v1",
+        "owner": "postgres",
+        "table": "cashier_buyin_movements",
+        "config": [
+          "search_path=\"\""
+        ],
+        "enabled": "O",
+        "definition": "CREATE TRIGGER multi_day_movement_identity_v1 BEFORE INSERT ON public.cashier_buyin_movements FOR EACH ROW EXECUTE FUNCTION private.multi_day_movement_identity_v1()",
+        "source_md5": "0a5b23210dda14aa79f3f04ebde6481f",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "satellite_cashier_movement_phase_v1",
+        "owner": "postgres",
+        "table": "cashier_buyin_movements",
+        "config": [
+          "search_path=\"\""
+        ],
+        "enabled": "O",
+        "definition": "CREATE TRIGGER satellite_cashier_movement_phase_v1 BEFORE INSERT ON public.cashier_buyin_movements FOR EACH ROW EXECUTE FUNCTION private.satellite_cashier_movement_phase_v1()",
+        "source_md5": "3b12da3162c7852bd45f0187a8274ce7",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "satellite_no_cash_on_voucher_v1",
+        "owner": "postgres",
+        "table": "cashier_buyin_movements",
+        "config": [
+          "search_path=\"\""
+        ],
+        "enabled": "O",
+        "definition": "CREATE TRIGGER satellite_no_cash_on_voucher_v1 BEFORE INSERT ON public.cashier_buyin_movements FOR EACH ROW EXECUTE FUNCTION private.satellite_no_cash_on_voucher_v1()",
+        "source_md5": "aff1935049a8d4f7cdba2ac6ba348fe5",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "satellite_reject_orphan_movement_v1",
+        "owner": "postgres",
+        "table": "cashier_buyin_movements",
+        "config": [
+          "search_path=\"\""
+        ],
+        "enabled": "O",
+        "definition": "CREATE TRIGGER satellite_reject_orphan_movement_v1 BEFORE INSERT ON public.cashier_buyin_movements FOR EACH ROW EXECUTE FUNCTION private.satellite_reject_orphan_movement_v1()",
+        "source_md5": "a6a6dd3f87f61d357b167c7236a504cf",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "finance_bind_pt_cash_drawer",
+        "owner": "postgres",
+        "table": "dealer_pt_wage_payments",
+        "config": [
+          "search_path=\"\""
+        ],
+        "enabled": "O",
+        "definition": "CREATE TRIGGER finance_bind_pt_cash_drawer BEFORE INSERT ON public.dealer_pt_wage_payments FOR EACH ROW EXECUTE FUNCTION floor_private.bind_pt_cash_drawer_v1()",
+        "source_md5": "f5e7ffd869721e75b39abe5d1067e409",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "finance_preserve_pt_cash_source",
+        "owner": "postgres",
+        "table": "dealer_pt_wage_payments",
+        "config": [
+          "search_path=\"\""
+        ],
+        "enabled": "O",
+        "definition": "CREATE TRIGGER finance_preserve_pt_cash_source BEFORE UPDATE ON public.dealer_pt_wage_payments FOR EACH ROW EXECUTE FUNCTION floor_private.preserve_pt_cash_source_v1()",
+        "source_md5": "116a984e04df23463d97deb43b968c67",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "finance_record_pt_cash_movement",
+        "owner": "postgres",
+        "table": "dealer_pt_wage_payments",
+        "config": [
+          "search_path=\"\""
+        ],
+        "enabled": "O",
+        "definition": "CREATE TRIGGER finance_record_pt_cash_movement AFTER INSERT ON public.dealer_pt_wage_payments FOR EACH ROW EXECUTE FUNCTION floor_private.record_pt_cash_movement_v1()",
+        "source_md5": "5b28d70db5fb28ba963ef9952f7e2330",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "name": "trg_dealer_pt_wage_payments_immutable",
+        "owner": "postgres",
+        "table": "dealer_pt_wage_payments",
+        "config": [
+          "search_path=public"
+        ],
+        "enabled": "O",
+        "definition": "CREATE TRIGGER trg_dealer_pt_wage_payments_immutable BEFORE DELETE OR UPDATE ON public.dealer_pt_wage_payments FOR EACH ROW EXECUTE FUNCTION reject_dealer_pt_wage_payment_mutation()",
+        "source_md5": "eca5ffe7c0adaac347944e24a970b1c5",
+        "security_definer": true
+      }
+    ],
+    "functions": [
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "bind_pt_cash_drawer_v1",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "schema": "floor_private",
+        "identity": "",
+        "source_md5": "f5e7ffd869721e75b39abe5d1067e409",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "preserve_pt_cash_source_v1",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "schema": "floor_private",
+        "identity": "",
+        "source_md5": "116a984e04df23463d97deb43b968c67",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "record_pt_cash_movement_v1",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "schema": "floor_private",
+        "identity": "",
+        "source_md5": "5b28d70db5fb28ba963ef9952f7e2330",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "verify_pt_cash_movement_v1",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "schema": "floor_private",
+        "identity": "",
+        "source_md5": "34ca6fad22adc6673abd2cf12bf21ab0",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres,authenticated=X/postgres}",
+        "name": "cashier_cashflow_range_v1",
+        "owner": "postgres",
+        "config": [
+          "search_path=public, pg_temp"
+        ],
+        "schema": "public",
+        "identity": "p_club_id uuid, p_from timestamp with time zone, p_to timestamp with time zone",
+        "source_md5": "c95e949f38307fae5afe0f75de256236",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres,authenticated=X/postgres}",
+        "name": "cashier_close_shift_v1",
+        "owner": "postgres",
+        "config": [
+          "search_path=public, pg_temp"
+        ],
+        "schema": "public",
+        "identity": "p_shift_id uuid, p_counted_cash bigint",
+        "source_md5": "05f2f114e3cae4cc9f2176c1e16fcefa",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres,authenticated=X/postgres}",
+        "name": "cashier_shift_summary_v1",
+        "owner": "postgres",
+        "config": [
+          "search_path=public, pg_temp"
+        ],
+        "schema": "public",
+        "identity": "p_shift_id uuid",
+        "source_md5": "1f1c769ab4ca981905f8e8df03704b26",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres}",
+        "name": "cashier_tour_active_v1",
+        "owner": "postgres",
+        "config": [
+          "search_path=public, pg_temp"
+        ],
+        "schema": "public",
+        "identity": "p_club_id uuid",
+        "source_md5": "21190bf2f850451ef744e5dbccfbfab4",
+        "security_definer": true
+      },
+      {
+        "acl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "name": "is_club_cashier",
+        "owner": "postgres",
+        "config": [
+          "search_path=public"
+        ],
+        "schema": "public",
+        "identity": "_user_id uuid, _club_id uuid",
+        "source_md5": "1aec6322d94543227ecd2bf70d1eb2aa",
+        "security_definer": true
+      },
+      {
+        "acl": "{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "name": "record_club_expense",
+        "owner": "postgres",
+        "config": [
+          "search_path=\"\""
+        ],
+        "schema": "public",
+        "identity": "p_club_id uuid, p_category expense_category, p_amount_vnd bigint, p_incurred_at timestamp with time zone, p_description text, p_payment_status text, p_payment_source text, p_tournament_id uuid, p_series_id uuid, p_attachment_url text, p_adjusts_id uuid, p_idempotency_key text",
+        "source_md5": "a96cdd76edcbfb03cc1812b26047e179",
+        "security_definer": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "cashier_buyin_movements_amount_check",
+        "validated": true,
+        "definition": "CHECK ((amount > 0))"
+      },
+      {
+        "name": "cashier_buyin_movements_bank_transaction_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (bank_transaction_id) REFERENCES bank_transactions(id)"
+      },
+      {
+        "name": "cashier_buyin_movements_check",
+        "validated": true,
+        "definition": "CHECK (((applied_amount >= 0) AND (applied_amount <= amount)))"
+      },
+      {
+        "name": "cashier_buyin_movements_club_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id)"
+      },
+      {
+        "name": "cashier_buyin_movements_dealer_pt_wage_payment_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (dealer_pt_wage_payment_id) REFERENCES dealer_pt_wage_payments(id) ON DELETE RESTRICT"
+      },
+      {
+        "name": "cashier_buyin_movements_direction_check",
+        "validated": true,
+        "definition": "CHECK ((direction = ANY (ARRAY['in'::text, 'out'::text])))"
+      },
+      {
+        "name": "cashier_buyin_movements_method_check",
+        "validated": true,
+        "definition": "CHECK ((method = ANY (ARRAY['cash'::text, 'bank'::text])))"
+      },
+      {
+        "name": "cashier_buyin_movements_pkey",
+        "validated": true,
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "cashier_buyin_movements_prize_payment_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (prize_payment_id) REFERENCES tournament_prize_payments(id) ON DELETE RESTRICT"
+      },
+      {
+        "name": "cashier_buyin_movements_purpose_check",
+        "validated": true,
+        "definition": "CHECK ((purpose = ANY (ARRAY['buyin'::text, 'refund'::text, 'drawer_adjustment'::text, 'prize_payout'::text, 'dealer_pt_wage'::text])))"
+      },
+      {
+        "name": "cashier_buyin_movements_refund_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (refund_id) REFERENCES cashier_refund_requests(id)"
+      },
+      {
+        "name": "cashier_buyin_movements_registration_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (registration_id) REFERENCES tournament_registrations(id)"
+      },
+      {
+        "name": "cashier_buyin_movements_shift_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (shift_id) REFERENCES cashier_till_shifts(id)"
+      },
+      {
+        "name": "cashier_buyin_movements_tournament_id_fkey",
+        "validated": true,
+        "definition": "FOREIGN KEY (tournament_id) REFERENCES tournaments(id)"
+      },
+      {
+        "name": "cashier_movement_shape",
+        "validated": true,
+        "definition": "CHECK ((((purpose = ANY (ARRAY['buyin'::text, 'refund'::text, 'drawer_adjustment'::text])) AND (prize_payment_id IS NULL) AND (((purpose = 'drawer_adjustment'::text) AND (method = 'cash'::text) AND (shift_id IS NOT NULL) AND (registration_id IS NULL) AND (bank_transaction_id IS NULL)) OR ((purpose = 'buyin'::text) AND (direction = 'in'::text) AND (registration_id IS NOT NULL) AND (refund_id IS NULL) AND (((method = 'cash'::text) AND (shift_id IS NOT NULL) AND (bank_transaction_id IS NULL)) OR ((method = 'bank'::text) AND (bank_transaction_id IS NOT NULL) AND (shift_id IS NULL)))) OR ((purpose = 'refund'::text) AND (direction = 'out'::text) AND (registration_id IS NOT NULL) AND (refund_id IS NOT NULL) AND (bank_transaction_id IS NULL) AND (((method = 'cash'::text) AND (shift_id IS NOT NULL)) OR ((method = 'bank'::text) AND (shift_id IS NULL)))))) OR ((purpose = 'prize_payout'::text) AND (prize_payment_id IS NOT NULL) AND (tournament_id IS NOT NULL) AND (method = 'cash'::text) AND (direction = 'out'::text) AND (shift_id IS NOT NULL) AND (registration_id IS NULL) AND (refund_id IS NULL) AND (bank_transaction_id IS NULL) AND (applied_amount = amount)) OR ((purpose = 'dealer_pt_wage'::text) AND (method = 'cash'::text) AND (direction = 'out'::text) AND (shift_id IS NOT NULL) AND (dealer_pt_wage_payment_id IS NOT NULL) AND (tournament_id IS NULL) AND (registration_id IS NULL) AND (refund_id IS NULL) AND (bank_transaction_id IS NULL) AND (prize_payment_id IS NULL) AND (applied_amount = amount))))"
+      },
+      {
+        "name": "cashier_pt_source_shape",
+        "validated": true,
+        "definition": "CHECK (((purpose = 'dealer_pt_wage'::text) = (dealer_pt_wage_payment_id IS NOT NULL)))"
+      },
+      {
+        "name": "cashier_satellite_funding_phase_v1",
+        "validated": true,
+        "definition": "CHECK (((satellite_funding_phase IS NULL) OR (satellite_funding_phase = ANY (ARRAY['open'::text, 'late'::text]))))"
+      }
+    ],
+    "source_columns": [
+      {
+        "type": "uuid",
+        "table": "cashier_buyin_movements",
+        "column": "dealer_pt_wage_payment_id",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "type": "boolean",
+        "table": "cashier_tour_settings",
+        "column": "pt_cash_drawer_link_enabled",
+        "default": "false",
+        "not_null": true
+      },
+      {
+        "type": "uuid",
+        "table": "dealer_pt_wage_payments",
+        "column": "cashier_shift_id",
+        "default": null,
+        "not_null": false
+      }
+    ]
+  }
+}
