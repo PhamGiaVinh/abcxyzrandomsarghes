@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {randomBytes,createHmac,createHash} from 'node:crypto';
-import {mkdirSync,readFileSync,writeFileSync,copyFileSync} from 'node:fs';
+import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createServer} from 'vite';
 import {chromium} from 'playwright';
@@ -13,12 +13,13 @@ const sqlFiles=[
  ['supabase/pending-migrations/20261126001901_finance_pt_cash_drawer_link_v1.sql','44106b5d3500dbb9c1b2f4d3a1feecfc6c83f1ff018266e1951f32d8b5eb2dcb'],
  ['supabase/pending-migrations/20261126011530_finance_expense_cash_source_v1.sql','34464adca0c8546bae2e7b81dee1fee43dbd50c2c44dc68be00b5fd0102e92bf'],
  ['supabase/pending-migrations/20261126023026_finance_expense_cash_source_status_v1.sql','28287f7df15621f00c8e5edd9ebd233d2822eead10af96807bca9fbe0840f914'],
+ ['supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql','af120dd8ba5cf4ec3aae0700522bb3028915237811a39d591381130841355f46'],
 ];
 for(const [file,hash] of sqlFiles)assert.equal(createHash('sha256').update(readFileSync(file)).digest('hex'),hash);
 const api='http://127.0.0.1:3021',base='http://127.0.0.1:23870',container='expense-cash-client-http';
 const secret=randomBytes(48).toString('hex'),tokens=[];
 const folder=join(process.env.RUNNER_TEMP,'expense-cash-client');mkdirSync(folder,{recursive:true});
-const proof={sourceSha:process.env.SOURCE_SHA,backendSha:'aca9e00c2fe9a3b0cc1a028bd70c40c4ba48a1e8',backendRun:'45736731928',sqlSha256:sqlFiles[2][1],browser:[],productionMutation:false,productionCapacityClaim:false};
+const proof={sourceSha:process.env.SOURCE_SHA,baselineBackendSha:'aca9e00c2fe9a3b0cc1a028bd70c40c4ba48a1e8',baselineBackendRun:'45736731928',authoritySqlSha256:sqlFiles[4][1],sqlSha256:sqlFiles[2][1],browser:[],productionMutation:false,productionCapacityClaim:false};
 const id=n=>`18140000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 function sql(query){const r=spawnSync('psql',['-XqAt','-v','ON_ERROR_STOP=1','-c',query],{encoding:'utf8'});assert.equal(r.status,0,String(r.stderr).slice(0,1600));return r.stdout.trim();}
 const read=q=>JSON.parse(sql(q));
@@ -41,14 +42,7 @@ const zero=f=>assert.deepEqual(facts(f),{expenses:0,receipts:0,movements:0});
 const journal=(page,f)=>page.evaluate(key=>sessionStorage.getItem(key),`vinpoker:cashier-expense:v1:${f.cashier}:${f.club}`);
 let browser,server,livePage;
 try{
- const prior=JSON.parse(readFileSync(join(process.env.EXPENSE_CLIENT_PARTIAL_PROOF,'failure.json'),'utf8'));
- assert.equal(prior.sourceSha,'de2371183801268ddc1aa829c15ac2874bcb40c6');
- assert.equal(prior.statusReaderSqlSha256,sqlFiles[3][1]);assert.equal(prior.sqlSha256,sqlFiles[2][1]);
- assert.deepEqual(prior.browser,[{width:320,scenario:'committed-lost-ack',posts:1,lookupReads:1,oneCostReceiptMovement:true,recordedCash:9000000,overflow:false,pageErrors:0}]);
- assert.match(prior.error,/validate_unique_display_name/);
- const reusedImage=readFileSync(join(process.env.EXPENSE_CLIENT_PARTIAL_PROOF,'committed-lost-ack-320.png'));
- copyFileSync(join(process.env.EXPENSE_CLIENT_PARTIAL_PROOF,'committed-lost-ack-320.png'),join(folder,'reused-committed-lost-ack-320.png'));
- proof.reusedBrowser=[{...prior.browser[0],sourceSha:prior.sourceSha,producerRun:'45743258253',imageSha256:createHash('sha256').update(reusedImage).digest('hex')}];
+ // Authority SQL changed: every client case runs on this source; no prior case is reused.
  assert.equal(sql('SELECT count(*) FROM public.clubs'),'0');
  for(const [file] of sqlFiles){const r=spawnSync('psql',['-Xq','-v','ON_ERROR_STOP=1','--single-transaction','-f',file],{encoding:'utf8'});assert.equal(r.status,0,String(r.stderr).slice(0,1600));}
  proof.statusReaderSqlSha256=sqlFiles[3][1];
@@ -66,10 +60,6 @@ try{
  let ready=false;for(let i=0;i<60;i++){try{if((await fetch(api,{signal:AbortSignal.timeout(500)})).status<500){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,500));}assert.ok(ready);
  server=await createServer({configFile:'tests/financeExpenseCashClient/http.vite.config.ts'});await server.listen();browser=await chromium.launch({headless:true});let index=100;
  for(const width of [320,375,414,768,1280])for(const scenario of ['committed-lost-ack','pending-reload-same-intent','closed-before-submit','revoked-unknown']){
-  // This exact completed case is retained from a failed producer whose NEXT
-  // fixture violated the real unique display-name constraint. Product/src/SQL
-  // equality is enforced by the workflow; never call that producer a green job.
-  if(width===320&&scenario==='committed-lost-ack')continue;
   const f=await seed(index++),page=await browser.newPage({viewport:{width,height:1000},reducedMotion:'reduce'});livePage=page;
   const writes=[],lookups=[],errors=[];let first=true,denyLookup=scenario==='pending-reload-same-intent';
   page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.url().endsWith('/rpc/record_cashier_club_expense_v1'))writes.push(r.postDataJSON());if(r.url().includes('receipts%3A')||decodeURIComponent(r.url()).includes('receipts:'))lookups.push(r.url());});
@@ -123,6 +113,7 @@ try{
  await page.addInitScript(input=>{window.__expenseCashInput=input;},{club:denied.club,actor:denied.accountant,jwt:token(denied.accountant),from:new Date(Date.now()-86400000).toISOString(),to:new Date(Date.now()+86400000).toISOString()});
  await page.route('**/*',route=>route.request().url().startsWith(base)||route.request().url().startsWith('data:')?route.continue():route.abort());
  await page.goto(base+'/tests/financeExpenseCashClient/http.preview.html');await page.getByRole('alert').filter({hasText:'chưa có quyền chi từ két'}).waitFor();assert.equal(await page.getByLabel('Két chi tiền',{exact:true}).count(),0);zero(denied);await page.close();livePage=null;
+ assert.equal(proof.browser.length,20,'All five widths and four recovery cases must run on the new authority SQL');
  proof.accountantSpendingDenied=true;proof.actualPostgrest=true;proof.scope='actual expense source entry and CashflowPanel with real SDK/HTTP/PostgreSQL; synthetic auth bootstrap, loopback only; not full parent workbench, hosted auth, approval policy, TC3 or capacity';writeFileSync(join(folder,'verification.json'),JSON.stringify(proof));console.log('EXPENSE_CASH_CLIENT_NATIVE_PASS');
 }catch(e){let message=String(e.message).replaceAll(secret,'[REDACTED]');for(const t of tokens)message=message.replaceAll(t,'[REDACTED]');writeFileSync(join(folder,'failure.json'),JSON.stringify({...proof,error:message}));if(livePage)await livePage.screenshot({path:join(folder,'failure.png'),fullPage:true}).catch(()=>{});console.error('EXPENSE_CASH_CLIENT_FAILED',message);process.exitCode=1;}
 finally{await browser?.close();await server?.close();spawnSync('docker',['rm','--force',container],{stdio:'ignore'});}
