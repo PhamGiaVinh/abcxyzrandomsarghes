@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {execFileSync, spawnSync} from 'node:child_process';
+import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {createHmac, randomBytes, randomUUID, createHash} from 'node:crypto';
 import {readFileSync, writeFileSync, mkdirSync} from 'node:fs';
 import http from 'node:http';
@@ -23,6 +23,15 @@ const ids = Object.fromEntries(['owner', 'operator', 'clubA', 'clubB', 'pt', 'ft
 const secret = randomBytes(48).toString('hex');
 const api = 'http://127.0.0.1:3023';
 const container = 'l08-bulk-salary-http';
+const pgPort = Number(process.env.PGPORT);
+assert.ok(Number.isInteger(pgPort) && pgPort >= 1024 && pgPort <= 65535);
+const localBinary = process.env.L08_POSTGREST_WSL_BINARY;
+const localDistro = process.env.L08_POSTGREST_WSL_DISTRO;
+if (localBinary) {
+  assert.equal(process.platform, 'win32');
+  assert.match(localBinary, /^\/tmp\/[A-Za-z0-9_.\/-]+\/postgrest$/);
+  assert.equal(localDistro, 'PokerVision-P16-4C-Eval');
+}
 const token = sub => {
   const now = Math.floor(Date.now() / 1000);
   const body = [
@@ -34,21 +43,29 @@ const token = sub => {
 const jwt = token(ids.operator);
 const sdk = actor => createClient(api, 'isolated-l08-client', {
   auth: {persistSession: false, autoRefreshToken: false, detectSessionInUrl: false},
-  global: {headers: {Authorization: `Bearer ${token(actor)}`}},
+  global: {headers: {Authorization: `Bearer ${token(actor)}`},
+    fetch: (url, options) => fetch(String(url).replace(api+'/rest/v1/', api+'/'), options)},
 });
 const receipt = {
   sourceSha: execFileSync('git', ['rev-parse', 'HEAD'], {encoding: 'utf8'}).trim(),
   schemaCaptureRun: process.env.CAPTURE_RUN,
   schemaCaptureSha: process.env.CAPTURE_SHA,
   actualPostgrest: true, syntheticAuth: true, productionMutation: false, qualification: false,
-  cases: [], pageErrors: 0,
+  cases: [], pageErrors: 0, http: [], requestFailures: [], restPrefixAdapter: true,
   scope: 'Actual BulkSalaryDialog and Supabase SDK through loopback PostgREST/captured-schema PostgreSQL17. Synthetic signed auth and owned TEST fixtures; not hosted auth, parent workbench, salary settlement, full E05 or production acceptance.',
 };
-let browser, server, created = false;
+let browser, server, localProcess, localPid, created = false;
 try {
   sql(`
     DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='authenticator') THEN CREATE ROLE authenticator NOINHERIT LOGIN; END IF; END $$;
+    ALTER ROLE authenticator LOGIN NOINHERIT;
     GRANT anon,authenticated,service_role TO authenticator;
+    -- restore-schema-test-baseline supplies a legacy SQL-only auth.uid stub.
+    -- This owned fixture also accepts the actual JSON claim setting used by PostgREST.
+    CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $uid$
+      SELECT coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),
+        nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid
+    $uid$;
     INSERT INTO auth.users(id) VALUES ('${ids.owner}'),('${ids.operator}');
     INSERT INTO public.profiles(user_id,display_name) VALUES ('${ids.owner}','L08 TEST owner'),('${ids.operator}','L08 TEST operator');
     INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES
@@ -73,14 +90,29 @@ try {
     END $$;
     CREATE TRIGGER l08_client_fixture_audit AFTER UPDATE ON public.dealers FOR EACH ROW EXECUTE FUNCTION l08_client_fixture.salary_audit();
   `);
-  const run = spawnSync('docker', ['run', '--detach', '--name', container, '--network', 'host',
-    ...['PGRST_DB_URI', 'PGRST_DB_SCHEMAS', 'PGRST_DB_ANON_ROLE', 'PGRST_JWT_SECRET', 'PGRST_SERVER_HOST', 'PGRST_SERVER_PORT'].flatMap(key => ['-e', key]),
-    'postgrest/postgrest:v13.0.7'], {encoding: 'utf8', env: {...process.env,
-    PGRST_DB_URI: 'postgres://authenticator@127.0.0.1:5432/vinpoker_ops_l09',
+  const keys = ['PGRST_DB_URI', 'PGRST_DB_SCHEMAS', 'PGRST_DB_ANON_ROLE', 'PGRST_JWT_SECRET', 'PGRST_SERVER_HOST', 'PGRST_SERVER_PORT'];
+  const apiEnv = {...process.env,
+    PGRST_DB_URI: `postgres://authenticator@127.0.0.1:${pgPort}/vinpoker_ops_l09`,
     PGRST_DB_SCHEMAS: 'public', PGRST_DB_ANON_ROLE: 'anon', PGRST_JWT_SECRET: secret,
     PGRST_SERVER_HOST: '127.0.0.1', PGRST_SERVER_PORT: '3023',
-  }});
-  assert.equal(run.status, 0, 'isolated PostgREST startup'); created = true;
+  };
+  if (localBinary) {
+    // Existing local tool only. Secret remains in environment; stdout reports its owned PID only.
+    localProcess = spawn('wsl.exe', ['-d', localDistro, '--exec', 'sh', '-c', 'echo $$; exec "$1"', 'l08-postgrest', localBinary],
+      {env: {...apiEnv, WSLENV: [...(process.env.WSLENV?.split(':') ?? []), ...keys].join(':')}, windowsHide:true});
+    await new Promise((resolve,reject) => {
+      let text=''; const timer=setTimeout(()=>reject(new Error('local PostgREST PID timeout')),10000);
+      localProcess.stdout.on('data',chunk=>{text+=chunk;const first=text.split(/\r?\n/)[0];if(text.includes('\n') && /^\d+$/.test(first)){localPid=Number(first);clearTimeout(timer);resolve();}});
+      localProcess.once('error',error=>{clearTimeout(timer);reject(error);});
+    });
+    localProcess.stderr.resume();
+    receipt.postgrestRuntime = {kind:'existing-local-wsl-binary',version:execFileSync('wsl.exe',['-d',localDistro,'--exec',localBinary,'--version'],{encoding:'utf8'}).trim(),
+      binarySha256:execFileSync('wsl.exe',['-d',localDistro,'--exec','sha256sum',localBinary],{encoding:'utf8'}).trim().split(/\s/)[0]};
+  } else {
+    const run = spawnSync('docker', ['run', '--detach', '--name', container, '--network', 'host', ...keys.flatMap(key=>['-e',key]), 'postgrest/postgrest:v13.0.7'], {encoding:'utf8',env:apiEnv});
+    assert.equal(run.status,0,'isolated PostgREST startup'); created=true;
+    receipt.postgrestRuntime = {kind:'disposable-ci-container',image:'postgrest/postgrest:v13.0.7'};
+  }
   let ready = false;
   for (let i = 0; i < 80; i++) {
     try { ready = (await fetch(api)).ok; } catch {}
@@ -99,6 +131,10 @@ try {
   const changes = id => Number(sql(`SELECT count(*) FROM l08_client_fixture.salary_audit WHERE dealer_id='${id}'`));
   const rate = id => JSON.parse(sql(`SELECT row_to_json(d) FROM (SELECT ${columns} FROM public.dealers WHERE id='${id}') d;`));
   const client = sdk(ids.operator);
+  const initialRead = await client.from('dealers').select('id').eq('club_id',ids.clubA);
+  receipt.actorFixtureRead = {errorCode:initialRead.error?.code ?? null,rows:initialRead.data?.length ?? 0};
+  assert.equal(initialRead.error,null,'actor can read the owned A fixture');
+  assert.equal(initialRead.data.length,2);
   const code = await build({
     stdin: {resolveDir: process.cwd(), loader: 'tsx', contents: `
       import React from 'react'; import {createRoot} from 'react-dom/client';
@@ -112,7 +148,8 @@ try {
       plugin.onResolve({filter: /integrations\/supabase\/client$/}, () => ({path: 'client', namespace: 'fixture'}));
       plugin.onLoad({filter: /.*/, namespace: 'fixture'}, () => ({resolveDir: process.cwd(), loader: 'js', contents: `
         import {createClient} from '@supabase/supabase-js';
-        export const supabase=createClient(window.__config.api,'isolated-l08-client',{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{headers:{Authorization:'Bearer '+window.__config.jwt}}});
+        // Supabase's gateway strips /rest/v1 before PostgREST; preserve every other request property.
+        export const supabase=createClient(window.__config.api,'isolated-l08-client',{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{headers:{Authorization:'Bearer '+window.__config.jwt},fetch:(url,options)=>fetch(String(url).replace(window.__config.api+'/rest/v1/',window.__config.api+'/'),options)}});
         // Measurement only: delegate the real SDK builder unchanged. The timer task
         // marks completion after its body parse and the caller's await continuation.
         window.__completedRows=[];
@@ -146,6 +183,18 @@ try {
       return route.continue();
     });
     page.on('pageerror', () => { receipt.pageErrors++; });
+    page.on('requestfailed', request => {
+      if (new URL(request.url()).origin === api) receipt.requestFailures.push({method:request.method(),error:request.failure()?.errorText});
+    });
+    page.on('response', async response => {
+      if (new URL(response.url()).origin !== api) return;
+      try {
+        const value=await response.json(), row=Array.isArray(value)?value[0]:value;
+        receipt.http.push({method:response.request().method(),status:response.status(),code:value?.code??null,
+          rows:Array.isArray(value)?value.length:null,idKnown:[ids.pt,ids.ft,ids.other].includes(row?.id),
+          fields:row?Object.keys(row):[]});
+      } catch {}
+    });
     await page.goto(origin);
     await page.getByRole('button', {name:'Áp lương hàng loạt',exact:true}).click();
     await page.getByRole('button', {name:'Chọn tất cả đang hiển thị'}).click();
@@ -273,5 +322,10 @@ try {
   if (browser) await browser.close();
   if (server) await new Promise(resolve=>server.close(resolve));
   if (created) spawnSync('docker',['rm','--force',container],{stdio:'ignore'});
+  if (localPid) {
+    const same = spawnSync('wsl.exe',['-d',localDistro,'--exec','sh','-c','if test ! -e /proc/$1; then exit 0; fi; test "$(readlink /proc/$1/exe)" = "$2" && kill -TERM "$1"','l08-owned-stop',String(localPid),localBinary],{stdio:'ignore',windowsHide:true});
+    assert.equal(same.status,0,'owned local PostgREST stopped');
+    if (localProcess) await new Promise(resolve=>localProcess.exitCode!==null?resolve():localProcess.once('exit',resolve));
+  }
 }
 console.log(JSON.stringify(receipt));
