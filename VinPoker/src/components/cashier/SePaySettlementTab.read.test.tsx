@@ -103,7 +103,7 @@ it('removes an open scoped worklist and pending actions when server permission i
  expect(screen.queryByText('visible before revoke')).not.toBeInTheDocument();
  expect(screen.getByText('Không có quyền đọc danh sách đối soát SePay.')).toBeInTheDocument();
  expect(screen.queryByRole('button',{name:'Tra cứu yêu cầu đang chờ'})).not.toBeInTheDocument();
- expect(screen.queryByRole('button',{name:'Bỏ qua',exact:true})).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Bỏ qua'})).not.toBeInTheDocument();
  expect(sessionStorage.getItem(key)).toBe(JSON.stringify(pending));
  expect(rpc.mock.calls.every(call=>call[0]==='sepay_cashier_settlement_scope_v1')).toBe(true);
 });
@@ -151,7 +151,7 @@ it('keeps a B read failure after a delayed A response arrives for the same actor
   amount:100000,reg_total_pay:null,amount_delta:null,content:'late A must stay hidden'}],error:null});});
  expect(screen.getByRole('alert')).toHaveTextContent('Không tải được');
  expect(screen.queryByText('late A must stay hidden')).not.toBeInTheDocument();
- expect(screen.queryByRole('button',{name:'Bỏ qua',exact:true})).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Bỏ qua'})).not.toBeInTheDocument();
  expect(rpc.mock.calls.map(call=>call[1].p_club_id)).toEqual([clubA,clubB]);
 });
 
