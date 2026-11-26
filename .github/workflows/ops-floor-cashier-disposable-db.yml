@@ -20,6 +20,8 @@ on:
       - "VinPoker/src/components/admin/MediaClubSchedules*"
       - "VinPoker/src/components/admin/TournamentPhotosManager.tsx"
       - "VinPoker/src/components/admin/TournamentPhotosManager.scope.test.tsx"
+      - "VinPoker/src/pages/MediaCenter.tsx"
+      - "VinPoker/src/pages/MediaCenter.access.test.tsx"
       - "VinPoker/src/lib/seriesReorder*"
       - "VinPoker/e2e/operations-responsive.mock.spec.ts"
       - "VinPoker/e2e/fixtures/operations-responsive.tsx"
@@ -139,6 +141,7 @@ jobs:
           src/components/admin/MediaClubSchedules.uploadOutcome.test.tsx
           src/components/admin/MediaClubSchedules.reorder.test.tsx
           src/components/admin/TournamentPhotosManager.scope.test.tsx
+          src/pages/MediaCenter.access.test.tsx
           src/lib/seriesReorder.test.ts
           src/components/LegacyScheduleEvidenceNote.test.tsx
           src/pages/ClubDetail.scheduleEvidence.test.tsx
@@ -171,6 +174,9 @@ jobs:
         run: >-
           npx eslint
           src/OpsApp.tsx
+          src/pages/MediaCenter.tsx
+          src/pages/MediaCenter.access.test.tsx
+          src/components/admin/TournamentPhotosManager.scope.test.tsx
           src/components/TournamentRegisterModal.test.tsx
           src/pages/CashierDashboard.tourEntry.test.tsx
           src/components/ops/OpsShell.tsx
