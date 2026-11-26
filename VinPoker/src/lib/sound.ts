@@ -10,7 +10,7 @@ function getCtx(): AudioContext | null {
   if (typeof window === "undefined") return null;
   try {
     if (!ctx) {
-      const AC = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
+      const AC = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AC) return null;
       ctx = new AC();
     }
@@ -176,31 +176,65 @@ export function initButtonSounds() {
 export async function enableTvLevelAudio(): Promise<boolean> {
   const ac = getCtx();
   if (!ac) return false;
+  unlockAudio();
   try {
-    if (ac.state === 'suspended') await ac.resume();
+    if (ac.state !== 'running') await ac.resume();
     return ac.state === 'running';
   } catch { return false; }
 }
 
+const tvOscillators = new Set<OscillatorNode>();
+let tvAudioEpoch = 0;
+
+export function stopTvLevelAudio() {
+  tvAudioEpoch += 1;
+  for (const oscillator of tvOscillators) {
+    try { oscillator.stop(); } catch { /* Already ended. */ }
+  }
+}
+
+function scheduleTvTone(ac: AudioContext, frequency: number, start: number, duration: number, peak: number, type: OscillatorType = 'sine') {
+  const oscillator = ac.createOscillator();
+  const gain = ac.createGain();
+  oscillator.type = type;
+  oscillator.frequency.setValueAtTime(frequency, start);
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.linearRampToValueAtTime(peak, start + 0.008);
+  if (duration > 0.5) gain.gain.setValueAtTime(peak, start + duration - 0.15);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+  oscillator.connect(gain).connect(ac.destination);
+  tvOscillators.add(oscillator);
+  oscillator.onended = () => {
+    tvOscillators.delete(oscillator);
+    oscillator.disconnect();
+    gain.disconnect();
+  };
+  oscillator.start(start);
+  oscillator.stop(start + duration + 0.02);
+}
+
+/** One audible warning per server-clock second; the final tone also works at 00:00. */
+export async function playTvCountdownTone(final = false, delaySeconds = 0): Promise<boolean> {
+  const epoch = tvAudioEpoch;
+  if (!await enableTvLevelAudio() || epoch !== tvAudioEpoch) return false;
+  const ac = getCtx();
+  if (!ac) return false;
+  try {
+    scheduleTvTone(ac, final ? 660 : 1320, ac.currentTime + delaySeconds,
+      final ? 0.75 : 0.18, final ? 0.22 : 0.32, final ? 'triangle' : 'sine');
+    return true;
+  } catch { return false; }
+}
+
 export async function playTvLevelChime() {
+  const epoch = tvAudioEpoch;
+  if (!await enableTvLevelAudio() || epoch !== tvAudioEpoch) return;
   const ac = getCtx();
   if (!ac) return;
   try {
-    if (ac.state === 'suspended') await ac.resume();
-    if (ac.state !== 'running') return;
     [660, 880, 1100].forEach((frequency, index) => {
       const start = ac.currentTime + index * 0.22;
-      const oscillator = ac.createOscillator();
-      const gain = ac.createGain();
-      oscillator.type = 'sine';
-      oscillator.frequency.setValueAtTime(frequency, start);
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(0.18, start + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.65);
-      oscillator.connect(gain).connect(ac.destination);
-      oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
-      oscillator.start(start);
-      oscillator.stop(start + 0.7);
+      scheduleTvTone(ac, frequency, start, 0.65, 0.18);
     });
   } catch { /* A TV without audio still displays the authoritative clock. */ }
 }
