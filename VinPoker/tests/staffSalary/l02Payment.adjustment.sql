@@ -1,9 +1,15 @@
 -- Pending200k is source evidence, not another payable or a wage cost.
 BEGIN;
+\if :{?l02_self_reader}
+\ir ../../supabase/pending-migrations/20261119093017_staff_self_ft_payslips_v1.sql
+\ir ../../supabase/pending-migrations/20261126162754_staff_salary_supplement_self_reader_v1.sql
+SET LOCAL l02.self_reader = 'on';
+\endif
 DO $test$
 DECLARE
  owner_id constant uuid:='16770000-0000-4000-8000-000000000001';
  accountant constant uuid:='16770000-0000-4000-8000-000000000002';
+ cashier constant uuid:='16770000-0000-4000-8000-000000000003';
  employee constant uuid:='16770000-0000-4000-8000-000000000004';
  foreign_admin constant uuid:='16770000-0000-4000-8000-000000000099';
  club constant uuid:='16770000-0000-4000-8000-000000000011';
@@ -12,11 +18,12 @@ DECLARE
  before_finance jsonb; packet jsonb; request_id uuid; child_id uuid; denied boolean:=false;
 BEGIN
  ASSERT current_database()='vinpoker_ops_l02';
- INSERT INTO auth.users(id)VALUES(owner_id),(accountant),(employee),(foreign_admin);
+ INSERT INTO auth.users(id)VALUES(owner_id),(accountant),(cashier),(employee),(foreign_admin);
  INSERT INTO public.profiles(user_id,display_name)VALUES(owner_id,'L02 adjustment owner TEST'),(accountant,'L02 adjustment accountant TEST'),(employee,'L02 adjustment employee TEST'),(foreign_admin,'L02 foreign admin TEST');
  INSERT INTO public.clubs(id,owner_id,name,region,status)VALUES(club,owner_id,'L02 supplement TEST','TEST','approved'),(foreign_admin,foreign_admin,'Other adjustment club TEST','TEST','approved');
  INSERT INTO public.user_roles(user_id,role)VALUES(foreign_admin,'club_admin');
  INSERT INTO public.club_accountants(club_id,user_id,granted_by)VALUES(club,accountant,owner_id);
+ INSERT INTO public.club_cashiers(club_id,user_id,granted_by)VALUES(club,cashier,owner_id);
  INSERT INTO public.staff(id,club_id,user_id,full_name,department,employment_type,monthly_salary_vnd,manual_bhxh_vnd,manual_tax_vnd,status)
  VALUES(v_staff,club,employee,'L02 supplement FT','service','full_time',5200000,0,0,'active');
  INSERT INTO public.staff_attendance(staff_id,shift_date,status,check_in_time,check_out_time)
@@ -36,6 +43,12 @@ BEGIN
  SELECT snapshot INTO before_source FROM floor_private.staff_salary_sources_v1 WHERE run_id=(before_salary->>'id')::uuid;
  PERFORM set_config('request.jwt.claim.sub',employee::text,true);SET LOCAL ROLE authenticated;
  result:=public.staff_check_out(v_staff);ASSERT result->>'outcome'='checked_out',result::text;
+ IF current_setting('l02.self_reader',true)='on' THEN
+  result:=public.get_my_staff_ft_payslips_v1(v_staff,club);
+  ASSERT jsonb_array_length(result->'payslips')=1 AND jsonb_array_length(result->'pending_adjustments')=1,result::text;
+  ASSERT(result#>>'{pending_adjustments,0,amount_vnd}')::bigint=200000,result::text;
+  ASSERT(result#>>'{pending_adjustments,0,base_run_id}')::uuid=(before_salary->>'id')::uuid,result::text;
+ END IF;
  PERFORM set_config('request.jwt.claim.sub',accountant::text,true);
  packet:=public.get_staff_salary_adjustments_v1(club,2026,11);
  ASSERT jsonb_array_length(packet->'requests')=1,packet::text;
@@ -63,6 +76,9 @@ BEGIN
  PERFORM set_config('request.jwt.claim.sub',accountant::text,true);denied:=false;
  BEGIN PERFORM public.approve_staff_salary_adjustment_v1(request_id);EXCEPTION WHEN insufficient_privilege THEN denied:=true;END;
  ASSERT denied,'accountant approved own supplement';
+ PERFORM set_config('request.jwt.claim.sub',cashier::text,true);denied:=false;
+ BEGIN PERFORM public.approve_staff_salary_adjustment_v1(request_id);EXCEPTION WHEN insufficient_privilege THEN denied:=true;END;
+ ASSERT denied,'cashier approved supplement';
  PERFORM set_config('request.jwt.claim.sub',owner_id::text,true);
  result:=public.approve_staff_salary_adjustment_v1(request_id);
  ASSERT result->>'status'='approved' AND(result->>'amount_vnd')::bigint=200000,result::text;
@@ -94,6 +110,11 @@ BEGIN
  result:=public.get_staff_salary_run_source_v1(child_id);
  ASSERT result->>'source_status'='verified' AND(result->>'base_run_id')::uuid=(before_salary->>'id')::uuid,result::text;
  ASSERT(result->>'recorded_net_vnd')::bigint=200000 AND(result->'source'->>'net_vnd')::bigint=5200000,result::text;
+ IF current_setting('l02.self_reader',true)='on' THEN
+  result:=public.get_my_staff_ft_payslips_v1(v_staff,club);
+  ASSERT jsonb_array_length(result->'payslips')=2 AND jsonb_array_length(result->'pending_adjustments')=0,result::text;
+  ASSERT EXISTS(SELECT 1 FROM jsonb_array_elements(result->'payslips') slip WHERE(slip->>'id')::uuid=child_id AND(slip->>'adjusts_id')::uuid=(before_salary->>'id')::uuid AND(slip->>'net_vnd')::bigint=200000 AND slip->>'source_status'='verified'),result::text;
+ END IF;
  RESET ROLE;
  SELECT to_jsonb(r) INTO after_salary FROM public.staff_salary_runs r WHERE r.id=(before_salary->>'id')::uuid;
  ASSERT after_salary=before_salary,'supplement changed original5M receipt';

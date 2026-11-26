@@ -7,6 +7,8 @@ on:
       - 'VinPoker/src/lib/staffSalary/**'
       - 'VinPoker/src/hooks/staff/useStaffSalary*'
       - 'VinPoker/src/components/staff-app/salary/StaffSalaryScreen*'
+      - 'VinPoker/src/components/staffSalary/**'
+      - 'VinPoker/src/lib/featureFlags.ts'
       - '.github/workflows/staff-ft-payment-confirmation.yml'
 permissions:
   contents: read
@@ -23,4 +25,4 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm test -- src/pages/StaffSalaryChot.test.tsx src/hooks/staffSalary/useSalaryActions.test.tsx src/hooks/staffSalary/useStaffSalary.read.test.tsx src/hooks/staff/useStaffSalary.test.tsx src/components/staff-app/salary/StaffSalaryScreen.test.tsx
+      - run: npm test -- src/pages/StaffSalaryChot.test.tsx src/hooks/staffSalary/useSalaryActions.test.tsx src/hooks/staffSalary/useStaffSalary.read.test.tsx src/hooks/staffSalary/useSalaryAdjustments.test.tsx src/components/staffSalary/StaffSalaryAdjustments.test.tsx src/components/staffSalary/SalaryRunSource.test.tsx src/hooks/staff/useStaffSalary.test.tsx src/components/staff-app/salary/StaffSalaryScreen.test.tsx --maxWorkers=1

@@ -22,6 +22,7 @@ export interface SalaryRow {
   netVnd: number;
   alreadyLocked?: boolean; // preview rows: a locked run already exists for this staff
   runId?: string | null; // locked rows only
+  adjustsId?: string | null; // a separately approved supplement links to its original run
   status?: string | null; // locked rows only ('locked' | 'paid')
   paidAt?: string | null;
   paymentMethod?: string | null;

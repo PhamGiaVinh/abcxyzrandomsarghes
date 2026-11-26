@@ -80,4 +80,30 @@ describe('staff self salary read integrity',()=>{
   const h=renderHook(()=>useStaffSalary(profile),{wrapper:wrapper()});await waitFor(()=>expect(h.result.current.salary).not.toBeNull());
   f.actor=null;h.rerender();expect(h.result.current.salary).toBeNull();expect(f.rpc).toHaveBeenCalledTimes(1);h.unmount();
  });
+ it('retains linked FT supplements and source availability without changing saved amounts',async()=>{
+  flags.staffFtPayslips=true;
+  const payslips=[{id:'base',period_year:2026,period_month:11,net_vnd:5000000,status:'recorded_paid',paid_at:'2026-11-26T12:00Z',payment_method:'cash',adjusts_id:null,source_status:'verified'},
+   {id:'child',period_year:2026,period_month:11,net_vnd:200000,status:'approved',paid_at:null,payment_method:null,adjusts_id:'base',source_status:'verified'}];
+  f.rpc.mockImplementation(async(fn:string)=>({data:fn==='get_my_staff_salary'?payload:{staff_id:'staff',club_id:'club',payslips},error:null}));
+  const h=renderHook(()=>useStaffSalary(profile),{wrapper:wrapper()});
+  await waitFor(()=>expect(h.result.current.ftPayslips?.isSuccess).toBe(true));
+  expect(h.result.current.ftPayslips?.data).toEqual(payslips);h.unmount();
+ });
+ it('observes a pending supplement on an already-open self screen within the polling interval',async()=>{
+  vi.useFakeTimers();flags.staffFtPayslips=true;let pending:unknown[]=[];
+  f.rpc.mockImplementation(async(fn:string)=>({data:fn==='get_my_staff_salary'?payload:{staff_id:'staff',club_id:'club',payslips:[],pending_adjustments:pending},error:null}));
+  const h=renderHook(()=>useStaffSalary(profile),{wrapper:wrapper()});
+  try{
+   await act(async()=>vi.advanceTimersByTimeAsync(1));
+   pending=[{id:'request',base_run_id:'base',period_year:2026,period_month:11,amount_vnd:200000}];
+   await act(async()=>vi.advanceTimersByTimeAsync(2000));
+   expect(h.result.current.ftPayslips?.pendingAdjustments).toEqual(pending);
+  }finally{h.unmount();vi.useRealTimers();}
+ });
+ it('blocks a captured FT receipt refetch after the session changes',async()=>{
+  flags.staffFtPayslips=true;f.rpc.mockImplementation(async(fn:string)=>({data:fn==='get_my_staff_salary'?payload:{staff_id:'staff',club_id:'club',payslips:[]},error:null}));
+  const h=renderHook(()=>useStaffSalary(profile),{wrapper:wrapper()});await waitFor(()=>expect(h.result.current.ftPayslips?.isSuccess).toBe(true));
+  const old=h.result.current.ftPayslips!.refetch;f.session={access_token:'NEW_TEST_SESSION'};h.rerender();
+  await expect(old()).rejects.toThrow();h.unmount();
+ });
 });

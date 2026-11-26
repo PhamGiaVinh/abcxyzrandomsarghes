@@ -1,4 +1,4 @@
-import {act,cleanup,renderHook} from '@testing-library/react';
+import {act,cleanup,renderHook,waitFor} from '@testing-library/react';
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import type {PropsWithChildren} from 'react';
@@ -130,4 +130,12 @@ it('explains a replaced salary run and reloads the current report without announ
   expect(f.success).not.toHaveBeenCalled();
   expect(f.error).toHaveBeenCalledWith(detail);
   expect(invalidate).toHaveBeenCalledWith({queryKey:['staffSalary','month','live','club',2026,10]});
+});
+it('does not send payment after the held preflight report resolves on an unmounted screen',async()=>{
+ let release!:(value:unknown)=>void;f.rpc.mockReturnValueOnce(new Promise(resolve=>{release=resolve;}));const view=mount();
+ let outcome!:Promise<unknown>;
+ act(()=>{outcome=view.result.current.markPaid.mutateAsync({runId,method:'cash'}).then(()=>null,error=>error);});
+ await waitFor(()=>expect(release).toBeTypeOf('function'));view.unmount();
+ release({data:saved,error:null});expect(await outcome).toBeInstanceOf(Error);
+ expect(f.rpc.mock.calls.some(([fn])=>fn==='mark_staff_salary_paid')).toBe(false);expect(f.success).not.toHaveBeenCalled();
 });

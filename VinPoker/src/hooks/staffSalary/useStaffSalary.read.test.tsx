@@ -59,6 +59,29 @@ it('rejects inconsistent totals and duplicate staff rows',async()=>{
  f.rpc.mockResolvedValue({data,error:null});const view=mount();
  await waitFor(()=>expect(view.result.current.isError).toBe(true));expect(view.result.current.data).toBeUndefined();
 });
+const linkedPacket=()=>{
+ const data=packet(5000000);
+ data.rows.push({...data.rows[0],id:'child-test',gross_vnd:200000,net_vnd:200000,worked_days:0,adjusts_id:'run-test'} as typeof data.rows[number]);
+ data.total_net_vnd=5200000;data.total_gross_vnd=5200000;return data;
+};
+it('accepts a verified same-staff FT base and separate linked supplement exactly once',async()=>{
+ f.rpc.mockResolvedValue({data:linkedPacket(),error:null});const view=mount();
+ await waitFor(()=>expect(view.result.current.isSuccess).toBe(true));
+ expect(view.result.current.data?.lockedRows.map(r=>[r.runId,r.adjustsId])).toEqual([['run-test',null],['child-test','run-test']]);
+ expect(view.result.current.data?.totalNetVnd).toBe(5200000);
+});
+it.each(['missing-parent','other-staff','self-link','nested-child','part-time','duplicate-id','conflicting-id'])('rejects invalid supplement linkage: %s',async(kind)=>{
+ const data=linkedPacket(),child=data.rows[1] as typeof data.rows[number]&{adjusts_id:string;run_id?:string};
+ if(kind==='missing-parent')child.adjusts_id='absent';
+ if(kind==='other-staff')child.staff_id='other';
+ if(kind==='self-link')child.adjusts_id=child.id;
+ if(kind==='nested-child')Object.assign(data.rows[0],{adjusts_id:child.id});
+ if(kind==='part-time')child.employment_type='part_time';
+ if(kind==='duplicate-id')child.id=data.rows[0].id;
+ if(kind==='conflicting-id')child.run_id='different-child';
+ f.rpc.mockResolvedValue({data,error:null});const view=mount();
+ await waitFor(()=>expect(view.result.current.isError).toBe(true));expect(view.result.current.data).toBeUndefined();
+});
 it('rejects totals that disagree with unique saved rows',async()=>{
  const data=packet();data.total_net_vnd=999;f.rpc.mockResolvedValue({data,error:null});const view=mount();
  await waitFor(()=>expect(view.result.current.isError).toBe(true));expect(view.result.current.data).toBeUndefined();

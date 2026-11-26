@@ -1705,6 +1705,8 @@ export const FEATURES = {
    * PR #844 was meant to ship but never merged). Kill-switch: set false to re-hide.
    */
   staffSalaryChot: true,
+  // New requests/approval UI only. Approved supplement reads/payment remain compatible when OFF.
+  staffSalaryAdjustments: import.meta.env.VITE_STAFF_SALARY_ADJUSTMENTS_V1 === "true",
   /**
    * accountantWorkspace — the full multi-tab "Kế toán" workspace at `/accountant` (Bảng
    * lương NV · Lương dealer · Nhân viên & lương · Sổ chi phí · F&B thu chi · Báo cáo).

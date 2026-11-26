@@ -5,6 +5,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 \i supabase/pending-migrations/20261119093017_staff_self_ft_payslips_v1.sql
+\ir ../../supabase/pending-migrations/20261126162754_staff_salary_supplement_self_reader_v1.sql
 \if :{?l05_browser}
 SET LOCAL l05.browser = 'on';
 \endif

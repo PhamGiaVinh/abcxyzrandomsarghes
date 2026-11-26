@@ -27,6 +27,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import {StaffSalaryAdjustments} from '@/components/staffSalary/StaffSalaryAdjustments';
+import {SalaryRunSource} from '@/components/staffSalary/SalaryRunSource';
 
 const STATUS_LABEL: Record<SalaryPeriodStatus, string> = {
   prepared: "Đã chốt · chờ gửi",
@@ -103,6 +105,7 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
   const paymentRow = payment?.scope === paymentScope && hasRuns && status === "approved"
     ? rows.find((row) => row.runId === payment.runId && row.employmentType === "full_time" && row.status === "locked")
     : undefined;
+  const paymentBaseRow=paymentRow?.adjustsId?rows.find(row=>row.runId===paymentRow.adjustsId):undefined;
   const canApprove = activeClub?.role === "owner" || activeClub?.role === "admin";
   const busy =
     !view || monthQuery.isFetching ||
@@ -157,7 +160,7 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <MetricCard icon={Coins} label="Tổng lương (gross)" value={view ? formatVND(view.totalGrossVnd) : "—"} />
             <MetricCard icon={Wallet} label="Thực nhận (net)" value={view ? formatVND(view.totalNetVnd) : "—"} />
-            <MetricCard icon={Users} label="Số nhân viên" value={view ? `${rows.length}` : "—"} />
+            <MetricCard icon={Users} label="Số nhân viên" value={view ? `${new Set(rows.map(row=>row.staffId)).size}` : "—"} />
             <MetricCard icon={BadgeCheck} label="Trạng thái" value={!view ? "Chưa xác minh" : hasRuns ? STATUS_LABEL[status] : "Chưa chốt"} />
           </div>
 
@@ -215,6 +218,8 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
                   <SalaryRowItem
                     key={row.runId ?? row.staffId}
                     row={row}
+                    baseRow={row.adjustsId ? rows.find(base=>base.runId===row.adjustsId) : undefined}
+                    sourceContext={source==='live'&&(FEATURES.staffSalaryAdjustments||row.adjustsId)?{clubId:activeClubId,year,month}:undefined}
                     showMarkPaid={hasRuns && status === "approved"}
                     onMarkPaid={() => {
                       if (!row.runId) return;
@@ -229,6 +234,10 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
             )}
           </Card>
 
+          {FEATURES.staffSalaryAdjustments && source==='live' && view && hasRuns && <StaffSalaryAdjustments
+            source={source} clubId={activeClubId} year={year} month={month} rows={rows}
+            canApprove={activeClub?.role==='owner'||!!isAdmin}
+          />}
           <Dialog open={!!paymentRow} onOpenChange={(open) => { if (!open) setPayment(null); }}>
             <DialogContent>
               <DialogHeader>
@@ -247,6 +256,7 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
                   });
                 }}>
                   <p>{paymentRow.fullName} · {activeClub?.name} · {month}/{year} · {formatVND(paymentRow.netVnd)}</p>
+                  {paymentBaseRow && <p className="text-sm text-muted-foreground">Phiếu gốc: {formatVND(paymentBaseRow.netVnd)}. Đây là khoản bổ sung được duyệt riêng.</p>}
                   <label className="block">Phương thức
                     <select aria-label="Phương thức" className="block w-full rounded border bg-background p-2" required value={paymentMethod}
                       onChange={(event) => {
@@ -311,11 +321,15 @@ function MetricCard({
 
 function SalaryRowItem({
   row,
+  baseRow,
+  sourceContext,
   showMarkPaid,
   onMarkPaid,
   markPaidPending,
 }: {
   row: SalaryRow;
+  baseRow?: SalaryRow;
+  sourceContext?: {clubId:string;year:number;month:number};
   showMarkPaid: boolean;
   onMarkPaid: () => void;
   markPaidPending: boolean;
@@ -324,7 +338,7 @@ function SalaryRowItem({
   const meta =
     row.employmentType === "part_time"
       ? "PT"
-      : `FT · ${row.workedDays ?? 0} công`;
+      : row.adjustsId ? 'FT · bổ sung' : `FT · ${row.workedDays ?? 0} công`;
   return (
     <div className="py-3 flex flex-wrap items-center gap-3">
       <div className="basis-full min-w-0 sm:basis-auto sm:flex-1">
@@ -334,11 +348,13 @@ function SalaryRowItem({
             {deptLabel(row.department)}
           </Badge>
           <span className="text-[11px] text-muted-foreground">{meta}</span>
+          {row.adjustsId && <Badge variant="outline" className="text-[10px]">Bổ sung lương</Badge>}
           {row.alreadyLocked && <span className="text-[10px] text-amber-400">đã có bản chốt</span>}
         </div>
         {row.employmentType === "part_time" && (
           <p className="text-[11px] text-muted-foreground">Tổng đã trả theo ngày · chỉ đối chiếu tháng</p>
         )}
+        {baseRow && <p className="text-[11px] text-muted-foreground">Bổ sung cho phiếu gốc {formatVND(baseRow.netVnd)} · giữ nguyên chứng từ gốc</p>}
         {(row.manualBhxhVnd > 0 || row.manualTaxVnd > 0) && (
           <p className="text-[11px] text-muted-foreground">
             BHXH {formatVND(row.manualBhxhVnd)} · Thuế {formatVND(row.manualTaxVnd)}
@@ -370,6 +386,7 @@ function SalaryRowItem({
           <div><dt className="inline">Thời điểm ghi chi: </dt><dd className="inline">{row.paidAt ? formatDateTime(row.paidAt) : "Chưa rõ thời điểm ghi chi"}</dd></div>
         </dl>
       )}
+      {row.runId&&sourceContext&&row.employmentType==='full_time'&&<SalaryRunSource {...sourceContext} runId={row.runId} baseRunId={row.adjustsId??row.runId} staffId={row.staffId} netVnd={row.netVnd}/>}
     </div>
   );
 }
