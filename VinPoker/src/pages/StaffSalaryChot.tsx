@@ -55,7 +55,7 @@ function shiftYM(year: number, month: number, delta: number): { year: number; mo
   return { year: d.getFullYear(), month: d.getMonth() + 1 };
 }
 
-export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?: boolean; scopedClubId?: string } = {}) {
+export default function StaffSalaryChot({ embedded, scopedClubId, payrollMonth }: { embedded?: boolean; scopedClubId?: string; payrollMonth?: {year:number;month:number} } = {}) {
   const { loading: authLoading, user, isAdmin, isClubAdmin, isClubOwner } = useAuth();
   const [searchParams] = useSearchParams();
   const source = staffSalarySource();
@@ -66,7 +66,7 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
 
   const [clubId, setClubId] = useState("");
   const [ym, setYM] = useState(currentYM);
-  const { year, month } = ym;
+  const { year, month } = payrollMonth ?? ym;
 
   const clubsQuery = useSalaryClubs(source, allowed);
   const clubs = useMemo(() => clubsQuery.isError ? [] : clubsQuery.data ?? [], [clubsQuery.data, clubsQuery.isError]);
@@ -79,8 +79,8 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
   const actions = useSalaryActions(source, activeClubId, year, month);
 
   useEffect(() => {
-    if (!clubId && clubs[0]?.id) setClubId(clubs[0].id);
-  }, [clubId, clubs]);
+    if (scopedClubId===undefined && !clubId && clubs[0]?.id) setClubId(clubs[0].id);
+  }, [clubId, clubs,scopedClubId]);
 
   if (authLoading || clubsQuery.isLoading) return <ChotSkeleton />;
   // Embedded (accountant workspace): the parent already gates access — never redirect.
@@ -117,7 +117,7 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
             Kế toán tính + chốt bảng lương tháng rồi gửi cho chủ CLB duyệt. Số đã chốt là bất biến — không tính lại.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        {!payrollMonth&&<div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setYM((s) => shiftYM(s.year, s.month, -1))} aria-label="Tháng trước">
             <ArrowLeft className="w-4 h-4" />
           </Button>
@@ -127,7 +127,7 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
           <Button variant="outline" size="sm" onClick={() => setYM((s) => shiftYM(s.year, s.month, 1))} aria-label="Tháng sau">
             <ArrowRight className="w-4 h-4" />
           </Button>
-        </div>
+        </div>}
       </header>
 
       {preview && (

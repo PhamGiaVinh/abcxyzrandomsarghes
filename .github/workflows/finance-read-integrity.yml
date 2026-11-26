@@ -13,6 +13,10 @@ on:
       - 'VinPoker/src/components/Layout.unread.test.tsx'
       - 'VinPoker/src/App.tsx'
       - 'VinPoker/src/lib/financeNavigation*'
+      - 'VinPoker/src/lib/financePayrollPeriod*'
+      - 'VinPoker/src/pages/StaffSalaryChot*'
+      - 'VinPoker/src/components/cashier/DealerPayrollTab*'
+      - 'VinPoker/src/hooks/staffSalary/useSalaryActions.test.tsx'
       - 'VinPoker/src/pages/AccountantDashboard*'
       - 'VinPoker/src/pages/CashierDashboard*'
       - 'VinPoker/src/pages/ClubExpenses*'
@@ -37,7 +41,7 @@ jobs:
       - run: npm ci --ignore-scripts
         working-directory: VinPoker
       - run: git diff --check
-      - run: npx vitest run src/hooks/useClubFinanceSummary.readIntegrity.test.tsx src/hooks/accountant/useFinanceSummaryRpcOnly.test.tsx src/lib/financeSummaryRead.test.ts src/components/accountant/AccountantFinanceTab.readIntegrity.test.tsx src/components/Layout.unread.test.tsx src/pages/FinanceWorkspace.test.tsx src/pages/FinanceLegacyRedirect.test.tsx src/pages/AccountantDashboard.navigation.test.tsx src/pages/CashierDashboard.tourEntry.test.tsx src/pages/ClubExpenses.test.tsx src/lib/financeNavigation.test.ts src/components/cashier/RevenueReportTab.test.tsx src/pages/ClubFinanceDashboard.acceptance.test.tsx --maxWorkers=1 --minWorkers=1
+      - run: npx vitest run src/hooks/useClubFinanceSummary.readIntegrity.test.tsx src/hooks/accountant/useFinanceSummaryRpcOnly.test.tsx src/lib/financeSummaryRead.test.ts src/components/accountant/AccountantFinanceTab.readIntegrity.test.tsx src/components/Layout.unread.test.tsx src/pages/FinanceWorkspace.test.tsx src/pages/FinanceLegacyRedirect.test.tsx src/pages/AccountantDashboard.navigation.test.tsx src/lib/financePayrollPeriod.test.ts src/pages/StaffSalaryChot.test.tsx src/components/cashier/DealerPayrollTab.read.test.tsx src/hooks/staffSalary/useSalaryActions.test.tsx src/pages/CashierDashboard.tourEntry.test.tsx src/pages/ClubExpenses.test.tsx src/lib/financeNavigation.test.ts src/components/cashier/RevenueReportTab.test.tsx src/pages/ClubFinanceDashboard.acceptance.test.tsx --maxWorkers=1 --minWorkers=1
         working-directory: VinPoker
       - run: npx tsc --noEmit -p tsconfig.app.json --pretty false
         working-directory: VinPoker
