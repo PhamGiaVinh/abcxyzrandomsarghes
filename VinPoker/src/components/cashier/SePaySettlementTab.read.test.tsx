@@ -8,6 +8,9 @@ const { rpc, auth } = vi.hoisted(() => ({ rpc: vi.fn(), auth: { user: { id: '000
 vi.mock('@/integrations/supabase/client', () => ({ supabase: { rpc } }));
 vi.mock('@/hooks/useAuth', () => ({ useAuth: () => auth }));
 vi.mock('@/lib/featureFlags', () => ({ FEATURES: { sepayScopedHandoff: true } }));
+// These tests isolate worklist/intent behavior; membership RPC integration is
+// exercised without this mock in SePaySettlementTab.membership.test.tsx.
+vi.mock('./useSePayCurrentClubs',()=>({useSePayCurrentClubs:(_actor:string,clubIds:string[])=>({clubIds,error:null,refresh:vi.fn()})}));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 afterEach(() => { cleanup(); sessionStorage.clear(); rpc.mockReset(); vi.mocked(toast.success).mockClear(); vi.mocked(toast.error).mockClear(); auth.user = { id: '00000000-0000-4000-8000-000000000001' }; vi.useRealTimers(); });
 function deferred() { let resolve!: (value: unknown) => void; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }

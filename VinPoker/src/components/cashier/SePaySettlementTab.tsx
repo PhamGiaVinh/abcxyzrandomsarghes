@@ -15,6 +15,7 @@ import { formatVND, formatDateTime } from "@/lib/format";
 import { Loader2, RefreshCw, CheckCircle2, XCircle, Banknote } from "lucide-react";
 import {useSePaySettlementIntent} from './useSePaySettlementIntent';
 import { FEATURES } from "@/lib/featureFlags";
+import {useSePayCurrentClubs} from './useSePayCurrentClubs';
 
 // Shape returned by public.sepay_cashier_settlement_worklist (20261116000000) — RAW FACTS only.
 type Row = {
@@ -70,8 +71,16 @@ export const SePaySettlementTab = ({ clubIds, clubs, clubId, bankId, allClubs = 
       <a className="inline-flex min-h-11 items-center underline underline-offset-2" href="/cashier?tab=sepay_settlement&scope=all">Tất cả CLB được phân quyền</a>
     </Card>;
   }
-  return <SettlementSession actorId={user.id} clubIds={clubIds ?? []} clubId={clubId} bankId={bankId} key={JSON.stringify([user.id, sessionReadEpoch(session), [...(clubIds ?? [])].sort(), clubId, bankId])}/>;
+  return <CurrentSettlementScope actorId={user.id} clubIds={clubIds ?? []} clubId={clubId} bankId={bankId} key={JSON.stringify([user.id, sessionReadEpoch(session), [...(clubIds ?? [])].sort(), clubId, bankId])}/>;
 };
+
+function CurrentSettlementScope({actorId,clubIds,clubId,bankId}:{actorId:string;clubIds:string[];clubId?:string|null;bankId?:string|null}){
+  const current=useSePayCurrentClubs(actorId,clubIds,FEATURES.sepayScopedHandoff);
+  if(current.error)return <Card role="alert" className="p-4 space-y-2"><p>{current.error}</p><Button onClick={()=>void current.refresh()}>Thử xác minh quyền</Button></Card>;
+  if(current.clubIds===null)return <Skeleton className="h-24 rounded-xl"/>;
+  if(FEATURES.sepayScopedHandoff&&(!current.clubIds.length||(clubId&&!current.clubIds.includes(clubId))))return <Card role="alert" className="p-4">Không có quyền đọc danh sách đối soát SePay.</Card>;
+  return <SettlementSession key={JSON.stringify(current.clubIds)} actorId={actorId} clubIds={current.clubIds} clubId={clubId} bankId={bankId}/>;
+}
 
 function validSettlementRow(value: unknown): value is Row {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -100,12 +109,13 @@ function SettlementSession({ actorId, clubIds, clubId, bankId }: { actorId: stri
   const [ignoreReason, setIgnoreReason] = useState("");
   // Stale-response guard (mount + clubs-loaded fire back to back; only the latest may write state).
   const loadSeq = useRef(0), readFlight = useRef<AbortController | null>(null);
+  const readFailed=useRef(false);
 
   const load = useCallback(async (quiet = false) => {
     const seq = ++loadSeq.current;
     readFlight.current?.abort();
     const controller = new AbortController(); readFlight.current = controller;
-    if (!quiet) { setRows(null); setLoadError(null); }
+    if (!quiet) { readFailed.current=false; setRows(null); setLoadError(null); }
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- existing RPC is not in generated types.ts
       const rpc = clubId ? "sepay_cashier_settlement_scope_v1" : "sepay_cashier_settlement_worklist";
@@ -114,15 +124,18 @@ function SettlementSession({ actorId, clubIds, clubId, bankId }: { actorId: stri
       const { data, error } = await observeTrackerContextRead((supabase.rpc as any)(rpc, args).abortSignal(controller.signal)) as { data: unknown; error: { code?: string } | null };
       if (seq !== loadSeq.current) return;
       if (error?.code === '42501') {
+        readFailed.current=true;
         setRows(null); setReadForbidden(true); setConfirmTarget(null); setIgnoreTarget(null);
         setLoadError('Không có quyền đọc danh sách đối soát SePay.'); return;
       }
       if (error || !Array.isArray(data) || !data.every(validSettlementRow)
         || new Set(data.map(row => row.bank_transaction_id)).size !== data.length
+        || (FEATURES.sepayScopedHandoff && data.some(row=>!row.club_id||!clubIds.includes(row.club_id)))
         || (clubId && data.some(row => row.club_id !== clubId || (bankId && row.bank_transaction_id !== bankId)))) throw new Error('unverified_worklist');
-      setReadForbidden(false); setLoadError(null); setRows(data);
+      readFailed.current=false; setReadForbidden(false); setLoadError(null); setRows(data);
     } catch {
       if (seq === loadSeq.current) {
+        readFailed.current=true;
         setRows(null); setConfirmTarget(null); setIgnoreTarget(null);
         setLoadError('Không tải được danh sách đối soát SePay. Hãy thử lại.');
       }
@@ -130,7 +143,7 @@ function SettlementSession({ actorId, clubIds, clubId, bankId }: { actorId: stri
       controller.abort();
       if (seq === loadSeq.current) readFlight.current = null;
     }
-  }, [scope, clubId, bankId]);
+  }, [scope, clubId, bankId, clubIds]);
 
   const cancelRead = useCallback(() => { loadSeq.current++; readFlight.current?.abort(); }, []);
   const mutation=useSePaySettlementIntent(actorId,()=>{
@@ -150,7 +163,7 @@ function SettlementSession({ actorId, clubIds, clubId, bankId }: { actorId: stri
     void load();
     // A linked workspace must drop data/actions after a server-side revocation,
     // even when its parent membership list has not been reloaded yet.
-    const interval=clubId ? window.setInterval(()=>{if(!readFlight.current)void load(true);},5000) : undefined;
+    const interval=clubId || FEATURES.sepayScopedHandoff ? window.setInterval(()=>{if(!readFlight.current&&!readFailed.current)void load(true);},5000) : undefined;
     return ()=>{window.clearInterval(interval);cancelRead();};
   }, [load, cancelRead, clubId]);
 

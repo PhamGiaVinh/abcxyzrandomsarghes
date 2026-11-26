@@ -21,6 +21,11 @@ kết quả xác nhận. Liên kết và reader không ghi nhận thu, không đ
 - Khi trang theo CLB đang mở, đọc lại server mỗi 5 giây, không chồng request hoặc kéo
   dài hạn chờ của request đang treo. Khi quyền bị từ chối, gỡ dữ liệu, dialog và hành
   động pending. Không xoá chứng từ hoặc journal.
+- Mở rộng cho chế độ tất cả CLB: xác minh membership từ server mỗi 5 giây, độc lập
+  danh sách CLB còn cache ở màn cha. Danh sách không đổi giữ màn hiện tại; thay đổi
+  hoặc lỗi quyền hủy màn con và các lần đọc/dialog cũ. Journal giữ nguyên, không cho
+  recover/retry/link về CLB đã mất quyền. CLB còn quyền vẫn đọc được. Lỗi đọc quyền
+  không được coi là danh sách giao dịch rỗng. Cờ tắt giữ reader/polling cũ.
 
 ## Kiểm chứng
 
@@ -36,6 +41,10 @@ kết quả xác nhận. Liên kết và reader không ghi nhận thu, không đ
    Journal được cài trong ca runtime chỉ là trạng thái pending TEST, không phải bằng
    chứng một payment producer đã chạy. Realtime/SW/hosted production không được chấm
    từ harness này. Thử năm kích thước 320/375/414/768/1280.
+6. Riêng chế độ tất cả CLB: rút A khi màn còn mở, cả khi có journal hoặc dialog A;
+   A biến mất, B còn dùng được, không ghi tiền. Kiểm phản hồi membership cũ sau đổi
+   actor, đọc quyền lỗi/treo, giữ deadline và cờ OFF. Các khu vực Cashier khác,
+   header cha, exports và Realtime vẫn cần ca E07 riêng, không suy từ màn này.
 
 ## Rollback và phát hành
 
