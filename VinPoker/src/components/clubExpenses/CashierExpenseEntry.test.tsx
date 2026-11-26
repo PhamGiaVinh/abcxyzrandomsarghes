@@ -6,7 +6,7 @@ const f=vi.hoisted(()=>({actor:'18140000-0000-4000-8000-000000000001',session:{a
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({user:{id:f.actor},session:f.session,loading:false})}));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:(name:string,args:Record<string,unknown>)=>f.rpc(name,args),from:(table:string)=>{
  let columns='';const q={select:(value:string)=>{columns=value;return q;},eq:()=>q,is:()=>q,maybeSingle:()=>{
-  if(table==='cashier_tour_settings')return Promise.resolve({data:{club_id:f.club,enabled:true,expense_cash_source_enabled:true},error:null});
+  if(table==='cashier_tour_settings')throw Error('Protected settings table must never be read directly by the client');
   if(columns.includes('receipts:'))return Promise.resolve({data:f.lookup(),error:null});
   return Promise.resolve({data:{id:f.shift,club_id:f.club,opening_cash:10000000,opened_at:'2026-11-26T00:00:00Z',closed_at:null},error:null});
  }};return q;
@@ -16,7 +16,7 @@ const clients:QueryClient[]=[];
 function mount(){const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});clients.push(client);const view=render(<QueryClientProvider client={client}><CashierExpenseEntry clubId={f.club} allowNew/></QueryClientProvider>);return {...view,rerenderAuth:()=>view.rerender(<QueryClientProvider client={client}><CashierExpenseEntry clubId={f.club} allowNew/></QueryClientProvider>)};}
 beforeEach(()=>{sessionStorage.clear();f.allowed=true;f.rpc.mockReset();f.lookup.mockReset();f.last=null;f.lookup.mockReturnValue(null);
  f.session={access_token:'LOCAL_TEST_ONLY'};
- f.rpc.mockImplementation((name,args)=>{if(name==='is_club_cashier')return Promise.resolve({data:f.allowed,error:null});if(name==='cashier_shift_summary_v1')return Promise.resolve({data:{ok:true,shift_id:f.shift,club_id:f.club,closed_at:null,expected_cash:10000000},error:null});f.last=args;return Promise.resolve({data:{status:'ok',idempotent:false,expense_id:f.expense,request_id:args.p_request_id,shift_id:args.p_shift_id,amount_vnd:args.p_amount_vnd,paid_at:'2026-11-26T01:00:00Z'},error:null});});});
+ f.rpc.mockImplementation((name,args)=>{if(name==='is_club_cashier')return Promise.resolve({data:f.allowed,error:null});if(name==='cashier_expense_source_status_v1')return Promise.resolve({data:{club_id:f.club,enabled:true,expense_cash_source_enabled:true},error:null});if(name==='cashier_shift_summary_v1')return Promise.resolve({data:{ok:true,shift_id:f.shift,club_id:f.club,closed_at:null,expected_cash:10000000},error:null});f.last=args;return Promise.resolve({data:{status:'ok',idempotent:false,expense_id:f.expense,request_id:args.p_request_id,shift_id:args.p_shift_id,amount_vnd:args.p_amount_vnd,paid_at:'2026-11-26T01:00:00Z'},error:null});});});
 afterEach(()=>{cleanup();clients.splice(0).forEach(x=>x.clear());vi.restoreAllMocks();});
 const payments=()=>f.rpc.mock.calls.filter(c=>c[0]==='record_cashier_club_expense_v1');
 it('requires explicit till selection, persists the intent before sending and prevents double submit',async()=>{

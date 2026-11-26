@@ -56,7 +56,7 @@ function CashierExpenseForm({clubId,allowNew=false,onPendingChange}:{clubId:stri
    if(permission.error)throw permission.error;
    if(z.boolean().parse(permission.data)!==true)return {state:'denied'};
    const [policyResult,tillResult]=await observeTrackerContextRead(Promise.all([
-    supabase.from('cashier_tour_settings' as never).select('club_id,enabled,expense_cash_source_enabled').eq('club_id',clubId).maybeSingle(),
+    supabase.rpc('cashier_expense_source_status_v1' as never,{p_club_id:clubId} as never),
     supabase.from('cashier_till_shifts' as never).select('id,club_id,opening_cash,opened_at,closed_at').eq('club_id',clubId).is('closed_at',null).maybeSingle(),
    ]));assertCurrent();
    if(policyResult.error)throw policyResult.error;if(tillResult.error)throw tillResult.error;

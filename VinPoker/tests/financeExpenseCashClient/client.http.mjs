@@ -12,6 +12,7 @@ const sqlFiles=[
  ['supabase/migrations/20270128000354_finance_expense_scope_idempotency.sql','4c7615860dba50225a6507f6b2db378f417701a3968bb0063414bdad1ac62632'],
  ['supabase/pending-migrations/20261126001901_finance_pt_cash_drawer_link_v1.sql','44106b5d3500dbb9c1b2f4d3a1feecfc6c83f1ff018266e1951f32d8b5eb2dcb'],
  ['supabase/pending-migrations/20261126011530_finance_expense_cash_source_v1.sql','34464adca0c8546bae2e7b81dee1fee43dbd50c2c44dc68be00b5fd0102e92bf'],
+ ['supabase/pending-migrations/20261126023026_finance_expense_cash_source_status_v1.sql','28287f7df15621f00c8e5edd9ebd233d2822eead10af96807bca9fbe0840f914'],
 ];
 for(const [file,hash] of sqlFiles)assert.equal(createHash('sha256').update(readFileSync(file)).digest('hex'),hash);
 const api='http://127.0.0.1:3021',base='http://127.0.0.1:23870',container='expense-cash-client-http';
@@ -22,7 +23,8 @@ const id=n=>`18140000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 function sql(query){const r=spawnSync('psql',['-XqAt','-v','ON_ERROR_STOP=1','-c',query],{encoding:'utf8'});assert.equal(r.status,0,String(r.stderr).slice(0,1600));return r.stdout.trim();}
 const read=q=>JSON.parse(sql(q));
 function token(actor){const enc=v=>Buffer.from(JSON.stringify(v)).toString('base64url'),body=enc({alg:'HS256',typ:'JWT'})+'.'+enc({sub:actor,role:'authenticated',exp:Math.floor(Date.now()/1000)+1800});const t=body+'.'+createHmac('sha256',secret).update(body).digest('base64url');tokens.push(t);return t;}
-async function rpc(name,args,actor){const r=await fetch(api+'/rpc/'+name,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token(actor)}`},body:JSON.stringify(args),signal:AbortSignal.timeout(12000)});const data=await r.json();assert.equal(r.status,200,name+': HTTP');assert.equal(data.error,undefined);return data;}
+async function request(name,args,actor){const r=await fetch(api+'/rpc/'+name,{method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token(actor)}`},body:JSON.stringify(args),signal:AbortSignal.timeout(12000)});return {status:r.status,data:await r.json()};}
+async function rpc(name,args,actor){const r=await request(name,args,actor);assert.equal(r.status,200,name+': HTTP');assert.equal(r.data.error,undefined);return r.data;}
 async function open(f){const r=await rpc('cashier_open_shift_v1',{p_club_id:f.club,p_opening_cash:10000000},f.cashier);assert.equal(r.ok,true);f.shift=r.shift_id;}
 async function seed(index){const f={club:id(index*10+1),owner:id(index*10+2),cashier:id(index*10+3),accountant:id(index*10+4)};
  sql(`INSERT INTO auth.users(id) VALUES('${f.owner}'),('${f.cashier}'),('${f.accountant}');
@@ -41,6 +43,9 @@ let browser,server,livePage;
 try{
  assert.equal(sql('SELECT count(*) FROM public.clubs'),'0');
  for(const [file] of sqlFiles){const r=spawnSync('psql',['-Xq','-v','ON_ERROR_STOP=1','--single-transaction','-f',file],{encoding:'utf8'});assert.equal(r.status,0,String(r.stderr).slice(0,1600));}
+ proof.statusReaderSqlSha256=sqlFiles[3][1];
+ assert.equal(sql("SELECT has_table_privilege('authenticated','public.cashier_tour_settings','SELECT')"),'f');
+ assert.equal(sql("SELECT has_function_privilege('anon','public.cashier_expense_source_status_v1(uuid)','EXECUTE') OR has_function_privilege('service_role','public.cashier_expense_source_status_v1(uuid)','EXECUTE')"),'f');
  // The terminal-absence client proof depends on these real RLS policies, not
  // merely on a receipt being absent from an independently timed request.
  const policies=read(`SELECT jsonb_agg(jsonb_build_object('table',tablename,'name',policyname,'roles',roles,'permissive',permissive,'cmd',cmd,'qual',qual)) FROM pg_policies WHERE schemaname='public' AND tablename IN('cashier_till_shifts','club_expenses','finance_expense_cash_receipts','clubs') AND cmd='SELECT'`);
@@ -60,16 +65,17 @@ try{
   await page.route('**/*',route=>route.request().url().startsWith(base)||route.request().url().startsWith('data:')?route.continue():route.abort());
   await page.route('**/rest/v1/cashier_till_shifts?**',route=>decodeURIComponent(route.request().url()).includes('receipts:')&&denyLookup?route.fulfill({status:503,contentType:'application/json',body:'{"message":"TEST interrupted read"}'}):route.continue());
   await page.route('**/rest/v1/rpc/record_cashier_club_expense_v1',async route=>{
-   if(!first||scenario==='closed-before-submit')return route.continue();first=false;
+   if(!first)return route.continue();first=false;
+   if(scenario==='closed-before-submit'){
+    const closed=await rpc('cashier_close_shift_v1',{p_shift_id:f.shift,p_counted_cash:10000000},f.cashier);assert.equal(closed.variance_cash,0);
+    return route.continue();
+   }
    const response=await route.fetch();assert.ok(response.ok(),'commit must precede withheld ACK');
    if(scenario==='revoked-unknown')sql(`DELETE FROM public.club_cashiers WHERE club_id='${f.club}' AND user_id='${f.cashier}'`);
    return route.fulfill({status:503,contentType:'application/json',body:'{"message":"TEST withheld committed ACK"}'});
   });
   await page.goto(base+'/tests/financeExpenseCashClient/http.preview.html');
   await page.getByLabel('Két chi tiền',{exact:true}).selectOption(f.shift);await page.getByLabel('Số tiền chi',{exact:true}).fill('1.000.000');
-  if(scenario==='closed-before-submit'){
-   const closed=await rpc('cashier_close_shift_v1',{p_shift_id:f.shift,p_counted_cash:10000000},f.cashier);assert.equal(closed.variance_cash,0);
-  }
   await page.getByRole('button',{name:'Chi từ két',exact:true}).click();
   if(scenario==='closed-before-submit'){
    await page.getByRole('alert').filter({hasText:'Yêu cầu cũ chưa ghi và két đã đóng'}).waitFor();zero(f);assert.equal(await journal(page,f),null);assert.equal(writes.length,1);
@@ -96,7 +102,12 @@ try{
   await page.reload();await page.getByLabel('Két chi tiền',{exact:true}).waitFor();assert.equal(writes.length,scenario==='closed-before-submit'||scenario==='pending-reload-same-intent'?2:1);one(f);
   proof.browser.push({width,scenario,posts:writes.length,lookupReads:lookups.length,oneCostReceiptMovement:true,recordedCash:9000000,overflow:false,pageErrors:0});await page.close();livePage=null;
  }
- const denied=await seed(index++),page=await browser.newPage();livePage=page;
+ const denied=await seed(index++),foreign=await seed(index++),page=await browser.newPage();livePage=page;
+ for(const actor of [denied.accountant,foreign.cashier,null]){const r=await request('cashier_expense_source_status_v1',{p_club_id:denied.club},actor);assert.equal(r.status,403);assert.equal(r.data.code,'42501');}
+ assert.deepEqual(await rpc('cashier_expense_source_status_v1',{p_club_id:denied.club},denied.cashier),{club_id:denied.club,enabled:true,expense_cash_source_enabled:true});
+ sql(`UPDATE public.cashier_tour_settings SET expense_cash_source_enabled=false WHERE club_id='${denied.club}'`);
+ assert.deepEqual(await rpc('cashier_expense_source_status_v1',{p_club_id:denied.club},denied.cashier),{club_id:denied.club,enabled:true,expense_cash_source_enabled:false});
+ proof.narrowStatusReader={cashier:true,accountantDenied:true,foreignDenied:true,missingActorDenied:true,adoptionOffVisible:true,settingsTableStillPrivate:true};
  await page.addInitScript(input=>{window.__expenseCashInput=input;},{club:denied.club,actor:denied.accountant,jwt:token(denied.accountant),from:new Date(Date.now()-86400000).toISOString(),to:new Date(Date.now()+86400000).toISOString()});
  await page.route('**/*',route=>route.request().url().startsWith(base)||route.request().url().startsWith('data:')?route.continue():route.abort());
  await page.goto(base+'/tests/financeExpenseCashClient/http.preview.html');await page.getByRole('alert').filter({hasText:'chưa có quyền chi từ két'}).waitFor();assert.equal(await page.getByLabel('Két chi tiền',{exact:true}).count(),0);zero(denied);await page.close();livePage=null;

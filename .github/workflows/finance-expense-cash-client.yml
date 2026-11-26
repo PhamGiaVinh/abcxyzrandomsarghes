@@ -6,6 +6,7 @@ on:
       - 'VinPoker/tests/financeExpenseCashClient/**'
       - 'VinPoker/src/components/clubExpenses/**'
       - 'VinPoker/src/lib/clubExpenses/cashierExpensePayment*'
+      - 'VinPoker/supabase/pending-migrations/20261126023026_finance_expense_cash_source_status_v1.sql'
 permissions: {actions: read, contents: read}
 jobs:
   client-runtime:
