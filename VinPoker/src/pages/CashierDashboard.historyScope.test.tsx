@@ -59,4 +59,3 @@ describe.each([['history',HistoryTab],['refund history',RefundHistoryTab]] as co
   await act(async()=>pending.resolve({data:['club-a'],error:null}));expect(h.export).not.toHaveBeenCalled();
  });
 });
-

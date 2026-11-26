@@ -64,4 +64,3 @@ export function useCashierClubScope(actorId:string|null,sessionEpoch:number,enab
  const current=enabled&&state.key===key?state:{scope:null,error:null};
  return {clubs:current.scope?.clubs??null,ownerClubIds:current.scope?.ownerClubIds??[],isAdmin:current.scope?.isAdmin??false,error:current.error,refresh};
 }
-

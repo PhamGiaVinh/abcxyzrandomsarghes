@@ -69,4 +69,3 @@ export function useCashierStakingHistory(clubIds:string[],kind:Kind){
  const visible=state.key===key?state:{rows:null,error:null};
  return {rows:visible.rows,error:visible.error,reload,exportRows,exporting,exportError};
 }
-
