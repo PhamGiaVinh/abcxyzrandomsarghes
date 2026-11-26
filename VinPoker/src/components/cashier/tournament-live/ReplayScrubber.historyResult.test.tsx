@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { buildFixtureHand } from "@/dev/livefeltFixtures";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ReplayHand } from "@/lib/tracker-poker/replayEngine";
 import { ReplayScrubber } from "./ReplayScrubber";
@@ -21,6 +22,31 @@ beforeEach(() => vi.stubGlobal("ResizeObserver", class {
   disconnect() {}
 }));
 afterEach(() => vi.unstubAllGlobals());
+
+it("plays SB, ante and BB before dealing two rounds to eight players", () => {
+  vi.useFakeTimers();
+  const onFrame = vi.fn();
+  try {
+    render(<ReplayScrubber hand={buildFixtureHand("verified-bba-jj", 8)} onFrame={onFrame} hud />);
+    const current = () => onFrame.mock.calls.at(-1)?.[0];
+    expect(current()).toMatchObject({ index: 0, holeCardsDealt: false, dealHoleCards: false });
+    fireEvent.click(screen.getByTitle("Phát"));
+    for (const actionType of ["post_sb", "post_ante", "post_bb"]) {
+      act(() => vi.advanceTimersByTime(1000));
+      expect(current().latestAction.action_type).toBe(actionType);
+      expect(current().holeCardsDealt).toBe(false);
+    }
+    act(() => vi.advanceTimersByTime(350));
+    expect(current()).toMatchObject({ index: 3, holeCardsDealt: true, dealHoleCards: true });
+    act(() => vi.advanceTimersByTime(3499));
+    expect(current().index).toBe(3);
+    act(() => vi.advanceTimersByTime(1));
+    expect(current()).toMatchObject({ index: 4, holeCardsDealt: true, dealHoleCards: false });
+  } finally {
+    cleanup();
+    vi.useRealTimers();
+  }
+});
 
 it("shows the exact verified History result only at the end without treating it as settlement proof", () => {
   render(<ReplayScrubber hand={hand} onFrame={vi.fn()} hud />);

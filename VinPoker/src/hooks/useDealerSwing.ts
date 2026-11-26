@@ -39,6 +39,8 @@ export interface DealerAttendance {
   id: string;
   dealer_id: string;
   shift_date: string;
+  duplicate_active_attendance?: boolean;
+  dealer_shifts?: { club_id: string; start_time: string; end_time: string; closed_at: string | null; archived_at: string | null } | null;
   status: string;
   check_in_time: string | null;
   check_out_time: string | null;
@@ -57,6 +59,7 @@ export interface DealerAttendance {
     telegram_username?: string;
     tier: "A" | "B" | "C";
     club_id: string;
+    status?: string;
   };
 }
 
@@ -163,12 +166,15 @@ interface UseRealtimeQueryOptions<T> {
   realtimeTables: string[];
   clubIds: string[];
   pollFallbackMs?: number;
+  backoffPolling?: boolean;
+  separateTableChannels?: boolean;
 }
 
 function useRealtimeQuery<T>(
   options: UseRealtimeQueryOptions<T>
 ): { data: T[]; loading: boolean; error: string | null; refetch: () => void } {
-  const { queryFn, realtimeTables, clubIds, pollFallbackMs = 60_000 } = options;
+  const { queryFn, realtimeTables, clubIds, pollFallbackMs = 60_000, backoffPolling = false } = options;
+  const separateTableChannels = options.separateTableChannels ?? false;
   const { user } = useAuth();
   const actorId = user?.id ?? null;
 
@@ -186,6 +192,8 @@ function useRealtimeQuery<T>(
   const lifetime = useRef({ active: false, generation: 0 });
   const subscriptionGeneration = useRef(0);
   const generationRef = useRef(0);
+  const pendingRead = useRef<number | null>(null);
+  const pollingState = useRef({ failures: 0, retryAt: 0 });
   const queryFnRef = useRef<() => Promise<any>>(queryFn);
   /** Unique per-hook-instance id to prevent channel name collision when
    *  multiple hooks subscribe to the same table (e.g. useCheckedInDealers
@@ -205,6 +213,8 @@ function useRealtimeQuery<T>(
     const capturedScope = scopeRef.current;
     const capturedLifetime = lifetime.current.generation;
     const gen = ++generationRef.current;
+    pendingRead.current = gen;
+    let failed = false;
     const isCurrent = () => lifetime.current.active
       && lifetime.current.generation === capturedLifetime
       && capturedScope === scopeRef.current && gen === generationRef.current;
@@ -215,6 +225,7 @@ function useRealtimeQuery<T>(
       const rows = Array.isArray(result) ? result : result?.data;
       const error = Array.isArray(result) ? null : result?.error;
       if (error) {
+        failed = true;
         const msg = (error as any)?.message || JSON.stringify(error);
         console.error("[useRealtimeQuery] error:", msg);
         setError(msg);
@@ -226,15 +237,26 @@ function useRealtimeQuery<T>(
       snapshotScopeRef.current = capturedScope;
     } catch (e) {
       if (!isCurrent()) return;
+      failed = true;
       const msg = (e as Error)?.message || "Unknown error";
       console.error("[useRealtimeQuery] threw:", msg);
       setError(msg);
       setSnapshotScope(capturedScope);
       snapshotScopeRef.current = capturedScope;
     } finally {
-      if (isCurrent()) setLoading(false);
+      if (pendingRead.current === gen) pendingRead.current = null;
+      if (isCurrent()) {
+        if (backoffPolling) {
+          const failures = failed ? pollingState.current.failures + 1 : 0;
+          pollingState.current = {
+            failures,
+            retryAt: failed ? Date.now() + Math.min(30_000, pollFallbackMs * 2 ** failures) : 0,
+          };
+        }
+        setLoading(false);
+      }
     }
-  }, [actorId]);
+  }, [actorId, backoffPolling, pollFallbackMs]);
 
   useEffect(() => {
     let active = true;
@@ -250,6 +272,7 @@ function useRealtimeQuery<T>(
     const selectedClubs: string[] = JSON.parse(clubsKey);
     const selectedTables: string[] = JSON.parse(tablesKey);
     generationRef.current += 1;
+    pollingState.current = { failures: 0, retryAt: 0 };
     setData([]);
     setError(null);
     setSnapshotScope(null);
@@ -271,47 +294,43 @@ function useRealtimeQuery<T>(
     }
 
     const ids = selectedClubs.join("+");
-    const tables = selectedTables.join("+");
-    const channel = supabase.channel(`swing:${tables}:${ids}:${instanceId}:${++subscriptionGeneration.current}`);
-
-    for (const table of selectedTables) {
-      channel.on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table,
-        },
-        () => {
-          invalidate();
+    // An unavailable metadata binding must not interrupt the attendance feed.
+    const groups = separateTableChannels ? selectedTables.map(table => [table]) : [selectedTables];
+    const channels = groups.map(group => {
+      const channel = supabase.channel(`swing:${group.join("+")}:${ids}:${instanceId}:${++subscriptionGeneration.current}`);
+      for (const table of group) {
+        channel.on("postgres_changes", { event: "*", schema: "public", table }, invalidate);
+      }
+      channel.subscribe(status => {
+        if (status === "SUBSCRIBED") {
+          console.debug("[useRealtimeQuery] Realtime connected:", group);
+          // Catch writes between the initial read and joining the roster feed.
+          if (separateTableChannels) invalidate();
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("[useRealtimeQuery] Realtime error, falling back to poll", group);
         }
-      );
-    }
-
-    channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") {
-        console.debug("[useRealtimeQuery] Realtime connected:", selectedTables);
-      }
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        console.warn("[useRealtimeQuery] Realtime error, falling back to poll");
-      }
+      });
+      return channel;
     });
 
     const onResume = () => { if (canRefresh()) invalidate(); };
     document.addEventListener("visibilitychange", onResume);
     window.addEventListener("online", onResume);
-    const timer = window.setInterval(() => { if (active && canRefresh()) void refetch(); }, pollFallbackMs);
+    const timer = window.setInterval(() => {
+      if (active && canRefresh() && (!backoffPolling ||
+        (pendingRead.current === null && Date.now() >= pollingState.current.retryAt))) void refetch();
+    }, pollFallbackMs);
 
     return () => {
       active = false;
       generationRef.current += 1;
-      supabase.removeChannel(channel);
+      for (const channel of channels) supabase.removeChannel(channel);
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onResume);
       window.removeEventListener("online", onResume);
       if (invalidationTimer !== undefined) window.clearTimeout(invalidationTimer);
     };
-  }, [actorId, clubsKey, tablesKey, instanceId, pollFallbackMs, refetch]);
+  }, [actorId, clubsKey, tablesKey, instanceId, pollFallbackMs, backoffPolling, separateTableChannels, refetch]);
 
   const currentSnapshot = snapshotScope === scope;
   return {
@@ -331,7 +350,8 @@ export function useCheckedInDealers(clubIds: string[]) {
           `id, dealer_id, shift_date, status, check_in_time, check_out_time,
            overtime_minutes, current_state, worked_minutes_since_last_break,
            priority_break_flag, last_released_at,
-           dealers!inner(full_name, telegram_username, tier, club_id)`
+           dealers!inner(full_name, telegram_username, tier, club_id, status),
+           dealer_shifts!dealer_attendance_shift_id_fkey(club_id, start_time, end_time, closed_at, archived_at)`
         )
         .eq("status", "checked_in")
         .in("dealers.club_id", clubIds)
@@ -343,7 +363,8 @@ export function useCheckedInDealers(clubIds: string[]) {
         // frontend list is filtered; the scheduler already excludes them.
         .is("dealers.deleted_at", null)
         .order("check_in_time", { ascending: true }),
-    realtimeTables: ["dealer_attendance"],
+    realtimeTables: ["dealer_attendance", "dealer_shifts", "dealers"],
+    separateTableChannels: true,
     clubIds,
   });
 
@@ -354,8 +375,11 @@ export function useCheckedInDealers(clubIds: string[]) {
     const map = new Map<string, DealerAttendance>();
     for (const d of result.data) {
       const existing = map.get(d.dealer_id);
-      if (!existing || d.check_in_time! > existing.check_in_time!) {
+      if (!existing) {
         map.set(d.dealer_id, d);
+      } else {
+        const latest = (d.check_in_time ?? "") > (existing.check_in_time ?? "") ? d : existing;
+        map.set(d.dealer_id, { ...latest, duplicate_active_attendance: true });
       }
     }
     return Array.from(map.values());
@@ -698,7 +722,8 @@ export function useActiveTables(clubIds: string[]) {
  * Floor. The legacy reader remains available to configuration screens that
  * still need raw game_tables metadata.
  */
-export function useDealerOperationalTables(clubIds: string[]) {
+export function useDealerOperationalTables(clubIds: string[], reconcileFloorSessions = false) {
+  const fastReconciliation = FEATURES.floorTableControlV3 && reconcileFloorSessions;
   return useRealtimeQuery<GameTableRow>({
     queryFn: async () => {
       if (!FEATURES.floorTableControlV3) {
@@ -710,7 +735,18 @@ export function useDealerOperationalTables(clubIds: string[]) {
       }
 
       const client = createFloorTableControlV3Client(
-        ((name, args) => (supabase.rpc as unknown as FloorTableControlV3Rpc)(name, args)),
+        async (name, args) => {
+          if (!fastReconciliation || name !== "get_club_table_inventory") {
+            return (supabase.rpc as unknown as FloorTableControlV3Rpc)(name, args);
+          }
+          const controller = new AbortController();
+          const timeout = window.setTimeout(() => controller.abort(), 4500);
+          try {
+            return await supabase.rpc(name, { p_club_id: String(args.p_club_id) }).abortSignal(controller.signal);
+          } finally {
+            window.clearTimeout(timeout);
+          }
+        },
         { enabled: true },
       );
       const responses = await Promise.all(
@@ -731,6 +767,10 @@ export function useDealerOperationalTables(clubIds: string[]) {
     realtimeTables: FEATURES.floorTableControlV3
       ? ["game_tables", "table_sessions", "tournament_tables", "dealer_assignments"]
       : ["game_tables"],
+    // An unstaffed close changes only Floor rows, which are not all published.
+    // Reconcile the authorized inventory while the operational Swing view is visible.
+    pollFallbackMs: fastReconciliation ? 2000 : undefined,
+    backoffPolling: fastReconciliation,
     clubIds,
   });
 }

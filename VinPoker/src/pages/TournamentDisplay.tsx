@@ -6,6 +6,7 @@ import { TvBreakScreen } from "@/components/tv/TvBreakScreen";
 import { TvPayoutsScreen } from "@/components/tv/TvPayoutsScreen";
 import { TvAnnouncementScreen } from "@/components/tv/TvAnnouncementScreen";
 import { TvChrome } from "@/components/tv/TvChrome";
+import { TvLevelSound } from "@/components/tv/TvLevelSound";
 import { useTvDisplayState } from "@/lib/tv/useTvDisplayState";
 import { selectTvScreen } from "@/lib/tv/selectTvScreen";
 import { clearDisplayToken, storeDisplayToken } from "@/lib/tv/displayToken";
@@ -63,12 +64,15 @@ const TournamentDisplay = () => {
     <TvChrome
       wrapperProps={{ "data-display-id": payload?.display?.id } as HTMLAttributes<HTMLDivElement>}
       overlay={
-        state === "ready" && offline ? (
-          <span
-            title={t("tv.offline")}
-            className="absolute bottom-[1.5vmin] left-[1.5vmin] h-[1.2vmin] w-[1.2vmin] animate-pulse rounded-full bg-amber-500/80"
-          />
-        ) : null
+        <>
+          <TvLevelSound data={state === "ready" && selectTvScreen(payload?.display?.layout, !!data) === "clock" ? data : null} />
+          {state === "ready" && offline ? (
+            <span
+              title={t("tv.offline")}
+              className="absolute bottom-[1.5vmin] left-[1.5vmin] h-[1.2vmin] w-[1.2vmin] animate-pulse rounded-full bg-amber-500/80"
+            />
+          ) : null}
+        </>
       }
     >
       {(() => {

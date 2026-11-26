@@ -1,9 +1,9 @@
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const state = vi.hoisted(() => ({ readTour: vi.fn(), readOrdered: vi.fn(), rpc: vi.fn(), select:vi.fn(), signals:[] as AbortSignal[], client: {} as Record<string,unknown> }));
+const state = vi.hoisted(() => ({ broadcast: false, readTour: vi.fn(), readOrdered: vi.fn(), rpc: vi.fn(), select:vi.fn(), signals:[] as AbortSignal[], client: {} as Record<string,unknown> }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => state.client }));
 vi.mock("@/hooks/useLiveClock", () => ({ useLiveClock: () => 0 }));
-vi.mock("@/lib/featureFlags", () => ({ FEATURES: { tvLayoutEditorV1: false } }));
+vi.mock("@/lib/featureFlags", () => ({ FEATURES: { tvLayoutEditorV1: false, get publicSpectatorRealtimeV2(){return state.broadcast;} } }));
 import { useTournamentTvDataCore } from "./useTournamentTvDataCore";
 const a = "f7280000-0000-4000-8000-000000000003";
 const b = "f7280000-0000-4000-8000-000000000004";
@@ -14,6 +14,7 @@ const tourRow = (id: string) => ({ data: { name: id, status: "live", players_rem
 beforeEach(() => {
   vi.clearAllMocks();
   state.signals=[];
+  state.broadcast=false;
   state.readTour.mockImplementation((id: string) => Promise.resolve(tourRow(id)));
   state.readOrdered.mockImplementation(() => Promise.resolve({ data: [], error: null }));
   state.rpc.mockImplementation((name: string, args: { p_tournament_id: string }) => Promise.resolve(name === "get_tournament_clock"
@@ -203,4 +204,23 @@ describe("TV canonical participation and scope", () => {
     await act(async () => resolveOld({ ...tourRow(a), data: { ...tourRow(a).data, name: "OLD ACCOUNT" } }));
     expect(result.current.data?.tournamentName).toBe(a);
   });
+});
+
+it('refreshes the same authenticated TV on tournament Broadcast without legacy changes',async()=>{
+ state.broadcast=true;
+ let onChanged!:(message:unknown)=>void;
+ let onStatus!:(status:string)=>void;
+ const channel={
+  on:vi.fn((_type,_filter,callback)=>{onChanged=callback;return channel;}),
+  subscribe:vi.fn(callback=>{onStatus=callback;return channel;}),
+ };
+ state.client.channel=vi.fn(()=>channel);
+ const {result}=renderHook(()=>useTournamentTvDataCore(a,{userId:'owner',authLoading:false}));
+ await waitFor(()=>expect(result.current.data?.status).toBe('live'));
+ expect(state.client.channel).toHaveBeenCalledWith(`public:tournament-viewer-v2:${a}`,{config:{private:false}});
+ expect(channel.on).toHaveBeenCalledWith('broadcast',{event:'changed'},expect.any(Function));
+ act(()=>onStatus('SUBSCRIBED'));
+ state.readTour.mockResolvedValue({...tourRow(a),data:{...tourRow(a).data,status:'completed'}});
+ act(()=>onChanged({payload:{tournamentId:a,components:['clock']}}));
+ await waitFor(()=>expect(result.current.data?.status).toBe('finished'),{timeout:4000});
 });

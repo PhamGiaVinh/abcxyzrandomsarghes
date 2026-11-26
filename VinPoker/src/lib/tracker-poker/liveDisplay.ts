@@ -24,13 +24,16 @@ export function deriveLiveHandDisplay(args: {
   startingStacks: Map<string, number>;
   actions: LiveDisplayAction[];
   inProgress: boolean;
+  bigBlindAnteOnly?: boolean;
 }): {
   remainingStacks: Map<string, number>;
   contributions: Map<string, number>;
   potBreakdown: PotBreakdown;
   potSize: number;
 } {
-  const contributionRows = contributionsFromActions(args.actions);
+  const bigBlindPayer = args.bigBlindAnteOnly
+    ? args.actions.find(action => action.action_type === "post_bb")?.player_id : undefined;
+  const contributionRows = contributionsFromActions(args.actions, bigBlindPayer);
   const contributions = new Map(contributionRows.map((row) => [row.player_id, row.total_bet]));
   const remainingStacks = new Map<string, number>();
   for (const [playerId, startingStack] of args.startingStacks) {

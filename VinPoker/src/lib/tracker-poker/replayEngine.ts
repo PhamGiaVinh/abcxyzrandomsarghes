@@ -54,6 +54,8 @@ export interface ReplayHand {
   big_blind?: number;
   small_blind?: number | null;
   ante?: number | null;
+  /** Set from the frozen hand rule when the BB alone supplied dead ante chips. */
+  big_blind_ante_only?: boolean;
   level_number?: number | null;
   players: ReplayHandPlayer[];
   actions: ReplayHandAction[];
@@ -74,6 +76,9 @@ export interface ReplayHand {
 }
 
 export interface ReplayFrame {
+  /** Playback-only cues supplied by the transport after blind setup. */
+  dealHoleCards?: boolean;
+  holeCardsDealt?: boolean;
   /** 0..N — number of actions applied. */
   index: number;
   seats: SeatInfo[];
@@ -233,6 +238,10 @@ export function buildReplayFrames(hand: ReplayHand, opts?: { trackBets?: boolean
   const trackBets = !!opts?.trackBets;
   const actions = [...(hand.actions || [])].sort((a, b) => a.action_order - b.action_order);
   const N = actions.length;
+  const blindPayer = actions.find(action => action.action_type === "post_bb")?.player_id;
+  const antePosts = actions.filter(action => action.action_type === "post_ante");
+  const bigBlindAntePayer = hand.big_blind_ante_only && antePosts.length === 1 && antePosts[0].player_id === blindPayer
+    ? blindPayer : undefined;
   const players = hand.players || [];
   const positions = getHandSeatPositions(players, hand.button_seat, actions);
   const community = hand.community_cards || [];
@@ -262,7 +271,7 @@ export function buildReplayFrames(hand: ReplayHand, opts?: { trackBets?: boolean
 
   const makeFrame = (k: number, lastAction: ReplayHandAction | null): ReplayFrame => {
     const breakdown = computePotBreakdown(
-      contributionsFromActions(actions.slice(0, k) as any)
+      contributionsFromActions(actions.slice(0, k), bigBlindAntePayer)
     );
     const isFinal = k === N;
     const reveal =
@@ -398,7 +407,7 @@ export function buildReplayFrames(hand: ReplayHand, opts?: { trackBets?: boolean
         // P0.1: the DELTA semantics live in streetContribution (potEngine) — the
         // shared reconstruction source for live + replay. Never add raw inline.
         const add = streetContribution(a.action_type, a.action_amount);
-        st.streetBet += add;
+        if (a.action_type !== "post_ante" || a.player_id !== bigBlindAntePayer) st.streetBet += add;
         st.totalBet += add;
       }
       st.last = formatActionLabel({

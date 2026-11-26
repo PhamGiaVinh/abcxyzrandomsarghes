@@ -53,10 +53,10 @@ export function ViewerSyncStatus({ phase, lastLabel, onReload }: ViewerSyncStatu
     return (
       <div ref={errorRef} tabIndex={-1} className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-red-600/50 bg-red-950/30 text-[11px] text-red-300" role="alert">
         <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
-        <span className="font-medium">Chua xac minh duoc server - khong thao tac tiep</span>
+        <span className="font-medium">{lastLabel || "Chưa xác minh được trạng thái trên máy chủ. Hãy tải lại bàn."}</span>
         {onReload && (
           <button type="button" onClick={onReload} className="rounded border border-red-400/60 px-2 py-0.5 font-semibold hover:bg-red-500/15">
-            Tai lai
+            Tải lại
           </button>
         )}
       </div>

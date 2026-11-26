@@ -29,12 +29,26 @@ export function prizePaymentPayload(intent: PrizePaymentIntent) {
     ...(intent.multiDayEventId?{event_id:intent.multiDayEventId,participation_id:intent.multiDayParticipationId}:{}) };
 }
 export type PrizePaymentResolution = { status: "unknown" } | { status: "rejected"; error: string }
-  | { status: "committed"; outcome: "recorded" | "already_paid"; amount: number };
+  | { status: "committed"; outcome: "recorded" | "already_paid"; paymentId: string; amount: number };
 // Only established business rejections resolve a request. An unknown envelope
 // must preserve the journal; it says nothing conclusive about an earlier send.
 const resolvedRejections=new Set(['invalid_payment_intent','tournament_not_found','place_not_in_money',
   'place_not_finalized','place_ambiguous','prize_invalid','recipient_missing','payout_confirmation_stale',
   'paid_result_conflict','multi_day_obligations_not_finalized','multi_day_package_release_off','no_unpaid_obligation']);
+export function prizeDrawerRetryMessage(intent: PrizePaymentIntent, error: {code?: string;message?: string}): string | null {
+  if (intent.method !== "cash") return null;
+  if (error.code === "55P03" && error.message === "cash_prize_drawer_busy") {
+    return "Két đang bận. Khi két sẵn sàng, chọn Gửi lại yêu cầu cũ.";
+  }
+  if (error.code === "23514" && error.message === "cash_prize_requires_open_shift") {
+    return "Ca chưa mở két. Mở ca rồi chọn Gửi lại yêu cầu cũ.";
+  }
+  if (error.code === "23514" && error.message === "cash_prize_drawer_amount_unavailable") {
+    return "Két không đủ tiền đã ghi nhận để trả khoản này. Đối soát két rồi chọn Gửi lại yêu cầu cũ.";
+  }
+  return null;
+}
+
 export function resolvePrizePaymentResult(intent: PrizePaymentIntent, result: unknown): PrizePaymentResolution {
   if (!record(result)) return { status: "unknown" };
   if (result.ok === false && typeof result.error === "string" && result.error) {
@@ -48,7 +62,7 @@ export function resolvePrizePaymentResult(intent: PrizePaymentIntent, result: un
     || result.tournament_id !== intent.tournamentId || result.finished_place !== intent.finishedPlace
     || result.entry_id !== intent.entryId || result.recipient_ref !== intent.recipientRef
     || result.prize_amount !== intent.prizeAmount) return { status: "unknown" };
-  return { status: "committed", outcome: result.outcome as "recorded" | "already_paid", amount: intent.prizeAmount };
+  return { status: "committed", outcome: result.outcome as "recorded" | "already_paid", paymentId: result.payment_id, amount: intent.prizeAmount };
 }
 export function resolvePrizePaymentReceipt(intent: PrizePaymentIntent, receipt: unknown): PrizePaymentResolution {
   if (!record(receipt) || receipt.found !== true || receipt.actor_id !== intent.actorId

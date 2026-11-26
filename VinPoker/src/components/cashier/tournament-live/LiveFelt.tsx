@@ -17,10 +17,13 @@ import { tableAppearanceStyle, type TableAppearance } from '@/components/tracker
 
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTrackerCardStyle } from '@/components/tracker/TrackerCardStyle';
-import { TRACKER_TABLE_GEOMETRY, TRACKER_FELT_STYLE, trackerTableSizes, trackerBetPoint, useTrackerTableLayout } from '@/components/tracker/trackerTableLayout';
+import { PlayerSeatPlate, PlayerSeatPortrait } from '@/components/tracker/PlayerSeat';
+import { TRACKER_TABLE_GEOMETRY, trackerTableSizes, trackerBetPoint, useTrackerTableLayout } from '@/components/tracker/trackerTableLayout';
+import { TableSurface } from '@/components/tracker/TableSurface';
+import { TablePot } from '@/components/tracker/TablePot';
 import { useTranslation } from "react-i18next";
 import { PokerCard, CardBack } from "./PokerVisuals";
-import { CenterPotStack, ChipStack } from "./ChipStack";
+import { AwardChips, CenterPotStack, ChipStack } from "./ChipStack";
 import { FeltStatusBar } from "./FeltStatusBar";
 import { TableMotionLayer } from "./TableMotionLayer";
 import { useCountUp } from "@/hooks/useCountUp";
@@ -31,9 +34,10 @@ import {
   type BestFiveFocus,
   type VerifiedShowdownPresentation,
 } from "@/lib/tracker-poker/replayBestFiveFocus";
-import { POT_AWARD_TRAVEL_MS, isReplaySettlementPayoutPhase, type ReplayRunoutPhase, type ReplayRunoutPresentation } from "@/lib/tracker-poker/replayRunoutTimeline";
+import { POT_AWARD_TRAVEL_MS, isReplaySettlementPayoutPhase, showdownRevealDelay, type ReplayRunoutPhase, type ReplayRunoutPresentation } from "@/lib/tracker-poker/replayRunoutTimeline";
 import { shouldCollectCommittedChips } from "@/lib/tracker-poker/livePotCollection";
-import { formatViewerChipAndBB } from "@/lib/tracker-poker/viewerAmounts";
+import { toggleViewerAmountUnit } from "@/components/tracker/viewerAmountUnit";
+import { formatViewerAmount, type ViewerAmountUnit } from "@/lib/tracker-poker/viewerAmounts";
 
 /** Count-up text (Phase 3, tableFx only): tweens a numeric display toward its target.
  *  First render / enabled-off / reduced-motion emit the target directly, so static
@@ -238,6 +242,7 @@ export interface LiveFeltProps {
   formatBB: (n: number) => string | null;
   /** Spectator projection: every gameplay amount is rendered as BB only. */
   viewerAmountsInBB?: boolean;
+  viewerAmountUnit?: ViewerAmountUnit;
   viewerBigBlind?: number | null;
   /** Narrow-phone vertical layout (tall oval + portrait seat map). */
   portrait?: boolean;
@@ -344,23 +349,17 @@ export interface LiveFeltProps {
    * state only: all amounts and recipients come from `showdownPresentation`.
    */
   replayRunoutPresentation?: ReplayRunoutPresentation | null;
-  /**
-   * trackerShowdownRevealOrder (viewer) — ADDITIVE; absent → simultaneous reveal
-   * (byte-identical). player_ids in the order they should table their cards at
-   * showdown; each revealed seat's hole-card flip is delayed by its index ×
-   * `revealStaggerMs`, so the cards appear in sequence ~0.5s apart.
-   */
+  /** Players whose already-public cards are revealed one seat at a time. */
   revealOrder?: string[];
-  /** Per-step delay for the staggered showdown reveal (ms). Default 500 when
-   * `revealOrder` is set. */
-  revealStaggerMs?: number;
   /** VinPoker-native display events. No event may decide cards, pot or winners. */
   motionEvents?: TableMotionEvent[];
   motionHandKey?: string | null;
   motionSpeed?: number;
   motionEnabled?: boolean;
+  dealSound?: boolean;
   /** Static historical hand: never invent card backs for cards not public in the payload. */
   hideUnrecordedHoleCards?: boolean;
+  hideHoleCards?: boolean;
 }
 
 export function LiveFelt({
@@ -375,6 +374,7 @@ export function LiveFelt({
   latestAction,
   formatBB,
   viewerAmountsInBB = false,
+  viewerAmountUnit,
   viewerBigBlind = null,
   portrait: portraitProp,
   buttonSeat = null,
@@ -398,12 +398,13 @@ export function LiveFelt({
   replayRunoutPhase = null,
   replayRunoutPresentation = null,
   revealOrder,
-  revealStaggerMs = 500,
   motionEvents = [],
   motionHandKey = null,
   motionSpeed = 1,
   motionEnabled = false,
+  dealSound = false,
   hideUnrecordedHoleCards = false,
+  hideHoleCards = false,
 }: LiveFeltProps) {
   const { t } = useTranslation();
   const unified = !!useTrackerCardStyle();
@@ -499,17 +500,30 @@ export function LiveFelt({
   // on every render, so operator/TV and static renders are byte-identical. Display
   // only — every gate below still reads the raw potSize.
   const displayPot = useCountUp(potSize, { enabled: tableFx });
-  const formatViewerAmount = (amount: number): string => formatBB(amount) ?? "— BB";
-  const formatGameplayAmount = viewerAmountsInBB ? formatViewerAmount : formatStack;
+  const formatSpectatorAmount = (amount: number): string => viewerAmountUnit
+    ? formatViewerAmount(amount, viewerBigBlind, viewerAmountUnit)
+    : formatBB(amount) ?? "— BB";
+  const formatGameplayAmount = viewerAmountsInBB ? formatSpectatorAmount : formatStack;
 
-  // trackerShowdownRevealOrder: this seat's flip delay = its place in the reveal
-  // order × the per-step stagger. Not in `revealOrder` (or prop absent) → undefined
-  // → no delay (simultaneous, byte-identical). Index 0 → 0ms (starts immediately).
-  const revealDelayStyle = (playerId: string): CSSProperties | undefined => {
-    if (!revealOrder) return undefined;
-    const i = revealOrder.indexOf(playerId);
-    return i > 0 ? { animationDelay: `${i * revealStaggerMs}ms` } : undefined;
-  };
+  const revealKey = revealOrder?.length ? JSON.stringify([motionHandKey, handNumber, revealOrder]) : null;
+  const revealCount = revealOrder?.length ?? 0;
+  const [revealProgress, setRevealProgress] = useState<{ key: string; count: number } | null>(null);
+  useEffect(() => {
+    if (!revealKey) {
+      setRevealProgress(null);
+      return;
+    }
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setRevealProgress({ key: revealKey, count: revealCount });
+      return;
+    }
+    const timers = Array.from({ length: revealCount }, (_, index) =>
+      window.setTimeout(() => setRevealProgress(current => current?.key === revealKey && current.count > index
+        ? current : { key: revealKey, count: index + 1 }), showdownRevealDelay(index, motionSpeed)),
+    );
+    return () => timers.forEach(timer => window.clearTimeout(timer));
+  }, [motionSpeed, revealCount, revealKey]);
+  const revealedCount = revealProgress && revealProgress.key === revealKey ? revealProgress.count : 0;
 
   // Viewer Felt V2 — cards size with the FELT's own width (cqi resolves to the
   // container-type set on the oval below) so they never overlap on mobile. Inline
@@ -614,11 +628,25 @@ export function LiveFelt({
   const activePotWinnerIds = new Set(
     activePotAwardsComplete ? activePotLayer?.winnerPlayerIds ?? [] : [],
   );
-  const visibleSettlementPotLayers = settlementPayoutSequenceActive && showdownPresentation
-    ? settlementPayoutPhase === "pot_award" || settlementPayoutPhase === "static"
-      ? showdownPresentation.potLayers.slice(Math.max(0, activePotLayerIndex), Math.max(0, activePotLayerIndex) + 1)
+  const visibleSettlementPotLayers = settlementPayoutSequenceActive && showdownPresentation && settlementPayoutPhase !== "static"
+    ? settlementPayoutPhase === "pot_award"
+      ? showdownPresentation.potLayers.slice(Math.max(0, activePotLayerIndex) + (awardArrived ? 1 : 0))
       : showdownPresentation.potLayers
     : [];
+  const confirmedPots = showdownPresentation?.enabled ? showdownPresentation.potLayers : undefined;
+  const visiblePotLayers = viewerAmountUnit
+    ? (confirmedPots?.reduce((sum, pot) => sum + pot.amount, 0) === displayPot ? confirmedPots : undefined)
+    : potBreakdown?.pots;
+  const renderViewerPot = () => <TablePot total={potUnavailable ? "—" : formatGameplayAmount(displayPot)}
+    layers={potUnavailable ? undefined : visiblePotLayers} formatAmount={formatGameplayAmount}
+    onAmountClick={viewerAmountUnit ? toggleViewerAmountUnit : undefined}
+    amountUnitLabel={viewerAmountUnit === "bb" ? "Chip" : "BB"} />;
+  const visibleMainPot = visibleSettlementPotLayers.find(pot => pot.kind === "main");
+  const visibleSidePots = visibleSettlementPotLayers.filter(pot => pot.kind === "side");
+  const settlementClusters = [
+    ...(visibleMainPot ? [{ pot: visibleMainPot, amount: visibleMainPot.amount }] : []),
+    ...(visibleSidePots.length > 0 ? [{ pot: visibleSidePots[0], amount: visibleSidePots.reduce((sum, pot) => sum + pot.amount, 0) }] : []),
+  ];
   const settlementPotPoint = (visibleIndex: number, total: number): Pt => {
     const horizontalOffset = (visibleIndex - (total - 1) / 2) * 13;
     return {
@@ -659,17 +687,20 @@ export function LiveFelt({
     if (typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const slot = ((chipPush.seatNumber - 1) % 9) + 1;
     const pos = seatMap[slot] || seatMap[1];
+    const from = unified && viewerLayout ? trackerBetPoint(pos, portrait) : pos;
     // Phase 3: cap the transient queue at 3 — at 8× replay (125ms/step vs the ~520ms fly
     // animation) unbounded pushes stack into chip spam; the newest 3 keep the effect legible.
-    setChips((cs) => [...cs, { id: chipPush.nonce, fx: `${pos.l}%`, fy: `${pos.t}%`, color: chipColorFor(chipPush.kind) }].slice(-3));
-  }, [chipPush, seatMap]);
+    setChips((cs) => [...cs, { id: chipPush.nonce, fx: `${from.l}%`, fy: `${from.t}%`, color: chipColorFor(chipPush.kind) }].slice(-3));
+  }, [chipPush, seatMap, unified, viewerLayout, portrait]);
 
   // V2 landscape scale-to-fit: a wide 9-max table can't fit a narrow phone width without
   // overlap, so below LANDSCAPE_DESIGN_W we render the felt at that design width and scale
   // the WHOLE thing down to fit (everything shrinks uniformly → never overlaps). Portrait is
   // untouched (it already fits, and stays the big-readable option). Wide screens (≥ design
   // width) also untouched. Operator/TV (viewerLayout off) never measure.
-  const LANDSCAPE_DESIGN_W = 560;
+  // The unified landscape CSS has a 410px minimum height. Match its actual
+  // aspect ratio before calculating the height of the clipping wrapper.
+  const LANDSCAPE_DESIGN_W = unified ? 780 : 560;
   const FIT_PAD = 26; // breathing room above/below for pods that straddle the rim
   const feltWrapRef = layout.ref;
   const [fit, setFit] = useState<{ scale: number; h: number } | null>(null);
@@ -680,7 +711,7 @@ export function LiveFelt({
     const measure = () => {
       const w = el.clientWidth;
       if (!w || w >= LANDSCAPE_DESIGN_W) { setFit(null); return; }
-      const scale = w / LANDSCAPE_DESIGN_W;
+      const scale = (unified ? Math.max(1, w - 24) : w) / LANDSCAPE_DESIGN_W;
       const designH = LANDSCAPE_DESIGN_W / motionAspect;
       setFit({ scale, h: Math.round(designH * scale) + FIT_PAD * 2 });
     };
@@ -688,7 +719,7 @@ export function LiveFelt({
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [viewerLayout, portrait, unified, motionAspect, feltWrapRef]);
+  }, [viewerLayout, portrait, unified, motionAspect, feltWrapRef, LANDSCAPE_DESIGN_W]);
 
   return (
     <div
@@ -743,27 +774,27 @@ export function LiveFelt({
               }
         }
       >
-        <div
+        {unified ? <TableSurface portrait={portrait} appearance={appearance} /> : <div
           aria-hidden="true"
           className="absolute inset-0"
           style={{
             ...tableAppearanceStyle(appearance),
-            borderRadius: unified ? (portrait ? '38% / 22%' : '28% / 42%') : '9999px',
+            borderRadius: '9999px',
             // viewerLayout (V2) → RPT-style BLACK felt + a thin neon-green rim hint.
             // `neon` (old viewerNeon-only path) keeps the green felt; default =
             // burgundy operator/TV felt.
-            background: unified ? TRACKER_FELT_STYLE.background : viewerLayout
+            background: viewerLayout
               ? "radial-gradient(80% 72% at 50% 40%, #16181d 0%, #090b0f 58%, #020304 100%)"
               : neon
               ? "radial-gradient(62% 60% at 50% 38%, hsl(158 30% 13%) 0%, hsl(158 30% 13%) 50%, hsl(210 13% 5%) 100%)"
               : "radial-gradient(62% 60% at 50% 38%, hsl(var(--poker-felt)) 0%, hsl(var(--poker-felt)) 50%, hsl(var(--poker-felt-dark)) 100%)",
-            boxShadow: unified ? TRACKER_FELT_STYLE.boxShadow : viewerLayout
+            boxShadow: viewerLayout
               ? "inset 0 0 0 1.5px hsl(var(--primary) / 0.24), inset 0 18px 48px rgba(255,255,255,0.025), inset 0 0 82px rgba(0,0,0,0.74), 0 18px 48px rgba(0,0,0,0.56), 0 0 28px hsl(var(--primary) / 0.07)"
               : neon
               ? "inset 0 0 0 5px hsl(var(--primary) / 0.4), inset 0 0 0 7px hsl(210 13% 5% / 0.85), inset 0 0 0 8px hsl(var(--primary) / 0.55), inset 0 0 70px rgba(0,0,0,0.55), 0 22px 55px rgba(0,0,0,0.45), 0 0 36px hsl(var(--primary) / 0.12)"
               : "inset 0 0 0 5px hsl(var(--poker-gold) / 0.5), inset 0 0 0 7px hsl(var(--poker-felt-dark) / 0.85), inset 0 0 0 8px hsl(var(--poker-gold) / 0.7), inset 0 0 70px rgba(0,0,0,0.5), 0 22px 55px rgba(0,0,0,0.42)",
           }}
-        />
+        />}
         <div
           aria-hidden="true"
           className="absolute inset-0"
@@ -808,10 +839,10 @@ export function LiveFelt({
               V
             </div>
           )}
-          {potSize > 0 && compactActive && portrait && !hideBaseCenterPot && (
+          {!unified && potSize > 0 && compactActive && portrait && !hideBaseCenterPot && (
             <div data-testid="felt-total-pot" className="relative mb-2 flex flex-col items-center">
               {viewerLayout ? (
-                <CenterPotStack compact label={`${t("liveHub.felt.pot", "POT").toUpperCase()} ${formatGameplayAmount(displayPot)}`} />
+                viewerAmountUnit ? renderViewerPot() : <CenterPotStack compact label={`${formatGameplayAmount(displayPot)}`} />
               ) : (
                 <div className="tracker-pot-pulse inline-flex flex-col items-center rounded-full bg-black/70 px-4 py-1.5 shadow-[0_0_18px_hsl(var(--viewer-neon)_/_0.16)]" style={{ border: "1px solid hsl(var(--poker-gold) / 0.58)" }}>
                   <div className="tracker-display text-[8px] font-black uppercase tracking-[0.22em]" style={{ color: "hsl(var(--poker-gold) / 0.82)" }}>{t("liveHub.felt.totalPot", "Total Pot")}</div>
@@ -820,13 +851,19 @@ export function LiveFelt({
               )}
             </div>
           )}
-          {unified && <><TableLogo url={appearance?.logoUrl} /><TableBlinds {...blinds} /></>}
+          {unified && <>
+            <TableLogo url={appearance?.logoUrl} />
+            {(potSize > 0 || potUnavailable) && !hideBaseCenterPot && <div data-testid="felt-total-pot" className="mb-1.5">
+              {renderViewerPot()}
+            </div>}
+          </>}
           {/* Board — revealed cards face up. VIEWER: undealt slots render NOTHING (the
               face-down placeholders sat in front of the top-center seats, covering their
               pods/stacks/bet chips preflop). Operator/TV keep the V-logo backs → byte-identical. */}
           <div data-testid="board-cards" className={`flex items-center justify-center ${viewerLayout && portrait ? "gap-1" : "gap-1.5"}`}>
-            {displayCards.map((card, i) => {
+            {(unified ? Array.from({ length: 5 }, (_, i) => displayCards[i]) : displayCards).map((card, i) => {
               if (!card) {
+                if (unified) return null;
                 // Preserve the five-card board footprint during the viewer-only
                 // all-in runout without rendering a card back or exposing a card.
                 if (viewerLayout && replayRunoutPhase) {
@@ -872,6 +909,7 @@ export function LiveFelt({
               );
             })}
           </div>
+          {unified && <TableBlinds {...blinds} />}
           {showdownRankingVisible && (
             <div
               data-testid="felt-showdown-ranking"
@@ -897,29 +935,20 @@ export function LiveFelt({
           )}
           {/* Compact portrait: the pot lives in the STATUS BAR below (RPT pattern) — the
               short felt keeps only the board centered, so 9-max pods never collide. */}
-          {potSize > 0 && !(compactActive && portrait) && !hideBaseCenterPot && (
+          {!unified && potSize > 0 && !(compactActive && portrait) && !hideBaseCenterPot && (
             <div
               {...(viewerLayout ? { "data-testid": "felt-total-pot" } : {})}
               className={`mt-2.5 flex flex-col items-center${viewerLayout ? " relative" : ""}`}
             >
               {viewerLayout ? (
-                <CenterPotStack label={`${t("liveHub.felt.pot", "POT").toUpperCase()} ${potUnavailable ? "—" : viewerAmountsInBB ? formatViewerChipAndBB(displayPot, viewerBigBlind ?? blinds?.bb ?? null) : formatGameplayAmount(displayPot)}`} />
+                viewerAmountUnit ? renderViewerPot() : <CenterPotStack label={`${potUnavailable ? "—" : formatGameplayAmount(displayPot)}`} />
               ) : <div
                 className="tracker-pot-pulse inline-flex flex-col items-center rounded-full bg-black/55 px-3.5 py-1"
                 style={{ border: "1px solid hsl(var(--poker-gold) / 0.42)" }}
               >
-                <div className={`tracker-display text-[8px] uppercase tracking-[0.22em]${viewerLayout ? " inline-flex items-center gap-1" : ""}`} style={{ color: "hsl(var(--poker-gold) / 0.78)" }}>
-                  {viewerLayout && (
-                    <span
-                      aria-hidden="true"
-                      className="inline-block h-2 w-2 shrink-0 rounded-full"
-                      style={{ background: "radial-gradient(circle at 35% 30%, #ffe7a8, #f5b340 60%, #9a6418 100%)", boxShadow: "0 0 0 1px rgba(0,0,0,.4)" }}
-                    />
-                  )}
-                  {t("liveHub.felt.pot", "Pot")}
-                </div>
+                <span className="sr-only">{t("liveHub.felt.pot", "Pot")}</span>
                 <div className="tracker-num text-lg font-bold leading-tight sm:text-xl" style={{ color: "hsl(var(--poker-gold))" }}>
-                  {potUnavailable ? "—" : viewerAmountsInBB ? formatViewerChipAndBB(displayPot, viewerBigBlind ?? blinds?.bb ?? null) : formatStack(displayPot)}
+                  {potUnavailable ? "—" : formatGameplayAmount(displayPot)}
                   {!viewerAmountsInBB && formatBB(potSize) && (
                     <span className="ml-1.5 text-[10px] font-normal" style={{ color: "hsl(var(--poker-gold) / 0.6)" }}>
                       ({formatBB(displayPot)})
@@ -927,7 +956,7 @@ export function LiveFelt({
                   )}
                 </div>
               </div>}
-              {potBreakdown && potBreakdown.sidePots.length > 0 && (
+              {!viewerAmountUnit && potBreakdown && potBreakdown.sidePots.length > 0 && (
                 <div
                   className={
                     viewerLayout
@@ -945,7 +974,7 @@ export function LiveFelt({
                           : "border-[hsl(var(--poker-gold)/0.4)] text-[hsl(var(--poker-gold))]"
                       }`}
                     >
-                      {i === 0 ? t("liveHub.felt.main", "Main") : t("liveHub.felt.side", "Side {{i}}", { i })} {formatGameplayAmount(pot.amount)}
+                      {i === 0 ? "" : t("liveHub.felt.side", "Side {{i}}", { i })} {formatGameplayAmount(pot.amount)}
                       <span className="ml-1 font-normal opacity-60">({pot.eligible_player_ids.length})</span>
                     </span>
                   ))}
@@ -956,6 +985,8 @@ export function LiveFelt({
         </div>
 
         {seats.map((seat) => {
+          const revealIndex = revealOrder?.indexOf(seat.player_id) ?? -1;
+          const holeCards = revealIndex < 0 || revealIndex < revealedCount ? seat.hole_cards : undefined;
           const slot = ((seat.seat_number - 1) % 9) + 1;
           const pos = seatMap[slot] || seatMap[1];
           const posStyle: CSSProperties = { left: `${pos.l}%`, top: `${pos.t}%`, transform: "translate(-50%, -50%)" };
@@ -998,13 +1029,14 @@ export function LiveFelt({
           // is byte-identical. The selection frame sits on the OUTER wrapper and
           // is emerald — distinct from the to-act accent ring on the avatar.
           const isSelected = selectedSeat != null && seat.seat_number === selectedSeat;
-          const interactiveCls = onSeatClick ? " cursor-pointer" : "";
+          const portraitClick = viewerAmountUnit ? onSeatClick : undefined;
+          const interactiveCls = onSeatClick && !viewerAmountUnit ? " cursor-pointer" : "";
           const selectedCls = isSelected
             ? ` rounded-2xl ring-2 ring-emerald-400 ring-offset-2 ${
                 viewerLayout ? "ring-offset-black" : "ring-offset-[hsl(var(--poker-felt-dark))]"
               } shadow-[0_0_16px_rgba(16,185,129,0.55)]`
             : "";
-          const interactiveProps = onSeatClick
+          const interactiveProps = onSeatClick && !viewerAmountUnit
             ? {
                 role: "button" as const,
                 tabIndex: 0,
@@ -1019,13 +1051,33 @@ export function LiveFelt({
               }
             : {};
 
+          const stackAmount = viewerAmountsInBB ? (
+                      <div data-testid={`felt-stack-${seat.player_id}`} data-stack-target={displayedStack(seat)} className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
+                        <CountUpText value={displayedStack(seat)} format={formatSpectatorAmount} enabled={tableFx} />
+                      </div>
+                    ) : compactActive && formatBB(seat.chip_count) ? (
+                      <>
+                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
+                          <CountUpText value={displayedStack(seat)} format={(n) => formatBB(n) ?? formatStack(n)} enabled={tableFx} />
+                        </div>
+                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[8px] font-semibold leading-none text-white/60" style={subTextStyle}>
+                          <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="tracker-num mt-[1px] text-[10px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
+                        <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
+                      </div>
+                    );
           return (
             <div
               key={seat.player_id}
               data-tracker-seat={unified ? seat.seat_number : undefined}
               data-seat-selected={unified && isSelected}
               data-seat-acting={unified && isToAct}
-              className={`absolute z-10 ${seat.is_folded ? "opacity-50" : ""}${tableFx ? " transition-opacity duration-300 motion-reduce:transition-none" : ""}${interactiveCls}${selectedCls}`}
+              data-seat-winner={unified && isWinner || undefined}
+              data-seat-folded={unified ? !!seat.is_folded : undefined}
+              className={`absolute z-10 ${seat.is_folded && !unified ? "opacity-50" : ""}${tableFx ? " transition-opacity duration-300 motion-reduce:transition-none" : ""}${interactiveCls}${selectedCls}`}
               style={posStyle}
               {...interactiveProps}
             >
@@ -1038,7 +1090,14 @@ export function LiveFelt({
                     ◀ {t("liveHub.felt.toAct", "chờ")}
                   </div>
                 )}
-                <div className={unified ? 'tracker-seat-avatar' : 'relative'}>
+                <div className={viewerAmountUnit ? "relative z-[1]" : "contents"}>
+                {portraitClick && <button type="button" aria-label={seat.display_name}
+                  onClick={() => portraitClick(seat.seat_number)}
+                  className="absolute inset-0 z-10 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" />}
+                {unified ? <PlayerSeatPortrait name={seat.display_name} photo={seat.avatar_url} seat={seat.seat_number} style={avatarStyle}>
+                  <div className="tracker-seat-position">{isButtonSeat ? <b aria-label="Dealer">D</b> : seat.position && <span>{seat.position}</span>}</div>
+                </PlayerSeatPortrait> : (
+                <div className="relative">
                   <div
                     className={`grid ${viewerLayout ? "h-9 w-9 sm:h-10 sm:w-10" : "h-8 w-8 sm:h-9 sm:w-9"} place-items-center overflow-hidden rounded-full border-2 text-[9px] font-bold sm:text-[11px] ${
                       isWinner ? "tracker-win-glow border-[hsl(var(--poker-gold))]" : `${avatarBorder} ${avatarRing}`
@@ -1079,38 +1138,38 @@ export function LiveFelt({
                     </span>
                   )}
                 </div>
-                {viewerLayout || unified ? (
+                )}
+                </div>
+                {unified ? (
+                  <PlayerSeatPlate name={seat.display_name} seat={seat.seat_number} title={`${seat.display_name} · ${displayedStack(seat)}`}
+                    onClick={viewerAmountUnit ? toggleViewerAmountUnit : undefined}>
+                    {stackAmount}
+                  </PlayerSeatPlate>
+                ) : viewerLayout ? (
                   // V2: a CoinPoker-style "nameplate" capsule — name + stack grouped in one
                   // dark, neon-bordered pill so each seat reads as a tight unit.
                   // PR-A1 compact: the stack goes BB-FIRST (RPT pattern — meaningful at any
                   // level) with chips demoted to a smaller secondary line. formatBB null
                   // (no blind level) → chips render alone exactly as today: never a fake BB.
                   <div
-                    className={`mt-1 flex max-w-full flex-col items-center rounded-md px-1.5 py-[3px] leading-none${unified ? ' tracker-seat-plate' : ''}`}
+                    role={viewerAmountUnit ? "button" : undefined}
+                    tabIndex={viewerAmountUnit ? 0 : undefined}
+                    aria-label={viewerAmountUnit ? seat.display_name + " · Chip / BB" : undefined}
+                    onClick={viewerAmountUnit ? toggleViewerAmountUnit : undefined}
+                    onKeyDown={viewerAmountUnit ? (event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        toggleViewerAmountUnit();
+                      }
+                    } : undefined}
+                    className={`mt-1 flex max-w-full flex-col items-center rounded-md px-1.5 py-[3px] leading-none`}
                     title={`${seat.display_name} · ${displayedStack(seat)}`}
-                    style={unified ? undefined : { background: "rgba(3,5,8,0.9)", border: "1px solid hsl(var(--primary) / 0.28)", boxShadow: "0 1px 3px rgba(0,0,0,0.6)" }}
+                    style={{ background: "rgba(3,5,8,0.9)", border: "1px solid hsl(var(--primary) / 0.28)", boxShadow: "0 1px 3px rgba(0,0,0,0.6)" }}
                   >
-                    <div className={`tracker-display max-w-full truncate text-[10px] font-semibold leading-tight text-white sm:text-[11px]${unified ? ' tracker-seat-name' : ''}`} style={unified ? undefined : nameTextStyle}>
+                    <div className={`tracker-display max-w-full truncate text-[10px] font-semibold leading-tight text-white sm:text-[11px]`} style={nameTextStyle}>
                       {seat.display_name}
                     </div>
-                    {viewerAmountsInBB ? (
-                      <div data-testid={`felt-stack-${seat.player_id}`} data-stack-target={displayedStack(seat)} className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
-                        <CountUpText value={displayedStack(seat)} format={formatViewerAmount} enabled={tableFx} />
-                      </div>
-                    ) : compactActive && formatBB(seat.chip_count) ? (
-                      <>
-                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[11px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
-                          <CountUpText value={displayedStack(seat)} format={(n) => formatBB(n) ?? formatStack(n)} enabled={tableFx} />
-                        </div>
-                        <div className="tracker-num mt-[1px] whitespace-nowrap text-[8px] font-semibold leading-none text-white/60" style={subTextStyle}>
-                          <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
-                        </div>
-                      </>
-                    ) : (
-                      <div className="tracker-num mt-[1px] text-[10px] font-bold leading-none" style={{ color: "hsl(146 62% 56%)", ...bbTextStyle }}>
-                        <CountUpText value={displayedStack(seat)} format={formatStack} enabled={tableFx} />
-                      </div>
-                    )}
+                    {stackAmount}
                   </div>
                 ) : (
                   <>
@@ -1128,6 +1187,7 @@ export function LiveFelt({
                       data-testid={`felt-settlement-award-label-${seat.player_id}`}
                       className="tracker-settlement-award-label mt-1"
                       style={{ position: "relative", zIndex: 30 }}>
+                      <span data-testid={`felt-win-${seat.player_id}`} className="tracker-seat-win">WIN</span>{" "}
                       +{formatGameplayAmount(allocation.amount)}
                     </span>
                   ))}
@@ -1136,12 +1196,12 @@ export function LiveFelt({
                     Operator/TV (viewerLayout off) keep the standalone ALL IN label as today,
                     so their render is byte-identical even with current_bet now populated. */}
                 {!viewerLayout && seat.is_all_in && (
-                  <div className="mt-0.5 text-[8px] font-bold text-red-400" style={nameShadow}>{t("liveHub.felt.allIn", "ALL IN")}</div>
+                  <div className="tracker-seat-action mt-0.5 text-red-400" style={nameShadow}>{t("liveHub.felt.allIn", "ALL IN")}</div>
                 )}
                 {viewerLayout && seat.is_all_in && !seat.is_folded && !hideCommittedSeatStacks
                   && ![seat.current_bet,seat.display_committed_bet].some(value=>typeof value==='number'&&Number.isFinite(value)&&value>0) && (
                   <div data-testid={`felt-all-in-status-${seat.player_id}`}
-                    className="mt-0.5 max-w-full text-[8px] font-bold text-red-400"
+                    className="tracker-seat-action mt-0.5 text-red-400"
                     title={t('liveHub.felt.sweptAllIn','Tổng chip đã cược trong hand; đã gom vào pot')}
                     style={nameShadow}>
                     {t("liveHub.felt.allIn", "ALL IN")}
@@ -1149,9 +1209,9 @@ export function LiveFelt({
                       ? ` · ${formatGameplayAmount(seat.total_committed)}` : ''}
                   </div>
                 )}
-                {seat.is_folded && <div className="mt-0.5 text-[8px] text-zinc-300" style={nameShadow}>{t("liveHub.felt.folded", "FOLDED")}</div>}
+                {seat.is_folded && <div className="tracker-seat-action mt-0.5 text-zinc-300" style={nameShadow}>{t("liveHub.felt.folded", "FOLDED")}</div>}
                 {!seat.is_folded && !seat.is_all_in && seat.last_action && (
-                  <div className="mt-0.5 max-w-full truncate text-[8px] text-amber-300/90" style={nameShadow}>
+                  <div className="tracker-seat-action mt-0.5 text-amber-200" style={nameShadow}>
                     {viewerAmountsInBB && seat.last_action_type && seat.last_action_amount != null
                       ? formatActionLabel({
                           street: "",
@@ -1161,25 +1221,22 @@ export function LiveFelt({
                           action_type: seat.last_action_type,
                           action_amount: seat.last_action_amount,
                           action_order: 0,
-                        }, formatViewerAmount)
+                        }, formatSpectatorAmount)
                       : seat.last_action}
                   </div>
                 )}
                 {/* Compact: face-DOWN backs are dropped entirely (RPT pods carry no cards
                     until a reveal) — the short felt can't afford the extra pod height.
                     Revealed cards (showdown/all-in) still render. Non-compact unchanged. */}
-                {!seat.is_folded && (!hideUnrecordedHoleCards || (seat.hole_cards && seat.hole_cards.length === 2)) && (unified || !compactActive || (seat.hole_cards && seat.hole_cards.length === 2)) && (
+                {!hideHoleCards && !seat.is_folded && (!hideUnrecordedHoleCards || (seat.hole_cards && seat.hole_cards.length === 2)) && (unified || !compactActive || (seat.hole_cards && seat.hole_cards.length === 2)) && (
                 <div
                   data-testid="seat-holecards"
+                  data-all-in={seat.is_all_in || undefined}
+                  data-revealed={holeCards?.length === 2}
                   className={`mt-0.5 flex justify-center gap-0.5${unified ? ' tracker-seat-cards' : ''}`}
                 >
-                  {seat.hole_cards && seat.hole_cards.length === 2 ? (
-                    // trackerShowdownRevealOrder: stagger the flip by this seat's place
-                    // in the reveal order (index * revealStaggerMs added to the existing
-                    // tracker-card-reveal pop). revealOrder absent → delay undefined →
-                    // today's simultaneous reveal (byte-identical). Reduced-motion kills
-                    // the animation entirely (CSS), so the delay is moot for a11y.
-                    seat.hole_cards.map((card, ci) => {
+                  {holeCards?.length === 2 ? (
+                    holeCards.map((card, ci) => {
                       const focusClass = cardFocusClass(card, bestFiveFocus?.holeCardCodesByPlayerId.get(seat.player_id));
                       const viewerClass = viewerLayout ? "drop-shadow-[0_2px_5px_rgba(0,0,0,0.65)]" : "";
                       return (
@@ -1189,12 +1246,17 @@ export function LiveFelt({
                           size="xs"
                           className={[viewerClass, focusClass].filter(Boolean).join(" ") || undefined}
                           muted={seat.is_folded}
-                          style={{ ...holeStyle, ...revealDelayStyle(seat.player_id) }}
+                          style={holeStyle}
                         />
                       );
                     })
                   ) : (
-                    [0, 1].map((ci) => <CardBack key={ci} size="xs" muted={seat.is_folded} style={holeStyle} />)
+                    [0, 1].map(ci => {
+                      const deal = motionEvents.find(event => event.kind === "deal_hole" && event.handId === motionHandKey);
+                      const index = deal?.kind === "deal_hole" ? deal.seatNumbers.indexOf(seat.seat_number) : -1;
+                      const delay = deal?.kind === "deal_hole" && index >= 0 ? ((ci * deal.seatNumbers.length + index) * 200 + 260) / motionSpeed : 0;
+                      return <CardBack key={ci} size="xs" style={{ ...holeStyle, "--deal-arrival": delay + "ms" } as CSSProperties} />;
+                    })
                   )}
                 </div>
                 )}
@@ -1230,13 +1292,13 @@ export function LiveFelt({
                 className={`absolute -translate-x-1/2${portrait ? " -translate-y-1/2" : ""}`}
                 style={{ left: "50%", top: `${settlementPotPoint(0, 1).t}%`, marginTop: settlementPotMarginTop }}
               >
-                <CenterPotStack compact label={`${t("liveHub.felt.pot", "POT").toUpperCase()} ${formatGameplayAmount(displayPot)}`} />
+                <CenterPotStack compact label={`${formatGameplayAmount(displayPot)}`} />
               </div>
             )}
 
-            {(settlementPayoutPhase === "pot_collect" ? [] : visibleSettlementPotLayers).map((pot, visibleIndex) => {
-              const point = settlementPotPoint(visibleIndex, visibleSettlementPotLayers.length);
-              const isAwardingPot = settlementPayoutPhase === "pot_award" && visibleIndex === 0;
+            {(settlementPayoutPhase === "pot_collect" ? [] : settlementClusters).map(({ pot, amount }, visibleIndex) => {
+              const point = settlementPotPoint(visibleIndex, settlementClusters.length);
+              const isAwardingPot = settlementPayoutPhase === "pot_award" && !awardArrived && pot.potId === activePotLayer?.potId;
               return (
                 <div
                   key={pot.potId}
@@ -1248,11 +1310,11 @@ export function LiveFelt({
                   style={{ left: `${point.l}%`, top: `${point.t}%`, marginTop: settlementPotMarginTop }}
                 >
                   <CenterPotStack compact
-                    label={`${pot.kind === "main" ? t("liveHub.felt.main", "Main") : t("liveHub.felt.side", "Side {{i}}", { i: activePotLayerIndex })} ${formatGameplayAmount(pot.amount)}`}
+                    label={formatGameplayAmount(amount)}
                   />
                   {isAwardingPot && activePotAwardsComplete && activePotAwardRows.flatMap(({ allocation, seat }, allocationIndex) => {
                     const slot = ((seat.seat_number - 1) % 9) + 1;
-                    const target = stackPt(seatMap[slot] || seatMap[1]);
+                    const target = seatMap[slot] || seatMap[1];
                     return [0, 1, 2].map((chip) => (
                       <span
                         key={`${pot.potId}-${allocation.playerId}-${chip}`}
@@ -1265,7 +1327,7 @@ export function LiveFelt({
                           "--sp-dy": `${(target.t - point.t) / motionAspect}cqi`,
                           animationDelay: `${allocationIndex * 55 + chip * 22}ms`,
                         } as CSSProperties}
-                      />
+                      ><AwardChips column={chip} /></span>
                     ));
                   })}
                 </div>
@@ -1279,16 +1341,11 @@ export function LiveFelt({
         {settlementPotResultActive && activePotAwardsComplete && activePotLayer && (
           <section
             data-testid="felt-settlement-award-announcement"
-            className={portrait ? "sr-only" : "tracker-settlement-award-announcement pointer-events-none absolute z-[25] -translate-x-1/2 -translate-y-1/2"}
+            className="sr-only"
             style={{ left: "50%", top: `${Math.max(13, potCenterT - (portrait ? 19 : 17))}%` }}
             role="status"
             aria-live="polite"
           >
-            <div className="tracker-settlement-award-title">
-              {activePotLayer.kind === "main"
-                ? t("liveHub.felt.mainPot", "Main Pot")
-                : t("liveHub.felt.sidePot", "Side Pot")}
-            </div>
             <div className="tracker-settlement-award-recipients">
               {activePotAwardRows.map(({ allocation, winner }) => {
                 const awardBB = formatBB(allocation.amount);
@@ -1299,7 +1356,7 @@ export function LiveFelt({
                     className="tracker-settlement-award-recipient"
                   >
                     <span className="truncate">{winner.playerName}</span>
-                    <span className="tracker-num whitespace-nowrap">+{viewerAmountsInBB ? awardBB ?? "— BB" : `${formatStack(allocation.amount)}${awardBB ? ` (${awardBB})` : ""}`}</span>
+                    <span className="tracker-num whitespace-nowrap">+{viewerAmountsInBB ? formatGameplayAmount(allocation.amount) : `${formatStack(allocation.amount)}${awardBB ? ` (${awardBB})` : ""}`}</span>
                   </div>
                 );
               })}
@@ -1416,6 +1473,7 @@ export function LiveFelt({
 
         <TableMotionLayer
           enabled={motionEnabled && viewerLayout}
+          dealSound={dealSound}
           handKey={motionHandKey}
           events={motionEvents}
           seatPositions={seatMap}
@@ -1450,9 +1508,10 @@ export function LiveFelt({
           toActName={
             toActId ? seats.find((s) => s.player_id === toActId)?.display_name ?? null : null
           }
-          potSize={displayPot}
+          potSize={settlementPotResultActive ? visibleSettlementPotLayers.reduce((sum, layer) => sum + layer.amount, 0) : displayPot}
           formatBB={formatBB}
           viewerAmountsInBB={viewerAmountsInBB}
+          formatViewerPot={viewerAmountUnit ? formatGameplayAmount : undefined}
           runout={runout}
         />
       )}
@@ -1479,12 +1538,12 @@ export function LiveFelt({
       {/* Action rail — OUTSIDE the felt so it never collides with the table. */}
       {latestAction && (
         <div className="mt-2.5 px-2">
-          <div className="tracker-display mx-auto flex w-fit max-w-full items-center gap-2 rounded-full border border-amber-500/30 bg-black/65 px-3.5 py-1.5 text-xs">
+          <div className="tracker-display mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-full border border-amber-500/30 bg-black/65 px-3.5 py-1.5 text-sm">
             <span className="shrink-0 text-[9px] font-bold uppercase tracking-widest text-amber-400/80">{t("liveHub.felt.action", "Hành động")}</span>
-            <span className="truncate text-amber-100">
+            <span className="min-w-0 break-words text-amber-100">
               {latestAction.seat_number > 0 && <span className="text-amber-300/70">{t("liveHub.seat", "Ghế {{n}}", { n: latestAction.seat_number })} · </span>}
               <span className="font-semibold text-emerald-300">{latestAction.display_name}</span>{" "}
-              <span className="tracker-num">{formatActionLabel(latestAction, formatGameplayAmount)}</span>
+              <span className="tracker-num text-base font-extrabold sm:text-lg">{formatActionLabel(latestAction, formatGameplayAmount)}</span>
             </span>
           </div>
         </div>

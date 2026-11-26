@@ -10,8 +10,9 @@ vi.mock("@/lib/featureFlags", () => ({ FEATURES: { tvLayoutEditorV1: true } }));
 vi.mock("@/components/ProofUploadWorkspace", () => ({ ProofUploadWorkspace: ({folder,onUploadingChange}:{folder:string;onUploadingChange?:(busy:boolean)=>void}) => <div>
  <button onClick={()=>onUploadingChange?.(true)}>Start {folder}</button><button onClick={()=>onUploadingChange?.(false)}>Finish {folder}</button>
  </div> }));
-vi.mock("@/components/tournament-clock/VinPokerTournamentClock", () => ({ VinPokerTournamentClock: ({data}:{data:{brandName:string}}) => <div data-testid="clock-preview">{data.brandName}</div> }));
+vi.mock("@/components/tv/TvBroadcastPreview", () => ({ TvBroadcastPreview: ({data}:{data:{brandName:string}}) => <div data-testid="clock-preview">{data.brandName}</div> }));
 vi.mock("sonner", () => ({ toast: { success: m.success, error: m.error } }));
+vi.mock("@/hooks/useTournamentTvData", () => ({ useTournamentTvData: () => ({ state: "loading", data: null }) }));
 import { TvBrandingEditor } from "./TvBrandingEditor";
 const branding = { logo_url: null, background_url: null, brand_name: "TEST", layout: {}, revision: 7 };
 beforeEach(() => { vi.resetAllMocks(); m.actor = "owner-a";m.session={access_token:'synthetic-a'}; m.rpc.mockResolvedValue({ data: branding, error: null }); });

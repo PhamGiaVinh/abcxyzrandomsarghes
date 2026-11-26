@@ -52,6 +52,20 @@ function validInput() {
 }
 
 describe("historical display settlement verification", () => {
+  it('keeps the frozen BB ante in a completed hand and verifies the stored ending stacks',async()=>{
+    const input=validInput();
+    input.hand=hand({community_cards:[],pot_size:600,tracker_bba:200,tracker_big_blind_ante_only:true,tracker_bb_position:3});
+    input.players=[
+      {hand_id:'hand-8',player_id:'limitless',entry_number:1,seat_number:2,starting_stack:1000,ending_stack:1400,hole_cards:[],is_eliminated:false},
+      {hand_id:'hand-8',player_id:'kayhan',entry_number:1,seat_number:3,starting_stack:1000,ending_stack:600,hole_cards:[],is_eliminated:false},
+    ];
+    input.actions=[['limitless','post_sb',100],['kayhan','post_ante',200],['kayhan','post_bb',200],['limitless','call',100],['kayhan','fold',0]]
+      .map(([player_id,action_type,action_amount],index)=>({id:`bba-${index}`,hand_id:'hand-8',player_id:String(player_id),
+        entry_number:1,street:'preflop',action_type:String(action_type),action_amount:Number(action_amount),action_order:index+1}));
+    const result=await verifyHistoricalDisplaySettlement(input);
+    expect(result.publicOutcome.pots.reduce((sum,pot)=>sum+pot.amount,0)).toBe(600);
+    expect(result.publicOutcome.pots[0].allocations).toEqual([expect.objectContaining({winnerId:'limitless',amount:600})]);
+  });
   function refundOnlyInput() {
     const input=validInput();
     input.hand=hand({community_cards:[],pot_size:0,tracker_small_blind:100,tracker_big_blind:100,tracker_bba:0});

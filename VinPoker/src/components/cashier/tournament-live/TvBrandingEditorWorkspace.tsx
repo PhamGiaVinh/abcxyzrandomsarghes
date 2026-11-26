@@ -12,8 +12,9 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ProofUploadWorkspace } from "@/components/ProofUploadWorkspace";
-import { VinPokerTournamentClock } from "@/components/tournament-clock/VinPokerTournamentClock";
-import type { TournamentClockData } from "@/components/tournament-clock/types";
+import { TvBroadcastPreview } from "@/components/tv/TvBroadcastPreview";
+import { useMockTvData } from "@/lib/tv/mockTvData";
+import type { TvData } from "@/types/tv";
 import { FEATURES } from "@/lib/featureFlags";
 import {
   DEFAULT_TV_BRANDING_LAYOUT,
@@ -26,29 +27,6 @@ import {
   type TvBrandingLayout,
   type TvTextStyle,
 } from "@/lib/tv/brandingLayout";
-
-const BRANDING_PREVIEW_DATA: TournamentClockData = {
-  title: "MAIN EVENT · DAY 1",
-  players: 93,
-  entries: 128,
-  reEntries: 35,
-  prizePool: "2,910,000,000 VND",
-  totalChips: "38,400,000",
-  averageStack: "412,903 · 82 BB",
-  levelLabel: "Level 8",
-  secondsLeft: 35 * 60 + 31,
-  nextBreakSecondsLeft: 18 * 60,
-  currentLevel: "2,000 / 4,000 / 4,000",
-  nextLevel: "2,500 / 5,000 / 5,000",
-  payouts: [
-    { rank: "1st", amount: "720,000,000 VND" },
-    { rank: "2nd", amount: "480,000,000 VND" },
-    { rank: "3rd", amount: "320,000,000 VND" },
-    { rank: "4th", amount: "210,000,000 VND" },
-    { rank: "5th", amount: "150,000,000 VND" },
-  ],
-  footerNote: "Next level · 40 min",
-};
 
 type UntypedRpc = (fn: string, args?: Record<string, unknown>) => PromiseLike<{
   data: unknown;
@@ -74,6 +52,8 @@ function RangeControl({ label, value, min, max, onChange }: {
 }
 
 type TvBrandingEditorWorkspaceProps={tournamentId:string;actorId:string|undefined;sessionEpoch:number;
+  liveData?: TvData | null;
+  onPreviewOpenChange?: (open: boolean) => void;
   /** Explicit display transport, never used in publish/CAS or persisted URLs. */
   assetPreviewUrl?:(canonicalUrl:string|null)=>string|null;
 };
@@ -81,13 +61,17 @@ export function TvBrandingEditorWorkspace(props:TvBrandingEditorWorkspaceProps) 
   return <ScopedTvBrandingEditor key={JSON.stringify([props.actorId,props.sessionEpoch,props.tournamentId])} {...props}/>;
 }
 
-function ScopedTvBrandingEditor({ tournamentId,actorId,sessionEpoch,assetPreviewUrl }: TvBrandingEditorWorkspaceProps) {
+function ScopedTvBrandingEditor({ tournamentId,actorId,sessionEpoch,assetPreviewUrl,liveData,onPreviewOpenChange }: TvBrandingEditorWorkspaceProps) {
   const supabase = useSupabaseClient();
   const rpc = useMemo(
     () => supabase.rpc.bind(supabase) as UntypedRpc,
     [supabase],
   );
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    onPreviewOpenChange?.(open);
+    return () => onPreviewOpenChange?.(false);
+  }, [open, onPreviewOpenChange]);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [bgUrl, setBgUrl] = useState<string | null>(null);
   const [brandName, setBrandName] = useState("");
@@ -145,13 +129,15 @@ function ScopedTvBrandingEditor({ tournamentId,actorId,sessionEpoch,assetPreview
     return () => { cancelled = true; };
   }, [open, rpc, tournamentId]);
 
-  const previewData = useMemo<TournamentClockData>(() => ({
-    ...BRANDING_PREVIEW_DATA,
-    clubBackgroundUrl: assetPreviewUrl?.(bgUrl) ?? bgUrl,
+  const sample = useMockTvData(false);
+  const current = liveData?.tournamentId === tournamentId ? liveData : null;
+  const previewData: TvData = {
+    ...(current ?? sample),
+    clubCoverUrl: assetPreviewUrl?.(bgUrl) ?? bgUrl,
     clubLogoUrl: assetPreviewUrl?.(logoUrl) ?? logoUrl,
     brandName: brandName.trim() || fallbackBrandName || "VINPOKER",
     brandingLayout: layout,
-  }), [bgUrl, brandName, fallbackBrandName, layout, logoUrl,assetPreviewUrl]);
+  };
 
   const patchLayout = <K extends keyof TvBrandingLayout>(key: K, value: TvBrandingLayout[K]) => {
     setLayout((current) => ({ ...current, [key]: value }));
@@ -258,19 +244,12 @@ function ScopedTvBrandingEditor({ tournamentId,actorId,sessionEpoch,assetPreview
           </div>
         ) : (
           <div className="grid lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
-            <section className="border-b bg-black/95 p-4 lg:border-b-0 lg:border-r">
+            <section className="min-w-0 border-b bg-black/95 p-4 lg:border-b-0 lg:border-r">
               <div className="mb-2 flex items-center justify-between text-[11px] uppercase tracking-[.18em] text-white/60">
                 <span>Draft 16:9 preview · not on TV</span><span>Safe area: 4–96%</span>
               </div>
-              <div className="relative aspect-video overflow-hidden rounded-xl border border-emerald-400/30 shadow-2xl">
-                <VinPokerTournamentClock
-                  data={previewData}
-                  brandingEditing
-                  editorPreview
-                  onBrandingLayoutChange={setLayout}
-                />
-              </div>
-              <p className="mt-3 text-xs leading-relaxed text-white/55">Changes appear on TV only after Publish. Tournament numbers remain server-controlled.</p>
+              <TvBroadcastPreview data={previewData} live={current !== null} onLayoutChange={setLayout} />
+              <p className="mt-3 text-xs leading-relaxed text-white/55">{current ? "Dữ liệu của giải đang chọn." : "Đang minh họa bố cục bằng số liệu mẫu."} Nhấn Publish TV layout để áp dụng bố cục lên TV.</p>
               {layoutError && <p role="alert" className="mt-2 text-xs text-amber-300">{layoutError}</p>}
             </section>
 

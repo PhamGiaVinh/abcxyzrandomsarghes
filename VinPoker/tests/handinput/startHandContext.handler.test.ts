@@ -41,6 +41,24 @@ const undo={action:'undo_last_action_v1',tournament_table_id:context.tournament_
  expected_source_revision:7,idempotency_key:'undo-TEST-saved-key'};
 const undoProof={ok:true,duplicate:false,operation:'undo_open_hand',hand_id:undo.hand_id,
  undone_action_id:undo.expected_action_id,source_revision:8};
+
+describe('actual Tracker Edge atomic blind intent',()=>{
+ const intent={action:'post_blinds_v1',hand_id:undo.hand_id,request_id:'33333333-3333-4333-8333-333333333333',expected_actor_id:actor};
+ const proof={status:'success',hand_id:undo.hand_id,big_blind_ante_only:true,sb_paid:100,ante_paid:100,bb_paid:200};
+ it.each([{expected_actor_id:'other'},{expected_actor_id:null},{request_id:null},{hand_id:null}])('rejects malformed or changed actor intent %j before RPC',async(extra)=>{
+  const r=await invoke({...intent,...extra},proof);
+  expect(r.status).toBe(422);expect(r.body.code).toBe('INVALID_BLIND_INTENT');expect(r.rpc).not.toHaveBeenCalled();
+ });
+ it.each([false,true])('forwards tournament and hand scope once, preserving duplicate=%s',async(duplicate)=>{
+  const r=await invoke(intent,{...proof,duplicate});
+  expect(r.status).toBe(200);expect(r.body.data).toEqual({...proof,duplicate});
+  expect(r.rpc).toHaveBeenCalledExactlyOnceWith('post_tracker_blinds_v1',{
+   p_tournament_id:'46cab483-91e7-4220-aacf-e17bdf05269c',p_hand_id:intent.hand_id,p_request_id:intent.request_id});
+ });
+ it.each([null,{}, {...proof,hand_id:'another-hand'}, {...proof,big_blind_ante_only:false}])('keeps an unconfirmed blind receipt unknown: %j',async(data)=>{
+  const r=await invoke(intent,data);expect(r.status).toBe(502);expect(r.body.code).toBe('blind_receipt_unconfirmed');
+ });
+});
 describe('actual Tracker Edge undo verdict and receipt',()=>{
  it.each(['dealer_assignment_not_unique','actor_not_allowed','last_action_changed'])('does not wrap %s denial as success',async(code)=>{
   const r=await invoke(undo,{ok:false,error:code});expect(r.status).toBe(409);expect(r.body.code).toBe(code);

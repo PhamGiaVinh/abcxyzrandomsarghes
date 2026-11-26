@@ -15,17 +15,37 @@ const intent={actor_id:actor,request_id:'95000000-0000-4000-8000-000000000001',t
 const receipt={ok:true,status:'success',hand_id:intent.hand_id,actor_id:actor,request_id:intent.request_id,intent,
  table_session_id:intent.table_session_id,control_epoch:1,expected_source_revision:12,committed_source_revision:13,starting_total:60000,ending_total:60000};
 const body={tournament_id:intent.tournament_id,action:'record_manual_hand_v1',finish_intent:intent};
-async function request(value,{data=receipt,error=null,authenticated=true,header=true,authError=null,authThrows=false}={}){
+async function request(value,{data=receipt,error=null,authenticated=true,header=true,authError=null,authThrows=false,frozenAnte=false,snapshotError=false}={}){
  let handler;const calls=[],clients=[];
  runInNewContext(source,{Request,Response,console,isManualFinishIntent,manualFinishReceiptMatches,manualFinishCancellationMatches,reconcileSidePots,
   Deno:{env:{get:key=>({SUPABASE_URL:'https://synthetic.invalid',SUPABASE_ANON_KEY:'synthetic-anon'})[key]},serve:callback=>{handler=callback;}},
-  createClient:(url,key,options)=>{clients.push({url,key,options});return {auth:{getUser:async()=>{if(authThrows)throw new TypeError('synthetic auth transport failed');return {data:{user:authenticated?{id:actor}:null},error:authError};}},rpc:async(name,params)=>{calls.push({name,params});return {data,error};}};},
+  createClient:(url,key,options)=>{clients.push({url,key,options});return {auth:{getUser:async()=>{if(authThrows)throw new TypeError('synthetic auth transport failed');return {data:{user:authenticated?{id:actor}:null},error:authError};}},rpc:async(name,params)=>{calls.push({name,params});return {data,error};},
+   from:table=>{
+    const answer={error:snapshotError?{message:'synthetic read failure'}:null,data:snapshotError?null:
+     table==='tournament_hands'?{button_seat:1,tracker_big_blind_ante_only:frozenAnte,tracker_bb_position:2}:
+     table==='hand_players'?intent.payload.players:[]};
+    const query={select:()=>query,eq:()=>query,order:()=>query,maybeSingle:async()=>answer,
+     then:(resolve,reject)=>Promise.resolve(answer).then(resolve,reject)};return query;
+   }};},
  });
  const response=await handler(new Request('https://synthetic.invalid/functions/v1/tournament-live-update',{method:'POST',
   headers:{'Content-Type':'application/json',...(header?{Authorization:'Bearer synthetic-test-token'}:{})},body:JSON.stringify(value)}));
  return {status:response.status,payload:await response.json(),calls:JSON.parse(JSON.stringify(calls)),clients};
 }
 const good=await request(body);assert.equal(good.status,200);assert.deepEqual(good.payload.data,receipt);
+const anteActions=[['1','post_sb',100],['2','post_ante',200],['2','post_bb',200],['1','call',100]]
+ .map(([seat,action_type,action_amount],index)=>({player_id:`82000000-0000-4000-8000-00000000000${seat}`,
+  entry_number:1,action_type,action_amount,street:'preflop',action_order:index+1}));
+const anteIntent={...intent,payload:{...intent.payload,
+ players:intent.payload.players.map((player,index)=>({...player,starting_stack:1000,ending_stack:index===0?1400:600})),
+ actions:anteActions,side_pots:[{amount:600,eligible_player_ids:intent.payload.players.map(player=>player.player_id)}],pot_size:600}};
+const anteBody={...body,finish_intent:anteIntent,big_blind_ante_only:true};
+const anteProof={...receipt,intent:anteIntent,starting_total:2000,ending_total:2000};
+assert.equal((await request(anteBody,{frozenAnte:true,data:anteProof})).status,200);
+const forged=await request(anteBody,{frozenAnte:false,data:anteProof});
+assert.equal(forged.status,422);assert.equal(forged.payload.code,'SIDE_POTS_TAMPERED');assert.equal(forged.calls.length,0);
+const unreadable=await request(anteBody,{frozenAnte:true,snapshotError:true});
+assert.equal(unreadable.status,422);assert.equal(unreadable.payload.code,'FINISH_SNAPSHOT_UNAVAILABLE');assert.equal(unreadable.calls.length,0);
 for(const authError of [{status:503},{status:0},{status:429},{message:'unknown auth failure'}]){
  const unavailable=await request(body,{authenticated:false,authError});
  assert.equal(unavailable.status,503);assert.equal(unavailable.calls.length,0);

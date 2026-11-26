@@ -29,6 +29,8 @@ export type VoiceFinishInput = {
   players: readonly VoiceFinishPlayer[];
   actions: readonly VoiceFinishAction[];
   bettingComplete: boolean;
+  /** Resolved from the frozen hand and participant snapshot by the server. */
+  bigBlindAntePlayerId?: string;
 };
 
 export type VoiceFinishSettlement = {
@@ -96,7 +98,7 @@ export async function computeVoiceFinishSettlement(input: VoiceFinishInput): Pro
   ];
   if (new Set(cards).size !== cards.length) throw new Error("finish_duplicate_card");
 
-  const contributions = contributionsFromActions(actions);
+  const contributions = contributionsFromActions(actions, input.bigBlindAntePlayerId);
   const contributionByPlayer = new Map(contributions.map((row) => [row.player_id, row]));
   for (const player of players) {
     const committed = contributionByPlayer.get(player.player_id)?.total_bet ?? 0;

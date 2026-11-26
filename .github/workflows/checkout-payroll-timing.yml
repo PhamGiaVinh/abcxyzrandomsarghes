@@ -5,6 +5,7 @@ on:
       - '.github/workflows/checkout-payroll-timing.yml'
       - 'VinPoker/tests/dealerSwing/l09CheckoutPayroll.*'
       - 'VinPoker/tests/dealerSwing/l08BulkSalaryConcurrency.sh'
+      - 'VinPoker/tests/dealerSwing/l08BulkSalaryClient.mjs'
 permissions:
   actions: read
   contents: read
@@ -52,6 +53,18 @@ jobs:
       - name: Verify stale bulk salary updates with independent database connections
         working-directory: VinPoker
         run: bash tests/dealerSwing/l08BulkSalaryConcurrency.sh
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Install pinned client qualification dependencies
+        working-directory: VinPoker
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install Chromium for actual bulk salary client qualification
+        working-directory: VinPoker
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Verify bulk salary client through real isolated HTTP and PostgreSQL
+        working-directory: VinPoker
+        run: node tests/dealerSwing/l08BulkSalaryClient.mjs
       - name: Measure checkout and payroll with independent database connections
         working-directory: VinPoker
         run: |
@@ -66,3 +79,10 @@ jobs:
           name: l09-fixture-timings
           path: ${{ runner.temp }}/l09-result/
           if-no-files-found: ignore
+      - name: Save bulk salary HTTP client evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: l08-bulk-salary-http
+          path: ${{ runner.temp }}/l08-client/
+          if-no-files-found: error

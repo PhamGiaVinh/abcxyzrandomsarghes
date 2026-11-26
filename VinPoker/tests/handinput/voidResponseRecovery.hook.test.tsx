@@ -93,7 +93,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
         // Explicit frozen positions required by the existing resume boundary.
         // Single-seat seam models a dead SB; do not infer unknown legacy blinds.
         tracker_sb_position:mock.twoPlayerFold?1:2,tracker_bb_position:mock.twoPlayerFold?2:1 }
-      : table === "tournament_hands" && mock.resume && cols.includes("tracker_level_number") ? { tracker_level_number: null, tracker_small_blind: null, tracker_big_blind: null, tracker_bba: null }
+      : table === "tournament_hands" && mock.resume && (cols === "*" || cols.includes("tracker_level_number")) ? { tracker_level_number: null, tracker_small_blind: null, tracker_big_blind: null, tracker_bba: null }
       : null, error: (cols.includes("is_voided") && mock.readError)
         || (table==='tournament_seats' && mock.seatReadFails) || (table==='hand_players' && mock.resumeCardError)
         || (cols.includes("tracker_sb_position") && mock.lineageReadFails) ? new Error("read unavailable") : null });

@@ -103,7 +103,7 @@ export function TvBrandingOverlay({
           {logoUrl ? <img src={logoUrl} alt="" className="h-full w-full rounded-full object-cover" /> : <span aria-hidden="true">♠</span>}
         </div>
         <span className="tv-branding-name" style={{
-          minWidth: 0, overflow: "hidden", color: "#ecfff0", fontSize: "1vmin", fontWeight: 900,
+          minWidth: 0, overflow: "hidden", color: "#ecfff0", fontSize: "var(--tv-brand-label-size, 1vmin)", fontWeight: 900,
           letterSpacing: ".06em", textOverflow: "ellipsis", textShadow: "0 1px 3px #000", whiteSpace: "nowrap",
         }}>{brandName || "VINPOKER"}</span>
       </div>

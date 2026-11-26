@@ -1,9 +1,6 @@
-// trackerShowdownRevealOrder (LiveFelt `revealOrder`/`revealStaggerMs`) — the viewer
-// staggers each showing seat's hole-card flip by its place in the reveal order.
-// Pins: absent → no animationDelay (simultaneous, byte-identical); present → seat i
-// gets animationDelay i*staggerMs (index 0 = none); face-down (unrevealed) seats never
-// get a delay; a seat not in the order gets none.
-import { describe, it, expect } from "vitest";
+import { act, render } from "@testing-library/react";
+import { orderedShowdownPlayers } from "@/lib/tracker-poker/replayRunoutTimeline";
+import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { LiveFelt, type SeatInfo } from "@/components/cashier/tournament-live/LiveFelt";
 
@@ -37,44 +34,37 @@ const shown = [
   seat({ player_id: "b", seat_number: 3, hole_cards: ["7s", "4s"] }),
   seat({ player_id: "c", seat_number: 5, hole_cards: ["As", "Ad"] }),
 ];
-const delaysFor = (html: string) => (html.match(/animation-delay:\s*([0-9]+)ms/g) || []);
 
-describe("LiveFelt showdown reveal-order stagger", () => {
-  it("revealOrder absent → NO animation-delay on hole cards (byte-identical)", () => {
-    const html = renderToStaticMarkup(<LiveFelt seats={shown} {...baseProps} />);
-    expect(html).not.toContain("animation-delay");
-  });
-
-  it("revealOrder present → each seat delayed by its index × stagger (index 0 → none)", () => {
-    // Order c(5) first, then a(1), then b(3) — e.g. seat 5 was the river bettor.
-    const html = renderToStaticMarkup(
-      <LiveFelt seats={shown} {...baseProps} revealOrder={["c", "a", "b"]} revealStaggerMs={500} />
-    );
-    // c = index 0 → no delay; a = index 1 → 500ms (×2 cards); b = index 2 → 1000ms (×2).
-    const delays = delaysFor(html);
-    expect(delays.filter((d) => /500ms/.test(d)).length).toBe(2);
-    expect(delays.filter((d) => /1000ms/.test(d)).length).toBe(2);
-    // c (first) has no delay style at all.
-    expect(delays.filter((d) => /:\s*0ms/.test(d)).length).toBe(0);
-  });
-
-  it("a seat NOT in revealOrder gets no delay; face-down seats never get one", () => {
-    const seats = [
-      seat({ player_id: "a", seat_number: 1, hole_cards: ["Kh", "3h"] }),
-      seat({ player_id: "z", seat_number: 9 }), // face-down (no hole cards)
+describe("LiveFelt showdown reveal", () => {
+  it("keeps both opponents face down after call, then reveals the aggressor first", () => {
+    vi.useFakeTimers();
+    const players = shown.slice(0, 2);
+    const actions = [
+      { player_id: "a", action_type: "all_in", street: "preflop", action_order: 1 },
+      { player_id: "b", action_type: "call", street: "preflop", action_order: 2 },
+      { player_id: "system", action_type: "deal_flop", street: "flop", action_order: 3 },
     ];
-    const html = renderToStaticMarkup(
-      <LiveFelt seats={seats} {...baseProps} revealOrder={["a"]} revealStaggerMs={500} />
-    );
-    // Only 'a' is in the order at index 0 → no delay; 'z' has no revealed cards.
-    expect(html).not.toContain("animation-delay");
+    const order = orderedShowdownPlayers(players, actions, 1);
+    const { container, unmount } = render(<LiveFelt seats={players} {...baseProps} revealOrder={order} />);
+    const pockets = () => Array.from(container.querySelectorAll('[data-testid="seat-holecards"]'))
+      .map(pocket => pocket.getAttribute("data-revealed"));
+    try {
+      expect(order).toEqual(["a", "b"]);
+      expect(pockets()).toEqual(["false", "false"]);
+      act(() => vi.advanceTimersByTime(349));
+      expect(pockets()).toEqual(["false", "false"]);
+      act(() => vi.advanceTimersByTime(1));
+      expect(pockets()).toEqual(["true", "false"]);
+      act(() => vi.advanceTimersByTime(500));
+      expect(pockets()).toEqual(["true", "true"]);
+    } finally {
+      unmount();
+      vi.useRealTimers();
+    }
   });
 
-  it("stagger respects a custom revealStaggerMs", () => {
-    const html = renderToStaticMarkup(
-      <LiveFelt seats={shown} {...baseProps} revealOrder={["a", "b", "c"]} revealStaggerMs={300} />
-    );
-    expect(delaysFor(html).filter((d) => /300ms/.test(d)).length).toBe(2); // b at index 1
-    expect(delaysFor(html).filter((d) => /600ms/.test(d)).length).toBe(2); // c at index 2
+  it("shows public cards immediately when viewing a static showdown", () => {
+    const html = renderToStaticMarkup(<LiveFelt seats={shown} {...baseProps} />);
+    expect(html.match(/data-revealed="true"/g)).toHaveLength(3);
   });
 });

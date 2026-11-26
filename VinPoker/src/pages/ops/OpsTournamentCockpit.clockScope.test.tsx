@@ -5,11 +5,12 @@ const state = vi.hoisted(() => ({ id: "a", actor: "owner", authLoading: false, c
 vi.mock("react-router-dom", () => ({ useParams: () => ({ id: state.id }), useNavigate: () => vi.fn() }));
 vi.mock("@/ops/auth/OpsAuthProvider", () => ({ useOpsAuth: () => ({ user: state.actor ? { id: state.actor } : null, loading: state.authLoading }) }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => ({ useSupabaseClient: () => client }));
-const client = { rpc: state.rpc, functions: { invoke: state.invoke }, from: (table: string) => ({ select: () => {
+const channel = { on: () => channel, subscribe: () => channel };
+const client = { channel: () => channel, removeChannel: vi.fn(), rpc: state.rpc, functions: { invoke: state.invoke }, from: (table: string) => ({ select: () => {
   const data = table === "tournament_entries" ? [{ id: "entry", player_id: "player", entry_no: 1, current_stack: 0 }]
     : table === "tournament_seats" ? [{ player_id: "player", entry_number: 1, player_name: "TEST Player", is_active: false }] : [];
   const result = state.read(table, state.actor, state.id) ?? { data, error: null };
-  const query = { eq: () => query, in: () => query, order: () => Promise.resolve(result), then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(result).then(resolve, reject) };
+  const query = { eq: () => query, neq: () => query, in: () => query, order: () => Promise.resolve(result), then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(result).then(resolve, reject) };
   return query;
 } }) };
 vi.mock("@/ops/workspace/TournamentOpsProvider", () => ({ useTournamentOps: () => ({ snapshot: { clubId: "club" } }) }));
@@ -258,4 +259,15 @@ it("guards duplicate clicks and allows B while A remains pending", async () => {
   expect(b).toBeDisabled();
   cleanup();
   await act(async () => finish[1]({ data: { ok: true }, error: null }));
+});
+
+it("shows the pairing field in Floor and clears it when the operator changes", async () => {
+  const view = render(<OpsTournamentCockpit section="screens" />);
+  const code = await screen.findByPlaceholderText("000000");
+  fireEvent.change(code, { target: { value: "010203" } });
+  expect(code).toHaveValue("010203");
+  state.actor = "next-owner";
+  view.rerender(<OpsTournamentCockpit section="screens" />);
+  expect(await screen.findByPlaceholderText("000000")).toHaveValue("");
+  expect(state.rpc.mock.calls.some(([name]) => name === "tv_claim_display")).toBe(false);
 });

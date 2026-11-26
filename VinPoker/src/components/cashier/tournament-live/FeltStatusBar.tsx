@@ -16,12 +16,13 @@ interface FeltStatusBarProps {
   potSize: number;
   formatBB: (n: number) => string | null;
   viewerAmountsInBB?: boolean;
+  formatViewerPot?: (n: number) => string;
   /** All-in runout in progress (betting closed) — middle segment shows "Đang chạy
    * board" instead of a waiting-on-player name. Absent → no change. */
   runout?: boolean;
 }
 
-export function FeltStatusBar({ blinds, toActName, potSize, formatBB, viewerAmountsInBB = false, runout = false }: FeltStatusBarProps) {
+export function FeltStatusBar({ blinds, toActName, potSize, formatBB, viewerAmountsInBB = false, formatViewerPot, runout = false }: FeltStatusBarProps) {
   const { t } = useTranslation();
   const hasBlinds = !!blinds && blinds.bb > 0;
   if (!hasBlinds && !toActName && !runout && potSize <= 0) return null;
@@ -61,14 +62,9 @@ export function FeltStatusBar({ blinds, toActName, potSize, formatBB, viewerAmou
       )}
       {potSize > 0 && (
         <span className="flex shrink-0 items-center gap-1">
-          <span
-            className="rounded-sm px-1 py-px text-[8px] font-bold uppercase tracking-wide text-black"
-            style={{ background: "hsl(var(--poker-gold))" }}
-          >
-            {t("liveHub.felt.pot", "Pot")}
-          </span>
+          <span className="sr-only">{t("liveHub.felt.pot", "Pot")}</span>
           <span className="tracker-num font-bold" style={{ color: "hsl(var(--poker-gold))" }}>
-            {viewerAmountsInBB ? formatViewerChipAndBB(potSize, blinds?.bb ?? null) : formatStack(potSize)}
+            {formatViewerPot ? formatViewerPot(potSize) : viewerAmountsInBB ? formatViewerChipAndBB(potSize, blinds?.bb ?? null) : formatStack(potSize)}
           </span>
           {!viewerAmountsInBB && formatBB(potSize) && <span className="tracker-num text-white/50">({formatBB(potSize)})</span>}
         </span>
