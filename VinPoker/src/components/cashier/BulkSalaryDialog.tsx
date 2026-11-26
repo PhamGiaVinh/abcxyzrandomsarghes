@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,15 @@ function parseVnd(input: string, max: number): number | null {
 }
 const fmt = (n: number) => n.toLocaleString("vi-VN");
 
+function ftSalaryRates(monthly: number, standardHours: number | null | undefined) {
+  const hours = standardHours && standardHours > 0 ? standardHours : 8;
+  return {
+    monthly_salary_vnd: monthly,
+    base_rate_vnd: Math.round(monthly / WORKING_DAYS_PER_MONTH),
+    hourly_rate_vnd: Math.round(monthly / WORKING_DAYS_PER_MONTH / hours),
+  };
+}
+
 export function BulkSalaryDialog({
   dealers,
   onDone,
@@ -50,6 +59,8 @@ export function BulkSalaryDialog({
   const [ftMonthlyInput, setFtMonthlyInput] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const ptHelpId = useId();
+  const ftHelpId = useId();
 
   const hasSalary = (d: DealerRecord) =>
     d.employment_type === "part_time"
@@ -73,7 +84,14 @@ export function BulkSalaryDialog({
   const ptHourly = parseVnd(ptHourlyInput, MAX_INTEGER_RATE_VND);
   const ftMonthly = parseVnd(ftMonthlyInput, MAX_INTEGER_RATE_VND * WORKING_DAYS_PER_MONTH);
   const invalidPt = selPt.length > 0 && ptHourlyInput.trim() !== "" && ptHourly === null;
-  const invalidFt = selFt.length > 0 && ftMonthlyInput.trim() !== "" && ftMonthly === null;
+  const invalidFt = selFt.length > 0 && ftMonthlyInput.trim() !== "" && (
+    ftMonthly === null || selFt.some((dealer) => {
+      const rates = ftSalaryRates(ftMonthly, dealer.standard_hours_per_shift);
+      return [rates.base_rate_vnd, rates.hourly_rate_vnd].some(
+        (rate) => !Number.isSafeInteger(rate) || rate < 0 || rate > MAX_INTEGER_RATE_VND,
+      );
+    })
+  );
   const invalidAmount = invalidPt || invalidFt;
   // Groups that will actually be written (selected + amount entered for their type).
   const willWritePt = ptHourly ? selPt.length : 0;
@@ -136,11 +154,7 @@ export function BulkSalaryDialog({
         for (const [hours, group] of byHours) {
           const { error } = await supabase
             .from("dealers")
-            .update({
-              monthly_salary_vnd: ftMonthly,
-              base_rate_vnd: Math.round(ftMonthly / WORKING_DAYS_PER_MONTH),
-              hourly_rate_vnd: Math.round(ftMonthly / WORKING_DAYS_PER_MONTH / hours),
-            })
+            .update(ftSalaryRates(ftMonthly, hours))
             .in("id", group.map((d) => d.id));
           if (error) errors.push(`FT (${hours}h): ${error.message}`);
           else updated += group.length;
@@ -255,12 +269,12 @@ export function BulkSalaryDialog({
                 <div className="mb-1 text-[11px] text-muted-foreground">Lương giờ cho PT (VND/giờ)</div>
                 <Input
                   type="text" inputMode="numeric"
-                  aria-label="Lương giờ cho PT" aria-invalid={invalidPt} value={ptHourlyInput}
+                  aria-label="Lương giờ cho PT" aria-invalid={invalidPt} aria-describedby={ptHelpId} value={ptHourlyInput}
                   onChange={(e) => setPtHourlyInput(e.target.value)}
                   placeholder="VD: 100000"
                   className="h-9 text-sm bg-card border-border"
                 />
-                <div className="mt-0.5 text-[10px] text-muted-foreground">
+                <div id={ptHelpId} aria-live="polite" className="mt-0.5 text-[10px] text-muted-foreground">
                   {invalidPt ? "Nhập số VND nguyên dương trong giới hạn." : ptHourly ? `= ${fmt(ptHourly)}đ/giờ · áp cho ${selPt.length} PT đã chọn` : "Bỏ trống = không đổi PT"}
                 </div>
               </div>
@@ -268,12 +282,12 @@ export function BulkSalaryDialog({
                 <div className="mb-1 text-[11px] text-muted-foreground">Lương tháng cho FT (VND/tháng)</div>
                 <Input
                   type="text" inputMode="numeric"
-                  aria-label="Lương tháng cho FT" aria-invalid={invalidFt} value={ftMonthlyInput}
+                  aria-label="Lương tháng cho FT" aria-invalid={invalidFt} aria-describedby={ftHelpId} value={ftMonthlyInput}
                   onChange={(e) => setFtMonthlyInput(e.target.value)}
                   placeholder="VD: 9000000"
                   className="h-9 text-sm bg-card border-border"
                 />
-                <div className="mt-0.5 text-[10px] text-muted-foreground">
+                <div id={ftHelpId} aria-live="polite" className="mt-0.5 text-[10px] text-muted-foreground">
                   {invalidFt ? "Nhập số VND nguyên dương trong giới hạn." : ftMonthly ? `= ${fmt(ftMonthly)}đ/tháng · áp cho ${selFt.length} FT đã chọn` : "Bỏ trống = không đổi FT"}
                 </div>
               </div>
