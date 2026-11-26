@@ -19,4 +19,4 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm test -- src/pages/ops/TourCashierWorkbenchShift.test.tsx -t "requires the opening cash|rejects blank cash counts"
+      - run: npm test -- src/pages/ops/TourCashierWorkbenchShift.test.tsx
