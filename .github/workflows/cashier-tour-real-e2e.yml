@@ -227,8 +227,8 @@ jobs:
             git fetch --no-tags origin 26d829241c1da649eae4ec37aaff398ab00a5173
           # The exact finance tree fixture must survive branch deletion/squash.
           # Fetch immutable objects only; never execute that candidate's guard.
-          git cat-file -e 'e231ba934bbbc7e0608499dc05bb306f1f51f544^{commit}' ||
-            git fetch --no-tags origin e231ba934bbbc7e0608499dc05bb306f1f51f544
+          git cat-file -e 'c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0^{commit}' ||
+            git fetch --no-tags origin c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0
           node --test scripts/ops/prepare-manual-cards-runtime-dependencies.test.mjs scripts/ops/cashier-schema-mode.test.mjs scripts/ops/prepare-prize-close-runtime-dependencies.test.mjs scripts/ops/operations-audience-readiness.test.mjs scripts/ops/operations-audience-generation.test.mjs scripts/ops/operations-audience-hand-delivery.test.mjs scripts/ops/operations-hud-control.test.mjs
           node --test scripts/ops/telegram-test-sink.test.mjs
           git cat-file -e 'c69bce72ca98332ac4740808b05db01bf7bed398^{commit}' ||

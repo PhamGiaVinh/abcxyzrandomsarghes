@@ -1,23 +1,91 @@
 {
-  "schemaVersion": 1,
-  "kind": "ISOLATED_FINANCE_SOURCE_CLIENT_RECEIPT_NOT_HISTORICAL_OR_RELEASE_APPROVAL",
+  "schemaVersion": 2,
+  "kind": "ISOLATED_FINANCE_SCOPED_AUTHORITY_RECEIPT_NOT_HISTORICAL_OR_RELEASE_APPROVAL",
   "producer": {
     "actor": "PhamGiaVinh",
     "attempt": 1,
     "conclusion": "success",
     "event": "pull_request",
     "path": ".github/workflows/finance-expense-cash-client.yml",
-    "run": 45743719060,
-    "sourceSha": "e231ba934bbbc7e0608499dc05bb306f1f51f544",
+    "run": 45792554430,
+    "sourceSha": "c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0",
     "workflowId": 431098994
   },
-  "verificationSha256": "80fe8ef4ba4ce07551520a19cc4e801bd461031a98244b2c08ff3ea4199ca7ba",
+  "verificationSha256": "048c422e6e896ddea1fdddd594eed6dc8d40dc991002d6260ffd3011e86428b6",
   "backend": {
     "run": "45736731928",
     "sourceSha": "aca9e00c2fe9a3b0cc1a028bd70c40c4ba48a1e8",
     "sqlSha256": "34464adca0c8546bae2e7b81dee1fee43dbd50c2c44dc68be00b5fd0102e92bf"
   },
   "statusReaderSqlSha256": "28287f7df15621f00c8e5edd9ebd233d2822eead10af96807bca9fbe0840f914",
+  "authoritySqlSha256": "af120dd8ba5cf4ec3aae0700522bb3028915237811a39d591381130841355f46",
+  "authority": {
+    "producer": {
+      "actor": "PhamGiaVinh",
+      "attempt": 1,
+      "conclusion": "success",
+      "event": "pull_request",
+      "path": ".github/workflows/finance-expense-authority.yml",
+      "run": 45792554475,
+      "sourceSha": "c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0",
+      "workflowId": 431296054
+    },
+    "verificationSha256": "500a7ca02c6f23a6dbade25bceb36bf1dc06d948ad8626ea46066d9f8bd8a42d",
+    "candidate": {
+      "name": "candidate-club-authority-fix",
+      "isolationInvariantPassed": true,
+      "foreignReadDenied": true,
+      "foreignTableRows": 0,
+      "foreignWriteDenied": true,
+      "foreignCommittedRows": 0,
+      "explicitAccountantGranted": true,
+      "sameIntentReplay": true,
+      "revokedReadAndReplayDenied": true,
+      "otherClubStillAccessible": true,
+      "originalExpenseUnchanged": true
+    },
+    "concurrency": {
+      "actualHttpConnections": 2,
+      "observedBlockedConnections": 2,
+      "uncommittedGrantDenied": true,
+      "oneExpense": true,
+      "totalVnd": 1000000,
+      "conflictingIntentDenied": true,
+      "committedRevocationDeniesReadReplayAndNewWrite": true,
+      "foreignTableRows": 0,
+      "otherClubPreserved": true,
+      "originalExpensesUnchanged": true
+    },
+    "forwardRecovery": {
+      "pausedWriterDenied": true,
+      "safeReadRetained": true,
+      "correctedSourceRestored": true,
+      "metadataPoliciesAndExpensesUnchanged": true,
+      "receiptIdentityPreserved": true,
+      "foreignWriteStillDenied": true,
+      "limits": "Isolated source recovery from the corrected definition; not a hosted backup/restore or production rollback authorization."
+    },
+    "preimageFaults": [
+      {
+        "name": "disabled-rls",
+        "refusedAtomically": true
+      },
+      {
+        "name": "extra-permissive-policy",
+        "refusedAtomically": true
+      },
+      {
+        "name": "changed-accountant-policy",
+        "refusedAtomically": true
+      },
+      {
+        "name": "unexpected-execute-grant",
+        "refusedAtomically": true
+      }
+    ],
+    "functionMetadataAndExistingExpensesPreserved": true,
+    "repeatApplyRefusedAtomically": true
+  },
   "scope": [
     {
       "status": "M",
@@ -44,12 +112,21 @@
       "status": "A",
       "path": "VinPoker/supabase/pending-migrations/20261126023026_finance_expense_cash_source_status_v1.sql",
       "headSha256": "28287f7df15621f00c8e5edd9ebd233d2822eead10af96807bca9fbe0840f914"
+    },
+    {
+      "status": "A",
+      "path": "VinPoker/supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql",
+      "headSha256": "af120dd8ba5cf4ec3aae0700522bb3028915237811a39d591381130841355f46"
     }
   ],
   "runtimePins": [
     {
+      "path": ".github/workflows/finance-expense-authority.yml",
+      "sha256": "b5fd2b94d659644d9cd8bbf07939ed36ed21d4c7a93c81aae4f5e7daaa276d2a"
+    },
+    {
       "path": ".github/workflows/finance-expense-cash-client.yml",
-      "sha256": "a49a98b1e2d5600cff614da52c161c69e99366fe2643f129c6c12a955b34e500"
+      "sha256": "443ce38f6e65e7cd045278c2f41c3545de7fdf0ea763ae021a63638435fe0ebb"
     },
     {
       "path": ".github/workflows/finance-expense-cash-runtime.yml",
@@ -124,6 +201,10 @@
       "sha256": "e79b03bc7c396c2ad589248c11c991ede59888623e3154deca487f35e75cc327"
     },
     {
+      "path": "VinPoker/tests/financeExpenseAuthority/authority.http.mjs",
+      "sha256": "cd039ac8b6654a618e8998932851e89add89510d3933688942f2edd0a674faaa"
+    },
+    {
       "path": "VinPoker/tests/financeExpenseCash/cash.http.mjs",
       "sha256": "ffbaafa7d32757867d3bfcb7162c73d2fd67878d5fe8cedc8954c57c68ec4b00"
     },
@@ -141,7 +222,7 @@
     },
     {
       "path": "VinPoker/tests/financeExpenseCashClient/client.http.mjs",
-      "sha256": "4001eda68d936c6c8458f2bc2eb066ff5a7e87e1a09e803659bde0652656bf08"
+      "sha256": "e3db0e19c26e1dac2251570ce7533920ce213fc9dfe3b2bd216dd2338db1bd83"
     },
     {
       "path": "VinPoker/tests/financeExpenseCashClient/http.fixture.tsx",
@@ -193,23 +274,8 @@
     }
   ],
   "observed": {
-    "freshCases": 19,
-    "reusedCases": 1,
-    "reusedRun": "45743258253",
-    "reusedProducerConclusion": "failure",
-    "reusedCompletedCase": {
-      "width": 320,
-      "scenario": "committed-lost-ack",
-      "posts": 1,
-      "lookupReads": 1,
-      "oneCostReceiptMovement": true,
-      "recordedCash": 9000000,
-      "overflow": false,
-      "pageErrors": 0,
-      "sourceSha": "de2371183801268ddc1aa829c15ac2874bcb40c6",
-      "producerRun": "45743258253",
-      "imageSha256": "334a426cf600c89f88dd9e040fb0b0b1b08e9c437858bf3aa7450caeb491bf50"
-    },
+    "freshCases": 20,
+    "reusedCases": 0,
     "widths": [
       320,
       375,
@@ -236,7 +302,7 @@
     "productionMutation": false,
     "productionCapacityClaim": false
   },
-  "limitations": "Isolated component/hook/HTTP/PG17 evidence, not pre03 upgrade, hosted authentication, parent workbench, approval policy, full TC3, capacity or release approval",
+  "limitations": "Isolated source/client/HTTP/PG17 plus corrected-source recovery. Not pre03 upgrade, hosted authentication, parent workbench, full TC3, load capacity, hosted backup/restore, live collision/preflight or release approval. Historical needs_review failure remains unexplained.",
   "productTree": {
     "kind": "COMMITTED_PRODUCT_TREE_BOUND_TO_PRODUCER_SOURCE",
     "prefixes": [
@@ -253,7 +319,7 @@
       "VinPoker/scripts/ops/fixtures/finance-source-runtime-receipt-20261126.json",
       "VinPoker/scripts/ops/select-cashier-schema-mode.mjs"
     ],
-    "entries": 7641,
-    "sha256": "38583e2b58e41eae240eaa3ba1f813094c237c9afe609d59ad01da0c3d1cd2ef"
+    "entries": 7645,
+    "sha256": "3da6a0d3e20ee16d7aa3204a0efe1f04e6c31bd2c6eb1891a8cec912a0db8b08"
   }
 }

@@ -202,17 +202,23 @@ export function qualifiedFinanceSources(files, context) {
     assert.ok(blob(head,path).equals(blob(base,path)),`PR changes trusted guard: ${path}`);
   }
   const policy=JSON.parse(blob(base,financePolicyPath));
-  assert.equal(policy.schemaVersion,1);
+  assert.equal(policy.schemaVersion,2);
   assert.equal(policy.kind,'EXACT_FINANCE_NEW_SOURCE_CURRENT_RUNTIME_EXCEPTION');
-  assert.equal(policy.sourceCandidate,'e231ba934bbbc7e0608499dc05bb306f1f51f544');
-  const receiptHash='5e8ab4e6e9646b31fbe3dca9e9d190b6e5ff9ffabaedb6c3fbed636d216183d0';
+  assert.equal(policy.sourceCandidate,'c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0');
+  const receiptHash='5a40c6d8144866707e57e68ddbb8b81028da6cbabfa845e80f369bafb340a260';
   assert.equal(policy.proof.receiptPath,financeReceiptPath);
   assert.equal(policy.proof.receiptSha256,receiptHash);
   assert.equal(canonicalHash(blob(base,financeReceiptPath)),receiptHash,'Finance receipt drift');
   const receipt=JSON.parse(blob(base,financeReceiptPath));
-  const producer={run:45743719060,workflowId:431098994,sourceSha:policy.sourceCandidate,actor:'PhamGiaVinh',
+  const producer={run:45792554430,workflowId:431098994,sourceSha:policy.sourceCandidate,actor:'PhamGiaVinh',
     event:'pull_request',path:'.github/workflows/finance-expense-cash-client.yml',conclusion:'success',attempt:1};
+  assert.equal(receipt.schemaVersion,2);
   assert.deepEqual(receipt.producer,producer);
+  const authorityProducer={actor:'PhamGiaVinh',attempt:1,conclusion:'success',event:'pull_request',
+    path:'.github/workflows/finance-expense-authority.yml',run:45792554475,sourceSha:policy.sourceCandidate,workflowId:431296054};
+  assert.deepEqual(receipt.authority.producer,authorityProducer);
+  assert.deepEqual(policy.authorityProof,authorityProducer);
+  assert.equal(receipt.authoritySqlSha256,'af120dd8ba5cf4ec3aae0700522bb3028915237811a39d591381130841355f46');
   for(const [key,value] of Object.entries(producer))assert.equal(policy.proof[key],value,`Finance proof drift: ${key}`);
   assert.deepEqual(policy.migrationScope,receipt.scope);
   assert.deepEqual(policy.runtimePins,receipt.runtimePins);
@@ -230,7 +236,7 @@ export function qualifiedFinanceSources(files, context) {
   assert.equal(productEntries.length,policy.productTree.entries,'Inherited product tree changed');
   assert.equal(hash(Buffer.from(productEntries.join('\0')+'\0')),policy.productTree.sha256,'Inherited runtime dependency drift');
   const admittedPaths=[...policy.migrationScope,...policy.runtimePins].map(f=>f.path).sort();
-  assert.equal(admittedPaths.length,41);assert.equal(new Set(admittedPaths).size,41);
+  assert.equal(admittedPaths.length,44);assert.equal(new Set(admittedPaths).size,44);
   assert.deepEqual(files.map(f=>f.filename).sort(),admittedPaths,'Unlisted change invalidates exact finance evidence');
   assert.ok(files.every(f=>f.previous_filename===undefined),'Finance package cannot rename any path');
   const expectedPaths=[
@@ -239,10 +245,11 @@ export function qualifiedFinanceSources(files, context) {
     ['VinPoker/supabase/pending-migrations/20261126001901_finance_pt_cash_drawer_link_v1.sql','A'],
     ['VinPoker/supabase/pending-migrations/20261126011530_finance_expense_cash_source_v1.sql','A'],
     ['VinPoker/supabase/pending-migrations/20261126023026_finance_expense_cash_source_status_v1.sql','A'],
+    ['VinPoker/supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql','A'],
   ];
   assert.deepEqual(policy.migrationScope.map(f=>[f.path,f.status]).sort(),expectedPaths.sort());
   const migrations=files.filter(f=>isMigrationPath(f.filename)||isMigrationPath(f.previous_filename));
-  assert.equal(migrations.length,5,'Complete exact finance source package required');
+  assert.equal(migrations.length,6,'Complete exact finance source package required');
   for(const expected of policy.migrationScope){
     const actual=migrations.find(f=>f.filename===expected.path);
     assert.ok(actual&&actual.previous_filename===undefined,'Exact finance path required');
@@ -251,12 +258,23 @@ export function qualifiedFinanceSources(files, context) {
     if(expected.status==='A')assert.equal(git('ls-tree',diffBase,'--',expected.path).length,0,'Finance SQL must be new');
     else assert.equal(canonicalHash(blob(diffBase,expected.path)),expected.baseSha256,'Finance catalog preimage drift');
   }
-  assert.equal(policy.runtimePins.length,36,'Complete reviewed finance inputs required');
-  assert.equal(new Set(policy.runtimePins.map(f=>f.path)).size,36);
+  assert.equal(policy.runtimePins.length,38,'Complete reviewed finance inputs required');
+  assert.equal(new Set(policy.runtimePins.map(f=>f.path)).size,38);
   for(const file of policy.runtimePins)assert.equal(canonicalHash(blob(head,file.path)),file.sha256,`Finance runtime drift: ${file.path}`);
   assert.equal(receipt.observed.actualPostgrest,true);
-  assert.equal(receipt.observed.freshCases,19);assert.equal(receipt.observed.reusedCases,1);
-  assert.equal(receipt.observed.reusedProducerConclusion,'failure');
+  assert.equal(receipt.observed.freshCases,20);assert.equal(receipt.observed.reusedCases,0);
+  assert.equal(receipt.observed.accountantSpendingDenied,true);
+  for(const value of Object.values(receipt.observed.narrowStatusReader))assert.equal(value,true);
+  assert.equal(receipt.authority.candidate.isolationInvariantPassed,true);
+  assert.equal(receipt.authority.candidate.foreignCommittedRows,0);
+  assert.equal(receipt.authority.concurrency.actualHttpConnections,2);
+  assert.equal(receipt.authority.concurrency.observedBlockedConnections,2);
+  assert.equal(receipt.authority.concurrency.oneExpense,true);
+  assert.equal(receipt.authority.concurrency.totalVnd,1000000);
+  assert.equal(receipt.authority.concurrency.committedRevocationDeniesReadReplayAndNewWrite,true);
+  assert.equal(receipt.authority.forwardRecovery.metadataPoliciesAndExpensesUnchanged,true);
+  assert.equal(receipt.authority.forwardRecovery.receiptIdentityPreserved,true);
+  assert.equal(receipt.authority.forwardRecovery.foreignWriteStillDenied,true);
   assert.equal(receipt.observed.productionMutation,false);assert.equal(receipt.observed.productionCapacityClaim,false);
   // Admission only chooses contemporary Cashier compatibility tests. It does
   // not claim historical 03/11 upgrade proof, native-load or release approval.

@@ -1,10 +1,10 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "kind": "EXACT_FINANCE_NEW_SOURCE_CURRENT_RUNTIME_EXCEPTION",
   "activation": "INACTIVE_UNTIL_REVIEWED_OWNER_APPROVED_PROTECTED_BASE_MERGE",
-  "historicalCoverage": "Original pre03 upgrade remains unproved; this exact new package uses reviewed current baseline plus separate isolated source qualification",
-  "sourceCandidate": "e231ba934bbbc7e0608499dc05bb306f1f51f544",
-  "baselineBase": "9fcf0ad20a49d94d02092837ee9b45636d9f9f62",
+  "historicalCoverage": "Historical pre03 upgrade remains unproved. Only exact source with scoped authority, twenty fresh client cases and separate concurrency/recovery evidence can qualify.",
+  "sourceCandidate": "c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0",
+  "baselineBase": "25b0b3d23f62bdad191172d3145fb3d45d0965ea",
   "migrationScope": [
     {
       "status": "M",
@@ -31,12 +31,21 @@
       "status": "A",
       "path": "VinPoker/supabase/pending-migrations/20261126023026_finance_expense_cash_source_status_v1.sql",
       "headSha256": "28287f7df15621f00c8e5edd9ebd233d2822eead10af96807bca9fbe0840f914"
+    },
+    {
+      "status": "A",
+      "path": "VinPoker/supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql",
+      "headSha256": "af120dd8ba5cf4ec3aae0700522bb3028915237811a39d591381130841355f46"
     }
   ],
   "runtimePins": [
     {
+      "path": ".github/workflows/finance-expense-authority.yml",
+      "sha256": "b5fd2b94d659644d9cd8bbf07939ed36ed21d4c7a93c81aae4f5e7daaa276d2a"
+    },
+    {
       "path": ".github/workflows/finance-expense-cash-client.yml",
-      "sha256": "a49a98b1e2d5600cff614da52c161c69e99366fe2643f129c6c12a955b34e500"
+      "sha256": "443ce38f6e65e7cd045278c2f41c3545de7fdf0ea763ae021a63638435fe0ebb"
     },
     {
       "path": ".github/workflows/finance-expense-cash-runtime.yml",
@@ -111,6 +120,10 @@
       "sha256": "e79b03bc7c396c2ad589248c11c991ede59888623e3154deca487f35e75cc327"
     },
     {
+      "path": "VinPoker/tests/financeExpenseAuthority/authority.http.mjs",
+      "sha256": "cd039ac8b6654a618e8998932851e89add89510d3933688942f2edd0a674faaa"
+    },
+    {
       "path": "VinPoker/tests/financeExpenseCash/cash.http.mjs",
       "sha256": "ffbaafa7d32757867d3bfcb7162c73d2fd67878d5fe8cedc8954c57c68ec4b00"
     },
@@ -128,7 +141,7 @@
     },
     {
       "path": "VinPoker/tests/financeExpenseCashClient/client.http.mjs",
-      "sha256": "4001eda68d936c6c8458f2bc2eb066ff5a7e87e1a09e803659bde0652656bf08"
+      "sha256": "e3db0e19c26e1dac2251570ce7533920ce213fc9dfe3b2bd216dd2338db1bd83"
     },
     {
       "path": "VinPoker/tests/financeExpenseCashClient/http.fixture.tsx",
@@ -181,17 +194,27 @@
   ],
   "proof": {
     "receiptPath": "VinPoker/scripts/ops/fixtures/finance-source-runtime-receipt-20261126.json",
-    "receiptSha256": "5e8ab4e6e9646b31fbe3dca9e9d190b6e5ff9ffabaedb6c3fbed636d216183d0",
-    "run": 45743719060,
-    "sourceSha": "e231ba934bbbc7e0608499dc05bb306f1f51f544",
-    "workflowId": 431098994,
+    "receiptSha256": "5a40c6d8144866707e57e68ddbb8b81028da6cbabfa845e80f369bafb340a260",
     "actor": "PhamGiaVinh",
+    "attempt": 1,
+    "conclusion": "success",
     "event": "pull_request",
     "path": ".github/workflows/finance-expense-cash-client.yml",
-    "conclusion": "success",
-    "attempt": 1
+    "run": 45792554430,
+    "sourceSha": "c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0",
+    "workflowId": 431098994
   },
-  "unknownChangeBehavior": "pre03; no missing/partial/modified/renamed/symlink/unknown SQL exemption; full current suite remains required; no production approval",
+  "authorityProof": {
+    "actor": "PhamGiaVinh",
+    "attempt": 1,
+    "conclusion": "success",
+    "event": "pull_request",
+    "path": ".github/workflows/finance-expense-authority.yml",
+    "run": 45792554475,
+    "sourceSha": "c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0",
+    "workflowId": 431296054
+  },
+  "unknownChangeBehavior": "pre03; unknown/missing/modified/renamed/nonregular SQL or runtime and inherited dependency drift remain denied; full current suite and production gates unchanged",
   "productTree": {
     "kind": "COMMITTED_PRODUCT_TREE_BOUND_TO_PRODUCER_SOURCE",
     "prefixes": [
@@ -208,7 +231,7 @@
       "VinPoker/scripts/ops/fixtures/finance-source-runtime-receipt-20261126.json",
       "VinPoker/scripts/ops/select-cashier-schema-mode.mjs"
     ],
-    "entries": 7641,
-    "sha256": "38583e2b58e41eae240eaa3ba1f813094c237c9afe609d59ad01da0c3d1cd2ef"
+    "entries": 7645,
+    "sha256": "3da6a0d3e20ee16d7aa3204a0efe1f04e6c31bd2c6eb1891a8cec912a0db8b08"
   }
 }

@@ -11,8 +11,8 @@ import {selectCashierSchemaMode} from './select-cashier-schema-mode.mjs';
 const root=mkdtempSync(join(tmpdir(),'finance-policy-tree-'));
 after(()=>{assert.equal(dirname(resolve(root)),resolve(tmpdir()));rmSync(root,{recursive:true,force:true});});
 const actualRepo=fileURLToPath(new URL('../../..',import.meta.url));
-const source='e231ba934bbbc7e0608499dc05bb306f1f51f544';
-const baseSource='9fcf0ad20a49d94d02092837ee9b45636d9f9f62';
+const source='c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0';
+const baseSource='25b0b3d23f62bdad191172d3145fb3d45d0965ea';
 const git=(...args)=>execFileSync('git',['-C',root,...args],{maxBuffer:16*1024*1024});
 const original=(revision,path)=>execFileSync('git',['-C',actualRepo,'show',`${revision}:${path}`],{maxBuffer:16*1024*1024});
 const prefix='VinPoker/scripts/ops/';
@@ -120,4 +120,11 @@ test('tampered base receipts cannot manufacture a qualification',()=>{
  assert.equal(classify(pages(h,b),context(h,b)),'pre03');
  const noPolicyBase=new Map(baseline);noPolicyBase.delete(policyPath);const missing=commit(noPolicyBase),introduced=commit(candidate,missing);
  assert.equal(classify(pages(introduced,missing),context(introduced,missing)),'pre03');
+});
+
+test('missing scoped authority SQL or its producer inputs cannot qualify the old package',()=>{
+ for(const path of ['VinPoker/supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql',
+  '.github/workflows/finance-expense-authority.yml','VinPoker/tests/financeExpenseAuthority/authority.http.mjs']){
+  assert.equal(changed(path,null),'pre03');
+ }
 });
