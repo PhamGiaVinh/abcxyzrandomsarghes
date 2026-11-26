@@ -24,14 +24,19 @@ function shiftYM(year: number, month: number, delta: number): { year: number; mo
  * calendar-date finance RPC the owner cockpit reads; includes the clubExpenses cost line).
  * No write controls; numbers of an un-closed period are provisional by doctrine.
  */
-export function AccountantFinanceTab({ clubId }: { clubId: string | null }) {
+export function AccountantFinanceTab({ clubId, dateRange, onClearDateRange }: {
+  clubId: string | null;
+  dateRange?: { from: string; to: string };
+  onClearDateRange?: () => void;
+}) {
   const { t } = useTranslation();
   const [ym, setYM] = useState(currentYM);
-  const { from, to } = useMemo(() => {
+  const monthlyRange = useMemo(() => {
     const month=String(ym.month).padStart(2,'0');
     const last=new Date(Date.UTC(ym.year,ym.month,0)).toISOString().slice(0,10);
     return { from:`${ym.year}-${month}-01`,to:last };
   }, [ym]);
+  const { from, to } = dateRange ?? monthlyRange;
   const q = useFinanceSummaryRpcOnly(clubId, from, to);
   const s = q.data;
 
@@ -39,9 +44,14 @@ export function AccountantFinanceTab({ clubId }: { clubId: string | null }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-muted-foreground">
-          Doanh thu — chi phí — còn lại của tháng (chỉ xem; kỳ chưa chốt sổ là số tạm tính).
+          Doanh thu, chi phí và còn lại của kỳ đang xem. Kỳ chưa chốt sổ là số tạm tính.
         </p>
-        <div className="flex items-center gap-2">
+        {dateRange ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span>{from} – {to}</span>
+            {onClearDateRange && <Button variant="outline" onClick={onClearDateRange}>Xem theo tháng</Button>}
+          </div>
+        ) : <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setYM((s0) => shiftYM(s0.year, s0.month, -1))} aria-label="Tháng trước">
             <ArrowLeft className="w-4 h-4" />
           </Button>
@@ -51,7 +61,7 @@ export function AccountantFinanceTab({ clubId }: { clubId: string | null }) {
           <Button variant="outline" size="sm" onClick={() => setYM((s0) => shiftYM(s0.year, s0.month, 1))} aria-label="Tháng sau">
             <ArrowRight className="w-4 h-4" />
           </Button>
-        </div>
+        </div>}
       </div>
 
       {q.isLoading ? (

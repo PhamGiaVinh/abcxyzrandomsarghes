@@ -56,3 +56,7 @@ it.each(['1e5','10.00','1.5','9007199254740992'])('rejects ambiguous VND %s',asy
  await act(async()=>fireEvent.submit(screen.getByLabelText('Số tiền').closest('form')!));
  expect(f.write).not.toHaveBeenCalled();
 });
+
+it('uses inherited inclusive business dates as an exclusive UTC+7 expense range',()=>{render(<MemoryRouter><ClubExpenses embedded scopedClubId="club-a" dateRange={{from:"2026-10-01",to:"2026-10-20"}}/></MemoryRouter>);expect(f.read).toHaveBeenLastCalledWith("live","club-a","2026-09-30T17:00:00.000Z","2026-10-20T17:00:00.000Z");});
+
+it('blocks malformed inherited dates before mounting an expense form',()=>{render(<MemoryRouter><ClubExpenses embedded scopedClubId="club-a" dateRange={{from:"2026-02-30",to:"2026-03-01"}}/></MemoryRouter>);expect(screen.getByRole('alert')).toHaveTextContent('Khoảng ngày');expect(f.read.mock.calls.at(-1)?.[1]).toBeNull();expect(screen.queryByRole('button',{name:'Ghi chi phí'})).toBeNull();});

@@ -64,6 +64,16 @@ it('ignores a captured fire-and-forget action after session replacement',()=>{
 it('does not send a payment after its pre-read completes in an abandoned session',async()=>{
  let resolve!:(v:unknown)=>void;f.rpc.mockReturnValueOnce(new Promise(r=>{resolve=r;}));const v=mount();let result!:Promise<unknown>;await act(async()=>{result=v.result.current.markPaid.mutateAsync(runId).catch(e=>e);});f.auth={...f.auth,session:{access_token:'TEST_SALARY_NEW'}};v.rerender();await act(async()=>{resolve({data:saved,error:null});await result;});expect(f.rpc.mock.calls.map(c=>c[0])).toEqual(['get_staff_salary_report']);expect(f.success).not.toHaveBeenCalled();
 });
+it('does not send a payment after the operator changes payroll period during its pre-read',async()=>{
+ let resolve!:(v:unknown)=>void;f.rpc.mockReturnValueOnce(new Promise(r=>{resolve=r;}));
+ const c=new QueryClient({defaultOptions:{mutations:{retry:false}}});clients.push(c);
+ const v=renderHook(({month})=>useSalaryActions('live','club',2026,month),{initialProps:{month:10},wrapper:({children}:PropsWithChildren)=><QueryClientProvider client={c}>{children}</QueryClientProvider>});
+ let result!:Promise<unknown>;await act(async()=>{result=v.result.current.markPaid.mutateAsync(runId).catch(e=>e);});
+ v.rerender({month:11});
+ await act(async()=>{resolve({data:saved,error:null});await result;});
+ expect(await result).toBeInstanceOf(Error);
+ expect(f.rpc.mock.calls.map(c=>c[0])).toEqual(['get_staff_salary_report']);expect(f.success).not.toHaveBeenCalled();
+});
 it('does not send a second payment intent for a PT month summary of daily cash already paid',async()=>{
  f.rpc.mockImplementation(fn=>Promise.resolve({data:fn==='get_staff_salary_report'?{...saved,rows:[{...saved.rows[0],employment_type:'part_time'}]}:receipts.markPaid,error:null}));const v=mount();await act(async()=>{await expect(v.result.current.markPaid.mutateAsync(runId)).rejects.toThrow();});expect(f.rpc.mock.calls.map(c=>c[0])).toEqual(['get_staff_salary_report']);expect(f.success).not.toHaveBeenCalled();
 });

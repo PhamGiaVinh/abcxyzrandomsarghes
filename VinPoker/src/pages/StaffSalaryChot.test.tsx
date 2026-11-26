@@ -1,17 +1,17 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-const f=vi.hoisted(()=>({monthRead:vi.fn(),markPaid:vi.fn(),month:{data:undefined as any,isError:true,isLoading:false,isFetching:false,isPaused:false,refetch:vi.fn()},clubsError:false,clubsPaused:false}));
+const f=vi.hoisted(()=>({monthRead:vi.fn(),actionsScope:vi.fn(),markPaid:vi.fn(),month:{data:undefined as any,isError:true,isLoading:false,isFetching:false,isPaused:false,refetch:vi.fn()},clubsError:false,clubsPaused:false}));
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({user:{id:'owner'},loading:false,isClubOwner:true})}));
 vi.mock('@/lib/staffSalary/dataSource',()=>({staffSalarySource:()=> 'live'}));
 vi.mock('@/lib/featureFlags',()=>({FEATURES:{staffSalaryChot:true}}));
 vi.mock('@/hooks/staffSalary/useStaffSalary',()=>({
  useSalaryClubs:()=>({data:[{id:'club',name:'LOCAL TEST',role:'owner'}],isLoading:false,isPaused:f.clubsPaused,isError:f.clubsError,refetch:vi.fn()}),
  useStaffSalaryMonth:(...args:unknown[])=>{f.monthRead(...args);return f.month;},
- useSalaryActions:()=>Object.fromEntries(['chot','submit','approve','reject','markPaid'].map(k=>[k,{isPending:false,mutate:k==='markPaid'?f.markPaid:vi.fn()}])),
+ useSalaryActions:(...args:unknown[])=>{f.actionsScope(...args);return Object.fromEntries(['chot','submit','approve','reject','markPaid'].map(k=>[k,{isPending:false,mutate:k==='markPaid'?f.markPaid:vi.fn()}]));},
 }));
 import StaffSalaryChot from './StaffSalaryChot';
-beforeEach(()=>{f.monthRead.mockReset();f.markPaid.mockReset();f.clubsError=false;f.clubsPaused=false;f.month={data:undefined,isError:true,isLoading:false,isFetching:false,isPaused:false,refetch:vi.fn()};});
+beforeEach(()=>{f.monthRead.mockReset();f.actionsScope.mockReset();f.markPaid.mockReset();f.clubsError=false;f.clubsPaused=false;f.month={data:undefined,isError:true,isLoading:false,isFetching:false,isPaused:false,refetch:vi.fn()};});
 afterEach(()=>{cleanup();vi.useRealTimers();});
 const mount=()=>render(<MemoryRouter><StaffSalaryChot/></MemoryRouter>);
 it('opens the staff month in Vietnam across the UTC year boundary',()=>{
@@ -52,4 +52,11 @@ it('does not fall back to a different club for an embedded staff salary view', (
   render(<MemoryRouter><StaffSalaryChot embedded scopedClubId="other-club" /></MemoryRouter>);
   expect(f.monthRead.mock.calls.at(-1)?.[1]).toBeNull();
   expect(screen.queryByRole('button', {name:/Chốt lương/})).toBeNull();
+});
+
+it('loads the explicitly selected historical payroll month and follows period changes',()=>{
+ const v=render(<MemoryRouter><StaffSalaryChot embedded scopedClubId="club" payrollMonth={{year:2024,month:2}}/></MemoryRouter>);
+ expect(f.monthRead).toHaveBeenLastCalledWith('live','club',2024,2);expect(f.actionsScope).toHaveBeenLastCalledWith('live','club',2024,2);
+ v.rerender(<MemoryRouter><StaffSalaryChot embedded scopedClubId="club" payrollMonth={{year:2024,month:3}}/></MemoryRouter>);
+ expect(f.monthRead).toHaveBeenLastCalledWith('live','club',2024,3);expect(f.actionsScope).toHaveBeenLastCalledWith('live','club',2024,3);
 });

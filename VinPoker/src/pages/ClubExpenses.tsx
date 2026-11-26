@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Banknote, CalendarDays, ClipboardList, Landmark,
 import { useAuth } from "@/hooks/useAuth";
 import { FEATURES } from "@/lib/featureFlags";
 import { formatShortDate, formatVND } from "@/lib/format";
-import { financeBusinessToday } from "@/lib/financeSummaryRead";
+import { financeBusinessToday, financeCalendarInstants } from "@/lib/financeSummaryRead";
 import { clubExpensesSource } from "@/lib/clubExpenses/dataSource";
 import { EXPENSE_CATEGORIES, EXPENSE_CATEGORY_LABELS, type ExpenseCategory, type ExpensePaymentSource, type ExpensePaymentStatus } from "@/lib/clubExpenses/types";
 import { useExpenseClubs } from "@/hooks/clubExpenses/useExpenseClubs";
@@ -36,7 +36,12 @@ function currentMonthKey(): string {
   return financeBusinessToday().slice(0,7);
 }
 
-export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: boolean; scopedClubId?: string } = {}) {
+export default function ClubExpenses({ embedded, scopedClubId, dateRange, onClearDateRange }: {
+  embedded?: boolean;
+  scopedClubId?: string;
+  dateRange?: {from: string; to: string};
+  onClearDateRange?: () => void;
+} = {}) {
   const { loading: authLoading, isAdmin, isClubAdmin, isClubOwner, isCashier, isAccountant } = useAuth();
   const [searchParams] = useSearchParams();
   const source = clubExpensesSource();
@@ -48,10 +53,18 @@ export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: bo
   const allowed = FEATURES.clubExpenses ? liveAllowed : previewAllowed || mockPreview;
   const [clubId, setClubId] = useState<string>("");
   const [monthKey, setMonthKey] = useState(currentMonthKey);
-  const { from, to } = useMemo(() => monthBounds(monthKey), [monthKey]);
+  const range = useMemo(() => {
+    if (!dateRange) return {...monthBounds(monthKey), invalid: false};
+    try {
+      return {...financeCalendarInstants(dateRange.from, dateRange.to), invalid: false};
+    } catch {
+      return {from: "", to: "", invalid: true};
+    }
+  }, [dateRange, monthKey]);
+  const {from, to} = range;
   const clubsQuery = useExpenseClubs(source, allowed);
   const clubs = clubsQuery.isError ? [] : clubsQuery.data ?? [];
-  const activeClubId = scopedClubId === undefined
+  const activeClubId = range.invalid ? null : scopedClubId === undefined
     ? (clubs.some(c=>c.id===clubId) ? clubId : clubs[0]?.id ?? null)
     : clubs.find((club) => club.id === scopedClubId)?.id ?? null;
   const expensesQuery = useClubExpenses(source, activeClubId, from, to);
@@ -64,6 +77,11 @@ export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: bo
   if (authLoading || clubsQuery.isLoading) return <ExpensesSkeleton />;
   // Embedded (accountant workspace): the parent already gates access — never redirect.
   if (!allowed && !embedded) return <Navigate to="/club/admin" replace />;
+
+  if (range.invalid) return <Card role="alert" className="p-4 space-y-2">
+    <p>Khoảng ngày sổ chi phí không hợp lệ. Vui lòng chọn lại ngày báo cáo.</p>
+    {onClearDateRange && <Button variant="outline" onClick={onClearDateRange}>Xem theo tháng</Button>}
+  </Card>;
 
   const summary = expensesQuery.isError ? undefined : expensesQuery.data;
   const rows = summary?.rows ?? [];
@@ -83,7 +101,12 @@ export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: bo
             Ghi chi phí vận hành thủ công của CLB. Ledger append-only: sửa sai bằng dòng điều chỉnh, không edit/xóa dòng cũ.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        {dateRange ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span>{dateRange.from} – {dateRange.to}</span>
+            {onClearDateRange && <Button variant="outline" onClick={onClearDateRange}>Xem theo tháng</Button>}
+          </div>
+        ) : <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setMonthKey((m) => shiftMonth(m, -1))} aria-label="Tháng trước">
             <ArrowLeft className="w-4 h-4" />
           </Button>
@@ -93,7 +116,7 @@ export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: bo
           <Button variant="outline" size="sm" onClick={() => setMonthKey((m) => shiftMonth(m, 1))} aria-label="Tháng sau">
             <ArrowRight className="w-4 h-4" />
           </Button>
-        </div>
+        </div>}
       </header>
 
       {preview && (
