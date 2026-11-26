@@ -44,20 +44,33 @@ type Row = {
  * Cashier "Đối soát SePay" tab — surfaces the SePay reconciliation worklist (transfers the reconcile
  * worker verified + flagged) and submits confirm/ignore through actor-bound intent receipts.
  * The RPC returns raw facts; the cashier eyeballs the comparison and the
- * RPC re-validates authoritatively on click. clubIds is accepted for parity (the RPC self-scopes).
+ * RPC re-validates authoritatively on click. Linked reads retain the verified
+ * parent club; the all-clubs reader is entered through an explicit choice.
  */
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const SePaySettlementTab = ({ clubIds, clubId, bankId }: { clubIds?: string[]; clubId?: string | null; bankId?: string | null } = {}) => {
+export const SePaySettlementTab = ({ clubIds, clubs, clubId, bankId, allClubs = false }: {
+  clubIds?: string[]; clubs?: ReadonlyArray<{id:string;name:string}>;
+  clubId?: string | null; bankId?: string | null; allClubs?: boolean;
+} = {}) => {
   const { user, session } = useAuth();
   if (!user) return <Card className="p-4" role="alert">Đăng nhập để đọc danh sách đối soát SePay.</Card>;
   if (clubId != null || bankId != null) {
-    if (!clubId || !uuid.test(clubId) || !clubIds?.includes(clubId) || (bankId != null && !uuid.test(bankId))) {
+    if (allClubs || !clubId || !uuid.test(clubId) || !clubIds?.includes(clubId) || (bankId != null && !uuid.test(bankId))) {
       return <Card className="p-4" role="alert">Không xác minh được CLB hoặc giao dịch trong liên kết đối soát.</Card>;
     }
     if (!FEATURES.sepayScopedHandoff) return <Card className="p-4" role="alert">Chưa mở đối soát theo liên kết giao dịch.</Card>;
   }
-  return <SettlementSession actorId={user.id} clubId={clubId} bankId={bankId} key={JSON.stringify([user.id, sessionReadEpoch(session), [...(clubIds ?? [])].sort(), clubId, bankId])}/>;
+  if (FEATURES.sepayScopedHandoff && clubId == null && bankId == null && !allClubs) {
+    return <Card className="p-4 space-y-3">
+      <h2 className="text-lg font-semibold">Chọn CLB để đối soát SePay</h2>
+      <div className="flex flex-wrap gap-2">{(clubs ?? []).filter(club=>clubIds?.includes(club.id)).map(club=>
+        <a key={club.id} className="inline-flex min-h-11 items-center rounded-md border px-3 underline underline-offset-2"
+          href={`/cashier?${new URLSearchParams({tab:'sepay_settlement',club:club.id})}`}>Đối soát {club.name}</a>)}</div>
+      <a className="inline-flex min-h-11 items-center underline underline-offset-2" href="/cashier?tab=sepay_settlement&scope=all">Tất cả CLB được phân quyền</a>
+    </Card>;
+  }
+  return <SettlementSession actorId={user.id} clubIds={clubIds ?? []} clubId={clubId} bankId={bankId} key={JSON.stringify([user.id, sessionReadEpoch(session), [...(clubIds ?? [])].sort(), clubId, bankId])}/>;
 };
 
 function validSettlementRow(value: unknown): value is Row {
@@ -76,9 +89,10 @@ function validSettlementRow(value: unknown): value is Row {
     && [r.amount, r.reg_total_pay, r.amount_delta].every(value => value === null || typeof value === 'number' && Number.isSafeInteger(value));
 }
 
-function SettlementSession({ actorId, clubId, bankId }: { actorId: string; clubId?: string | null; bankId?: string | null }) {
+function SettlementSession({ actorId, clubIds, clubId, bankId }: { actorId: string; clubIds: string[]; clubId?: string | null; bankId?: string | null }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [readForbidden, setReadForbidden] = useState(false);
   const [scope, setScope] = useState<"actionable" | "resolved">("actionable");
   const [confirmTarget, setConfirmTarget] = useState<Row | null>(null);
   const [confirmReason, setConfirmReason] = useState("");
@@ -87,12 +101,11 @@ function SettlementSession({ actorId, clubId, bankId }: { actorId: string; clubI
   // Stale-response guard (mount + clubs-loaded fire back to back; only the latest may write state).
   const loadSeq = useRef(0), readFlight = useRef<AbortController | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (quiet = false) => {
     const seq = ++loadSeq.current;
     readFlight.current?.abort();
     const controller = new AbortController(); readFlight.current = controller;
-    setRows(null);
-    setLoadError(null);
+    if (!quiet) { setRows(null); setLoadError(null); }
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- existing RPC is not in generated types.ts
       const rpc = clubId ? "sepay_cashier_settlement_scope_v1" : "sepay_cashier_settlement_worklist";
@@ -100,13 +113,19 @@ function SettlementSession({ actorId, clubId, bankId }: { actorId: string; clubI
         : { p_scope: scope, p_limit: 200 };
       const { data, error } = await observeTrackerContextRead((supabase.rpc as any)(rpc, args).abortSignal(controller.signal)) as { data: unknown; error: { code?: string } | null };
       if (seq !== loadSeq.current) return;
-      if (error?.code === '42501') { setLoadError('Không có quyền đọc danh sách đối soát SePay.'); return; }
+      if (error?.code === '42501') {
+        setRows(null); setReadForbidden(true); setConfirmTarget(null); setIgnoreTarget(null);
+        setLoadError('Không có quyền đọc danh sách đối soát SePay.'); return;
+      }
       if (error || !Array.isArray(data) || !data.every(validSettlementRow)
         || new Set(data.map(row => row.bank_transaction_id)).size !== data.length
         || (clubId && data.some(row => row.club_id !== clubId || (bankId && row.bank_transaction_id !== bankId)))) throw new Error('unverified_worklist');
-      setRows(data);
+      setReadForbidden(false); setLoadError(null); setRows(data);
     } catch {
-      if (seq === loadSeq.current) setLoadError('Không tải được danh sách đối soát SePay. Hãy thử lại.');
+      if (seq === loadSeq.current) {
+        setRows(null); setConfirmTarget(null); setIgnoreTarget(null);
+        setLoadError('Không tải được danh sách đối soát SePay. Hãy thử lại.');
+      }
     } finally {
       controller.abort();
       if (seq === loadSeq.current) readFlight.current = null;
@@ -118,13 +137,22 @@ function SettlementSession({ actorId, clubId, bankId }: { actorId: string; clubI
     setConfirmTarget(null);setConfirmReason('');setIgnoreTarget(null);setIgnoreReason('');void load();
   });
   const busy=mutation.busy?mutation.pending?.bankId??null:null;
-  const mutationBlocked=mutation.busy||mutation.pending!==null||mutation.journalError||rows===null||loadError!==null;
+  const mutationBlocked=readForbidden||mutation.busy||mutation.pending!==null||mutation.journalError||rows===null||loadError!==null;
+  const pendingElsewhere=!!mutation.pending && (mutation.pending.clubId===null
+    || !clubIds.includes(mutation.pending.clubId)
+    || (!!clubId && mutation.pending.clubId!==clubId)
+    || (!!bankId && mutation.pending.bankId!==bankId));
+  const pendingUrl=pendingElsewhere && mutation.pending?.clubId && clubIds.includes(mutation.pending.clubId)
+    ? `/cashier?${new URLSearchParams({tab:'sepay_settlement',club:mutation.pending.clubId,bank:mutation.pending.bankId})}` : null;
   // Re-run when the scope filter changes; actor/session/club changes remount above.
   useEffect(() => {
     setConfirmTarget(null); setConfirmReason(''); setIgnoreTarget(null); setIgnoreReason('');
     void load();
-    return cancelRead;
-  }, [load, cancelRead]);
+    // A linked workspace must drop data/actions after a server-side revocation,
+    // even when its parent membership list has not been reloaded yet.
+    const interval=clubId ? window.setInterval(()=>{if(!readFlight.current)void load(true);},5000) : undefined;
+    return ()=>{window.clearInterval(interval);cancelRead();};
+  }, [load, cancelRead, clubId]);
 
   const doConfirm = async () => {
     const r = confirmTarget;
@@ -164,15 +192,18 @@ function SettlementSession({ actorId, clubId, bankId }: { actorId: string; clubI
             <Button variant={scope === "actionable" ? "default" : "outline"} size="sm" className="h-9" onClick={() => setScope("actionable")}>Cần xử lý</Button>
             <Button variant={scope === "resolved" ? "default" : "outline"} size="sm" className="h-9" onClick={() => setScope("resolved")}>Đã xử lý</Button>
           </>}
-          <Button variant="ghost" size="icon" aria-label="Tải lại đối soát SePay" className="h-9 w-9" onClick={load} disabled={rows === null && !loadError}>
+          <Button variant="ghost" size="icon" aria-label="Tải lại đối soát SePay" className="h-9 w-9" onClick={() => void load()} disabled={rows === null && !loadError}>
             {rows === null && !loadError ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
           </Button>
         </div>
       </div>
 
       {(mutation.pending||mutation.journalError)&&<div role="alert" className="rounded-md border border-warning/40 p-3 text-sm space-y-2">
-        <p>{mutation.journalError?'Không đọc/lưu được yêu cầu đang chờ. Không gửi khoản mới; cần kiểm tra journal trước.':mutation.notice||'Có yêu cầu chưa xác minh từ lần trước. Tra cứu receipt trước khi tiếp tục.'}</p>
-        {mutation.pending&&<div className="flex gap-2 flex-wrap">
+        <p>{mutation.journalError?'Không đọc/lưu được yêu cầu đang chờ. Không gửi khoản mới; cần kiểm tra journal trước.':pendingElsewhere
+          ?'Có yêu cầu đang chờ của giao dịch khác. Mở đúng giao dịch để xác minh trước khi gửi khoản mới.'
+          :mutation.notice||'Có yêu cầu chưa xác minh từ lần trước. Tra cứu receipt trước khi tiếp tục.'}</p>
+        {!readForbidden&&pendingUrl&&<a className="inline-flex min-h-11 items-center underline underline-offset-2" href={pendingUrl}>Mở đúng giao dịch đang chờ</a>}
+        {mutation.pending&&!pendingElsewhere&&!readForbidden&&<div className="flex gap-2 flex-wrap">
           <Button variant="outline" size="sm" disabled={mutation.busy} onClick={()=>void mutation.recover()}>Tra cứu yêu cầu đang chờ</Button>
           {mutation.missing&&<Button variant="outline" size="sm" disabled={mutation.busy} onClick={()=>void mutation.retry()}>Thử lại cùng yêu cầu</Button>}
         </div>}
