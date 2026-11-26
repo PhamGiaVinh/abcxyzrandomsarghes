@@ -43,8 +43,9 @@ try{
  for(const [file] of sqlFiles){const r=spawnSync('psql',['-Xq','-v','ON_ERROR_STOP=1','--single-transaction','-f',file],{encoding:'utf8'});assert.equal(r.status,0,String(r.stderr).slice(0,1600));}
  // The terminal-absence client proof depends on these real RLS policies, not
  // merely on a receipt being absent from an independently timed request.
- const policies=read(`SELECT jsonb_agg(jsonb_build_object('table',tablename,'cmd',cmd,'qual',qual)) FROM pg_policies WHERE schemaname='public' AND tablename IN('cashier_till_shifts','club_expenses','finance_expense_cash_receipts','clubs') AND cmd='SELECT'`);
- const tillPolicies=policies.filter(p=>p.table==='cashier_till_shifts');assert.equal(tillPolicies.length,1);assert.match(tillPolicies[0].qual,/is_club_cashier\(auth.uid\(\), club_id\)/);
+ const policies=read(`SELECT jsonb_agg(jsonb_build_object('table',tablename,'name',policyname,'roles',roles,'permissive',permissive,'cmd',cmd,'qual',qual)) FROM pg_policies WHERE schemaname='public' AND tablename IN('cashier_till_shifts','club_expenses','finance_expense_cash_receipts','clubs') AND cmd='SELECT'`);
+ const tillPolicies=policies.filter(p=>p.table==='cashier_till_shifts');assert.equal(tillPolicies.length,1);
+ assert.deepEqual(tillPolicies[0],{table:'cashier_till_shifts',name:'cashier_till_staff_read',roles:['authenticated'],permissive:'PERMISSIVE',cmd:'SELECT',qual:'is_club_cashier(( SELECT auth.uid() AS uid), club_id)'});
  proof.lookupRls=policies;
  sql(`ALTER ROLE authenticator LOGIN NOINHERIT NOSUPERUSER;GRANT authenticated,anon TO authenticator;
  CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $auth$ SELECT coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid $auth$;`);
