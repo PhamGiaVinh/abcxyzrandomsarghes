@@ -1,3 +1,4 @@
+import { DealerShiftReviewList } from "./DealerShiftReviewList";
 import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from "react";
 import { startLiveReportRefresh } from '@/lib/liveReportRefresh';
 import { supabase } from "@/integrations/supabase/client";
@@ -71,6 +72,17 @@ const ADJ_TYPE_COLORS: Record<AdjType, string> = {
   OTHER: "border-border text-muted-foreground",
   TIPS: "border-warning text-warning",
 };
+
+const payrollShiftTime = new Intl.DateTimeFormat("vi-VN", {
+  timeZone: "Asia/Ho_Chi_Minh",
+  dateStyle: "short",
+  timeStyle: "short",
+});
+
+function formatPayrollShiftTime(value: string): string {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? payrollShiftTime.format(timestamp) : "Chưa xác minh giờ";
+}
 
 function mergeSavedPayrollRows(
   liveRows: DealerPayrollRow[],
@@ -323,6 +335,7 @@ interface DealerPayrollTabProps {
    * boundary — this is presentation only.
    */
   hideApprovalActions?: boolean;
+  showShiftReviews?: boolean;
 }
 
 export default function DealerPayrollTab(props: DealerPayrollTabProps) {
@@ -333,7 +346,7 @@ export default function DealerPayrollTab(props: DealerPayrollTabProps) {
   return <DealerPayrollScope key={`${user.id}:${sessionReadEpoch(session)}:${[...props.clubIds].sort().join(':')}`} {...props}/>;
 }
 
-function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayrollTabProps) {
+function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftReviews }: DealerPayrollTabProps) {
   const { user, isAdmin } = useAuth();
   const { scope: operatorScope } = useOperatorClubs();
   const monthOptions = useMemo(() => getMonthYearOptions(), []);
@@ -991,13 +1004,30 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayro
           </Badge>
         );
       case "total_shifts": {
-        const hasOvernight = r.shifts.some((s) => s.is_overnight);
+        const hasOvernight = !savedPeriodId && r.shifts.some((s) => s.is_overnight);
         return (
           <div className={`${baseRight.replace("text-right", "text-center")} text-foreground`}>
             <div className="flex items-center justify-center gap-1">
               {r.total_shifts || "—"}
               {hasOvernight && <Moon className="w-3 h-3 text-[hsl(var(--ds-active))]" />}
             </div>
+            {(r.shifts.length > 0 || !!savedPeriodId) && (
+              <details className="mt-1 text-left text-xs">
+                <summary className="cursor-pointer text-muted-foreground">Nguồn ca làm</summary>
+                {savedPeriodId && (
+                  <p className="text-muted-foreground">Danh sách dưới đây lấy từ dữ liệu ca hiện tại. Phiếu đã lưu chưa có bản chụp từng ca để đối chiếu.</p>
+                )}
+                <ul className="space-y-2">
+                  {r.shifts.map((shift) => (
+                    <li key={shift.attendance_id}>
+                      <div>{formatPayrollShiftTime(shift.check_in_time)} → {shift.check_out_time ? formatPayrollShiftTime(shift.check_out_time) : "Chưa checkout"}</div>
+                      <div>{shift.is_overnight && "Qua đêm · "}{shift.regular_minutes} phút thường · {shift.overtime_minutes} phút OT</div>
+                      <div className="break-all text-muted-foreground">Mã ca {shift.attendance_id}</div>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </div>
         );
       }
@@ -1111,6 +1141,8 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayro
   }
   return (
     <div className="min-h-full flex flex-col gap-3">
+      {currentRange && activeClubId && (showShiftReviews || operatorScope.some(row => row.club_id === activeClubId && row.can_owner)) &&
+        <DealerShiftReviewList key={savedReadScope} club={activeClubId} from={currentRange.start} to={currentRange.end} />}
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
         {clubs.length > 1 && (
@@ -1286,9 +1318,9 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayro
                 finance.approvalRiskLevel === "blocked" ? "text-destructive" :
                 finance.approvalRiskLevel === "review" ? "text-warning" : "text-success"
               }`}>
-                Trạng thái sẵn sàng chi trả: {
-                  finance.approvalRiskLevel === "blocked" ? "Không nên chi trước khi đối chiếu" :
-                  finance.approvalRiskLevel === "review" ? "Cần kiểm tra trước khi duyệt" : "Sẵn sàng duyệt"
+                Đối chiếu bảng lương: {
+                  finance.approvalRiskLevel === "blocked" ? "Có chênh lệch thực lãnh" :
+                  finance.approvalRiskLevel === "review" ? "Cần đối chiếu ca làm" : "Không phát hiện chênh lệch"
                 }
               </div>
               <ul className="text-[11px] text-muted-foreground mt-0.5 space-y-0.5">

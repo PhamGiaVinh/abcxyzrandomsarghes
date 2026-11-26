@@ -170,7 +170,7 @@ function DealerSwingClubView({
   const { user } = useAuth();
   const scopedIds = useMemo(() => [activeClubId], [activeClubId]);
 
-  const tablesQ = useDealerOperationalTables(scopedIds);
+  const tablesQ = useDealerOperationalTables(scopedIds, true);
   const asgQ = useActiveAssignmentsWithTimeline(scopedIds);
   const rosterQ = useCheckedInDealers(scopedIds);
   const outQ = useTodayCheckedOutDealers(scopedIds);

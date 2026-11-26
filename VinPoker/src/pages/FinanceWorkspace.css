@@ -1,0 +1,8 @@
+/* Operator reports need native readable text; keep the public poker theme outside this workspace. */
+.finance-workspace,
+.finance-workspace :where(h1, h2, h3, h4, h5, h6, input, textarea, select, button, table),
+.finance-workspace .font-display,
+.finance-workspace .font-mono {
+  font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif !important;
+  font-variant-numeric: tabular-nums;
+}

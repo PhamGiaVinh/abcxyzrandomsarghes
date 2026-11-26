@@ -10169,6 +10169,42 @@
       "version": "20270128000345",
       "filename": "20270128000345_floor_operator_fast_bust_v1.sql",
       "sha256": "6a64cf4c2d4f54c980f046261aa8dabf02c2a601ade7f4393b612c9fcfa297a2"
+    },
+    {
+      "version": "20270128000346",
+      "filename": "20270128000346_public_hud_equivalent_status_fingerprint.sql",
+      "sha256": "af996d72c2c30a2394dca2e1125caa0b0810000e4a89b304f0310e4fde235a0a",
+      "domain": "public-hud"
+    },
+    {
+      "version": "20270128000347",
+      "filename": "20270128000347_dealer_relief_stale_outgoing_v1.sql",
+      "sha256": "ed22e037fb62f5a4b7671058d16a8eb8c282c5478cdbd88f5f097f15ff645b86",
+      "domain": "dealer-swing"
+    },
+    {
+      "version": "20270128000348",
+      "filename": "20270128000348_manual_stale_shift_resolution.sql",
+      "sha256": "c221fa3c3481dea710e9c94567bb683df4093eae4340cbd4f2e900f8d5ead370",
+      "domain": "dealer-swing"
+    },
+    {
+      "version": "20270128000349",
+      "filename": "20270128000349_dealer_shift_payroll_review.sql",
+      "sha256": "29f2e3fb662cb8a75b69ea1fd7f5928469c2d3d3163ef54d5de675dd4e61ca35",
+      "domain": "dealer-swing"
+    },
+    {
+      "version": "20270128000350",
+      "filename": "20270128000350_tracker_bb_ante_atomic_v1.sql",
+      "sha256": "40facc8f4e09daa07a36ab7d07a3f99433d84c6d40de15d70e58f280632f83c1",
+      "domain": "tracker-bb-ante"
+    },
+    {
+      "version": "20270128000351",
+      "filename": "20270128000351_tracker_bb_ante_settlement_v1.sql",
+      "sha256": "54821b77d5033cf64d7244653954d0a43793281276626cab77939f478ce363bd",
+      "domain": "tracker-bb-ante"
     }
   ],
   "floorActiveAllowlist": [

@@ -31,12 +31,16 @@ export function normalizeSource(row){
  return {...row.hand,settlement:valid?{verified:true,current:true,
   winnerPlayerIds:[...new Set(proof.pots.flatMap(p=>p.winnerIds))],eligiblePlayerIds:proof.handRanks.map(r=>r.playerId),showdown:proof.handRanks.length>=2}:null};
 }
-export function createShadow(classifier){
+const equivalentStatusDefinitionHashes = ["30c14514ffa4d20111fcbd028d96c921","ae3bba424a7cc0c9d9b8579c068a09fd"];
+export function assertEquivalentStatusDefinitions(row){
+ assert.deepEqual(row.equivalentStatusDefinitionHashes,equivalentStatusDefinitionHashes);
+}
+export function createShadow(classifier,{equivalentPublicStatuses=false}={}){
  const players=new Map(),tours=new Map();
- const report={kind:'READ_ONLY_RAW_SOURCE_SHADOW_NOT_LOAD_TEST',complete:false,passed:false,snapshot:null,version:classifier.PUBLIC_HUD_PROJECTION_VERSION,classifierSha256:classifier.shadowClassifierSha256,sqlSha256:createHash('sha256').update(shadowSql).digest('hex'),
+ const report={kind:'READ_ONLY_RAW_SOURCE_SHADOW_NOT_LOAD_TEST',complete:false,passed:false,snapshot:null,version:classifier.PUBLIC_HUD_PROJECTION_VERSION,classifierSha256:classifier.shadowClassifierSha256,sqlSha256:createHash('sha256').update(equivalentPublicStatuses?shadowSqlForEquivalentPublicStatuses():shadowSql).digest('hex'),
   sourceHands:0,contributions:0,results:0,playerTotals:0,tournamentTotals:0,mismatches:0,examples:[]};
  let header=false,end=false;
- function mismatch(code,key){report.mismatches++;if(report.examples.length<20)report.examples.push({code,entityHash:createHash('sha256').update(String(key)).digest('hex')});}
+ function mismatch(code,key,details={}){report.mismatches++;if(report.examples.length<20)report.examples.push({code,entityHash:createHash('sha256').update(String(key)).digest('hex'),...details});}
  function check(actual,expected,code,key){try{assert.deepEqual(actual,expected);}catch{mismatch(code,key);}}
  function total(map,key){if(!map.has(key))map.set(key,{...classifier.emptyPublicHudCounters(),winnings:0n,resultCount:0});return map.get(key);}
  function add(target,row){for(const field of fields)row[field].forEach((n,i)=>{target[field][i]+=n;});
@@ -53,7 +57,9 @@ export function createShadow(classifier){
    assert.equal(row.readOnly,true);assert.equal(row.isolation,'repeatable read');
    assert.equal(row.version,classifier.PUBLIC_HUD_PROJECTION_VERSION);
    assert.equal(row.backfillComplete,true);assert.equal(row.handsDone,true);assert.equal(row.resultsDone,true);
-   assert.equal(row.pendingJobs,0);assert.equal(row.barriers,0);return;
+   assert.equal(row.pendingJobs,0);assert.equal(row.barriers,0);
+   if(equivalentPublicStatuses)assertEquivalentStatusDefinitions(row);
+   return;
   }
   assert.ok(header&&!end);
   if(row.kind==='hand'){
@@ -66,8 +72,12 @@ export function createShadow(classifier){
     if(actual){check(fromStored(actual),counters,'hand_counters',row.id);
      check({played_at:actual.played_at,hand_number:actual.hand_number,table_id:actual.table_id,session_id:actual.session_id},row.metadata,'hand_history_metadata',row.id);
      check(actual.settlement_evidence,row.evidence,'hand_settlement_evidence',row.id);
-     check([actual.tournament_id,String(actual.source_revision),actual.source_fingerprint],
-      [row.tournamentId,String(row.sourceRevision),row.fingerprint],'hand_source_identity',row.id);}
+     const mismatchedFields=[];
+     if(actual.tournament_id!==row.tournamentId)mismatchedFields.push('tournament_id');
+     if(String(actual.source_revision)!==String(row.sourceRevision))mismatchedFields.push('source_revision');
+     if(actual.source_fingerprint!==row.fingerprint
+      && !(equivalentPublicStatuses && row.legacyPublicFingerprints?.includes(actual.source_fingerprint)))mismatchedFields.push('source_fingerprint');
+     if(mismatchedFields.length)mismatch('hand_source_identity',row.id,{mismatchedFields});}
     const scoped=total(tours,JSON.stringify([row.tournamentId,playerId]));add(scoped,counters);
     if(row.publicEligible)add(total(players,playerId),counters);
    }
@@ -142,14 +152,15 @@ async function main(){
  const production=process.argv.includes('--production-read-only')&&env.PGHOST==='db.orlesggcjamwuknxwcpk.supabase.co'&&env.PGPORT==='5432'&&db==='postgres'&&env.PGSSLMODE==='require';
  assert.ok(local||production,'Exact read-only target required');
  assert.ok(env.TRACKER_HUD_SHADOW_REPORT,'Nonsecret report destination required');
- const shadow=createShadow(await loadClassifier());
+ const equivalentPublicStatuses=process.argv.includes('--equivalent-public-statuses');
+ const shadow=createShadow(await loadClassifier(),{equivalentPublicStatuses});
  const windows=process.platform==='win32'&&local;
  const args=['-w','-X','-qAt','-v','ON_ERROR_STOP=1','-v','FETCH_COUNT=100'];
  const child=spawn(windows?'wsl':'psql',windows?['-d','PokerVision-P16-4C-Eval','--','env',`PGHOST=${env.PGHOST}`,`PGPORT=${env.PGPORT}`,`PGUSER=${env.PGUSER}`,`PGDATABASE=${db}`,'psql',...args]:args,{env,stdio:['pipe','pipe','pipe']});
  // Consume diagnostics privately without retaining raw SQL/rows/credentials.
  child.stderr.resume();
  const done=new Promise((resolve,reject)=>{child.on('error',()=>reject(Error('Shadow database process unavailable')));child.on('close',code=>resolve(code));});
- child.stdin.on('error',()=>{});child.stdin.end(shadowSql);
+ child.stdin.on('error',()=>{});child.stdin.end(equivalentPublicStatuses?shadowSqlForEquivalentPublicStatuses():shadowSql);
  try{for await(const line of createInterface({input:child.stdout}))if(line.trim()){
    const row=JSON.parse(line);
    if(row.kind==='header')shadow.report.target=validateShadowTarget(row,env,local);
@@ -161,3 +172,23 @@ async function main(){
  console.log(JSON.stringify(shadow.report));if(!shadow.report.passed)process.exitCode=1;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(()=>{console.error('Shadow certification failed; no activation was performed');process.exitCode=1;});
+
+export function shadowSqlForEquivalentPublicStatuses(){
+ const marker=" 'fingerprint',tracker_analytics_v1.hand_fingerprint(ids.id),";
+ return shadowSql.replace(" 'pendingJobs',"," 'equivalentStatusDefinitionHashes',jsonb_build_array(\n"+
+  "  (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='tracker_analytics_v1.hand_fingerprint(uuid)'::regprocedure),\n"+
+  "  (SELECT md5(replace(prosrc,chr(13),'')) FROM pg_proc WHERE oid='tracker_analytics_v1.visibility_changed()'::regprocedure)),\n"+
+  " 'pendingJobs',").replace(marker,marker+`
+ 'legacyPublicFingerprints',CASE WHEN EXISTS (
+   SELECT 1 FROM public.tournaments t WHERE t.id=h.tournament_id AND t.deleted_at IS NULL
+     AND t.status IN ('live','final_table','completed','finished')
+ ) THEN (
+   SELECT jsonb_agg(md5(jsonb_build_object(
+     'hand',jsonb_build_array(h.id,h.tournament_id,h.source_revision,h.status,h.is_voided,h.hand_time,h.hand_number),
+     'policy',jsonb_build_array(NULL::timestamptz,legacy.status),
+     'proof',(SELECT jsonb_agg(jsonb_build_array(o.id,o.source_revision,o.settlement_revision,o.status,o.public_outcome)
+       ORDER BY o.settlement_revision,o.id) FROM public.tournament_settlement_outcomes o WHERE o.hand_id=ids.id)
+   )::text))
+   FROM (VALUES ('final_table'),('completed'),('finished')) legacy(status)
+ ) ELSE '[]'::jsonb END,`);
+}

@@ -25,6 +25,7 @@ export function parseHistoryWorkerHandIds(value: unknown): string[] | undefined 
 const DETERMINISTIC_CODES = new Set([
   "invalid_historical_hand",
   "invalid_historical_source",
+  "invalid_big_blind_ante_snapshot",
   "historical_blind_snapshot_missing",
   "incomplete_showdown_cards",
   "duplicate_card",

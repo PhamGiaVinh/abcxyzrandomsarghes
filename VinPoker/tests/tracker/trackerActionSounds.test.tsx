@@ -62,8 +62,9 @@ describe("mp3SrcFor (C4)", () => {
     expect(mp3SrcFor("deal_river")).toBe("/sounds/tracker/deal-turn-river-2535.mp3");
     expect(mp3SrcFor("pot_collect")).toBe("/sounds/tracker/pot-collect.mp3");
     expect(mp3SrcFor("pot_award")).toBe("/sounds/tracker/pot-award-2531.mp3");
-    // Owner decision: the bet family keeps the existing clip.
-    for (const kind of ["bet", "call", "raise", "all_in", "post_sb", "post_bb"] as const) {
+    expect(mp3SrcFor("deal_one")).toBe("/sounds/tracker/deal-one.mp3");
+    for (const kind of ["post_sb", "post_bb", "post_ante"] as const) expect(mp3SrcFor(kind)).toBe("/sounds/tracker/post-chip.mp3");
+    for (const kind of ["bet", "call", "raise", "all_in"] as const) {
       expect(mp3SrcFor(kind), kind).toBe("/sounds/poker/poker-bet.mp3");
     }
     // The plain viewer deal is untouched by the flag.

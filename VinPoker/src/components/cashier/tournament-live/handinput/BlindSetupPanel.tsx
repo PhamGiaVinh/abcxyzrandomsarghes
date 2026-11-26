@@ -6,8 +6,7 @@
 // Floor blind level (snapshotted by the parent) and lets the operator post
 // SB/BB and confirm. Presentational only — posting/confirm are parent callbacks.
 //
-// Ante is DISPLAY-ONLY in Layer 1: the client action path has no working
-// `post_ante` case yet, so we never post it here (deferred, not invented).
+// Frozen BB-ante hands confirm the complete server-owned batch in one action.
 
 import { Input } from "@/components/ui/input";
 import { formatStack } from "./format";
@@ -33,6 +32,7 @@ interface BlindSetupPanelProps {
   levelMissing: boolean;
   /** New hands use the Floor level frozen by the canonical Start Hand writer. */
   lockedAmounts?: boolean;
+  atomicBlinds?: boolean;
   sbAmount: number;
   bbAmount: number;
   onSbAmountChange: (n: number) => void;
@@ -82,6 +82,7 @@ function BlindRow({
   onPost,
   disabled,
   lockedAmounts,
+  batchOnly,
 }: {
   role: "post_sb" | "post_bb";
   seat: number | null;
@@ -92,6 +93,7 @@ function BlindRow({
   onPost: (type: "post_sb" | "post_bb", playerId: string, amount: number) => void;
   disabled?: boolean;
   lockedAmounts?: boolean;
+  batchOnly?: boolean;
 }) {
   const label = role === "post_sb" ? "Small Blind" : "Big Blind";
   const isAllIn = !!player && amount >= player.current_stack && player.current_stack > 0;
@@ -116,6 +118,8 @@ function BlindRow({
       </div>
       {posted ? (
         <span className="text-[11px] font-bold text-emerald-400">✓ Đã post</span>
+      ) : batchOnly ? (
+        <span className="text-[11px] text-muted-foreground">Chờ xác nhận</span>
       ) : (
         <button
           type="button"
@@ -141,6 +145,7 @@ export function BlindSetupPanel({
   ante,
   levelMissing,
   lockedAmounts,
+  atomicBlinds = false,
   sbAmount,
   bbAmount,
   onSbAmountChange,
@@ -198,7 +203,8 @@ export function BlindSetupPanel({
           onClick={() => onPostBoth?.()}
           className="w-full rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-bold text-black transition active:scale-[0.99] disabled:opacity-40"
         >
-          ⚡ Đăng blind & xác nhận (1 chạm{deadSb ? " · SB chết" : ""}) — SB {deadSb ? "—" : formatStack(sbAmount)} / BB {formatStack(bbAmount)}
+          {atomicBlinds ? `Đặt blind và ante — SB ${deadSb ? "—" : formatStack(sbAmount)} / BB ${formatStack(bbAmount)} / ante tối đa ${formatStack(ante)}`
+            : `⚡ Đăng blind & xác nhận (1 chạm${deadSb ? " · SB chết" : ""}) — SB ${deadSb ? "—" : formatStack(sbAmount)} / BB ${formatStack(bbAmount)}`}
         </button>
       )}
 
@@ -221,12 +227,12 @@ export function BlindSetupPanel({
             <span className="text-muted-foreground">{seatLabel(players, sbSeat)}</span>
           </div>
         ) : (
-          <BlindRow role="post_sb" seat={sbSeat} player={sbPlayer} amount={sbAmount} onAmountChange={onSbAmountChange} posted={sbPosted} onPost={onPost} disabled={disabled} lockedAmounts={lockedAmounts} />
+          <BlindRow role="post_sb" seat={sbSeat} player={sbPlayer} amount={sbAmount} onAmountChange={onSbAmountChange} posted={sbPosted} onPost={onPost} disabled={disabled} lockedAmounts={lockedAmounts} batchOnly={atomicBlinds} />
         )}
-        <BlindRow role="post_bb" seat={bbSeat} player={bbPlayer} amount={bbAmount} onAmountChange={onBbAmountChange} posted={bbPosted} onPost={onPost} disabled={disabled} lockedAmounts={lockedAmounts} />
+        <BlindRow role="post_bb" seat={bbSeat} player={bbPlayer} amount={bbAmount} onAmountChange={onBbAmountChange} posted={bbPosted} onPost={onPost} disabled={disabled} lockedAmounts={lockedAmounts} batchOnly={atomicBlinds} />
       </div>
 
-      {onToggleDeadSb && (
+      {onToggleDeadSb && !atomicBlinds && (
         <label className="flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer select-none">
           <input
             type="checkbox"
@@ -241,7 +247,8 @@ export function BlindSetupPanel({
 
       {ante > 0 && (
         <div className="text-[10px] text-muted-foreground">
-          Ante hiển thị theo level ({formatStack(ante)}); thao tác post ante sẽ bổ sung sau.
+          {atomicBlinds ? `BB đóng ante tối đa ${formatStack(ante)}, ưu tiên blind khi thiếu chip.`
+            : `Ante hiển thị theo level (${formatStack(ante)}); thao tác post ante sẽ bổ sung sau.`}
         </div>
       )}
 

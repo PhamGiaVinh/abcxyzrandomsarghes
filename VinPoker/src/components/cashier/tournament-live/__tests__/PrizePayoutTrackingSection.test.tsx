@@ -65,6 +65,43 @@ beforeEach(() => {
 });
 
 describe("PrizePayoutTrackingSection (W3-B2)", () => {
+  it("hides the previous cash receipt when another payment is pending", async () => {
+    REC.data = DATA;
+    rpc.mockResolvedValueOnce({ data: RECEIPT, error: null });
+    const view = render(<PrizePayoutTrackingSection tournamentId="t1" />);
+    clickBtn("Ghi nhận đã trả");
+    clickBtn("Xác nhận đã trả");
+    await waitFor(() => expect(has("Mã ca xuất két")).toBe(true));
+    REC.data = { ...DATA, places: [{ ...DATA.places[1], isPaid: false, method: null, paidAt: null }] };
+    view.rerender(<PrizePayoutTrackingSection tournamentId="t1" />);
+    rpc.mockImplementationOnce(() => new Promise(() => {}));
+    clickBtn("Ghi nhận đã trả");
+    clickBtn("Xác nhận đã trả");
+    await waitFor(() => expect(has("Yêu cầu đang chờ xác minh")).toBe(true));
+    expect(has("Mã ca xuất két")).toBe(false);
+  });
+
+  it("keeps the exact cash payout request when the drawer is locked", async () => {
+    const event = "10000000-0000-4000-8000-000000000010";
+    REC.data = { ...DATA, mode: "multi_day", eventId: event,
+      places: [{ ...DATA.places[0], multiDayEventId: event,
+        multiDayParticipationId: "10000000-0000-4000-8000-000000000011" }] };
+    rpc.mockResolvedValueOnce({ data: null, error: { code: "55P03", message: "cash_prize_drawer_busy" } });
+    render(<PrizePayoutTrackingSection tournamentId="t1" />);
+    clickBtn("Ghi nhận đã trả");
+    clickBtn("Xác nhận đã trả");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("Két đang bận")));
+    expect(rpc.mock.calls[0][0]).toBe("record_multi_day_prize_payment_v1");
+    const key = "vinpoker:prize-payment:v2:owner-test:t1";
+    const pending = sessionStorage.getItem(key);
+    expect(pending).not.toBeNull();
+    expect(toast.success).not.toHaveBeenCalled();
+    rpc.mockResolvedValueOnce({ data: RECEIPT, error: null });
+    clickBtn("Gửi lại yêu cầu cũ");
+    await waitFor(() => expect(toast.success).toHaveBeenCalledTimes(1));
+    expect(rpc.mock.calls[1]).toEqual(rpc.mock.calls[0]);
+    expect(sessionStorage.getItem(key)).toBeNull();
+  });
   it.each([false,true])('labels individual obligations as partial even when every known recipient is paid: %s',paid=>{
     const event='10000000-0000-4000-8000-000000000010';
     REC.data={...DATA,mode:'multi_day',eventId:event,liabilityScope:'INDIVIDUAL',isPartial:true,

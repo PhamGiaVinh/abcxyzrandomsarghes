@@ -613,6 +613,151 @@ test('canonical Floor open and close propagate into one continuously open screen
  }catch(error){phase+='-failed';report();throw error;}
 });
 
+test('Floor close reaches an already-open Dealer Swing screen', async ({ page: floor, browser }) => {
+  const scope = process.env.LOCAL_OPERATIONS_DIAGNOSTIC_SCOPE;
+  const staffed = scope === 'floor-swing-close-staffed';
+  test.skip(scope !== 'floor-swing-close' && !staffed, 'Isolated Floor and Swing close proof only');
+  test.setTimeout(90_000);
+  const token = await loginOwner(floor);
+  const swingContext = await browser.newContext({ baseURL: process.env.PLAYWRIGHT_BASE_URL });
+  const swing = await swingContext.newPage();
+  await loginOwner(swing);
+  const clubId = 'a2000000-0000-4000-8000-000000000001';
+  const tourId = 'a3000000-0000-4000-8000-000000000001';
+  const { floorTable } = JSON.parse(readFileSync(process.env.LOCAL_OPERATIONS_DEALER_FILE!, 'utf8'));
+  const api = process.env.LOCAL_SUPABASE_URL!.replace(/\/$/, '');
+  const headers = { apikey: process.env.LOCAL_SUPABASE_ANON_KEY!, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const rpc = async (name: string, args: Record<string, unknown>) => {
+    const response = await fetch(`${api}/rest/v1/rpc/${name}`, { method: 'POST', headers, body: JSON.stringify(args), signal: AbortSignal.timeout(5000) });
+    expect(response.ok, name).toBe(true);
+    return response.json();
+  };
+  const proof = {
+    sha: process.env.LOCAL_OPERATIONS_SOURCE_SHA,
+    staffed,
+    phase: 'setup',
+    swingVisibleBeforeClose: false,
+    independentRosterOpenBeforeClose: false,
+    ackMs: null as number | null,
+    floorVisibleMs: null as number | null,
+    swingVerifiedAfterReceiptMs: null as number | null,
+    independentRosterClosed: false,
+    independentInventoryReleased: false,
+    unstaffedAlertCleared: false,
+    independentAssignmentReleased: false,
+    swingViewAtEnd: 'unobserved',
+    swingScopeRecoveredFromGatewayError: false,
+    swingInventoryHttpStatuses: [] as number[],
+    qualification: false,
+  };
+  swing.on('response', response => {
+    if (new URL(response.url()).pathname.endsWith('/rpc/get_club_table_inventory')) {
+      proof.swingInventoryHttpStatuses.push(response.status());
+    }
+  });
+  const battlefield = swing.getByText('BẢN ĐỒ CHIẾN TRƯỜNG', { exact: true });
+  try {
+    const opened = await rpc('floor_open_tournament_table_v3', {
+      p_tournament_id: tourId, p_game_table_id: floorTable.id, p_control_mode: 'manual', p_request_id: crypto.randomUUID(),
+    });
+    expect(opened.ok).toBe(true);
+    let assignmentId: string | undefined;
+    if (staffed) {
+      const assigned = await rpc('assign_dealer_to_table', {
+        p_attendance_id: 'af710000-0000-4000-8000-000000000002',
+        p_table_id: floorTable.id,
+        p_club_id: clubId,
+        p_idempotency_key: crypto.randomUUID(),
+        p_swing_due_at: new Date(Date.now() + 60_000).toISOString(),
+      });
+      expect(assigned.outcome).toBe('ok');
+      expect(assigned.assignment_id).toMatch(/^[a-f0-9-]{36}$/);
+      assignmentId = assigned.assignment_id;
+    }
+    await swing.goto('/dealer-swing');
+    if (staffed) {
+      const scopeGate = swing.getByRole('heading', { name: 'Chọn CLB để vận hành Dealer Swing', exact: true });
+      const scopeError = swing.getByRole('alert').filter({ hasText: /Không tải được phạm vi CLB/ });
+      await expect(scopeGate.or(scopeError)).toBeVisible();
+      if (await scopeError.isVisible()) {
+        expect(scopeReadFailures.get(swing)?.map(failure => failure.status)).toEqual([502]);
+        await swing.getByRole('button', { name: 'Thử lại', exact: true }).click();
+        await expect(scopeGate).toBeVisible();
+        proof.swingScopeRecoveredFromGatewayError = true;
+      }
+    }
+    await selectDealerSwingClub(swing, 'Cashier Edge TEST');
+    const swingCard = swing.locator(`#table-card-${floorTable.id}`);
+    const unstaffedAlert = swing.getByText('Floor session latency TEST • Thiếu dealer', { exact: true });
+    await expect(swingCard).toBeVisible();
+    if (staffed) await expect(swingCard.getByText('Floor close TEST dealer', { exact: true })).toBeVisible();
+    else await expect(unstaffedAlert).toBeVisible();
+    await floor.goto(`/ops/floor/tournaments/${tourId}/tables?club=${clubId}`);
+    const floorCard = floor.locator(`[data-testid="floor-table-roster-card"][data-floor-table-number="${floorTable.tableNumber}"]`);
+    await floorCard.click();
+    await floor.locator('[data-ops-action="floor.tables.open_close_table"]').click();
+    const confirmation = floor.locator('[data-ops-action="floor.tables.close_table"]');
+    await expect(confirmation).toBeEnabled();
+    proof.phase = 'before-close';
+    const rosterBeforeClose = await rpc(floorRosterRpc, { p_tournament_id: tourId });
+    expect(rosterBeforeClose.some((row: { table_session_id: string }) => row.table_session_id === opened.table_session_id)).toBe(true);
+    proof.independentRosterOpenBeforeClose = true;
+    await expect(swingCard).toBeVisible();
+    proof.swingVisibleBeforeClose = true;
+    proof.phase = 'closing';
+    const started = performance.now();
+    const receipt = floor.waitForResponse(response => /\/rpc\/close_tournament_table_v[34]$/.test(new URL(response.url()).pathname), { timeout: 5000 });
+    const observed = Promise.allSettled([
+      receipt.then(async response => {
+        const body = await response.json();
+        proof.ackMs = performance.now() - started;
+        expect(response.ok()).toBe(true);
+        expect(body).toMatchObject({ ok: true, closed: true, table_session_id: opened.table_session_id });
+        const roster = await rpc(floorRosterRpc, { p_tournament_id: tourId });
+        expect(Array.isArray(roster)).toBe(true);
+        expect(roster.some((row: { table_session_id: string }) => row.table_session_id === opened.table_session_id)).toBe(false);
+        proof.independentRosterClosed = true;
+        const inventory = await rpc('get_club_table_inventory', { p_club_id: clubId });
+        expect(inventory.find((row: { game_table_id: string }) => row.game_table_id === floorTable.id)).toMatchObject({
+          availability_status: 'available', table_session_id: null, active_dealer_assignment_id: null,
+        });
+        proof.independentInventoryReleased = true;
+        if (assignmentId) {
+          expect(body.dealer_assignments_released).toBe(1);
+          const response = await fetch(`${api}/rest/v1/dealer_assignments?select=table_session_id,status,released_at&id=eq.${assignmentId}`, { headers, signal: AbortSignal.timeout(5000) });
+          expect(response.ok).toBe(true);
+          const assignments = await response.json();
+          expect(assignments).toHaveLength(1);
+          expect(assignments[0]).toMatchObject({ table_session_id: opened.table_session_id, status: 'completed', released_at: expect.any(String) });
+          proof.independentAssignmentReleased = true;
+        }
+        await expect(swingCard).toHaveCount(0, { timeout: Math.max(1, 3000 - (performance.now() - started)) });
+        await expect(battlefield).toBeVisible({ timeout: Math.max(1, 3000 - (performance.now() - started)) });
+        if (!staffed) {
+          await expect(unstaffedAlert).toHaveCount(0, { timeout: Math.max(1, 3000 - (performance.now() - started)) });
+          proof.unstaffedAlertCleared = true;
+        }
+        proof.swingVerifiedAfterReceiptMs = performance.now() - started;
+        expect(proof.swingVerifiedAfterReceiptMs).toBeLessThanOrEqual(3000);
+      }),
+      expect(floorCard).toHaveCount(0, { timeout: 3000 }).then(() => { proof.floorVisibleMs = performance.now() - started; }),
+    ]);
+    await confirmation.click();
+    for (const result of await observed) {
+      if (result.status === 'rejected') throw result.reason;
+    }
+    proof.phase = 'passed';
+  } finally {
+    proof.swingViewAtEnd = await battlefield.isVisible() ? 'battlefield'
+      : await swing.getByRole('heading', { name: 'Không xác minh được dữ liệu Dealer Swing' }).isVisible() ? 'blocked-read'
+      : await swing.getByRole('heading', { name: 'Đang xác minh dữ liệu Dealer Swing…' }).isVisible() ? 'loading'
+      : await swing.getByRole('heading', { name: 'Chọn CLB để vận hành Dealer Swing' }).isVisible() ? 'club-selection'
+      : 'other';
+    writeFileSync(process.env.LOCAL_OPERATIONS_LATENCY_REPORT!.replace(/\.json$/, '-floor-swing-close-http.json'), JSON.stringify(proof, null, 2));
+    await swingContext.close();
+  }
+});
+
 test('Cashier browser navigation and populated tour render latency',async({page})=>{
  test.skip(!process.env.LOCAL_OPERATIONS_LATENCY_REPORT,'Isolated stack measurement only');
  test.setTimeout(180_000);
@@ -1995,7 +2140,14 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   };
   phase='felt';await viewer.goto('/live/'+tour+'?tableId='+hand.tournament_table_id+'&tab=hands');
   await openTable();checks.actualTableOpen=true;
-  const seat=viewer.getByRole('button').filter({has:viewer.getByTestId('felt-stack-'+player)});await expect(seat).toBeVisible({timeout:15000});
+  // The nameplate changes Chip/BB; the separate avatar opens the player HUD.
+  // Resolve its accessible name from the actual player's rendered plate rather
+  // than clicking a different control and waiting for an RPC it never sends.
+  const unitPlate=viewer.getByRole('button').filter({has:viewer.getByTestId('felt-stack-'+player)});await expect(unitPlate).toBeVisible({timeout:15000});
+  const plateLabel=await unitPlate.getAttribute('aria-label'),unitSuffix=' · Chip / BB';
+  expect(plateLabel?.endsWith(unitSuffix)).toBe(true);
+  const hudName=plateLabel!.slice(0,-unitSuffix.length);expect(hudName.length).toBeGreaterThan(0);
+  const seat=viewer.getByRole('button',{name:hudName,exact:true});await expect(seat).toBeVisible({timeout:15000});
   const responseFor=(name:string)=>viewer.waitForResponse(response=>{if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/'+name))return false;const args=response.request().postDataJSON();return args?.p_tournament_id===tour&&args?.p_player_id===player;},{timeout:10000});
   const summaryResponse=responseFor('get_public_player_hud_summary_v1'),historyResponse=responseFor('get_public_player_hud_history_v1');void summaryResponse.catch(()=>{});void historyResponse.catch(()=>{});
   const firstHudOpen={iteration:0,kind:'first-open' as const,warmup:false,summaryVisibleMs:null as number|null,historyVisibleMs:null as number|null,status:'pending' as 'pending'|'passed'};hudOpenSamples.push(firstHudOpen);
@@ -2276,7 +2428,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page}
  test.skip(process.env.LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED!=='1','Explicit isolated full34 prize-close stage only');test.setTimeout(180_000);
  const owner=await loginOwner(page),staff=(await loginFixtureStaff()).slice(0,3),api=process.env.LOCAL_SUPABASE_URL!.replace(/\/$/,''),anon=process.env.LOCAL_SUPABASE_ANON_KEY!,tour='a3000000-0000-4000-8000-000000000005',club='a2000000-0000-4000-8000-000000000001';
  const headers={apikey:anon,Authorization:'Bearer '+owner,'Content-Type':'application/json'};
- let phase='setup',failure:{operation:string;httpStatus:number;code:string|null;messageSha256:string|null}|null=null,paidRows=0,prizeTotal=0,reconcileDelta:number|null=null;
+ let phase='setup',failure:{operation:string;httpStatus:number;code:string|null;messageSha256:string|null;denialSha256:string|null}|null=null,paidRows=0,prizeTotal=0,reconcileDelta:number|null=null;
  const showdownHands:{number:number;pots:number[];endings:number[]}[]=[];
  const payoutUi={loaded:false,dialogVerified:false,cancelPreservedUnpaid:false,confirmed:false,paidVisible:false};
  const timings:{operation:string;ms:number}[]=[];
@@ -2284,7 +2436,12 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page}
  const request=async(operation:string,path:string,body:Record<string,unknown>,custom=headers)=>{
   const at=performance.now(),response=await fetch(api+path,{method:'POST',headers:custom,body:JSON.stringify(body),signal:AbortSignal.timeout(10000)}),data=await response.json();
   timings.push({operation,ms:performance.now()-at});
-  if(!response.ok||data.ok===false||data.success===false){failure={operation,httpStatus:response.status,code:typeof data.code==='string'&&/^[A-Z0-9]{5}$/.test(data.code)?data.code:null,messageSha256:typeof data.message==='string'?createHash('sha256').update(data.message).digest('hex'):null};report();}
+  if(!response.ok||data.ok===false||data.success===false){
+   failure={operation,httpStatus:response.status,code:typeof data.code==='string'&&/^[A-Z0-9]{5}$/.test(data.code)?data.code:null,
+    messageSha256:typeof data.message==='string'?createHash('sha256').update(data.message).digest('hex'):null,
+    denialSha256:typeof data.error==='string'?createHash('sha256').update(data.error).digest('hex'):null};
+   report();
+  }
   expect(response.ok,operation).toBe(true);expect(data.ok,operation).not.toBe(false);expect(data.success,operation).not.toBe(false);return data;
  };
  const rpc=(name:string,args:Record<string,unknown>,custom=headers)=>request(name,'/rest/v1/rpc/'+name,args,custom);
@@ -2298,7 +2455,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page}
   phase='register-and-pay';report();
   for(const actor of staff){const actorHeaders={...headers,Authorization:'Bearer '+actor.token},registered=await request('tournament-register','/functions/v1/tournament-register',{tournament_id:tour},actorHeaders);expect(registered.success).toBe(true);expect(Number(registered.total_pay)).toBe(6600000);
    const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registered.registration_id,amount:6600000,request_id:crypto.randomUUID()},args={p_intent:intent,p_action:'record'};
-   const paid=await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders);expect(paid).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});expect(await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders)).toEqual(paid);
+   const paid=await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders);expect(paid,JSON.stringify({seatingState:paid.result?.seating_state,reason:paid.result?.reason==='seating_exception'?'seating_exception':null})).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});expect(await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders)).toEqual(paid);
   }
   const before=await roster();expect(before).toHaveLength(1);expect(before[0].seats).toHaveLength(3);expect(before[0].seats.reduce((n,s)=>n+s.chip_count,0)).toBe(60000);
   phase='prepare-and-apply-payout';report();const prepare={p_tournament_id:tour,p_itm_percent:0.2,p_archetype:'DAILY',p_min_cash_x:1,p_rounding_unit:1000,p_prize_pool_override:null,p_override_reason:null,p_regenerate:false,p_reason:'isolated canonical paid prize HTTP',p_custom_percents:null};

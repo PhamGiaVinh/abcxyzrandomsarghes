@@ -43,3 +43,9 @@ it('moves across year and leap-month boundaries using inclusive calendar dates',
  fireEvent.click(screen.getByRole('button',{name:'Tháng trước'}));
  expect(fixture.read).toHaveBeenLastCalledWith('club-test','2024-02-01','2024-02-29');
 });
+it('explains missing event dates as a data issue',()=>{
+ fixture.error = new Error('finance_report_event_start_unavailable');
+ render(<AccountantFinanceTab clubId="club-test"/>);
+ expect(screen.getByRole('alert')).toHaveTextContent('thiếu ngày bắt đầu');
+ expect(screen.getByRole('alert')).not.toHaveTextContent('kiểm tra kết nối');
+});

@@ -45,14 +45,14 @@ export function deriveReplayTableMotionEvents(args: {
   current: ReplayFrame;
 }): TableMotionEvent[] {
   const { handId, previous, current } = args;
+  if (current.dealHoleCards ?? current.index === 0) {
+    const seatNumbers = current.seats.filter(seat => seat.is_active).map(seat => seat.seat_number);
+    return seatNumbers.length < 2 ? [] : [{ id: `replay:${handId}:deal`, handId, kind: "deal_hole", seatNumbers }];
+  }
   if (!previous || current.index <= previous.index || current.index - previous.index !== 1) return [];
 
   const prefix = `replay:${handId}:${current.index}`;
   const events: TableMotionEvent[] = [];
-  if (previous.index === 0) {
-    const seatNumbers = current.seats.filter((seat) => seat.is_active).map((seat) => seat.seat_number);
-    if (seatNumbers.length >= 2) events.push({ id: `${prefix}:deal`, handId, kind: "deal_hole", seatNumbers });
-  }
 
   const previousBoard = previous.displayCards.filter(Boolean).length;
   const currentCards = current.displayCards.filter(Boolean);

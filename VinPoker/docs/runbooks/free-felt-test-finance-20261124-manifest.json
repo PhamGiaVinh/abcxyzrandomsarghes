@@ -1,0 +1,108 @@
+{
+  "schemaCloneSha256": "fdf69cbfba7e49dfaa7269c6ff711563203ff232b981a041d83bb3969671878f",
+  "readOnlyCaptureDate": "2026-11-24",
+  "clubId": "22222222-2222-2222-2222-222222222222",
+  "expectedPreimageMd5Utc": "d0537dfc803bf4c247098e6e0c0f8fab",
+  "qualification": "component and isolated schema-clone; exact captured trigger and report definitions; not production applied",
+  "projectRef": "orlesggcjamwuknxwcpk",
+  "tournamentId": "5a51bec5-4da0-4dd9-861a-cc4e7678478c",
+  "functions": [
+    {
+      "definitionMd5": "ad2b97257e4374a4476a93c0575a1458",
+      "signature": "cashier_movement_immutable_v1()"
+    },
+    {
+      "definitionMd5": "8d3e54ad9e74157ca30557c7754d1979",
+      "signature": "cashier_paid_registration_guard_v1()"
+    },
+    {
+      "definitionMd5": "99925e76e5b1e81de9148a607ba51318",
+      "signature": "cashier_registration_columns_guard_v1()"
+    },
+    {
+      "definitionMd5": "3bd3470d86ca961e9951b5784954b167",
+      "signature": "cashier_tour_registration_insert_guard_v1()"
+    },
+    {
+      "definitionMd5": "f2910dffa900cac31c60216e2b8e08b9",
+      "signature": "floor_private.tour_revenue_live_source_v1(uuid)"
+    },
+    {
+      "definitionMd5": "9097d813d8f0203d694691be8c1bafff",
+      "signature": "get_club_finance_summary_v2(date,date,uuid)"
+    },
+    {
+      "definitionMd5": "7cc8eaa4b63a7eff454667a189cfad97",
+      "signature": "get_club_finance_summary(timestamp with time zone,timestamp with time zone,uuid)"
+    },
+    {
+      "definitionMd5": "937e861bea1e5773967e40a6cb3826ad",
+      "signature": "private.lock_main_event_registration210()"
+    },
+    {
+      "definitionMd5": "ce8b21f810d82643452b2c5134f3176b",
+      "signature": "private.multi_day_movement_identity_v1()"
+    },
+    {
+      "definitionMd5": "666f92f52d4b4a861baab11316aa8394",
+      "signature": "private.multi_day_payout_row_fence_v1()"
+    },
+    {
+      "definitionMd5": "813e63bb46882444118574116e636cb0",
+      "signature": "private.multi_day_payout_source_fence_v1()"
+    },
+    {
+      "definitionMd5": "2aa08dc3464d3adf3ece6e4d5822031b",
+      "signature": "private.multi_day_registration_event_fence_v1()"
+    },
+    {
+      "definitionMd5": "20db7d8faf625e04dfc0f43cd8f8c2c4",
+      "signature": "private.satellite_cashier_movement_phase_v1()"
+    },
+    {
+      "definitionMd5": "97cb3984220a4334e16a629a5d24f8b4",
+      "signature": "private.satellite_locked_registration_evidence_v1()"
+    },
+    {
+      "definitionMd5": "68f5198fea2e73e4ff0421df9bf857d8",
+      "signature": "private.satellite_no_cash_on_voucher_v1()"
+    },
+    {
+      "definitionMd5": "d3192ea7966ea58b6772fca1af556d3d",
+      "signature": "private.satellite_offline_source_guard_v1()"
+    },
+    {
+      "definitionMd5": "8c20369dd1804b80de45384897bca14f",
+      "signature": "private.satellite_refund_cutoff_v1()"
+    },
+    {
+      "definitionMd5": "12107ee2c3137db34916e77161803045",
+      "signature": "private.satellite_registration_cutoff_v1()"
+    },
+    {
+      "definitionMd5": "34f6480a2bc5fc5ebb2ea2dc65cf29a2",
+      "signature": "private.satellite_reject_orphan_movement_v1()"
+    },
+    {
+      "definitionMd5": "c4ab2c5f356294ec5af499f740140acf",
+      "signature": "private.satellite_target_registration_fence_v1()"
+    },
+    {
+      "definitionMd5": "e2c874f27c847b6128193eef59dd8425",
+      "signature": "private.satellite_voucher_registration_delete_v1()"
+    },
+    {
+      "definitionMd5": "1c58d56c9702c7233d855ca34444c17e",
+      "signature": "trg_tour_reg_player_count()"
+    },
+    {
+      "definitionMd5": "3210625d1c794f6db7b3c3defc5984dd",
+      "signature": "update_updated_at_column()"
+    }
+  ],
+  "registrationIds": [
+    "5ccba4ae-82de-4f5c-a0f0-327dd7655779",
+    "a339364c-3f70-4b70-9257-9d73cd180915"
+  ],
+  "closedSnapshotJsonMd5": "c7529734fd3d37d87541a2ec6ca97f16"
+}

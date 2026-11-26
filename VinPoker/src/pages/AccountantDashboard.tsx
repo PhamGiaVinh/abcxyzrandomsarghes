@@ -1,7 +1,7 @@
 import { useOperationalCapabilities } from "@/hooks/useOperationalCapabilities";
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
-import { BarChart3, Calculator, ReceiptText, Table2, Users, UtensilsCrossed, Wallet } from "lucide-react";
+import { BarChart3, Calculator, ReceiptText, Table2, Wallet } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { FEATURES } from "@/lib/featureFlags";
@@ -39,6 +39,8 @@ export default function AccountantDashboard() {
   const clubsQuery = useSalaryClubs(source, gateOk && FEATURES.accountantWorkspace);
   const clubs = clubsQuery.isError ? [] : clubsQuery.data ?? [];
   const [clubId, setClubId] = useState("");
+  const [showStaffSettings, setShowStaffSettings] = useState(false);
+  const [showFnbDetails, setShowFnbDetails] = useState(false);
   const [salaryView, setSalaryView] = useState<"staff" | "dealer">("staff");
   const activeClub = clubId ? clubs.find((club) => club.id === clubId) : clubs[0];
   const activeClubId = activeClub?.id ?? null;
@@ -73,14 +75,14 @@ export default function AccountantDashboard() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-display text-2xl text-primary inline-flex items-center gap-2">
               <Calculator className="w-6 h-6" />
-              Tài chính &amp; Đối soát · nhân sự
+              Đối soát
             </h1>
             <Badge variant="outline" className="text-[10px]">
               {activeClub?.role === "accountant" ? "KẾ TOÁN CLB" : activeClub?.role === "owner" ? "CHỦ CLB" : "ADMIN"}
             </Badge>
           </div>
           <p className="text-[12px] text-muted-foreground max-w-2xl">
-            Bàn làm việc kế toán: bảng lương, nhân viên, chi phí và báo cáo. Kế toán chốt + gửi — chủ CLB duyệt.
+            Chọn CLB, đối chiếu lương và chi phí, rồi gửi chủ CLB duyệt.
           </p>
         </div>
         {(clubs.length > 1 || (clubs.length === 1 && !activeClub)) && (
@@ -108,17 +110,9 @@ export default function AccountantDashboard() {
             <Wallet className="w-4 h-4" />
             Bảng lương
           </TabsTrigger>
-          <TabsTrigger value="staff" className="gap-1.5">
-            <Users className="w-4 h-4" />
-            Nhân viên &amp; lương
-          </TabsTrigger>
           <TabsTrigger value="expenses" className="gap-1.5">
             <ReceiptText className="w-4 h-4" />
             Sổ chi phí
-          </TabsTrigger>
-          <TabsTrigger value="fnb" className="gap-1.5">
-            <UtensilsCrossed className="w-4 h-4" />
-            F&amp;B thu chi
           </TabsTrigger>
           <TabsTrigger value="report" className="gap-1.5">
             <BarChart3 className="w-4 h-4" />
@@ -127,6 +121,12 @@ export default function AccountantDashboard() {
         </TabsList>
 
         <TabsContent value="salary" className="space-y-3">
+          <details onToggle={event => setShowStaffSettings(event.currentTarget.open)} className="rounded-lg border border-border p-3">
+            <summary className="cursor-pointer text-sm font-medium">Danh sách nhân viên và mức lương</summary>
+            {showStaffSettings && (activeClub && staffAvailable
+              ? <StaffDirectoryManager key={activeClub.id} clubId={activeClub.id} />
+              : <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />)}
+          </details>
           <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
             {(["staff", "dealer"] as const).map((v) => (
               <button
@@ -154,16 +154,9 @@ export default function AccountantDashboard() {
             <DealerPayrollTab
               clubIds={[activeClub.id]}
               clubs={[{ id: activeClub.id, name: activeClub.name }]}
+              showShiftReviews
               hideApprovalActions={hideApprovalActions}
             />
-          ) : (
-            <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
-          )}
-        </TabsContent>
-
-        <TabsContent value="staff">
-          {activeClub && staffAvailable ? (
-            <StaffDirectoryManager clubId={activeClubId} />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
           )}
@@ -177,22 +170,21 @@ export default function AccountantDashboard() {
           )}
         </TabsContent>
 
-        <TabsContent value="fnb">
-          {activeClub && fnbAvailable ? (
-            <AccountantFnbTab clubId={activeClubId} />
-          ) : (
-            <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
-          )}
-        </TabsContent>
-
-        <TabsContent value="report">
+        <TabsContent value="report" className="space-y-3">
           {activeClub && financeAvailable ? (
             <AccountantFinanceTab clubId={activeClubId} />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
           )}
+      {activeClub && fnbAvailable && (
+        <details key={activeClub.id} onToggle={event => setShowFnbDetails(event.currentTarget.open)} className="rounded-lg border border-border p-3">
+          <summary className="cursor-pointer text-sm font-medium">Chi tiết bán hàng F&amp;B</summary>
+          {showFnbDetails && <AccountantFnbTab clubId={activeClub.id} />}
+        </details>
+      )}
         </TabsContent>
       </Tabs>
+
     </div>
   );
 }

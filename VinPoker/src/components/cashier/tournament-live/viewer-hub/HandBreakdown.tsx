@@ -15,7 +15,8 @@ import { useTranslation } from "react-i18next";
 import { Trophy } from "lucide-react";
 import { deriveHandBreakdown, type BreakdownAction } from "@/lib/tracker-poker/handBreakdown";
 import { getHandSeatPositions } from "@/lib/tournament/button";
-import { formatViewerBBOrUnavailable } from "@/lib/tracker-poker/viewerAmounts";
+import { useViewerAmountUnit } from "@/components/tracker/viewerAmountUnit";
+import { formatViewerAmount } from "@/lib/tracker-poker/viewerAmounts";
 
 export interface HandBreakdownPlayer {
   player_id: string;
@@ -77,7 +78,8 @@ export function HandBreakdown({
   showdownResult = null,
 }: HandBreakdownProps) {
   const { t } = useTranslation();
-  const streets = deriveHandBreakdown(actions, bigBlind);
+  const unit = useViewerAmountUnit();
+  const streets = deriveHandBreakdown(actions, bigBlind, (amount) => formatViewerAmount(amount, bigBlind, unit));
   if (streets.length === 0) return null;
 
   const playerById = new Map(players.map((p) => [p.player_id, p]));
@@ -134,7 +136,7 @@ export function HandBreakdown({
                 {player.display_name || fallbackName}
               </span>
               <span className="tracker-num">
-                +{formatViewerBBOrUnavailable(net, bigBlind)}
+                +{formatViewerAmount(net, bigBlind, unit)}
               </span>
             </span>
           ))}
@@ -152,7 +154,7 @@ export function HandBreakdown({
                 {STREET_LABELS[col.street] ?? col.street}
               </span>
               <span className="tracker-num text-[10px] text-muted-foreground" title={potHint}>
-                {t("liveHub.breakdown.pot", "Cược lũy kế")} {formatViewerBBOrUnavailable(col.potChips, bigBlind)}
+                {t("liveHub.breakdown.pot", "Cược lũy kế")} {formatViewerAmount(col.potChips, bigBlind, unit)}
               </span>
             </div>
 

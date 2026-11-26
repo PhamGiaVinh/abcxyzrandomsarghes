@@ -94,7 +94,8 @@ function connectionFixture(){
  const refreshRuntime=()=>waiting?pending.promise:Promise.resolve(runtime);
  const provider={kind:'openai_realtime',connect:async handlers=>{connections++;callbacks=handlers;},disconnect:async()=>{disconnects++;}};
  const sandbox={Error,performance:{now:()=>1},runtime,runtimeError:null,refreshRuntime,refreshRuntimeRef:{current:refreshRuntime},
-  providerOverride:provider,providerRef:{current:provider},hook:{tournamentId:'tour',tournamentTableId:'table',handId:'hand'},
+  providerOverride:provider,providerRef:{current:provider},hook:{tournamentId:'tour',tournamentTableId:'table',handId:'hand',manualActionGenerationRef:{current:0}},
+  manualGeneration:0,turnRef:{current:'turn-1'},partialTurnRef:{current:null},
   connectionGenerationRef:{current:0},connectionScopeKey:'scope',connectionScopeRef:{current:'scope'},runtimeScopeRef:{current:'hand-scope'},
   runtimeReadGenerationRef:{current:0},
   pendingAmountPrefixRef:{current:null},micTestActiveRef:{current:false},micTestFinalCountRef:{current:0},micTestMaxLevelRef:{current:0},
@@ -120,6 +121,17 @@ test('disconnect prevents pending transcript runtime refresh from creating a lat
 test('callbacks from the disconnected provider cannot publish a new transcript',async()=>{
  const f=connectionFixture();await f.connect();await f.disconnect();const writes=f.writes.length;
  f.emit();await new Promise(resolve=>setImmediate(resolve));assert.equal(f.writes.length,writes);
+});
+test('a manual write starting before the next render fences the old microphone callback',async()=>{
+ const f=connectionFixture();await f.connect();const writes=f.writes.length;
+ ++f.sandbox.hook.manualActionGenerationRef.current;f.emit();
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(f.writes.length,writes);
+});
+test('a turn change within the same hand discards the old transcript while runtime is pending',async()=>{
+ const f=connectionFixture();await f.connect();f.wait();f.emit();const writes=f.writes.length;
+ f.sandbox.turnRef.current='turn-2';f.pending.resolve(f.sandbox.runtime);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(f.writes.length,writes);
+ assert.equal(f.writes.some(([name])=>name==='setFinalAttempt'),false);
 });
 test('disconnect during initial runtime lookup never starts microphone provider',async()=>{
  const f=connectionFixture();f.wait();const pending=f.connect();await f.disconnect();const writes=f.writes.length;
@@ -251,9 +263,14 @@ for(const kind of ['hole','finish']){
 
 function actionFixture(){
  const f=boardFixture(actionCallback);f.sandbox.validatedProposal={ok:true,canonicalAction:'check'};
+ f.sandbox.manualGeneration=0;f.sandbox.hook.manualActionGenerationRef={current:0};
  let calls=0;f.sandbox.hook.handleVoiceAction=()=>{calls++;return f.commit.promise;};
  return {...f,calls:()=>calls};
 }
+test('a validated mic action cannot commit after a manual write begins',async()=>{
+ const f=actionFixture();++f.sandbox.hook.manualActionGenerationRef.current;
+ assert.equal(await f.run(),false);assert.equal(f.calls(),0);assert.deepEqual(f.writes,[]);
+});
 test('current action remains single-flight and verifies canonical readback',async()=>{
  const f=actionFixture(),first=f.run(),second=f.run();f.commit.resolve(true);await Promise.all([first,second]);
  assert.equal(f.calls(),1);assert.deepEqual(f.writes.at(-1),['setValidationState','committed']);

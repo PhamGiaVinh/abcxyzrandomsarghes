@@ -238,6 +238,10 @@ export default function CashierDashboard() {
     ...(showPtWages ? [{ key: "pt_wages" as SectionKey, label: "Lương PT", icon: Wallet }] : []),
   ];
 
+  const primarySections: SectionKey[] = ["overview", "offline_buyin", "reentry", "tournament_payouts"];
+  const primaryItems = navItems.filter(item => primarySections.includes(item.key));
+  const additionalItems = navItems.filter(item => !primarySections.includes(item.key));
+
   return (
     <div className="container mx-auto p-3 md:p-6">
       <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
@@ -257,7 +261,7 @@ export default function CashierDashboard() {
         <aside className="col-span-12 md:col-span-3 lg:col-span-2">
           <Card className="p-2 md:sticky md:top-4">
             <nav className="flex md:flex-col gap-1 overflow-x-auto md:overflow-x-visible">
-              {navItems.map((it) => {
+              {primaryItems.map((it) => {
                 const active = section === it.key;
                 const Icon = it.icon;
                 return (
@@ -277,6 +281,18 @@ export default function CashierDashboard() {
                 );
               })}
             </nav>
+            <details className="mt-2 border-t border-border pt-2" open={additionalItems.some(item => item.key === section) || undefined}>
+              <summary className="cursor-pointer px-3 py-2 text-sm text-muted-foreground">Thêm tác vụ</summary>
+              <div className="mt-1 flex flex-col gap-1">
+                {additionalItems.map(item => (
+                  <button key={item.key} type="button" onClick={() => setSection(item.key)}
+                    aria-current={section === item.key ? "page" : undefined}
+                    className={"min-h-11 rounded-lg px-3 py-2 text-left text-sm " + (section === item.key ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/50")}>
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </details>
           </Card>
         </aside>
 

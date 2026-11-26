@@ -1,4 +1,5 @@
 {
+  "trackerPotDetails": "Details",
   "clubDetailRead": {"error":"Could not load club data. Please retry.","retry":"Retry loading","loading":"Loading club data…"},
   "rankingReview": {"title":"Floor ranking confirmation","note":"Swap places only within the same-hand bust group. This confirmation does not close the tournament or record prize payments.","storage":"The request could not be safely read or saved. Reload and reconcile the previous request before continuing.","readError":"The ranking list could not be verified. Reload before confirming.","unknown":"The result is unverified. The original request is retained for reconciliation; do not create another request.","changed":"The data or conditions changed and this request was rejected. Check the latest rankings.","recorded":"Ranking confirmation recorded. Refreshing the closing status.","historical":"The previous request was reconciled, but its source changed. Check and confirm the current ranking again.","loading":"Verifying rankings…","pending":"An unverified request is retained. Do not send a new request.","check":"Check saved request","retrySame":"Resend the same saved request","reload":"Reload rankings","notReady":"Confirmation requires one winner and complete hand and bust-order evidence.","approved":"A confirmation receipt is saved. Closing conditions are checked separately.","up":"Rank {{name}} higher within the group","down":"Rank {{name}} lower within the group","confirm":"Confirm Floor-selected order","group":"Same-hand bust group {{group}}","reference":"Entry reference {{reference}}"},
   "publicScheduleRead": { "loading": "Loading tournament schedules…", "error": "Tournament schedules could not be loaded. Their availability is unverified. Please retry.", "retry": "Retry loading schedules" },
@@ -166,6 +167,8 @@
     "exitToMain": "Main app"
   },
   "tv": {
+    "levelSoundOn": "Sound on",
+    "levelSoundOff": "Enable sound", "testSound": "Test sound", "soundUnavailable": "Audio could not be enabled. Check this tab and your device sound settings.",
     "level": "Level",
     "blinds": "Blinds",
     "ante": "Ante",
@@ -198,7 +201,7 @@
     "loadErrorHint": "Retrying automatically…",
     "offline": "Realtime connection lost — using fallback polling",
     "pairTitle": "Pair this TV display",
-    "pairInstruction": "Enter this code in the VinPoker dashboard (Tournament Live → TV Displays) to assign a tournament to this TV",
+    "pairInstruction": "On the operator device, open Floor → select the tournament → TV & màn hình (Thêm on mobile). Enter these six digits in Pairing code, select Pair, then select Assign this next to the TV name.",
     "pairWaiting": "Waiting for pairing…",
     "pairExpires": "New code in",
     "pairError": "Cannot reach the server — retrying…",
@@ -2076,6 +2079,7 @@
     "detailsUnavailable": "Deal or profile history could not be fully loaded. Data is unverified; try again."
   },
   "financeRead": {
+    "missingEventStart": "A tournament with financial activity has no start date. Verify its event date to determine the reporting period.",
     "forbidden": "You do not have permission to view this club's financial report.",
     "missingBackend": "The server does not have the required report version. Figures cannot be verified.",
     "invalid": "The report data is incomplete or invalid. Figures cannot be verified.",
@@ -2091,6 +2095,7 @@
     },
     "selectTournament": "Select tournament",
     "tvDisplays": {
+      "otherTournament": "Showing another tournament",
       "tab": "TV Displays",
       "pairTitle": "Pair a new TV",
       "pairHint": "Open /tv/pair on the TV to get a 6-digit code, then enter it here to assign the TV to this club.",

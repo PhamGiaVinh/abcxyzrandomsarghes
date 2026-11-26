@@ -23,13 +23,17 @@ test("mock Voice keeps Shadow local, then flows through Assist, correction and V
   const transcript = page.getByRole("textbox", { name: "Mock transcript" });
   await transcript.fill("call");
   await page.getByRole("button", { name: "Phát final" }).click();
+  await expect(page.getByText("Hãy đọc rõ Ghế đang tới lượt trước action.")).toBeVisible();
+  await expect(page.getByTestId("canonical-action-count")).toHaveText("0");
+  await transcript.fill("ghế 4 call");
+  await page.getByRole("button", { name: "Phát final" }).click();
   await expect(page.getByText("Shadow hợp lệ, không gọi server và chưa ghi action.")).toBeVisible();
   await expect(page.getByTestId("validation-count")).toHaveText("0");
 
   await page.getByRole("button", { name: "assist" }).click();
-  await transcript.fill("call");
+  await transcript.fill("ghế 4 call");
   await page.getByRole("button", { name: "Phát final" }).click();
-  await expect(page.getByText("Player A · call", { exact: true })).toBeVisible();
+  await expect(page.getByText("Player A · call tới 100.000", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Xác nhận action" }).click();
   await expect(page.getByTestId("canonical-action-count")).toHaveText("1");
   await expect(page.getByTestId("viewer-replay-actions")).toContainText("Player A · call");
@@ -44,14 +48,14 @@ test("mock Voice keeps Shadow local, then flows through Assist, correction and V
   await expect(page.getByText("Alert đã vào hàng đợi Floor.")).toBeVisible();
   await expect(page.getByTestId("floor-alert-count")).toHaveText("1");
 
-  await transcript.fill("raise 120 nghìn");
+  await transcript.fill("ghế 4 raise 200 nghìn");
   await page.getByRole("button", { name: "Phát final" }).click();
   await expect(page.getByText("1 transcript đang chờ Floor")).toBeVisible();
   await expect(page.getByTestId("canonical-action-count")).toHaveText("2");
   await page.getByRole("button", { name: "Kiểm tra lại sau khi Floor sửa" }).click();
   await page.getByRole("button", { name: "Xác nhận action" }).click();
   await expect(page.getByTestId("canonical-action-count")).toHaveText("3");
-  await expect(page.getByTestId("viewer-replay-actions")).toContainText("raise tới 120.000");
+  await expect(page.getByTestId("viewer-replay-actions")).toContainText("raise tới 200.000");
 
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
@@ -84,7 +88,7 @@ test("repaired call remains a proposal until explicit confirmation", async ({ pa
   await page.getByRole("textbox", { name: "Mock transcript" }).fill("fit 4 call");
   await page.getByRole("button", { name: "Phát final" }).click();
 
-  await expect(page.getByText("Player A · call", { exact: true })).toBeVisible();
+  await expect(page.getByText("Player A · call tới 100.000", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Xác nhận action" })).toBeVisible();
   await expect(page.getByTestId("canonical-action-count")).toHaveText("0");
 });

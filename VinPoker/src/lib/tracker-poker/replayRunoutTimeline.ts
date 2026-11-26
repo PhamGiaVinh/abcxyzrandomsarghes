@@ -1,3 +1,33 @@
+import { showdownRevealOrder } from "./trackerEngine";
+
+export const SHOWDOWN_FIRST_FLIP_MS = 350;
+export const SHOWDOWN_SEAT_INTERVAL_MS = 500;
+
+export function orderedShowdownPlayers(
+  players: { player_id: string; seat_number: number }[],
+  actions: { player_id: string; action_type: string; street: string; action_order: number }[],
+  buttonSeat: number,
+): string[] | undefined {
+  if (players.length < 2) return undefined;
+  const seatToPlayer = new Map(players.map(player => [player.seat_number, player.player_id]));
+  const bettingActions = actions
+    .filter(action => ["check", "fold", "call", "bet", "raise", "all_in"].includes(action.action_type))
+    .sort((a, b) => b.action_order - a.action_order);
+  const finalStreet = bettingActions[0]?.street;
+  const aggressor = bettingActions.find(action =>
+    action.street === finalStreet && ["bet", "raise", "all_in"].includes(action.action_type),
+  );
+  return showdownRevealOrder({
+    shownSeatNumbers: [...seatToPlayer.keys()],
+    buttonSeat,
+    finalAggressorSeat: players.find(player => player.player_id === aggressor?.player_id)?.seat_number,
+  }).map(seat => seatToPlayer.get(seat)!);
+}
+
+export function showdownRevealDelay(index: number, speed: number): number {
+  return Math.round((SHOWDOWN_FIRST_FLIP_MS + index * SHOWDOWN_SEAT_INTERVAL_MS) / speed);
+}
+
 export const ALL_IN_HOLE_REVEAL_HOLD_MS = 650;
 export const FLOP_CARD_STAGGER_MS = 90;
 export const FLOP_REVEAL_TOTAL_MS = 450;
@@ -106,7 +136,7 @@ export function nextReplayRunoutPresentation(
   return createReplayRunoutPresentation(presentation.key, nextPhase, nextPotAwardIndex);
 }
 
-export function replayRunoutPhaseDuration(phase: ReplayRunoutPhase, speed: number): number {
+export function replayRunoutPhaseDuration(phase: ReplayRunoutPhase, speed: number, shownPlayers = 0): number {
   // Money arrival and the reading hold stay readable even at fast action speed.
   if (phase === "pot_award") return POT_AWARD_MS;
   if (phase === "pot_collect") return POT_COLLECT_MS;
@@ -128,7 +158,10 @@ export function replayRunoutPhaseDuration(phase: ReplayRunoutPhase, speed: numbe
                   ? RESULT_HOLD_MS
                   : 0;
   const safeSpeed = Math.max(0.5, Math.min(8, speed));
-  return Math.round(base / safeSpeed);
+  const hold = phase === "hole_hold" && shownPlayers > 1
+    ? showdownRevealDelay(shownPlayers - 1, 1) + ALL_IN_HOLE_REVEAL_HOLD_MS
+    : base;
+  return Math.round(hold / safeSpeed);
 }
 
 export function replayRunoutFocusPhase(phase: ReplayRunoutPhase | null): "hidden" | "dim" | "glow" | "static" {

@@ -25,7 +25,7 @@ export default function TourRevenuePanel({ clubId }: { clubId: string }) {
   useEffect(() => () => { if (download) URL.revokeObjectURL(download.url); }, [download]);
 
   useEffect(() => {
-    let active = true, busy = false;
+    let active = true, busy = false, reconnectPending = false;
     setLive(null); setError(false);
     const load = async () => {
       if (busy || !active) return;
@@ -34,7 +34,13 @@ export default function TourRevenuePanel({ clubId }: { clubId: string }) {
         const result = await loadLiveTourRevenue(client, clubId);
         if (active) { setLive(result); setError(false); }
       } catch { if (active) { setLive(null); setError(true); } }
-      finally { busy = false; }
+      finally {
+        busy = false;
+        if (active && reconnectPending) {
+          reconnectPending = false;
+          refresh();
+        }
+      }
     };
     void load();
     const channel = client.channel(`owner-tour-revenue:${clubId}`)
@@ -42,9 +48,22 @@ export default function TourRevenuePanel({ clubId }: { clubId: string }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "tournaments", filter: `club_id=eq.${clubId}` }, () => { void load(); })
       .subscribe();
     const refresh = () => { if (document.visibilityState !== "hidden") void load(); };
+    const onReconnect = () => {
+      if (busy) reconnectPending = true;
+      else refresh();
+    };
     const timer = window.setInterval(refresh, 5_000);
     window.addEventListener("focus", refresh);
-    return () => { active = false; window.clearInterval(timer); window.removeEventListener("focus", refresh); void client.removeChannel(channel); };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("online", onReconnect);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("online", onReconnect);
+      void client.removeChannel(channel);
+    };
   }, [client, clubId, revision]);
 
   useEffect(() => {

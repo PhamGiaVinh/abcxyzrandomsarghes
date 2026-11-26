@@ -104,6 +104,33 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
   const complete = result?.playerId === playerId && result?.tournamentId === tournamentId ? result : null;
   const current = complete;
   const currentHistory=history?.snapshot===complete?history:null;
+  const loadNextHistoryPage = async () => {
+    if (!currentHistory?.nextCursor || historyLoading) return;
+    const scope = currentHistory;
+    const signal = historyController.current?.signal;
+    if (!signal || signal.aborted) return;
+    setHistoryLoading(true);
+    setHistoryError(false);
+    try {
+      const {loadPublicHudHistoryPage} = await import('@/lib/preparedPublicPlayerHud');
+      const page = await loadPublicHudHistoryPage(tournamentId, scope.snapshot.playerId, signal, scope.nextCursor);
+      if (signal.aborted || resultRef.current !== scope.snapshot) return;
+      setHistory(previous => previous === scope ? {
+        ...previous,
+        hands: [...previous.hands, ...page.hands.filter(hand => !previous.hands.some(old => old.handId === hand.handId))],
+        nextCursor: page.nextCursor,
+      } : previous);
+    } catch (reason) {
+      if (signal.aborted || resultRef.current !== scope.snapshot) return;
+      if (reason instanceof Error && reason.message === 'PUBLIC_HUD_ACCESS_REVOKED') {
+        setError(true);
+        setResult(previous => previous === scope.snapshot ? null : previous);
+      }
+      setHistoryError(true);
+    } finally {
+      if (!signal.aborted) setHistoryLoading(false);
+    }
+  };
   const metrics = complete?.analytics.metrics ?? {};
   return <Dialog open={playerId != null} onOpenChange={open => { if (!open) onClose(); }}><DialogContent className="operations-typography max-h-[90svh] max-w-xl overflow-y-auto border-border bg-card p-5 text-foreground">
     <DialogTitle className="flex items-center gap-4 pr-8"><Avatar className="h-16 w-16"><AvatarImage src={current?.avatarUrl ?? undefined} alt="" /><AvatarFallback>{current?.name.slice(0,2) ?? '?'}</AvatarFallback></Avatar><span>{current?.name ?? 'Thống kê người chơi'}</span></DialogTitle>
@@ -112,23 +139,8 @@ export function PublicPlayerHud({ tournamentId, playerId, onClose }: {tournament
     {!current ? !error && <p role="status">Đang tải thống kê người chơi…</p> : <>
       {!currentHistory&&!historyError&&<p role="status">Đang tải lịch sử tour…</p>}
       {currentHistory&&<PlayerHandHistory tournamentId={tournamentId} hands={currentHistory.hands}/>}
-      {currentHistory?.nextCursor&&<button type="button" disabled={historyLoading} className="min-h-11 rounded-md border border-border px-3 text-sm disabled:opacity-50" onClick={async()=>{
-        setHistoryLoading(true);setHistoryError(false);
-        const scope=currentHistory;
-        const signal=historyController.current?.signal;
-        if(!signal||signal.aborted){setHistoryLoading(false);return;}
-        try{
-          const {loadPublicHudHistoryPage}=await import('@/lib/preparedPublicPlayerHud');
-          const page=await loadPublicHudHistoryPage(tournamentId,scope.snapshot.playerId,signal,scope.nextCursor??undefined);
-          if(signal.aborted||resultRef.current!==scope.snapshot)return;
-          setHistory(previous=>previous===scope?{...previous,hands:[...previous.hands,...page.hands.filter(h=>!previous.hands.some(old=>old.handId===h.handId))],nextCursor:page.nextCursor}:previous);
-        }catch(reason){
-          if(signal.aborted||resultRef.current!==scope.snapshot)return;
-          if(reason instanceof Error&&reason.message==='PUBLIC_HUD_ACCESS_REVOKED'){setError(true);setResult(previous=>previous===scope.snapshot?null:previous);}
-          setHistoryError(true);
-        }finally{if(!signal.aborted)setHistoryLoading(false);}
-      }}>{historyLoading?'Đang tải…':'Xem thêm 50 hand trong tour'}</button>}
-      {historyError&&<div><p role="alert" className="text-sm">Không tải được lịch sử tour. Chỉ số tổng hợp vẫn giữ phiên bản lúc mở.</p><button type="button" disabled={historyLoading} className="min-h-11 rounded-md border border-border px-3 text-sm" onClick={()=>setHistoryRetry(value=>value+1)}>Thử lại lịch sử</button></div>}
+      {currentHistory?.nextCursor&&<button type="button" disabled={historyLoading} className="min-h-11 rounded-md border border-border px-3 text-sm disabled:opacity-50" onClick={loadNextHistoryPage}>{historyLoading?'Đang tải…':'Xem thêm 50 hand trong tour'}</button>}
+      {historyError&&<div><p role="alert" className="text-sm">Không tải được lịch sử tour. Chỉ số tổng hợp vẫn giữ phiên bản lúc mở.</p><button type="button" disabled={historyLoading} className="min-h-11 rounded-md border border-border px-3 text-sm" onClick={currentHistory?.nextCursor ? loadNextHistoryPage : () => setHistoryRetry(value => value + 1)}>Thử lại lịch sử</button></div>}
       <p className="text-xs text-muted-foreground">Bản thống kê lúc mở{current.computedAt?` · ${new Date(current.computedAt).toLocaleString('vi-VN')}`:''}. Đóng và mở lại để nhận bản mới.{current.updateState==='updating'?' Máy chủ đang cập nhật.':''}</p>
       <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">Chỉ số cộng dồn · Tất cả tour</h3><button type="button" onClick={()=>setHelpOpen(true)} className="min-h-11 rounded-md border border-border px-3 text-xs font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">Giải thích các chỉ số</button></div>
       <div className="grid grid-cols-4 gap-2"><Ring label="VPIP" metric={metrics.vpip} metricKey="vpip" onExplain={explain} /><Ring label="PFR" metric={metrics.pfr} metricKey="pfr" onExplain={explain} /><Ring label="ATS" metric={metrics.ats} metricKey="ats" onExplain={explain} /><Ring label="3-BET" metric={metrics.threeBet} metricKey="threeBet" onExplain={explain} /></div>

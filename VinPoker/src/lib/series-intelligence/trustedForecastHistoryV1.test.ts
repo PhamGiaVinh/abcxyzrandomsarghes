@@ -99,7 +99,7 @@ describe("trusted D2B forecast history adapter", () => {
   it("uses final exact D2B entries and not the native current count", () => {
     const result = buildTrustedForecastHistoryV1({ asOfTs: AS_OF, events: [event("final")], statesByEventId: { final: state("final", { entries: 123 }) } });
     expect(result.events).toHaveLength(1);
-    expect(result.events[0]).toMatchObject({ event_id: "final", total_entries: 123, prize_pool_actual: null, outcome_available_at: "2026-07-02T00:00:00.000Z" });
+    expect(result.events[0]).toMatchObject({ event_id: "final", total_entries: 123, prize_pool_actual: null, outcome_available_at: "2026-07-02T00:01:00.000Z" });
   });
 
   it("includes a current corrected revision with compatible reconciliation", () => {
@@ -152,7 +152,7 @@ describe("trusted D2B forecast history adapter", () => {
       events: [event("future-cutoff")],
       statesByEventId: { "future-cutoff": state("future-cutoff", { capturedAt: "2026-08-02T00:00:00.000Z" }) },
     });
-    expect(result.events.map((item) => item.event_id)).toEqual(["future-cutoff"]);
+    expect(result.events).toMatchObject([{ event_id: "future-cutoff", outcome_available_at: "2026-08-02T00:00:00.000Z" }]);
   });
 
   it.each([

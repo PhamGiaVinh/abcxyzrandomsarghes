@@ -78,9 +78,9 @@ on:
         type: boolean
         default: false
       diagnostic_scope:
-        description: Target only unresolved payment or check-in failure; never full acceptance
+        description: Target one unresolved workflow; never full acceptance
         type: choice
-        options: [none, cashier-payment, dealer-checkin]
+        options: [none, cashier-payment, dealer-checkin, floor-swing-close, floor-swing-close-staffed]
         default: none
       schema_mode:
         description: Historical pre03 migration proof or contemporary runtime proof
@@ -185,6 +185,19 @@ jobs:
               node "$trusted_selector" "$GITHUB_WORKSPACE" "$BASE_SHA" "$HEAD_SHA")"
           fi
           package=none
+          if [[ "$mode" == current-cashier1730 ]]; then
+            [[ "$EVENT_NAME" == pull_request && "$PR_NUMBER" == 1730 ]]
+            run=45003990642
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" |
+              jq -e '.workflow_id == 426651222 and .event == "workflow_dispatch"
+                and .head_sha == "7b2445793da84b691dd6658d59551276fb4f1e5f"
+                and .head_branch == "main" and .actor.login == "PhamGiaVinh"
+                and .run_attempt == 1 and .conclusion == "success"' >/dev/null
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/attempts/1/jobs" |
+              jq -e '[.jobs[] | select(.name == "apply" and .conclusion == "success")] | length == 1' >/dev/null
+            package=cashier1730
+            mode=current
+          fi
           if [[ "$mode" == current-source342 ]]; then
             package=source342
             mode=current
@@ -212,6 +225,10 @@ jobs:
           # Keep tests reproducible after the candidate branch is removed.
           git cat-file -e '26d829241c1da649eae4ec37aaff398ab00a5173^{commit}' ||
             git fetch --no-tags origin 26d829241c1da649eae4ec37aaff398ab00a5173
+          # The exact finance tree fixture must survive branch deletion/squash.
+          # Fetch immutable objects only; never execute that candidate's guard.
+          git cat-file -e 'c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0^{commit}' ||
+            git fetch --no-tags origin c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0
           node --test scripts/ops/prepare-manual-cards-runtime-dependencies.test.mjs scripts/ops/cashier-schema-mode.test.mjs scripts/ops/prepare-prize-close-runtime-dependencies.test.mjs scripts/ops/operations-audience-readiness.test.mjs scripts/ops/operations-audience-generation.test.mjs scripts/ops/operations-audience-hand-delivery.test.mjs scripts/ops/operations-hud-control.test.mjs
           node --test scripts/ops/telegram-test-sink.test.mjs
           git cat-file -e 'c69bce72ca98332ac4740808b05db01bf7bed398^{commit}' ||

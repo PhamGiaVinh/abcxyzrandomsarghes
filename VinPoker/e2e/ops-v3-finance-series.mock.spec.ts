@@ -128,6 +128,37 @@ test("Finance renders only the server summary and stays responsive", async ({ pa
   ].sort());
 });
 
+test("Finance refreshes the displayed tour revenue when Chromium comes back online", async ({ page, context }) => {
+  const requests: string[] = [];
+  await installMockOpsSession(page, requests);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.clock.install();
+  await page.clock.pauseAt(new Date(Date.now() + 1_000));
+  let rake = 90_000;
+  let tourReads = 0;
+  await page.route("**/rest/v1/rpc/get_owner_tour_rake_live_v1", route => {
+    expect(route.request().postDataJSON()).toEqual({ p_club_id: clubId });
+    tourReads += 1;
+    return route.fulfill({ json: { clubId, asOf: "2026-11-20T02:00:00Z", tours: [{
+      tournamentId: "tour-reconnect", name: "Tour reconnect TEST", eventDay: "2026-11-20",
+      registrationClosedAt: null, buyState: "open", provisional: true, paidBuys: 4,
+      waitingSeatBuys: 0, uniquePlayers: 4, refundedBuys: 0, unavailableBuys: 0,
+      rake, serviceFee: 0, platformFee: 0, collected: 400_000,
+    }] } });
+  });
+  await page.goto(`/ops/finance?club=${clubId}`);
+  await expect(page.getByText("90.000 đ", { exact: true })).toBeVisible();
+  const readsBeforeReconnect = tourReads;
+
+  await context.setOffline(true);
+  await expect.poll(() => page.evaluate(() => navigator.onLine)).toBe(false);
+  rake = 120_000;
+  await context.setOffline(false);
+  await expect(page.getByText("120.000 đ", { exact: true })).toBeVisible();
+  await expect(page.getByText("90.000 đ", { exact: true })).toHaveCount(0);
+  expect(tourReads).toBe(readsBeforeReconnect + 1);
+});
+
 test("malformed Finance response blocks without client table fallback", async ({ page }) => {
   const requests: string[] = [];
   await installMockOpsSession(page, requests, true);
