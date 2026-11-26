@@ -7,6 +7,14 @@ vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:(...args:unknown[])
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>f.auth}));
 import {useStaffSalaryMonth} from './useStaffSalary';
 const clients:QueryClient[]=[];
+it('retains saved payment metadata from the authoritative report',async()=>{
+ const data=packet();Object.assign(data.rows[0],{status:'paid',paid_at:'2026-11-26T12:00:00Z',
+  payment_method:'bank_transfer',payment_reference:'ORIGINAL-TRANSFER'});
+ f.rpc.mockResolvedValue({data,error:null});const view=mount();
+ await waitFor(()=>expect(view.result.current.isSuccess).toBe(true));
+ expect(view.result.current.data?.lockedRows[0]).toMatchObject({paidAt:'2026-11-26T12:00:00Z',
+  paymentMethod:'bank_transfer',paymentReference:'ORIGINAL-TRANSFER'});
+});
 const packet=(net=1000)=>({club_id:'club-test',period_year:2026,period_month:10,header:{status:'approved'},rows:[{
  id:'run-test',staff_id:'staff-test',full_name:'LOCAL TEST staff',department:'fnb',employment_type:'full_time',worked_days:1,worked_minutes:null,
  gross_vnd:net,manual_bhxh_vnd:0,manual_tax_vnd:0,net_vnd:net,status:'locked'}],total_gross_vnd:net,total_net_vnd:net});

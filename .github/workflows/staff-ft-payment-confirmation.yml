@@ -4,6 +4,9 @@ on:
     paths:
       - 'VinPoker/src/pages/StaffSalaryChot*'
       - 'VinPoker/src/hooks/staffSalary/**'
+      - 'VinPoker/src/lib/staffSalary/**'
+      - 'VinPoker/src/hooks/staff/useStaffSalary*'
+      - 'VinPoker/src/components/staff-app/salary/StaffSalaryScreen*'
       - '.github/workflows/staff-ft-payment-confirmation.yml'
 permissions:
   contents: read
@@ -20,4 +23,4 @@ jobs:
         with:
           node-version: 22
       - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm test -- src/pages/StaffSalaryChot.test.tsx src/hooks/staffSalary/useSalaryActions.test.tsx
+      - run: npm test -- src/pages/StaffSalaryChot.test.tsx src/hooks/staffSalary/useSalaryActions.test.tsx src/hooks/staffSalary/useStaffSalary.read.test.tsx src/hooks/staff/useStaffSalary.test.tsx src/components/staff-app/salary/StaffSalaryScreen.test.tsx

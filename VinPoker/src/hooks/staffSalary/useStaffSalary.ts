@@ -26,6 +26,8 @@ const salaryRow = z.object({
   employment_type:z.enum(['full_time','part_time']),worked_days:count.nullable().optional(),worked_minutes:count.nullable().optional(),
   gross_vnd:amount,manual_bhxh_vnd:signedAmount,manual_tax_vnd:signedAmount,net_vnd:amount,
   id:z.string().min(1).optional(),run_id:z.string().min(1).optional(),status:z.enum(['locked','paid']).optional(),already_locked:z.boolean().optional(),
+  paid_at:z.string().refine(value=>Number.isFinite(Date.parse(value))).nullish(),
+  payment_method:z.string().nullish(),payment_reference:z.string().nullish(),
 });
 const reportPacket = z.object({
   club_id:z.string().min(1),period_year:z.number().int(),period_month:z.number().int().min(1).max(12),
@@ -52,6 +54,9 @@ function mapRow(r: z.infer<typeof salaryRow>, locked: boolean): SalaryRow {
     alreadyLocked: locked ? undefined : r.already_locked,
     runId: locked ? (r.id ?? r.run_id ?? null) : null,
     status: locked ? (r.status ?? null) : null,
+    paidAt: locked ? (r.paid_at ?? null) : null,
+    paymentMethod: locked ? (r.payment_method ?? null) : null,
+    paymentReference: locked ? (r.payment_reference ?? null) : null,
   };
 }
 

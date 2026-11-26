@@ -1,5 +1,5 @@
 import type React from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import {
@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { FEATURES } from "@/lib/featureFlags";
-import { formatVND } from "@/lib/format";
+import { formatDateTime, formatVND } from "@/lib/format";
 import {financeBusinessToday} from '@/lib/financeSummaryRead';
 import { staffSalarySource } from "@/lib/staffSalary/dataSource";
 import { STAFF_DEPARTMENT_LABELS, type StaffDepartment } from "@/types/staffApp";
@@ -231,7 +231,10 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
 
           <Dialog open={!!paymentRow} onOpenChange={(open) => { if (!open) setPayment(null); }}>
             <DialogContent>
-              <DialogHeader><DialogTitle>Xác nhận ghi chi lương</DialogTitle></DialogHeader>
+              <DialogHeader>
+                <DialogTitle>Xác nhận ghi chi lương</DialogTitle>
+                <DialogDescription>Đối chiếu người hưởng, CLB, kỳ lương và thông tin khoản đã chi trước khi ghi nhận.</DialogDescription>
+              </DialogHeader>
               {paymentRow && (
                 <form className="space-y-3" onSubmit={(event) => {
                   event.preventDefault();
@@ -245,7 +248,7 @@ export default function StaffSalaryChot({ embedded, scopedClubId }: { embedded?:
                 }}>
                   <p>{paymentRow.fullName} · {activeClub?.name} · {month}/{year} · {formatVND(paymentRow.netVnd)}</p>
                   <label className="block">Phương thức
-                    <select className="block w-full rounded border bg-background p-2" required value={paymentMethod}
+                    <select aria-label="Phương thức" className="block w-full rounded border bg-background p-2" required value={paymentMethod}
                       onChange={(event) => {
                         const value = event.target.value;
                         if (value === "" || value === "cash" || value === "bank_transfer") setPaymentMethod(value);
@@ -323,10 +326,10 @@ function SalaryRowItem({
       ? "PT"
       : `FT · ${row.workedDays ?? 0} công`;
   return (
-    <div className="py-3 flex items-center gap-3">
-      <div className="flex-1 min-w-0">
+    <div className="py-3 flex flex-wrap items-center gap-3">
+      <div className="basis-full min-w-0 sm:basis-auto sm:flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-bold text-foreground truncate">{row.fullName}</span>
+          <span className="max-w-full break-words font-bold text-foreground">{row.fullName}</span>
           <Badge variant="outline" className="text-[10px]">
             {deptLabel(row.department)}
           </Badge>
@@ -349,13 +352,24 @@ function SalaryRowItem({
       {showMarkPaid && row.employmentType === "full_time" &&
         (paid ? (
           <span className="text-[11px] font-bold text-primary shrink-0 inline-flex items-center gap-1">
-            <BadgeCheck className="w-3.5 h-3.5" /> Đã trả
+            <BadgeCheck className="w-3.5 h-3.5" /> CLB đã ghi chi
           </span>
         ) : (
           <Button variant="outline" size="sm" className="shrink-0" disabled={markPaidPending} onClick={onMarkPaid}>
             Đánh dấu trả
           </Button>
         ))}
+      {paid && row.employmentType === "full_time" && (
+        <dl aria-label={`Chứng từ đã ghi chi của ${row.fullName}`} className="w-full space-y-1 rounded-md border border-border bg-muted/20 p-2 text-xs text-muted-foreground">
+          <div><dt className="inline">Phương thức: </dt><dd className="inline text-foreground">
+            {row.paymentMethod === "cash" ? "Tiền mặt" : ["bank", "bank_transfer"].includes(row.paymentMethod ?? "") ? "Chuyển khoản" : "Chưa rõ phương thức"}
+          </dd></div>
+          {["bank", "bank_transfer"].includes(row.paymentMethod ?? "") && (
+            <div className="break-all"><dt className="inline">Tham chiếu: </dt><dd className="inline text-foreground">{row.paymentReference?.trim() || "Chưa rõ tham chiếu"}</dd></div>
+          )}
+          <div><dt className="inline">Thời điểm ghi chi: </dt><dd className="inline">{row.paidAt ? formatDateTime(row.paidAt) : "Chưa rõ thời điểm ghi chi"}</dd></div>
+        </dl>
+      )}
     </div>
   );
 }

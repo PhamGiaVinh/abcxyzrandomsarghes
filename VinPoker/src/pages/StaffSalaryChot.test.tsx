@@ -67,3 +67,22 @@ it('requires explicit method and a transfer reference before recording FT paymen
   fireEvent.click(confirm);
   expect(f.markPaid).toHaveBeenCalledExactlyOnceWith({runId:'run-ft',method:'bank_transfer',reference:'TEST-REF'});
 });
+
+it('shows the original stored payment method and reference after the report reloads', () => {
+  const paid={...pt,runId:'paid-ft',fullName:'FT paid snapshot',employmentType:'full_time',status:'paid',
+    netVnd:5000000,grossVnd:5000000,paidAt:'2026-11-26T12:00:00Z',paymentMethod:'bank_transfer',paymentReference:'ORIGINAL-TRANSFER'};
+  f.month={...f.month,isError:false,data:{status:'approved',hasRuns:true,lockedRows:[paid],totalGrossVnd:5000000,totalNetVnd:5000000}};
+  mount();
+  expect(screen.getByText('Chuyển khoản')).toBeVisible();
+  expect(screen.getByText('ORIGINAL-TRANSFER')).toBeVisible();
+  expect(screen.queryByRole('button',{name:'Đánh dấu trả'})).toBeNull();
+  expect(f.markPaid).not.toHaveBeenCalled();
+});
+
+it('does not guess cash for a legacy paid row without verified payment metadata', () => {
+  const paid={...pt,runId:'legacy-ft',fullName:'FT legacy paid',employmentType:'full_time',status:'paid'};
+  f.month={...f.month,isError:false,data:{status:'approved',hasRuns:true,lockedRows:[paid],totalGrossVnd:15792,totalNetVnd:15792}};
+  mount();
+  expect(screen.getByText('Chưa rõ phương thức')).toBeVisible();
+  expect(screen.queryByText('Tiền mặt')).toBeNull();
+});

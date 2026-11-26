@@ -48,3 +48,4 @@ head -n 1 "$work/retry" | jq -e --arg run "$run" '.status=="paid" and .run_id==$
 [[ "$(psql -XqAt -v ON_ERROR_STOP=1 -c 'SELECT sum(amount) FROM l02_payment_fixture.effective_payments')" == 5000000 ]]
 psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.intent.sql
 psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.input.sql
+psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.report.sql

@@ -23,6 +23,9 @@ export interface SalaryRow {
   alreadyLocked?: boolean; // preview rows: a locked run already exists for this staff
   runId?: string | null; // locked rows only
   status?: string | null; // locked rows only ('locked' | 'paid')
+  paidAt?: string | null;
+  paymentMethod?: string | null;
+  paymentReference?: string | null;
 }
 
 export interface SalaryMonthView {

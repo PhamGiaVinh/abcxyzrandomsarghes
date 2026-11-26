@@ -5,6 +5,7 @@ on:
       - '.github/workflows/staff-ft-payment-db.yml'
       - 'VinPoker/tests/staffSalary/l02Payment.*'
       - 'VinPoker/supabase/pending-migrations/20261126131948_staff_ft_payment_intent_v1.sql'
+      - 'VinPoker/supabase/pending-migrations/20261126135235_staff_salary_payment_report_v1.sql'
 permissions:
   actions: read
   contents: read
@@ -56,6 +57,7 @@ jobs:
           test "$PGHOST" = 127.0.0.1
           test "$PGDATABASE" = vinpoker_ops_l02
           psql -X -v ON_ERROR_STOP=1 --single-transaction -f supabase/pending-migrations/20261126131948_staff_ft_payment_intent_v1.sql
+          psql -X -v ON_ERROR_STOP=1 --single-transaction -f supabase/pending-migrations/20261126135235_staff_salary_payment_report_v1.sql
       - name: Race and replay approved FT payments as authenticated staff
         working-directory: VinPoker
         run: bash tests/staffSalary/l02Payment.concurrent.sh
