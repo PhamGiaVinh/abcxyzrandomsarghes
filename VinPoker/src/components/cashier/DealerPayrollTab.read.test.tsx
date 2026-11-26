@@ -362,3 +362,49 @@ it('allows payment in a newly selected club while ignoring the old club completi
   expect(state.success).not.toHaveBeenCalled();
  }finally{await act(async()=>finish({data:'11111111-1111-4111-8111-111111111111',error:null}));view.unmount();Reflect.deleteProperty(HTMLElement.prototype,'scrollIntoView');}
 });
+
+it('loads a controlled historical month beyond the local month menu and replaces it explicitly',async()=>{
+ editablePayroll();const v=render(<DealerPayrollTab clubIds={['club']} clubs={[{id:'club',name:'TEST'}]} payrollMonth={{year:2024,month:2}}/>);
+ await waitFor(()=>expect(state.fetch).toHaveBeenLastCalledWith('club','2024-02-01','2024-02-29'));
+ expect(state.saved).toHaveBeenLastCalledWith('club',2024,2);
+ v.rerender(<DealerPayrollTab clubIds={['club']} clubs={[{id:'club',name:'TEST'}]} payrollMonth={{year:2024,month:3}}/>);
+ await waitFor(()=>expect(state.fetch).toHaveBeenLastCalledWith('club','2024-03-01','2024-03-31'));
+ expect(state.saved).toHaveBeenLastCalledWith('club',2024,3);
+});
+it('does not publish saved rows from the previous month after a controlled month change',async()=>{
+ let resolveOld!:(value:unknown)=>void;
+ state.saved.mockImplementationOnce(()=>new Promise(done=>{resolveOld=done;})).mockImplementation(()=>new Promise(()=>{}));
+ const props={clubIds:['club'],clubs:[{id:'club',name:'TEST'}]};
+ const v=render(<DealerPayrollTab {...props} payrollMonth={{year:2024,month:2}}/>);
+ await waitFor(()=>expect(state.saved).toHaveBeenCalledWith('club',2024,2));
+ v.rerender(<DealerPayrollTab {...props} payrollMonth={{year:2024,month:3}}/>);
+ await waitFor(()=>expect(state.saved).toHaveBeenCalledWith('club',2024,3));
+ await act(async()=>resolveOld({periodId:'old-paid',status:'paid',records:[]}));
+ expect(state.adjustments).not.toHaveBeenCalled();expect(state.payment).not.toHaveBeenCalled();
+ expect(screen.getByRole('status')).toHaveTextContent('Đang xác minh trạng thái kỳ lương');
+});
+it('allows March work while an old February save is pending and ignores its late completion',async()=>{
+ editablePayroll();let finish!:(value:unknown)=>void;state.save.mockImplementationOnce(()=>new Promise(done=>{finish=done;}));
+ const props={clubIds:['club'],clubs:[{id:'club',name:'TEST'}]};
+ const v=render(<DealerPayrollTab {...props} payrollMonth={{year:2024,month:2}}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Lưu bảng lương'}));expect(state.save).toHaveBeenCalledTimes(1);
+ v.rerender(<DealerPayrollTab {...props} payrollMonth={{year:2024,month:3}}/>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Lưu bảng lương'})).toBeEnabled());
+ await act(async()=>finish({periodId:'2236ec97-2f12-402f-8912-025d238d5618',savedCount:1}));
+ expect(state.success).not.toHaveBeenCalled();expect(state.save).toHaveBeenCalledTimes(1);
+ expect(state.pending).toMatchObject({year:2024,month:2});
+});
+it('does not release a new month save lock when the previous month finishes',async()=>{
+ editablePayroll();let finishFebruary!:(value:unknown)=>void,finishMarch!:(value:unknown)=>void;
+ state.save.mockImplementationOnce(()=>new Promise(done=>{finishFebruary=done;})).mockImplementationOnce(()=>new Promise(done=>{finishMarch=done;}));
+ const props={clubIds:['club'],clubs:[{id:'club',name:'TEST'}]};
+ const v=render(<DealerPayrollTab {...props} payrollMonth={{year:2024,month:2}}/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Lưu bảng lương'}));
+ v.rerender(<DealerPayrollTab {...props} payrollMonth={{year:2024,month:3}}/>);
+ await waitFor(()=>expect(screen.getByRole('button',{name:'Lưu bảng lương'})).toBeEnabled());
+ fireEvent.click(screen.getByRole('button',{name:'Lưu bảng lương'}));expect(state.save).toHaveBeenCalledTimes(2);
+ await act(async()=>finishFebruary({periodId:'2236ec97-2f12-402f-8912-025d238d5618',savedCount:1}));
+ expect(screen.getByRole('button',{name:'Kiểm tra kết quả lưu'})).toBeDisabled();expect(state.success).not.toHaveBeenCalled();
+ await act(async()=>finishMarch({periodId:'3236ec97-2f12-402f-8912-025d238d5618',savedCount:1}));
+ expect(state.success).toHaveBeenCalledTimes(1);expect(state.save).toHaveBeenCalledTimes(2);
+});
