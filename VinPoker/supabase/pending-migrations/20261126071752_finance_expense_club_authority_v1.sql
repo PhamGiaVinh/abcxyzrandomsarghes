@@ -7,6 +7,18 @@ BEGIN;
 LOCK TABLE public.club_expenses IN SHARE ROW EXCLUSIVE MODE NOWAIT;
 DO $guard$
 BEGIN
+  IF EXISTS (SELECT FROM pg_proc p JOIN pg_roles r ON r.oid=p.proowner
+    WHERE p.oid IN ('public.record_club_expense(uuid,public.expense_category,bigint,timestamptz,text,text,text,uuid,uuid,text,uuid,text)'::regprocedure,
+      'public.get_club_expenses(uuid,timestamptz,timestamptz)'::regprocedure)
+    AND (r.rolname <> 'postgres' OR NOT p.prosecdef
+      OR p.proacl::text IS DISTINCT FROM '{postgres=X/postgres,authenticated=X/postgres,service_role=X/postgres}')) THEN
+    RAISE EXCEPTION 'expense_authority_metadata_drift';
+  END IF;
+  IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid='public.club_expenses'::regclass)
+    OR (SELECT array_agg(polname::text ORDER BY polname) FROM pg_policy WHERE polrelid='public.club_expenses'::regclass)
+      IS DISTINCT FROM ARRAY['club_expenses_select_accountant','club_expenses_select_operator'] THEN
+    RAISE EXCEPTION 'expense_authority_rls_drift';
+  END IF;
   IF (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.record_club_expense(uuid,public.expense_category,bigint,timestamptz,text,text,text,uuid,uuid,text,uuid,text)'::regprocedure)
     IS DISTINCT FROM 'a96cdd76edcbfb03cc1812b26047e179'
     OR (SELECT md5(prosrc) FROM pg_proc WHERE oid='public.get_club_expenses(uuid,timestamptz,timestamptz)'::regprocedure)
@@ -15,6 +27,8 @@ BEGIN
   END IF;
 END $guard$;
 CREATE TEMP TABLE expense_authority_expected (LIKE public.club_expenses) ON COMMIT DROP;
+CREATE POLICY expense_authority_accountant_expected ON pg_temp.expense_authority_expected
+  FOR SELECT TO authenticated USING (public.is_club_accountant(auth.uid(),club_id));
 CREATE POLICY "expense_authority_expected" ON pg_temp.expense_authority_expected FOR SELECT TO "authenticated" USING (("public"."has_role"("auth"."uid"(), 'super_admin'::"public"."app_role") OR "public"."has_role"("auth"."uid"(), 'club_admin'::"public"."app_role") OR (EXISTS ( SELECT 1
    FROM "public"."clubs" "c"
   WHERE (("c"."id" = expense_authority_expected.club_id) AND ("c"."owner_id" = "auth"."uid"())))) OR (EXISTS ( SELECT 1
@@ -30,6 +44,14 @@ BEGIN
   IF ROW(actual.polcmd,actual.polpermissive,actual.polroles,actual.expression)
     IS DISTINCT FROM ROW(expected.polcmd,expected.polpermissive,expected.polroles,expected.expression) THEN
     RAISE EXCEPTION 'expense_authority_policy_preimage_drift';
+  END IF;
+  SELECT polcmd,polpermissive,polroles,pg_get_expr(polqual,polrelid) AS expression
+    INTO STRICT actual FROM pg_policy WHERE polrelid='public.club_expenses'::regclass AND polname='club_expenses_select_accountant';
+  SELECT polcmd,polpermissive,polroles,pg_get_expr(polqual,polrelid) AS expression
+    INTO STRICT expected FROM pg_policy WHERE polrelid='pg_temp.expense_authority_expected'::regclass AND polname='expense_authority_accountant_expected';
+  IF ROW(actual.polcmd,actual.polpermissive,actual.polroles,actual.expression)
+    IS DISTINCT FROM ROW(expected.polcmd,expected.polpermissive,expected.polroles,expected.expression) THEN
+    RAISE EXCEPTION 'expense_authority_accountant_policy_drift';
   END IF;
 END $policy_guard$;
 CREATE OR REPLACE FUNCTION public.record_club_expense(

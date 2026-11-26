@@ -27,6 +27,21 @@ function token(actor){const enc=v=>Buffer.from(JSON.stringify(v)).toString('base
 async function request(path,args,actor){const r=await fetch(api+path,{method:args===undefined?'GET':'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token(actor)}`},...(args===undefined?{}:{body:JSON.stringify(args)}),signal:AbortSignal.timeout(12000)});return {status:r.status,data:await r.json()};}
 const range=club=>({p_club_id:club,p_from:'2026-10-01T00:00:00+07:00',p_to:'2026-11-01T00:00:00+07:00'});
 const intent=(club,key)=>({p_club_id:club,p_category:'rent',p_amount_vnd:1000000,p_incurred_at:'2026-10-10T08:00:00+07:00',p_description:'Synthetic cross-club authorization test',p_payment_status:'unpaid',p_payment_source:null,p_tournament_id:null,p_series_id:null,p_attachment_url:null,p_adjusts_id:null,p_idempotency_key:key});
+const candidate='supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql';
+const writer="public.record_club_expense(uuid,public.expense_category,bigint,timestamptz,text,text,text,uuid,uuid,text,uuid,text)";
+const reader='public.get_club_expenses(uuid,timestamptz,timestamptz)';
+const snapshot=()=>read(`SELECT jsonb_build_object('functions',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.oid) FROM pg_proc p WHERE p.oid IN ('${writer}'::regprocedure,'${reader}'::regprocedure)),'policies',(SELECT jsonb_agg(to_jsonb(p) ORDER BY p.polname) FROM pg_policy p WHERE p.polrelid='public.club_expenses'::regclass),'expenses',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.club_expenses e),'rls',(SELECT relrowsecurity FROM pg_class WHERE oid='public.club_expenses'::regclass))`);
+function refusedApply(expected){const before=snapshot();const r=spawnSync('psql',['-Xq','-v','ON_ERROR_STOP=1','-f',candidate],{encoding:'utf8'});assert.notEqual(r.status,0);assert.ok(r.stderr.includes(expected),r.stderr.slice(0,1000));assert.deepEqual(snapshot(),before);}
+function guardFaults(){
+ const faults=[
+  {name:'disabled-rls',change:'ALTER TABLE public.club_expenses DISABLE ROW LEVEL SECURITY',restore:'ALTER TABLE public.club_expenses ENABLE ROW LEVEL SECURITY',error:'expense_authority_rls_drift'},
+  {name:'extra-permissive-policy',change:'CREATE POLICY expense_authority_fault ON public.club_expenses FOR SELECT TO authenticated USING(true)',restore:'DROP POLICY expense_authority_fault ON public.club_expenses',error:'expense_authority_rls_drift'},
+  {name:'changed-accountant-policy',change:'ALTER POLICY club_expenses_select_accountant ON public.club_expenses USING(true)',restore:'ALTER POLICY club_expenses_select_accountant ON public.club_expenses USING(public.is_club_accountant(auth.uid(),club_id))',error:'expense_authority_accountant_policy_drift'},
+  {name:'unexpected-execute-grant',change:`GRANT EXECUTE ON FUNCTION ${writer} TO anon`,restore:`REVOKE EXECUTE ON FUNCTION ${writer} FROM anon`,error:'expense_authority_metadata_drift'},
+ ];
+ for(const fault of faults){sql(fault.change);refusedApply(fault.error);sql(fault.restore);}
+ proof.preimageFaults=faults.map(f=>({name:f.name,refusedAtomically:true}));
+}
 async function phase(name,index,isolated=false){
  const a={club:id(index*10+1),owner:id(index*10+2)},b={club:id(index*10+3),owner:id(index*10+4)};
  sql(`INSERT INTO auth.users(id) VALUES('${a.owner}'),('${b.owner}');
@@ -78,10 +93,16 @@ try{
  for(const [file] of sqlFiles)command('psql',['-Xq','-v','ON_ERROR_STOP=1','--single-transaction','-f',file]);
  sql("NOTIFY pgrst,'reload schema'");
  await phase('candidate-e231-frozen-sql',2);
- command('psql',['-Xq','-v','ON_ERROR_STOP=1','-f','supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql']);
+ guardFaults();
+ const beforeFix=snapshot();
+ command('psql',['-Xq','-v','ON_ERROR_STOP=1','-f',candidate]);
+ const afterFix=snapshot();assert.deepEqual(afterFix.expenses,beforeFix.expenses);
+ for(let i=0;i<beforeFix.functions.length;i++){const old=beforeFix.functions[i],fixed=afterFix.functions[i];for(const key of Object.keys(old).filter(k=>k!=='prosrc'))assert.deepEqual(fixed[key],old[key],key);}
+ proof.functionMetadataAndExistingExpensesPreserved=true;
+ refusedApply('expense_authority_function_preimage_drift');proof.repeatApplyRefusedAtomically=true;
  sql("NOTIFY pgrst,'reload schema'");
  await phase('candidate-club-authority-fix',3,true);
- proof.candidateMigrationSha256=createHash('sha256').update(readFileSync('supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql')).digest('hex');
+ proof.candidateMigrationSha256=createHash('sha256').update(readFileSync(candidate)).digest('hex');
  proof.finding='P1: club_admin global shortcut bypasses club scope in expense reader, table SELECT policy and generic expense writer; normal club owner receives this role in AdminUsers.assignClub';
  writeFileSync(join(folder,'reproduction.json'),JSON.stringify(proof,null,2));console.log('CROSS_CLUB_EXPENSE_AUTHORITY_VIOLATION_REPRODUCED_NOT_QUALIFIED');
 }catch(e){let message=String(e.message).replaceAll(secret,'[REDACTED]');for(const t of tokens)message=message.replaceAll(t,'[REDACTED]');writeFileSync(join(folder,'failure.json'),JSON.stringify({...proof,error:message},null,2));console.error('AUTHORITY_DIAGNOSTIC_FAILED',message);process.exitCode=1;}
