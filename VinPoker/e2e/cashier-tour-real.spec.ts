@@ -2140,7 +2140,14 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   };
   phase='felt';await viewer.goto('/live/'+tour+'?tableId='+hand.tournament_table_id+'&tab=hands');
   await openTable();checks.actualTableOpen=true;
-  const seat=viewer.getByRole('button').filter({has:viewer.getByTestId('felt-stack-'+player)});await expect(seat).toBeVisible({timeout:15000});
+  // The nameplate changes Chip/BB; the separate avatar opens the player HUD.
+  // Resolve its accessible name from the actual player's rendered plate rather
+  // than clicking a different control and waiting for an RPC it never sends.
+  const unitPlate=viewer.getByRole('button').filter({has:viewer.getByTestId('felt-stack-'+player)});await expect(unitPlate).toBeVisible({timeout:15000});
+  const plateLabel=await unitPlate.getAttribute('aria-label'),unitSuffix=' · Chip / BB';
+  expect(plateLabel?.endsWith(unitSuffix)).toBe(true);
+  const hudName=plateLabel!.slice(0,-unitSuffix.length);expect(hudName.length).toBeGreaterThan(0);
+  const seat=viewer.getByRole('button',{name:hudName,exact:true});await expect(seat).toBeVisible({timeout:15000});
   const responseFor=(name:string)=>viewer.waitForResponse(response=>{if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/'+name))return false;const args=response.request().postDataJSON();return args?.p_tournament_id===tour&&args?.p_player_id===player;},{timeout:10000});
   const summaryResponse=responseFor('get_public_player_hud_summary_v1'),historyResponse=responseFor('get_public_player_hud_history_v1');void summaryResponse.catch(()=>{});void historyResponse.catch(()=>{});
   const firstHudOpen={iteration:0,kind:'first-open' as const,warmup:false,summaryVisibleMs:null as number|null,historyVisibleMs:null as number|null,status:'pending' as 'pending'|'passed'};hudOpenSamples.push(firstHudOpen);
@@ -2448,7 +2455,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page}
   phase='register-and-pay';report();
   for(const actor of staff){const actorHeaders={...headers,Authorization:'Bearer '+actor.token},registered=await request('tournament-register','/functions/v1/tournament-register',{tournament_id:tour},actorHeaders);expect(registered.success).toBe(true);expect(Number(registered.total_pay)).toBe(6600000);
    const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registered.registration_id,amount:6600000,request_id:crypto.randomUUID()},args={p_intent:intent,p_action:'record'};
-   const paid=await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders);expect(paid).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});expect(await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders)).toEqual(paid);
+   const paid=await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders);expect(paid,JSON.stringify({seatingState:paid.result?.seating_state,reason:paid.result?.reason==='seating_exception'?'seating_exception':null})).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});expect(await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders)).toEqual(paid);
   }
   const before=await roster();expect(before).toHaveLength(1);expect(before[0].seats).toHaveLength(3);expect(before[0].seats.reduce((n,s)=>n+s.chip_count,0)).toBe(60000);
   phase='prepare-and-apply-payout';report();const prepare={p_tournament_id:tour,p_itm_percent:0.2,p_archetype:'DAILY',p_min_cash_x:1,p_rounding_unit:1000,p_prize_pool_override:null,p_override_reason:null,p_regenerate:false,p_reason:'isolated canonical paid prize HTTP',p_custom_percents:null};
