@@ -1,0 +1,19 @@
+# R03 — tournament photo read context
+
+Mode: CRITICAL, user/session/tournament read lifecycle. Base `23617d3ead5651c823b14db26226b54077da44be`; separate from frozen Cashier PR1821.
+
+A Media/Floor operator viewing tournament A then B must see only B's verified gallery. A late A response cannot replace it, a read failure is unknown rather than zero photos, and an actor/session change immediately disposes the previous workspace. Upload is unavailable while the selected gallery is unverified.
+
+Four baseline component cases failed: late A replaced B, B errors looked empty, the previous actor's gallery survived, and rejected photo reads had no contained retry path. The candidate keys the workspace by actor/session, binds each photo snapshot and request generation to its tournament, aborts superseded reads, reuses the existing ten-second read observer and exposes a retryable unknown state. It validates the returned tournament IDs. The existing upload/delete writers, membership policy and CMS publication authority are not redesigned in this slice.
+
+Evidence lives outside Git at `D:/Quy-trinh-hud-scale-evidence/r03-photo-scope-20261127/`. Four baseline failures are preserved in `red.json`; nine corrected component cases pass in `focused-clock-corrected.json`. The earlier fake-clock test timeout is retained; its correction uses a synchronous selection event after the controlled clock is installed. These are mocked component boundaries, not actual Storage/API or production proof.
+
+Remaining full R03 requirements include live membership withdrawal while open, scoped Media navigation versus global CMS, original async upload/delete lifecycle and server permissions, publication policy, native Storage/API/browser qualification, and controlled release. The captured November-19 public schema contains neither `club_media`, `media_club_ids` nor `tournament_photos`; the existing rollout documents explicitly identify them as source-only. Absence in a capture is not a current production catalog observation. Do not replay historical migrations or invent production objects to make a browser test pass. Verify the actual target and prepare any required new backend package separately with the current runbook and exact approval.
+
+Read-only inspection of the retained isolated Auth v2 database also found `club_media`, `media_club_ids`, `tournament_photos` and `is_club_floor_or_media` absent; `floor_club_ids` and `storage.buckets` exist. `local-catalog.json` records the exact owned datadir and loopback port. No DDL/DML was run; the owned cluster was stopped again. The owner question about club Media publishing directly versus drafting for approval is pending; do not infer an answer or change publication policy while waiting.
+
+Targeted lint has the same ten existing errors as `origin/main` (explicit-any casts and an irregular character in an old comment); there are no added lint errors/warnings, and the new test file is clean. One added ref-cleanup warning was corrected by capturing the stable request object inside its effect. The existing Ops workflow gains only this component/test path trigger and test argument, preserving all permissions and runtime checks.
+
+The first full compiler run rejected the generated client's missing-relation inference. The corrected code accepts its wire payload as `unknown` and validates the DTO before using it. Nine final component cases, full `tsc -b` (session 77663) and Vite build (session 96279, 1m21s) pass. Independent review passed the final DTO/cleanup and the three-line CI routing delta. Actual missing-backend browser qualification is the next check; successful source/build checks do not establish gallery upload or storage capability.
+
+Frontend rollback restores the previous component; no DB, Edge, feature flag, receipt or financial action changes are included. Do not call the entire R03 ticket or any hosted capability complete from these component checks.
