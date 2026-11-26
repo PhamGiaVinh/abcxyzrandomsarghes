@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/finance-expense-authority.yml'
       - 'VinPoker/tests/financeExpenseAuthority/**'
+      - 'VinPoker/supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql'
 permissions: {actions: read, contents: read}
 jobs:
   authority-runtime:

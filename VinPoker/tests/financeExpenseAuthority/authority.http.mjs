@@ -27,7 +27,7 @@ function token(actor){const enc=v=>Buffer.from(JSON.stringify(v)).toString('base
 async function request(path,args,actor){const r=await fetch(api+path,{method:args===undefined?'GET':'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token(actor)}`},...(args===undefined?{}:{body:JSON.stringify(args)}),signal:AbortSignal.timeout(12000)});return {status:r.status,data:await r.json()};}
 const range=club=>({p_club_id:club,p_from:'2026-10-01T00:00:00+07:00',p_to:'2026-11-01T00:00:00+07:00'});
 const intent=(club,key)=>({p_club_id:club,p_category:'rent',p_amount_vnd:1000000,p_incurred_at:'2026-10-10T08:00:00+07:00',p_description:'Synthetic cross-club authorization test',p_payment_status:'unpaid',p_payment_source:null,p_tournament_id:null,p_series_id:null,p_attachment_url:null,p_adjusts_id:null,p_idempotency_key:key});
-async function phase(name,index){
+async function phase(name,index,isolated=false){
  const a={club:id(index*10+1),owner:id(index*10+2)},b={club:id(index*10+3),owner:id(index*10+4)};
  sql(`INSERT INTO auth.users(id) VALUES('${a.owner}'),('${b.owner}');
  INSERT INTO public.profiles(user_id,display_name) VALUES('${a.owner}','Authority TEST A ${index}'),('${b.owner}','Authority TEST B ${index}');
@@ -40,6 +40,26 @@ async function phase(name,index){
  const foreignRead=await request('/rpc/get_club_expenses',range(a.club),b.owner);
  const directRead=await request(`/club_expenses?club_id=eq.${a.club}&select=id,club_id,amount_vnd`,undefined,b.owner);
  const foreignWrite=await request('/rpc/record_club_expense',intent(a.club,`${name}-foreign-b`),b.owner);
+ if(isolated){
+  assert.equal(foreignRead.status,403);assert.equal(foreignRead.data.code,'42501');
+  assert.equal(directRead.status,200);assert.deepEqual(directRead.data,[]);
+  assert.equal(foreignWrite.status,403);assert.equal(foreignWrite.data.code,'42501');
+  assert.equal(sql(`SELECT count(*) FROM public.club_expenses WHERE club_id='${a.club}' AND entered_by='${b.owner}'`),'0');
+  const before=read(`SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.club_expenses e WHERE club_id='${a.club}'`);
+  sql(`INSERT INTO public.club_accountants(club_id,user_id) VALUES('${a.club}','${b.owner}')`);
+  const grantedRead=await request('/rpc/get_club_expenses',range(a.club),b.owner);assert.equal(grantedRead.status,200);assert.equal(grantedRead.data.rows.length,1);
+  const grantedWrite=await request('/rpc/record_club_expense',intent(a.club,`${name}-accountant`),b.owner);assert.equal(grantedWrite.status,200);assert.equal(grantedWrite.data.status,'ok');
+  const replay=await request('/rpc/record_club_expense',intent(a.club,`${name}-accountant`),b.owner);assert.equal(replay.status,200);assert.equal(replay.data.expense_id,grantedWrite.data.expense_id);assert.equal(replay.data.idempotent,true);
+  sql(`DELETE FROM public.club_accountants WHERE club_id='${a.club}' AND user_id='${b.owner}'`);
+  const revokedRead=await request('/rpc/get_club_expenses',range(a.club),b.owner);assert.equal(revokedRead.status,403);
+  const revokedReplay=await request('/rpc/record_club_expense',intent(a.club,`${name}-accountant`),b.owner);assert.equal(revokedReplay.status,403);
+  const ownRead=await request('/rpc/get_club_expenses',range(b.club),b.owner);assert.equal(ownRead.status,200);assert.equal(ownRead.data.rows.length,1);
+  const after=read(`SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM public.club_expenses e WHERE club_id='${a.club}'`);
+  assert.deepEqual(after.filter(e=>e.id===own.data.expense_id),before);
+  assert.equal(after.length,2);assert.equal(after.reduce((sum,e)=>sum+Number(e.amount_vnd),0),2000000);
+  proof.phases.push({name,isolationInvariantPassed:true,foreignReadDenied:true,foreignTableRows:0,foreignWriteDenied:true,foreignCommittedRows:0,explicitAccountantGranted:true,sameIntentReplay:true,revokedReadAndReplayDenied:true,otherClubStillAccessible:true,originalExpenseUnchanged:true});
+  return;
+ }
  // This is deliberately a reproduction receipt, never an authorization PASS.
  assert.equal(foreignRead.status,200);assert.equal(foreignRead.data.rows.length,1);assert.equal(foreignRead.data.rows[0].id,own.data.expense_id);
  assert.equal(directRead.status,200);assert.equal(directRead.data.length,1);assert.equal(directRead.data[0].id,own.data.expense_id);
@@ -58,6 +78,10 @@ try{
  for(const [file] of sqlFiles)command('psql',['-Xq','-v','ON_ERROR_STOP=1','--single-transaction','-f',file]);
  sql("NOTIFY pgrst,'reload schema'");
  await phase('candidate-e231-frozen-sql',2);
+ command('psql',['-Xq','-v','ON_ERROR_STOP=1','-f','supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql']);
+ sql("NOTIFY pgrst,'reload schema'");
+ await phase('candidate-club-authority-fix',3,true);
+ proof.candidateMigrationSha256=createHash('sha256').update(readFileSync('supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql')).digest('hex');
  proof.finding='P1: club_admin global shortcut bypasses club scope in expense reader, table SELECT policy and generic expense writer; normal club owner receives this role in AdminUsers.assignClub';
  writeFileSync(join(folder,'reproduction.json'),JSON.stringify(proof,null,2));console.log('CROSS_CLUB_EXPENSE_AUTHORITY_VIOLATION_REPRODUCED_NOT_QUALIFIED');
 }catch(e){let message=String(e.message).replaceAll(secret,'[REDACTED]');for(const t of tokens)message=message.replaceAll(t,'[REDACTED]');writeFileSync(join(folder,'failure.json'),JSON.stringify({...proof,error:message},null,2));console.error('AUTHORITY_DIAGNOSTIC_FAILED',message);process.exitCode=1;}
