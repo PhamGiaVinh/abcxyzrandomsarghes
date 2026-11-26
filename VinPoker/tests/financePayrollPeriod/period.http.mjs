@@ -128,10 +128,13 @@ try{
  await delayed.getByLabel('Kỳ lương',{exact:true}).fill('2024-03');
  await delayed.waitForFunction(()=>document.body.innerText.includes('200.000'));
  const oldReply=delayed.waitForResponse(response=>response.url().endsWith('/rpc/get_staff_salary_report')&&response.request().postDataJSON().p_month===2);
- release();await oldReply;await delayed.getByRole('heading',{name:'Bảng lương 03/2024',exact:true}).waitFor();
+ release();const oldResponse=await oldReply;assert.equal(await oldResponse.finished(),null,'old response body must finish');
+ await delayed.getByRole('heading',{name:'Bảng lương 03/2024',exact:true}).waitFor();
  // Wait for the original HTTP response to be consumed, then inspect the rendered amount.
  await delayed.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
- assert.ok(!(await delayed.locator('body').innerText()).includes('100.000'),'late February response cannot replace March');
+ const afterOldReply=await delayed.locator('body').innerText();
+ assert.ok(afterOldReply.includes('200.000'),'March amount remains after consuming old response');
+ assert.ok(!afterOldReply.includes('100.000'),'late February response cannot replace March');
  await delayed.screenshot({path:join(folder,'payroll-375-stale-february-ignored.png'),fullPage:true,animations:'disabled'});await delayed.close();
  const denied=await fetch(api+'/rpc/get_staff_salary_report',{method:'POST',signal:AbortSignal.timeout(5000),headers:{'Content-Type':'application/json',Authorization:`Bearer ${otherJwt}`},body:JSON.stringify({p_club_id:club,p_year:2024,p_month:2})});
  assert.equal(denied.status,403);assert.equal((await denied.json()).code,'42501');
