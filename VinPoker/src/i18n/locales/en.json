@@ -168,7 +168,7 @@
   },
   "tv": {
     "levelSoundOn": "Sound on",
-    "levelSoundOff": "Enable sound",
+    "levelSoundOff": "Enable sound", "testSound": "Test sound", "soundUnavailable": "Audio could not be enabled. Check this tab and your device sound settings.",
     "level": "Level",
     "blinds": "Blinds",
     "ante": "Ante",

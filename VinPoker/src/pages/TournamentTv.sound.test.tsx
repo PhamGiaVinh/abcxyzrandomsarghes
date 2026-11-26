@@ -6,7 +6,7 @@ import TournamentTv from './TournamentTv';
 const fixture = vi.hoisted(() => ({
   live: { state: 'ready', data: null as TvData | null, realtimeStatus: 'online' },
   redraw: { state: 'empty', data: null },
-  enableTvLevelAudio: vi.fn(), playTvLevelChime: vi.fn(),
+  enableTvLevelAudio: vi.fn(), playTvLevelChime: vi.fn(), playTvCountdownTone: vi.fn(), stopTvLevelAudio: vi.fn(),
 }));
 vi.mock('react-router-dom', () => ({ useParams: () => ({ tournamentId: 'test' }), useSearchParams: () => [new URLSearchParams()] }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
@@ -14,7 +14,7 @@ vi.mock('@/hooks/useTournamentTvData', () => ({ useTournamentTvData: () => fixtu
 vi.mock('@/hooks/useTournamentRedrawTv', () => ({ useTournamentRedrawTv: () => fixture.redraw }));
 vi.mock('@/lib/tv/mockTvData', () => ({ useMockTvData: () => null }));
 vi.mock('@/lib/featureFlags', () => ({ FEATURES: { tournamentClockV2: true, floorRedrawSeatLockV1: true } }));
-vi.mock('@/lib/sound', () => ({ enableTvLevelAudio: fixture.enableTvLevelAudio, playTvLevelChime: fixture.playTvLevelChime }));
+vi.mock('@/lib/sound', () => ({ enableTvLevelAudio: fixture.enableTvLevelAudio, playTvLevelChime: fixture.playTvLevelChime, playTvCountdownTone: fixture.playTvCountdownTone, stopTvLevelAudio: fixture.stopTvLevelAudio }));
 vi.mock('@/components/tv/TvChrome', () => ({ TvChrome: ({ children, overlay }: { children: React.ReactNode; overlay: React.ReactNode }) => <>{children}{overlay}</> }));
 vi.mock('@/components/tv/TvBroadcastBoard', () => ({ TvBroadcastBoard: () => <div>Clock</div> }));
 
