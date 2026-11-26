@@ -267,7 +267,10 @@ export function useSalaryActions(
         timer=setTimeout(()=>reject(Error(unknown)),20_000);
       })]);
       assertContext();if(error)throw error;
-      if(data&&typeof data==='object'&&!Array.isArray(data)&&typeof data.error==='string'&&data.error.trim())throw Error(data.detail??data.error);
+      if(data&&typeof data==='object'&&!Array.isArray(data)&&typeof data.error==='string'&&data.error.trim()){
+        if(fn==='mark_staff_salary_paid'&&data.error==='STALE_SALARY_RUN')throw Error('Bản lương đã thay đổi. Bảng lương đang được tải lại; hãy đối chiếu trước khi ghi chi.');
+        throw Error(data.detail??data.error);
+      }
       const verified=receipt(fn,args,data);
       if (fn === "mark_staff_salary_paid" && verified.idempotent === true) {
         toast.success("Phiếu lương đã được ghi chi trước đó. Hệ thống giữ thông tin chi hiện có.");

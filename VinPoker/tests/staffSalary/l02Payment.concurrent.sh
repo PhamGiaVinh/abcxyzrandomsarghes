@@ -49,3 +49,4 @@ head -n 1 "$work/retry" | jq -e --arg run "$run" '.status=="paid" and .run_id==$
 psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.intent.sql
 psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.input.sql
 psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.report.sql
+psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.stale.sql

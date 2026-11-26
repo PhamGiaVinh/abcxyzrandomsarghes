@@ -118,3 +118,16 @@ it('does not announce success when the server reports a stored payment intent co
   expect(f.success).not.toHaveBeenCalled();
   expect(f.error).toHaveBeenCalledWith(detail);
 });
+
+it('explains a replaced salary run and reloads the current report without announcing payment', async () => {
+  const detail='Bản lương đã thay đổi. Bảng lương đang được tải lại; hãy đối chiếu trước khi ghi chi.';
+  f.rpc.mockImplementation(fn=>Promise.resolve({data:fn==='get_staff_salary_report'?saved:{
+    error:'STALE_SALARY_RUN',run_id:runId,status:'voided',
+  },error:null}));
+  const view=mount();
+  const invalidate=vi.spyOn(clients.at(-1)!,'invalidateQueries');
+  await act(async()=>{await expect(view.result.current.markPaid.mutateAsync({runId,method:'cash'})).rejects.toThrow(detail);});
+  expect(f.success).not.toHaveBeenCalled();
+  expect(f.error).toHaveBeenCalledWith(detail);
+  expect(invalidate).toHaveBeenCalledWith({queryKey:['staffSalary','month','live','club',2026,10]});
+});
