@@ -24,6 +24,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { formatVND } from "@/lib/format";
+import {financeBusinessToday} from '@/lib/financeSummaryRead';
+import {financePayrollMonthFromValue,financePayrollMonthRange,type FinancePayrollMonth} from '@/lib/financePayrollPeriod';
 import { exportToExcel, type ExcelColumn } from "@/lib/exportExcel";
 import {
   useDealerPayroll, type DealerPayrollRow,
@@ -307,11 +309,11 @@ function MetricCard({ label, value, sub, variant = "default" }: {
 
 function getMonthYearOptions(): { value: string; label: string; start: string; end: string; year: number; month: number }[] {
   const options: { value: string; label: string; start: string; end: string; year: number; month: number }[] = [];
-  const now = new Date();
+  const now = new Date(financeBusinessToday().slice(0,7)+'-01T00:00:00Z');
   for (let i = 0; i < 13; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const year = d.getFullYear();
-    const month = d.getMonth() + 1;
+    const d = new Date(now);d.setUTCMonth(now.getUTCMonth()-i);
+    const year = d.getUTCFullYear();
+    const month = d.getUTCMonth() + 1;
     const pad = (n: number) => String(n).padStart(2, "0");
     const start = `${year}-${pad(month)}-01`;
     const lastDay = new Date(year, month, 0).getDate();
@@ -336,6 +338,7 @@ interface DealerPayrollTabProps {
    */
   hideApprovalActions?: boolean;
   showShiftReviews?: boolean;
+  payrollMonth?: FinancePayrollMonth;
 }
 
 export default function DealerPayrollTab(props: DealerPayrollTabProps) {
@@ -346,12 +349,13 @@ export default function DealerPayrollTab(props: DealerPayrollTabProps) {
   return <DealerPayrollScope key={`${user.id}:${sessionReadEpoch(session)}:${[...props.clubIds].sort().join(':')}`} {...props}/>;
 }
 
-function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftReviews }: DealerPayrollTabProps) {
+function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftReviews, payrollMonth }: DealerPayrollTabProps) {
   const { user, isAdmin } = useAuth();
   const { scope: operatorScope } = useOperatorClubs();
   const monthOptions = useMemo(() => getMonthYearOptions(), []);
-  const [selectedMonth, setSelectedMonth] = useState(monthOptions[0]?.value ?? "");
-  const currentRange = useMemo(() => monthOptions.find((o) => o.value === selectedMonth), [monthOptions, selectedMonth]);
+  const [localMonth, setSelectedMonth] = useState(monthOptions[0]?.value ?? "");
+  const selectedMonth=payrollMonth?financePayrollMonthRange(payrollMonth).value:localMonth;
+  const currentRange = useMemo(() => financePayrollMonthFromValue(selectedMonth), [selectedMonth]);
   const [clubFilter, setClubFilter] = useState<string>(clubIds.length === 1 ? clubIds[0] : "");
 
   const { data: payrollRows, period, loading, error, fetchPayroll } = useDealerPayroll(clubIds);
@@ -432,8 +436,12 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftRevi
   const [adjReason, setAdjReason] = useState("");
   const [adjSaving, setAdjSaving] = useState(false);
   const adjustmentScopeGeneration = useRef(0);
+  const saveLockRef = useRef<{scope:string}|null>(null);
   useEffect(() => {
     adjustmentScopeGeneration.current += 1;
+    // The old period keeps its durable intent; its busy state cannot lock the new one.
+    saveLockRef.current = null;
+    setSaving(false);
     setPaymentBusy(false);
     setPaymentRef("");
     setReconRef("");
@@ -613,12 +621,13 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftRevi
 
   // ── Save payroll ──────────────────────────────────────────────────────────
 
-  const saveLockRef = useRef(false);
   const handleSave = useCallback(async () => {
     if (!user || !activeClubId || !currentRange || !payrollRows.length || saveLockRef.current
       || verifiedSavedScope !== savedReadScope || error || savedReadError) return;
     const scope = savedReadScope;
-    saveLockRef.current = true;
+    const generation=adjustmentScopeGeneration.current;
+    const flight={scope};saveLockRef.current=flight;
+    const current=()=>activeRef.current&&scope===savedReadScopeRef.current&&generation===adjustmentScopeGeneration.current;
     setSaving(true);
     try {
       const intentScope={actorId:user.id,clubId:activeClubId,year:currentRange.year,month:currentRange.month};
@@ -627,7 +636,7 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftRevi
       const intent=persistPayrollSaveIntent(sessionStorage,intentScope);
       setPendingSaveIntent(intent);
       const result = await savePayrollWithIntent(intent,payrollRows);
-      if (!activeRef.current || scope !== savedReadScopeRef.current) return;
+      if (!current()) return;
       clearPayrollSaveIntent(sessionStorage,intent,result);
       setPendingSaveIntent(null);
       setSavedPeriodId(result.periodId);
@@ -635,13 +644,13 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftRevi
       toast.success(`Đã lưu bảng lương — ${result.savedCount} dealer`);
       await refreshAll();
     } catch (e: any) {
-      if (!activeRef.current || scope !== savedReadScopeRef.current) return;
+      if (!current()) return;
       setVerifiedSavedScope(null);
       setSavedReadError('Chưa xác minh được kết quả lưu bảng lương. Hãy tải lại kỳ lương để đọc trạng thái từ server; không gửi lại thao tác khi chưa kiểm tra.');
       toast.error(e?.message ?? "Lỗi lưu bảng lương");
     } finally {
-      saveLockRef.current = false;
-      if (activeRef.current && scope === savedReadScopeRef.current) setSaving(false);
+      if(saveLockRef.current===flight)saveLockRef.current=null;
+      if(current())setSaving(false);
     }
   }, [user, activeClubId, currentRange, payrollRows, refreshAll,verifiedSavedScope,savedReadScope,error,savedReadError]);
 
@@ -1158,7 +1167,7 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftRevi
           </Select>
         )}
 
-        <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+        {!payrollMonth&&<Select value={selectedMonth} onValueChange={setSelectedMonth}>
           <SelectTrigger className="w-40 h-8 text-xs">
             <SelectValue />
           </SelectTrigger>
@@ -1167,7 +1176,7 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftRevi
               <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
             ))}
           </SelectContent>
-        </Select>
+        </Select>}
 
         <Button
           size="sm"

@@ -20,6 +20,10 @@ import { AccountantFnbTab } from "@/components/accountant/AccountantFnbTab";
 import { AccountantFinanceTab } from "@/components/accountant/AccountantFinanceTab";
 import ClubExpenses from "./ClubExpenses";
 import StaffSalaryChot from "./StaffSalaryChot";
+import {Input} from '@/components/ui/input';
+import {Label} from '@/components/ui/label';
+import {financeBusinessToday} from '@/lib/financeSummaryRead';
+import {financePayrollMonthFromValue,resolveFinancePayrollMonth} from '@/lib/financePayrollPeriod';
 
 /**
  * Accountant workspace (/accountant) — the dedicated, role-gated "Kế toán" area, parallel
@@ -37,6 +41,13 @@ export default function AccountantDashboard() {
   const reportDateRange = searchParams.has("from") || searchParams.has("to")
     ? {from: searchParams.get("from") ?? "", to: searchParams.get("to") ?? ""}
     : undefined;
+  const [defaultPayrollMonth]=useState(()=>financePayrollMonthFromValue(financeBusinessToday().slice(0,7)));
+  const payrollScope=resolveFinancePayrollMonth(reportDateRange,defaultPayrollMonth);
+  const selectPayrollMonth=(value:string)=>{
+    let selected:ReturnType<typeof financePayrollMonthFromValue>;
+    try{selected=financePayrollMonthFromValue(value);}catch{return;}
+    setSearchParams(previous=>{const next=new URLSearchParams(previous);next.set('from',selected.start);next.set('to',selected.end);next.delete('payment_id');return next;});
+  };
   const clearReportDateRange = () => setSearchParams(previous => {
     const next = new URLSearchParams(previous);
     next.delete("from");
@@ -146,6 +157,15 @@ export default function AccountantDashboard() {
         </TabsList>
 
         <TabsContent value="salary" className="space-y-3">
+          <div className="space-y-2 rounded-lg border border-border p-3">
+            <Label htmlFor="finance-payroll-month">Kỳ lương</Label>
+            <Input id="finance-payroll-month" type="month" min="0001-01" max="9999-12" className="min-h-11 w-full sm:w-52"
+              value={payrollScope.state==='month'?payrollScope.period.value:''} onChange={event=>selectPayrollMonth(event.target.value)}/>
+            {payrollScope.state==='month'&&payrollScope.partial&&<p className="text-sm text-muted-foreground">Bảng lương áp dụng cho cả tháng; không tính lại lương theo khoảng ngày của báo cáo.</p>}
+          </div>
+          {payrollScope.state!=='month'?<p role="alert" className="rounded-lg border border-border p-3 text-sm">
+            {payrollScope.state==='multiple_months'?'Khoảng ngày trải qua nhiều tháng. Chọn một kỳ lương để xem và thao tác.':'Khoảng ngày chưa hợp lệ. Chọn kỳ lương để tiếp tục.'}
+          </p>:<>
           <details onToggle={event => setShowStaffSettings(event.currentTarget.open)} className="rounded-lg border border-border p-3">
             <summary className="cursor-pointer text-sm font-medium">Danh sách nhân viên và mức lương</summary>
             {showStaffSettings && (activeClub && staffAvailable
@@ -171,7 +191,7 @@ export default function AccountantDashboard() {
 
           {salaryView === "staff" ? (
             activeClub && staffAvailable ? (
-              <StaffSalaryChot embedded scopedClubId={activeClub.id} />
+              <StaffSalaryChot embedded scopedClubId={activeClub.id} payrollMonth={payrollScope.period}/>
             ) : (
               <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
             )
@@ -181,10 +201,12 @@ export default function AccountantDashboard() {
               clubs={[{ id: activeClub.id, name: activeClub.name }]}
               showShiftReviews
               hideApprovalActions={hideApprovalActions}
+              payrollMonth={payrollScope.period}
             />
           ) : (
             <PendingDbNotice state={caps.state === "ok" ? "forbidden" : caps.state} />
           )}
+          </>}
         </TabsContent>
 
         <TabsContent value="expenses">
