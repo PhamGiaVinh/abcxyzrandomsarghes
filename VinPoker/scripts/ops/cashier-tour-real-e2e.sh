@@ -2736,6 +2736,42 @@ COMMIT;
 PRIZE_CLOSE_FRESH_FIXTURE
   prize_close_status=0
   LOCAL_OPERATIONS_PRIZE_CLOSE_ENABLED=1 run_browser_proof '' '' 'final current Floor Cashier prizes close over real Auth HTTP' || prize_close_status=$?
+  if [[ "$prize_close_status" != 0 ]]; then
+    # A separate, rollback-only diagnostic invocation may recover or fail with
+    # a different timing. It never changes the original failed test result.
+    docker exec -i "$db_container" psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d postgres \
+      >"$repo_root/output/operations-latency/cashier-http-prize-postfailure-rollback-probe-http.json" <<'PRIZE_ROLLBACK_PROBE' || true
+BEGIN;
+SET LOCAL lock_timeout='250ms';SET LOCAL statement_timeout='5s';
+DO $probe$
+DECLARE r public.tournament_registrations%ROWTYPE;v jsonb;code text;constraint_name text;table_name text;message text;context text;frames jsonb;
+BEGIN
+ IF shobj_description((SELECT oid FROM pg_database WHERE datname=current_database()),'pg_database') IS DISTINCT FROM 'vinpoker-operational-schema-fence-disposable'
+ OR NOT EXISTS(SELECT 1 FROM ops_load_fixture_v1.schema_fence WHERE singleton AND frozen)
+ THEN RAISE EXCEPTION 'rollback_probe_requires_owned_disposable';END IF;
+ SELECT * INTO r FROM public.tournament_registrations WHERE tournament_id='a3000000-0000-4000-8000-000000000005'
+ AND status='pending' AND cashier_seating_error='seating_exception' ORDER BY id LIMIT 1;
+ IF r.id IS NULL THEN v:=jsonb_build_object('invoked',false);
+ ELSE
+  PERFORM set_config('request.jwt.claims',jsonb_build_object('sub',r.player_id,'role','authenticated')::text,true);
+  BEGIN
+   v:=public.cashier_try_seat_paid_v1(r.id,r.player_id);
+   v:=jsonb_build_object('invoked',true,'exception',false,'seated',v->>'seating_state'='seated');
+  EXCEPTION WHEN OTHERS THEN
+   GET STACKED DIAGNOSTICS code=RETURNED_SQLSTATE,constraint_name=CONSTRAINT_NAME,table_name=TABLE_NAME,message=MESSAGE_TEXT,context=PG_EXCEPTION_CONTEXT;
+   SELECT coalesce(jsonb_agg(jsonb_build_object('function',m[1],'line',m[2]::integer)),'[]'::jsonb) INTO frames
+   FROM regexp_matches(context,'PL/pgSQL function ([a-zA-Z0-9_.]+)\([^)]*\) line ([0-9]+)','g') m;
+   v:=jsonb_build_object('invoked',true,'exception',true,'sqlstate',code,
+    'constraint',CASE WHEN constraint_name ~ '^[a-zA-Z0-9_]{1,128}$' THEN constraint_name END,
+    'table',CASE WHEN table_name ~ '^[a-zA-Z0-9_]{1,128}$' THEN table_name END,'messageMd5',md5(message),'frames',frames);
+  END;
+ END IF;
+ PERFORM set_config('vinpoker.rollback_probe_result',(v||jsonb_build_object('kind','SEPARATE_POSTFAILURE_ROLLBACK_DIAGNOSTIC','originalSqlstateProven',false,'qualification',false,'productionChanged',false,'allWritesRolledBack',true))::text,true);
+END $probe$;
+SELECT current_setting('vinpoker.rollback_probe_result');
+ROLLBACK;
+PRIZE_ROLLBACK_PROBE
+  fi
   if [[ "$prize_history_before" == missing ]]; then
     docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres -c "DELETE FROM public.club_settings WHERE club_id='a2000000-0000-4000-8000-000000000001';"
   else

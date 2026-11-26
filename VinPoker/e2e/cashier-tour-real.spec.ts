@@ -2455,7 +2455,7 @@ test('final current Floor Cashier prizes close over real Auth HTTP',async({page}
   phase='register-and-pay';report();
   for(const actor of staff){const actorHeaders={...headers,Authorization:'Bearer '+actor.token},registered=await request('tournament-register','/functions/v1/tournament-register',{tournament_id:tour},actorHeaders);expect(registered.success).toBe(true);expect(Number(registered.total_pay)).toBe(6600000);
    const intent={actor_id:actor.userId,club_id:club,tournament_id:tour,registration_id:registered.registration_id,amount:6600000,request_id:crypto.randomUUID()},args={p_intent:intent,p_action:'record'};
-   const paid=await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders);expect(paid).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});expect(await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders)).toEqual(paid);
+   const paid=await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders);expect(paid,JSON.stringify({seatingState:paid.result?.seating_state,reason:paid.result?.reason==='seating_exception'?'seating_exception':null})).toMatchObject({ok:true,result:{payment_state:'paid',seating_state:'seated'}});expect(await rpc('resolve_cashier_cash_buyin_intent_v1',args,actorHeaders)).toEqual(paid);
   }
   const before=await roster();expect(before).toHaveLength(1);expect(before[0].seats).toHaveLength(3);expect(before[0].seats.reduce((n,s)=>n+s.chip_count,0)).toBe(60000);
   phase='prepare-and-apply-payout';report();const prepare={p_tournament_id:tour,p_itm_percent:0.2,p_archetype:'DAILY',p_min_cash_x:1,p_rounding_unit:1000,p_prize_pool_override:null,p_override_reason:null,p_regenerate:false,p_reason:'isolated canonical paid prize HTTP',p_custom_percents:null};
