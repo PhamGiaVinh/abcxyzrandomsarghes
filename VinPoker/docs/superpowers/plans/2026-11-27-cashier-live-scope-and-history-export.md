@@ -20,7 +20,7 @@ Private evidence directory: `D:/Quy-trinh-hud-scale-evidence/cashier-live-scope-
 
 - Original parent RED: four failures, fourteen passes. An additional early-membership/slow-metadata case reproduced a candidate gap before correction.
 - Original History/Refund History code, with only named exports exposed for the test seam: sixteen failures; candidate restored in finally. No business behavior was changed in the baseline reproduction.
-- Current focused provider/history/staking outcome suite: one hundred passes. These tests use mocked API/Auth boundaries; the history tests spy on the actual Excel delivery seam rather than creating real files.
+- Focused parent/history/staking outcome suite initially passed one hundred cases; four further refund/metadata regressions bring the corrected candidate to 104 passes. These tests use mocked API/Auth boundaries; the history tests spy on the actual Excel delivery seam rather than creating real files.
 - Independent source review passed. Full typecheck/build, actual Auth/API/DB/browser club withdrawal, ownership withdrawal, file contents and real network cancellation still need their own evidence. Do not call this a production or full E07 result from component tests alone.
 
 ## Observed backend dependency
@@ -30,6 +30,8 @@ Actual Auth/browser export attempt 1723 could not read the four retained history
 The CLI-generated pending migration `20261126215845_cashier_club_scoped_staking_reads_v1.sql` adds one permissive SELECT policy for authenticated users, using the existing caller-bound `auth.uid()` and authoritative `is_club_cashier` membership/owner predicate. It changes no old policy, helper, ACL, row or mutation authority. Its existing-object guard rejects definition/role/command drift; identical reapply is a no-op. Rollback drops only the new named policy and preserves all data/receipts.
 
 Isolated native evidence verifies 0→4 scoped visible fixture rows, preserved participant access, no anonymous access to closed records, no direct updates, unchanged rows/old policies/ACL/helper and two identical applications. The repository regression SQL also checks owner A cannot read B and withdrawal of A retains B, with transaction rollback and a loopback fixture guard. This remains a local test, not production permission evidence. Actual workbook qualification must be rerun on a fresh fixture with this exact policy definition.
+
+Fresh actual run 1724, with that exact policy, exported a real History workbook containing only B and the unchanged 200,000 VND snapshot after A was withdrawn. Refund History then failed with actual `PGRST200`: the captured/current TEST schema has no staking-deals tournament foreign key. Do not add a fabricated FK or suppress this error. The corrected reader follows the existing AdminStaking/StakingPortfolio pattern: separate tournament lookup by explicit IDs and club scope, attach names only when the tournament club matches the deal, and mark unresolved names unverified. Read errors are displayed as unknown, never as confirmed zero/empty history. That corrected frontend still requires a fresh real workbook rerun.
 
 ## Scope and release
 

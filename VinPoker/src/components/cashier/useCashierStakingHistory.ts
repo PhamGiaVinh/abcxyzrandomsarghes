@@ -10,6 +10,7 @@ export type CashierHistoryRow={
  id:string;club_id:string;player_id:string|null;custom_event_name:string|null;status:string;created_at:string;filled_percent:number;
  result_prize_vnd?:number|null;buy_in_amount_vnd?:number|null;refund_reason?:string|null;refunded_at?:string|null;
  tournament?:{name:string}|null;player:{display_name:string|null}|null;
+ tournament_id?:string|null;
 };
 type Kind='history'|'refund';
 export function useCashierStakingHistory(clubIds:string[],kind:Kind){
@@ -27,7 +28,7 @@ export function useCashierStakingHistory(clubIds:string[],kind:Kind){
    if(!actorId||!ids.length){if(current())setState({key,rows:[],error:null});return;}
    const fields=kind==='history'
     ? 'id,custom_event_name,status,created_at,result_prize_vnd,filled_percent,club_id,player_id'
-    : 'id,custom_event_name,status,created_at,refund_reason,refunded_at,refunded_by,buy_in_amount_vnd,filled_percent,club_id,player_id,tournament:tournament_id(name)';
+    : 'id,custom_event_name,status,created_at,refund_reason,refunded_at,refunded_by,buy_in_amount_vnd,filled_percent,club_id,player_id,tournament_id';
    let query=supabase.from('staking_deals').select(fields).in('club_id',ids);
    query=kind==='history'?query.in('status',['completed','cancelled']):query.eq('status','deal_refunded');
    const result=await observeTrackerContextRead(query.order(kind==='history'?'updated_at':'refunded_at',{ascending:false}).limit(500).abortSignal(controller.signal));
@@ -36,13 +37,23 @@ export function useCashierStakingHistory(clubIds:string[],kind:Kind){
    const rows=result.data as unknown as CashierHistoryRow[];
    if(rows.some(row=>!row||typeof row.id!=='string'||!ids.includes(row.club_id)))throw Error('foreign_history_row');
    const players=[...new Set(rows.map(row=>row.player_id).filter((id):id is string=>typeof id==='string'))];
-   let names=new Map<string,{display_name:string|null}>();
-   if(players.length){
-    const profiles=await observeTrackerContextRead(supabase.from('profiles').select('user_id,display_name').in('user_id',players).abortSignal(controller.signal));
-    if(!current())return;if(profiles.error)throw Error('unverified_players');
-    names=new Map((profiles.data??[]).map(row=>[row.user_id,{display_name:row.display_name}]));
-   }
-   if(current())setState({key,rows:rows.map(row=>({...row,player:row.player_id?names.get(row.player_id)??null:null})),error:null});
+   const tourIds=kind==='refund'?[...new Set(rows.map(row=>row.tournament_id).filter((id):id is string=>typeof id==='string'))]:[];
+   // The captured schema has no staking_deals -> tournaments FK. Follow the
+   // existing staking metadata lookup seam instead of requiring an embedding.
+   const [profiles,tournaments]=await observeTrackerContextRead(Promise.all([
+    players.length?supabase.from('profiles').select('user_id,display_name').in('user_id',players).abortSignal(controller.signal):Promise.resolve({data:[],error:null}),
+    tourIds.length?supabase.from('tournaments').select('id,name,club_id').in('id',tourIds).in('club_id',ids).abortSignal(controller.signal):Promise.resolve({data:[],error:null}),
+   ]));
+   if(!current())return;
+   if(profiles.error||tournaments.error||!Array.isArray(profiles.data)||!Array.isArray(tournaments.data)||
+     profiles.data.some(profile=>!players.includes(profile.user_id)||(profile.display_name!==null&&typeof profile.display_name!=='string'))||
+     tournaments.data.some(tour=>!tourIds.includes(tour.id)||!ids.includes(tour.club_id??'')))throw Error('unverified_history_metadata');
+   const names=new Map<string,{display_name:string|null}>(profiles.data.map(row=>[row.user_id,{display_name:row.display_name}] as const));
+   const tours=new Map<string,{club_id:string|null;name:unknown}>(tournaments.data.map(tour=>[tour.id,{club_id:tour.club_id,name:tour.name}] as const));
+   setState({key,rows:rows.map(row=>{const tour=row.tournament_id?tours.get(row.tournament_id):null;return{
+    ...row,player:row.player_id?names.get(row.player_id)??null:null,
+    tournament:tour&&tour.club_id===row.club_id&&typeof tour.name==='string'?{name:tour.name}:null,
+   };}),error:null});
   }catch{if(current())setState({key,rows:[],error:'Không tải được lịch sử trong phạm vi CLB. Hãy thử lại.'});}
   finally{controller.abort();if(readFlight.current===controller)readFlight.current=null;}})();
   return()=>{alive.current=false;generation.current++;controller.abort();exportFlight.current?.abort();exportFlight.current=null;};

@@ -733,7 +733,7 @@ export function HistoryTab({ clubIds }: { clubIds: string[] }) {
         <Button size="sm" onClick={exportXlsx} disabled={exporting || !!error || filtered.length === 0}>
           <Download className="w-3.5 h-3.5 mr-1" /> Excel
         </Button>
-        <span className="ml-auto text-xs text-muted-foreground">{filtered.length} dòng</span>
+        <span className="ml-auto text-xs text-muted-foreground">{error?'Chưa xác minh số dòng':filtered.length+' dòng'}</span>
       </div>
       <div className="overflow-auto">
         <Table>
@@ -749,7 +749,7 @@ export function HistoryTab({ clubIds }: { clubIds: string[] }) {
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">Không có dữ liệu</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">{error ? 'Chưa xác minh dữ liệu' : 'Không có dữ liệu'}</TableCell></TableRow>
             ) : filtered.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.custom_event_name ?? "—"}</TableCell>
@@ -1212,7 +1212,7 @@ export function RefundHistoryTab({ clubIds }: { clubIds: string[] }) {
   const exportXlsx = () => {
     void exportRows(filtered, authorized => exportToExcel(authorized, [
       { header: "Deal ID", get: (r: any) => r.id.slice(0, 8) },
-      { header: "Sự kiện", get: (r: any) => r.custom_event_name ?? r.tournament?.name ?? "" },
+      { header: "Sự kiện", get: (r: any) => r.custom_event_name ?? r.tournament?.name ?? "Chưa xác minh tên giải" },
       { header: "Player", get: (r: any) => r.player?.display_name ?? "" },
       { header: "Buy-in", get: (r: any) => r.buy_in_amount_vnd ?? 0 },
       { header: "% lấp đầy", get: (r: any) => r.filled_percent },
@@ -1234,7 +1234,7 @@ export function RefundHistoryTab({ clubIds }: { clubIds: string[] }) {
         <Button size="sm" onClick={exportXlsx} disabled={exporting || !!error || filtered.length === 0}>
           <Download className="w-3.5 h-3.5 mr-1" /> Excel
         </Button>
-        <span className="ml-auto text-xs text-muted-foreground">{filtered.length} dòng</span>
+        <span className="ml-auto text-xs text-muted-foreground">{error?'Chưa xác minh số dòng':filtered.length+' dòng'}</span>
       </div>
       <div className="overflow-auto">
         <Table>
@@ -1250,10 +1250,10 @@ export function RefundHistoryTab({ clubIds }: { clubIds: string[] }) {
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">Không có dữ liệu</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">{error ? 'Chưa xác minh dữ liệu' : 'Không có dữ liệu'}</TableCell></TableRow>
             ) : filtered.map((r) => (
               <TableRow key={r.id}>
-                <TableCell className="font-medium">{r.custom_event_name ?? r.tournament?.name ?? "—"}</TableCell>
+                <TableCell className="font-medium">{r.custom_event_name ?? r.tournament?.name ?? "Chưa xác minh tên giải"}</TableCell>
                 <TableCell>{r.player?.display_name ?? "—"}</TableCell>
                 <TableCell className="font-mono">{r.buy_in_amount_vnd ? formatVND(r.buy_in_amount_vnd) : "—"}</TableCell>
                 <TableCell>{r.filled_percent}%</TableCell>
