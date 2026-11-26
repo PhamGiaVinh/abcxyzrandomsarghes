@@ -35,6 +35,8 @@ Fresh actual run 1724, with that exact policy, exported a real History workbook 
 
 ## Scope and release
 
+Fresh runtime 1727 at `e4e33b8257c510bc06d9b5f95b21a5a703a01d43` additionally opened both history tabs in separate real browser contexts before withdrawal. Each still displayed A+B immediately after TEST SQL revoked A. Immediate exports from both contexts each produced a workbook containing only B and 200,000 VND. Root remount intentionally resets the nested tab; the post-remount assertion reopens Refund History before checking B. The initial 1726 assertion failure and its downloaded files remain preserved. No application source changed between these runs. Receipt SHA-256: `73776c128b260ff08a6f374c7206097c6c69d268f71f45b6391a106d90a85e76`.
+
 The only DB change is the pending SELECT policy above. No privileged RPC, Edge writer, money calculation, feature flag or ownership constraint changes. Existing `cashier_club_ids` includes all clubs for a current super-admin, so explicit club filtering retains its scoped records without interpreting empty IDs as global. The separate Ops provider candidate does not repair this root page by itself.
 
 Exports/Realtime and cached state inside other children still require their own applicable checks. A parent remount is not a substitute for server permission checks or a proof of all subscription delivery behavior. Full E05/E07 workload and hosted production qualification remain open.
