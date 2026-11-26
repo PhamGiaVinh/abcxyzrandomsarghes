@@ -12,6 +12,8 @@ const profiles={
     run:37229283609,sha:'d64df388d42b51cb851e8d23361d4fe568988eb7',directory:'reviewed-pre-release-schema'},
   operations:{hash:'d23cfa75a7381453ba0d6216346f6460c816a3b1525ef5d47984c3a995ddc56a',
     run:37820347781,sha:'0463831bb9f8f142d585fd51c1b0633963b2161f',directory:'reviewed-operations-schema'},
+  nov19:{hash:'e07962ab82bc545c3a552c345796b70f48ec95baf544aeaf190f0eb46c3eed1a',
+    run:44484017071,sha:'02c4d6cba8678c9d52feea055fc1f0714082bc77',directory:'reviewed-nov19-schema',chunks:34,maxBytes:5_051_861},
 };
 const owner=process.env.GITHUB_REPOSITORY_OWNER;
 assert.ok(owner && process.env.GITHUB_ACTOR===owner && process.env.GITHUB_TRIGGERING_ACTOR===owner,'owner_context_required');
@@ -19,9 +21,9 @@ const profileName=process.env.RECOVERY_PROFILE??'original';
 assert.ok(Object.hasOwn(profiles,profileName),'unknown_recovery_profile');
 const profile=profiles[profileName];
 const expected=profile.hash;
-const chunks=Array.from({length:17},(_,i)=>process.env[`BASELINE_${String(i+1).padStart(2,'0')}`]??'');
+const chunks=Array.from({length:profile.chunks??17},(_,i)=>process.env[`BASELINE_${String(i+1).padStart(2,'0')}`]??'');
 assert.ok(chunks.every(chunk=>chunk.length>0 && /^[A-Za-z0-9+/=]+$/.test(chunk)),'complete private recovery input required');
-const schema=gunzipSync(Buffer.from(chunks.join(''),'base64'),{maxOutputLength:5_000_000});
+const schema=gunzipSync(Buffer.from(chunks.join(''),'base64'),{maxOutputLength:profile.maxBytes??5_000_000});
 assert.equal(createHash('sha256').update(schema).digest('hex'),expected,'original baseline bytes must match');
 assert.ok(process.env.RUNNER_TEMP && isAbsolute(process.env.RUNNER_TEMP),'absolute_runner_temp_required');
 const dir=join(process.env.RUNNER_TEMP,profile.directory);
