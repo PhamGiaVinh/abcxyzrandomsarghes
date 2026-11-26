@@ -40,6 +40,8 @@ import { SePaySettlementTab } from "@/components/cashier/SePaySettlementTab";
 import DealerPtWageTab from "@/components/cashier/DealerPtWageTab";
 import { TournamentPayoutTab } from "@/components/cashier/TournamentPayoutTab";
 import { FEATURES, OPS_TOUR_CASHIER_ENABLED } from "@/lib/featureFlags";
+import { useCashierStakingHistory } from '@/components/cashier/useCashierStakingHistory';
+import { useCashierClubScope } from '@/components/cashier/useCashierClubScope';
 import { PROFILE_REVIEW_ENABLED } from "@/lib/profileReviewGate";
 import {
   LayoutDashboard, Coins, Users as UsersIcon, FileBarChart, Loader2, CheckCircle2, XCircle,
@@ -63,107 +65,22 @@ type RefundPreviewRead=(name:'get_staking_refund_preview_v1',args:{p_deal:string
 type SectionKey = "overview" | "staking" | "members" | "reports" | "tournament_registrations" | "offline_buyin" | "reentry" | "sepay_settlement" | "pt_wages" | "tournament_payouts";
 
 export default function CashierDashboard() {
-  const { user, loading, isAdmin, rolesLoading, rolesError } = useAuth();
+  const { user, session, loading } = useAuth();
   const userId = user?.id ?? null;
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const section = (params.get("tab") as SectionKey) || "overview";
 
-  const [clubs, setClubs] = useState<ClubRow[] | null>(null);
-  const [clubsError, setClubsError] = useState<string | null>(null);
-  const [clubsForUserId, setClubsForUserId] = useState<string | null>(null);
-  const [isClubOwner, setIsClubOwner] = useState(false);
-  const [ownerClubIds, setOwnerClubIds] = useState<string[]>([]);
-  const clubRequestId = useRef(0);
-
-  useEffect(() => {
-    if (loading) return;
-    if (!user) { nav("/auth"); return; }
-    // Allow cashier, super_admin, OR club owners (detected via cashier_club_ids RPC below).
-    // Final guard happens once `clubs` loads — empty + not admin → "chưa được phân công" screen.
-  }, [loading, user, nav]);
-
-  // A failed scope read is not proof that the user has no assigned clubs.
-  // Keep the empty state for a successful, authoritative empty result only.
-  const loadClubs = useCallback(async (userId: string) => {
-    const requestId = ++clubRequestId.current;
-    const isCurrentRequest = () => clubRequestId.current === requestId;
-    setClubs(null);
-    setClubsError(null);
-    setClubsForUserId(null);
-    setIsClubOwner(false);
-    setOwnerClubIds([]);
-
-    try {
-      const { data: ids, error: scopeError } = await supabase.rpc("cashier_club_ids", { _user_id: userId });
-      if (!isCurrentRequest()) return;
-      if (scopeError) {
-        setClubsError("Không tải được quyền truy cập CLB. Kiểm tra kết nối rồi thử lại.");
-        setClubsForUserId(userId);
-        return;
-      }
-
-      const idArr = [...new Set(ids ?? [])];
-      if (!idArr.length) {
-        setClubs([]);
-        setClubsForUserId(userId);
-        return;
-      }
-
-      const { data: clubRows, error: clubError } = await supabase
-        .from("clubs").select("id,name").in("id", idArr);
-      if (!isCurrentRequest()) return;
-      if (clubError || !clubRows?.length) {
-        setClubsError("Đã xác nhận quyền CLB nhưng không tải được danh sách. Vui lòng thử lại.");
-        setClubsForUserId(userId);
-        return;
-      }
-      setClubs(clubRows as ClubRow[]);
-      setClubsForUserId(userId);
-
-      // This lookup only controls owner-only UAT affordances; it never grants data access.
-      try {
-        const { data: owned, error: ownerError } = await supabase
-          .from("clubs").select("id").eq("owner_id", userId).limit(1);
-        if (isCurrentRequest() && !ownerError) {
-          setIsClubOwner((owned ?? []).length > 0);
-          setOwnerClubIds((owned ?? []).map(club => club.id));
-        }
-      } catch {
-        // Keep owner-only affordances hidden when this secondary read is unavailable.
-      }
-    } catch {
-      if (isCurrentRequest()) {
-        setClubsError("Không kết nối được để xác minh quyền CLB. Kiểm tra mạng rồi thử lại.");
-        setClubsForUserId(userId);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!userId) {
-      clubRequestId.current += 1;
-      setClubs(null);
-      setClubsError(null);
-      setClubsForUserId(null);
-      setIsClubOwner(false);
-      setOwnerClubIds([]);
-      return;
-    }
-
-    void loadClubs(userId);
-    return () => { clubRequestId.current += 1; };
-  }, [userId, loadClubs]);
+  const { clubs, ownerClubIds, isAdmin, error: clubsError, refresh: loadClubs } = useCashierClubScope(userId, sessionReadEpoch(session), !loading);
+  const isClubOwner = ownerClubIds.length > 0;
+  useEffect(() => { if (!loading && !user) nav('/auth'); }, [loading,user,nav]);
 
   const setSection = (s: SectionKey) => {
     const p = new URLSearchParams(params); p.set("tab", s); setParams(p, { replace: true });
   };
 
-  const effectiveClubsError = clubsError || (clubs?.length === 0 && !isAdmin && !rolesLoading ? rolesError : null);
-  if (loading || !user || (clubs?.length === 0 && rolesLoading)) {
-    return <div className="container mx-auto p-6"><Skeleton className="h-96 rounded-xl" /></div>;
-  }
-  if (clubsForUserId !== userId) {
+  const effectiveClubsError = clubsError;
+  if (loading || !user) {
     return <div className="container mx-auto p-6"><Skeleton className="h-96 rounded-xl" /></div>;
   }
   if (effectiveClubsError) {
@@ -174,8 +91,7 @@ export default function CashierDashboard() {
           <div className="text-lg font-bold">Chưa xác minh được quyền CLB</div>
           <p className="text-sm text-muted-foreground">{effectiveClubsError}</p>
           <Button className="mx-auto" variant="outline" onClick={() => {
-            if (!clubsError && rolesError) { window.location.reload(); return; }
-            if (user) void loadClubs(user.id);
+            loadClubs();
           }}>
             <RefreshCw className="mr-2 h-4 w-4" /> Thử tải lại
           </Button>
@@ -297,7 +213,7 @@ export default function CashierDashboard() {
         </aside>
 
         {/* Main */}
-        <main className="col-span-12 md:col-span-9 lg:col-span-10 min-w-0">
+        <main key={JSON.stringify([userId, sessionReadEpoch(session), isAdmin, clubIds, ownerClubIds])} className="col-span-12 md:col-span-9 lg:col-span-10 min-w-0">
           {section === "overview" && <OverviewPanel key={JSON.stringify([userId, isAdmin, [...clubIds].sort()])} clubIds={clubIds} onJump={setSection} />}
           {section === "staking" && <StakingPanel clubIds={clubIds} />}
           {section === "tournament_payouts" && (FEATURES.prizePayoutTracking && clubIds.length > 0
@@ -778,31 +694,9 @@ function ResultPayoutTab({ clubIds }: { clubIds: string[] }) {
   );
 }
 
-function HistoryTab({ clubIds }: { clubIds: string[] }) {
-  const [rows, setRows] = useState<any[] | null>(null);
-  const [search, setSearch] = useState("");
-
-  const load = useCallback(async () => {
-    setRows(null);
-    let q = supabase.from("staking_deals")
-      .select(`id, custom_event_name, status, created_at, result_prize_vnd, filled_percent, club_id, player_id`)
-      .in("status", ["completed", "cancelled"])
-      .order("updated_at", { ascending: false })
-      .limit(500);
-    if (clubIds.length) q = q.in("club_id", clubIds);
-    const { data, error } = await q;
-    if (error) { toast.error(error.message); setRows([]); return; }
-    const arr = data ?? [];
-    const ids = Array.from(new Set(arr.map((r: any) => r.player_id).filter(Boolean)));
-    let pmap: Record<string, any> = {};
-    if (ids.length) {
-      const { data: ps } = await supabase.from("profiles").select("user_id, display_name").in("user_id", ids);
-      pmap = Object.fromEntries((ps ?? []).map((p: any) => [p.user_id, p]));
-    }
-    setRows(arr.map((r: any) => ({ ...r, player: pmap[r.player_id] ?? null })));
-  }, [clubIds]);
-
-  useEffect(() => { load(); }, [load]);
+export function HistoryTab({ clubIds }: { clubIds: string[] }) {
+  const {rows,error,reload:load,exportRows,exporting,exportError}=useCashierStakingHistory(clubIds,'history');
+  const [search,setSearch]=useState('');
 
   const filtered = useMemo(() => {
     if (!rows) return [];
@@ -815,7 +709,7 @@ function HistoryTab({ clubIds }: { clubIds: string[] }) {
   }, [rows, search]);
 
   const exportXlsx = () => {
-    exportToExcel(filtered, [
+    void exportRows(filtered, authorized => exportToExcel(authorized, [
       { header: "Deal ID", get: (r: any) => r.id.slice(0, 8) },
       { header: "Sự kiện", get: (r: any) => r.custom_event_name ?? "" },
       { header: "Player", get: (r: any) => r.player?.display_name ?? "" },
@@ -823,22 +717,23 @@ function HistoryTab({ clubIds }: { clubIds: string[] }) {
       { header: "Tổng giải", get: (r: any) => r.result_prize_vnd ?? 0 },
       { header: "% bán", get: (r: any) => r.filled_percent },
       { header: "Trạng thái", get: (r: any) => r.status },
-    ], "lich-su-staking", "History");
+    ], "lich-su-staking", "History"));
   };
 
   if (rows === null) return <Skeleton className="h-40 rounded-xl" />;
 
   return (
     <Card className="p-3">
+      {error&&<p role="alert">{error}</p>}{exportError&&<p role="alert">{exportError}</p>}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <Input placeholder="Tìm theo player / sự kiện / Deal ID"
           value={search} onChange={(e) => setSearch(e.target.value)}
           className="max-w-xs" />
         <Button size="sm" variant="outline" onClick={load}><RefreshCw className="w-3.5 h-3.5" /></Button>
-        <Button size="sm" onClick={exportXlsx} disabled={filtered.length === 0}>
+        <Button size="sm" onClick={exportXlsx} disabled={exporting || !!error || filtered.length === 0}>
           <Download className="w-3.5 h-3.5 mr-1" /> Excel
         </Button>
-        <span className="ml-auto text-xs text-muted-foreground">{filtered.length} dòng</span>
+        <span className="ml-auto text-xs text-muted-foreground">{error?'Chưa xác minh số dòng':filtered.length+' dòng'}</span>
       </div>
       <div className="overflow-auto">
         <Table>
@@ -854,7 +749,7 @@ function HistoryTab({ clubIds }: { clubIds: string[] }) {
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">Không có dữ liệu</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">{error ? 'Chưa xác minh dữ liệu' : 'Không có dữ liệu'}</TableCell></TableRow>
             ) : filtered.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="font-medium">{r.custom_event_name ?? "—"}</TableCell>
@@ -1300,32 +1195,9 @@ function ScopedRefundTab({ clubIds }: { clubIds: string[] }) {
   );
 }
 
-function RefundHistoryTab({ clubIds }: { clubIds: string[] }) {
-  const [rows, setRows] = useState<any[] | null>(null);
-  const [search, setSearch] = useState("");
-
-  const load = useCallback(async () => {
-    setRows(null);
-    let q = supabase.from("staking_deals")
-      .select(`id, custom_event_name, status, created_at, refund_reason, refunded_at, refunded_by, buy_in_amount_vnd, filled_percent, club_id, player_id,
-               tournament:tournament_id(name)`)
-      .eq("status", "deal_refunded" as any)
-      .order("refunded_at", { ascending: false })
-      .limit(500);
-    if (clubIds.length) q = q.in("club_id", clubIds);
-    const { data, error } = await q;
-    if (error) { toast.error(error.message); setRows([]); return; }
-    const arr = data ?? [];
-    const ids = Array.from(new Set(arr.map((r: any) => r.player_id).filter(Boolean)));
-    let pmap: Record<string, any> = {};
-    if (ids.length) {
-      const { data: ps } = await supabase.from("profiles").select("user_id, display_name").in("user_id", ids);
-      pmap = Object.fromEntries((ps ?? []).map((p: any) => [p.user_id, p]));
-    }
-    setRows(arr.map((r: any) => ({ ...r, player: pmap[r.player_id] ?? null })));
-  }, [clubIds]);
-
-  useEffect(() => { load(); }, [load]);
+export function RefundHistoryTab({ clubIds }: { clubIds: string[] }) {
+  const {rows,error,reload:load,exportRows,exporting,exportError}=useCashierStakingHistory(clubIds,'refund');
+  const [search,setSearch]=useState('');
 
   const filtered = useMemo(() => {
     if (!rows) return [];
@@ -1338,30 +1210,31 @@ function RefundHistoryTab({ clubIds }: { clubIds: string[] }) {
   }, [rows, search]);
 
   const exportXlsx = () => {
-    exportToExcel(filtered, [
+    void exportRows(filtered, authorized => exportToExcel(authorized, [
       { header: "Deal ID", get: (r: any) => r.id.slice(0, 8) },
-      { header: "Sự kiện", get: (r: any) => r.custom_event_name ?? r.tournament?.name ?? "" },
+      { header: "Sự kiện", get: (r: any) => r.custom_event_name ?? r.tournament?.name ?? "Chưa xác minh tên giải" },
       { header: "Player", get: (r: any) => r.player?.display_name ?? "" },
       { header: "Buy-in", get: (r: any) => r.buy_in_amount_vnd ?? 0 },
       { header: "% lấp đầy", get: (r: any) => r.filled_percent },
       { header: "Lý do", get: (r: any) => r.refund_reason ?? "" },
       { header: "Ngày hoàn", get: (r: any) => formatExcelDate(r.refunded_at) },
-    ], "lich-su-hoan-tien", "RefundHistory");
+    ], "lich-su-hoan-tien", "RefundHistory"));
   };
 
   if (rows === null) return <Skeleton className="h-40 rounded-xl" />;
 
   return (
     <Card className="p-3">
+      {error&&<p role="alert">{error}</p>}{exportError&&<p role="alert">{exportError}</p>}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         <Input placeholder="Tìm theo player / sự kiện / lý do"
           value={search} onChange={(e) => setSearch(e.target.value)}
           className="max-w-xs" />
         <Button size="sm" variant="outline" onClick={load}><RefreshCw className="w-3.5 h-3.5" /></Button>
-        <Button size="sm" onClick={exportXlsx} disabled={filtered.length === 0}>
+        <Button size="sm" onClick={exportXlsx} disabled={exporting || !!error || filtered.length === 0}>
           <Download className="w-3.5 h-3.5 mr-1" /> Excel
         </Button>
-        <span className="ml-auto text-xs text-muted-foreground">{filtered.length} dòng</span>
+        <span className="ml-auto text-xs text-muted-foreground">{error?'Chưa xác minh số dòng':filtered.length+' dòng'}</span>
       </div>
       <div className="overflow-auto">
         <Table>
@@ -1377,10 +1250,10 @@ function RefundHistoryTab({ clubIds }: { clubIds: string[] }) {
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">Không có dữ liệu</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">{error ? 'Chưa xác minh dữ liệu' : 'Không có dữ liệu'}</TableCell></TableRow>
             ) : filtered.map((r) => (
               <TableRow key={r.id}>
-                <TableCell className="font-medium">{r.custom_event_name ?? r.tournament?.name ?? "—"}</TableCell>
+                <TableCell className="font-medium">{r.custom_event_name ?? r.tournament?.name ?? "Chưa xác minh tên giải"}</TableCell>
                 <TableCell>{r.player?.display_name ?? "—"}</TableCell>
                 <TableCell className="font-mono">{r.buy_in_amount_vnd ? formatVND(r.buy_in_amount_vnd) : "—"}</TableCell>
                 <TableCell>{r.filled_percent}%</TableCell>

@@ -63,6 +63,10 @@ on:
       - "VinPoker/src/pages/SuperAdmin.tsx"
       - "VinPoker/src/pages/CashierDashboard.tsx"
       - "VinPoker/src/pages/CashierDashboard.tourEntry.test.tsx"
+      - "VinPoker/src/pages/CashierDashboard.historyScope.test.tsx"
+      - "VinPoker/src/pages/CashierDashboard.stakingOutcome.test.tsx"
+      - "VinPoker/src/components/cashier/useCashierClubScope.ts"
+      - "VinPoker/src/components/cashier/useCashierStakingHistory.ts"
       - "VinPoker/e2e/ops-v3-floor-cashier.mock.spec.ts"
       - "VinPoker/e2e/cashier-tour-preview.mock.spec.ts"
       - "VinPoker/tsconfig.ops-v3-floor-cashier.json"
@@ -132,6 +136,8 @@ jobs:
           src/components/floor/useFloorTournaments.readScope.test.tsx
           src/components/floor/MultiDayTournamentsBoard.test.tsx
           src/pages/CashierDashboard.tourEntry.test.tsx
+          src/pages/CashierDashboard.historyScope.test.tsx
+          src/pages/CashierDashboard.stakingOutcome.test.tsx
           src/pages/PublicTournamentClock.readState.test.tsx
           src/components/cashier/tournament-live/PlayerActionSheet.test.tsx
           src/components/admin/MediaClubSchedules.uploadOutcome.test.tsx

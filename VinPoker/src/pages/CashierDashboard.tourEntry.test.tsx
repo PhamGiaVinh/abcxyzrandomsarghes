@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup } from "@testing-library/react";
 
 const mock = vi.hoisted(() => ({
   userId: "cashier-a",
@@ -9,7 +10,11 @@ const mock = vi.hoisted(() => ({
   clubError: null as { message: string } | null,
   scopeRequest: null as ((userId: string) => Promise<{ data: string[] | null; error: { message: string } | null }>) | null,
   countRequest: null as ((table: string) => Promise<MockQueryResult>) | null,
+  clubRequest: null as (() => Promise<MockQueryResult>) | null,
   ptEnabled: false,
+  ownedIds: [] as string[],
+  globalAdmin: false,
+  cachedAdmin: false,
 }));
 
 type MockQueryResult = { data: unknown[]; count: number | null; error: { message: string } | null };
@@ -19,6 +24,7 @@ type MockQuery = {
   eq: () => MockQuery;
   gte: () => MockQuery;
   limit: () => Promise<MockQueryResult>;
+  abortSignal: (signal: AbortSignal) => MockQuery;
   then: <TResult1 = MockQueryResult, TResult2 = never>(
     onfulfilled?: ((value: MockQueryResult) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
@@ -26,7 +32,7 @@ type MockQuery = {
 };
 
 vi.mock("@/hooks/useAuth", () => ({
-  useAuth: () => ({ user: { id: mock.userId }, loading: false, isAdmin: false, isCashier: true }),
+  useAuth: () => ({ user: { id: mock.userId }, loading: false, isAdmin: mock.cachedAdmin, isCashier: true }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: () => "Không tải được thống kê. Hãy làm mới để thử lại." }),
@@ -43,19 +49,24 @@ vi.mock('@/components/cashier/DealerPtWageTab', () => ({ default: ({ clubIds, ow
   data-statements={String(finalizeStatements)}>PT statement workbench</div> }));
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
-    rpc: (_name: string, args: { _user_id: string }) => mock.scopeRequest
-      ? mock.scopeRequest(args._user_id)
-      : Promise.resolve({ data: mock.clubs.map((club) => club.id), error: mock.scopeError }),
+    rpc: (name: string, args?: { _user_id: string }) => {
+      const promise = name === 'get_my_ops_global_capability'
+        ? Promise.resolve({ data: [{ is_super_admin: mock.globalAdmin }], error: null })
+        : mock.scopeRequest ? mock.scopeRequest(args!._user_id)
+        : Promise.resolve({ data: mock.clubs.map(club => club.id), error: mock.scopeError });
+      return Object.assign(promise, { abortSignal: () => promise });
+    },
     from: (table: string) => {
       let result: MockQueryResult = { data: [], count: 0, error: null };
-      if (table === "clubs") result = { data: mock.clubs, count: 0, error: mock.clubError };
+      if (table === "clubs") result = { data: mock.clubs.map(club => ({ ...club, owner_id: mock.ownedIds.includes(club.id) ? mock.userId : null })), count: 0, error: mock.clubError };
       const query = {} as MockQuery;
       query.select = () => query;
       query.in = () => query;
       query.eq = () => query;
       query.gte = () => query;
-      query.limit = () => Promise.resolve({ data: [], count: 0, error: null });
-      query.then = (onfulfilled, onrejected) => (table !== "clubs" && mock.countRequest
+      query.limit = () => Promise.resolve({ data: mock.ownedIds.map(id => ({ id })), count: 0, error: null });
+      query.abortSignal = () => query;
+      query.then = (onfulfilled, onrejected) => (table === 'clubs' && mock.clubRequest ? mock.clubRequest() : table !== "clubs" && mock.countRequest
         ? mock.countRequest(table)
         : Promise.resolve(result)).then(onfulfilled, onrejected);
       return { select: () => query };
@@ -69,6 +80,7 @@ vi.mock("@/components/DocumentRedirect", () => ({
 }));
 
 import CashierDashboard from "./CashierDashboard";
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("Cashier tour entry", () => {
   beforeEach(() => {
@@ -78,7 +90,74 @@ describe("Cashier tour entry", () => {
     mock.clubError = null;
     mock.scopeRequest = null;
     mock.countRequest = null;
+    mock.clubRequest = null;
     mock.ptEnabled = false;
+    mock.ownedIds = [];mock.globalAdmin = false;mock.cachedAdmin = false;
+  });
+
+  it('removes a revoked club from the open Cashier header and child workspace', async () => {
+    vi.useFakeTimers();mock.ptEnabled = true;mock.clubs = [{id:'club-a',name:'Club A'},{id:'club-b',name:'Club B'}];
+    await act(async () => { render(<MemoryRouter initialEntries={['/cashier?tab=pt_wages']}><CashierDashboard /></MemoryRouter>); });
+    expect(screen.getByTestId('pt-workbench')).toHaveAttribute('data-clubs','club-a,club-b');
+    mock.clubs = [{id:'club-b',name:'Club B'}];
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByText(/Phụ trách: Club B/)).toBeInTheDocument();
+    expect(screen.queryByText(/Phụ trách: Club A/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('pt-workbench')).toHaveAttribute('data-clubs','club-b');
+  });
+
+  it('withdraws owner-only rollout controls even when cashier club IDs do not change', async () => {
+    vi.useFakeTimers();mock.ownedIds=['club-a'];
+    await act(async () => { render(<MemoryRouter initialEntries={['/cashier?tab=pt_wages']}><CashierDashboard /></MemoryRouter>); });
+    expect(screen.getByRole('button',{name:'Lương PT'})).toBeInTheDocument();
+    mock.ownedIds=[];
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.queryByRole('button',{name:'Lương PT'})).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pt-workbench')).not.toBeInTheDocument();
+    expect(screen.getByText(/Phụ trách: Club A/)).toBeInTheDocument();
+  });
+
+  it('does not keep cached global Admin affordances after canonical scope has been revoked', async () => {
+    vi.useFakeTimers();mock.cachedAdmin=true;mock.globalAdmin=true;mock.clubs=[];
+    await act(async () => { render(<MemoryRouter><CashierDashboard /></MemoryRouter>); });
+    expect(screen.getByText(/Toàn quyền \(Admin\)/)).toBeInTheDocument();
+    mock.globalAdmin=false;
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.queryByText(/Toàn quyền \(Admin\)/)).not.toBeInTheDocument();
+    expect(screen.getByText('Bạn chưa được phân công CLB nào')).toBeInTheDocument();
+  });
+
+  it('removes child controls on a failed background scope read rather than treating it as no clubs', async () => {
+    vi.useFakeTimers();mock.ptEnabled=true;
+    await act(async () => { render(<MemoryRouter initialEntries={['/cashier?tab=pt_wages']}><CashierDashboard /></MemoryRouter>); });
+    expect(screen.getByTestId('pt-workbench')).toBeInTheDocument();mock.scopeError={message:'offline'};
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByRole('alert')).toHaveTextContent('Chưa xác minh được quyền CLB');
+    expect(screen.queryByTestId('pt-workbench')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bạn chưa được phân công CLB nào')).not.toBeInTheDocument();
+  });
+
+  it('disposes A as soon as new membership is known while B metadata is still pending', async () => {
+    vi.useFakeTimers();mock.ptEnabled=true;mock.clubs=[{id:'club-a',name:'Club A'},{id:'club-b',name:'Club B'}];
+    await act(async()=>{render(<MemoryRouter initialEntries={['/cashier?tab=pt_wages']}><CashierDashboard/></MemoryRouter>);});
+    let finish!:(value:MockQueryResult)=>void;const pending=new Promise<MockQueryResult>(resolve=>{finish=resolve;});
+    mock.clubs=[{id:'club-b',name:'Club B'}];mock.clubRequest=()=>pending;
+    await act(async()=>{await vi.advanceTimersByTimeAsync(5000);});
+    expect(screen.queryByTestId('pt-workbench')).not.toBeInTheDocument();
+    await act(async()=>finish({data:[],count:null,error:{message:'B unavailable'}}));
+    expect(screen.getByRole('alert')).toHaveTextContent('Chưa xác minh được quyền CLB');
+  });
+
+  it('bounds a hung permission refresh and ignores its late result', async () => {
+    vi.useFakeTimers();mock.ptEnabled=true;
+    await act(async()=>{render(<MemoryRouter initialEntries={['/cashier?tab=pt_wages']}><CashierDashboard/></MemoryRouter>);});
+    let finish!:(value:{data:string[];error:null})=>void;const pending=new Promise<{data:string[];error:null}>(resolve=>{finish=resolve;});
+    mock.scopeRequest=()=>pending;
+    await act(async()=>{await vi.advanceTimersByTimeAsync(15001);});
+    expect(screen.getByRole('alert')).toHaveTextContent('Không kết nối được để xác minh quyền CLB');
+    expect(screen.queryByTestId('pt-workbench')).not.toBeInTheDocument();
+    await act(async()=>finish({data:['club-a'],error:null}));
+    expect(screen.getByRole('alert')).toBeInTheDocument();expect(screen.queryByTestId('pt-workbench')).not.toBeInTheDocument();
   });
 
   it('opens the real PT statement destination only with the salary rollout and verified cashier clubs', async () => {
