@@ -1,14 +1,15 @@
 import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/react';
 import {MemoryRouter} from 'react-router-dom';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
-const f=vi.hoisted(()=>({read:vi.fn(),write:vi.fn(),pendingInput:null as any,clubError:false,clubs:[{id:'club-a',name:'LOCAL TEST A'}],summary:{data:undefined as any,isError:true,isLoading:false,isFetching:false,refetch:vi.fn()}}));
-vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({loading:false,isClubOwner:true})}));
-vi.mock('@/lib/featureFlags',()=>({FEATURES:{clubExpenses:true}}));
+const f=vi.hoisted(()=>({read:vi.fn(),write:vi.fn(),cashFlag:false,pendingInput:null as any,clubError:false,clubs:[{id:'club-a',name:'LOCAL TEST A'}],summary:{data:undefined as any,isError:true,isLoading:false,isFetching:false,refetch:vi.fn()}}));
+vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({user:{id:'owner-test'},loading:false,isClubOwner:true})}));
+vi.mock('@/lib/featureFlags',()=>({FEATURES:{clubExpenses:true,get clubExpenseCashSource(){return f.cashFlag;}}}));
+vi.mock('@/components/clubExpenses/CashierExpenseEntry',()=>({default:()=> <p>LOCAL TEST SOURCE ENTRY</p>}));
 vi.mock('@/lib/clubExpenses/dataSource',()=>({clubExpensesSource:()=> 'live'}));
 vi.mock('@/hooks/clubExpenses/useExpenseClubs',()=>({useExpenseClubs:()=>({data:f.clubs,isLoading:false,isError:f.clubError,refetch:vi.fn()})}));
 vi.mock('@/hooks/clubExpenses/useClubExpenses',()=>({useClubExpenses:(...args:unknown[])=>{f.read(...args);return f.summary;},useRecordClubExpense:()=>({isPending:false,mutateAsync:f.write,pendingInput:f.pendingInput,contextKey:'LOCAL_TEST'})}));
 import ClubExpenses from './ClubExpenses';
-beforeEach(()=>{f.read.mockReset();f.write.mockReset();f.pendingInput=null;f.clubError=false;f.clubs=[{id:'club-a',name:'LOCAL TEST A'}];f.summary={data:undefined,isError:true,isLoading:false,isFetching:false,refetch:vi.fn()};});
+beforeEach(()=>{sessionStorage.clear();f.cashFlag=false;f.read.mockReset();f.write.mockReset();f.pendingInput=null;f.clubError=false;f.clubs=[{id:'club-a',name:'LOCAL TEST A'}];f.summary={data:undefined,isError:true,isLoading:false,isFetching:false,refetch:vi.fn()};});
 afterEach(()=>{cleanup();vi.useRealTimers();});
 const mount=()=>render(<MemoryRouter><ClubExpenses/></MemoryRouter>);
 it('does not render a failed expense read as verified zero or empty history',()=>{
@@ -24,6 +25,16 @@ it('drops a selected club when it disappears from current membership evidence',(
  const v=mount();f.clubs=[{id:'club-b',name:'LOCAL TEST B'}];v.rerender(<MemoryRouter><ClubExpenses/></MemoryRouter>);expect(f.read.mock.calls.at(-1)?.[1]).toBe('club-b');
 });
 const verified=()=>{f.summary={...f.summary,isError:false,data:{rows:[],totalVnd:0,paidVnd:0,unpaidVnd:0}};};
+it('offers one entry task at a time and keeps the explicit cash source hidden by default',async()=>{
+ verified();const view=mount();expect(screen.queryByRole('button',{name:'Chi từ két Cashier'})).toBeNull();
+ f.cashFlag=true;view.rerender(<MemoryRouter><ClubExpenses/></MemoryRouter>);
+ fireEvent.click(screen.getByRole('button',{name:'Chi từ két Cashier'}));await screen.findByText('LOCAL TEST SOURCE ENTRY');expect(screen.queryByLabelText('Số tiền')).toBeNull();
+ fireEvent.click(screen.getByRole('button',{name:'Ghi nhận chi phí'}));expect(screen.getByLabelText('Số tiền')).toBeTruthy();expect(screen.queryByText('LOCAL TEST SOURCE ENTRY')).toBeNull();
+});
+it('keeps source recovery reachable after the UI flag is off and blocks switching to another expense',async()=>{
+ verified();sessionStorage.setItem('vinpoker:cashier-expense:v1:owner-test:club-a','unresolved source request');mount();
+ await screen.findByText('LOCAL TEST SOURCE ENTRY');expect(screen.getByRole('button',{name:'Ghi nhận chi phí'})).toBeDisabled();expect(screen.queryByLabelText('Số tiền')).toBeNull();
+});
 const draft=()=>{fireEvent.change(screen.getByLabelText('Số tiền'),{target:{value:'10000'}});fireEvent.change(screen.getByLabelText('Mô tả'),{target:{value:'LOCAL TEST draft'}});};
 it('retains the draft until a confirmed asynchronous receipt and prevents double submit',async()=>{
  verified();let resolve!:(v:unknown)=>void;f.write.mockReturnValue(new Promise(r=>{resolve=r;}));mount();draft();const form=screen.getByLabelText('Số tiền').closest('form')!;fireEvent.submit(form);fireEvent.submit(form);expect(f.write).toHaveBeenCalledTimes(1);expect((screen.getByLabelText('Số tiền') as HTMLInputElement).value).toBe('10000');await act(async()=>{resolve({status:'ok'});});await waitFor(()=>expect((screen.getByLabelText('Số tiền') as HTMLInputElement).value).toBe(''));

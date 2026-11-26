@@ -4,6 +4,7 @@ import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext
 import { startLiveReportRefresh } from "@/lib/liveReportRefresh";
 import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import type { FinanceRange } from "./financeReadAdapter";
+import {FEATURES} from '@/lib/featureFlags';
 
 const amount = z.number().refine(Number.isSafeInteger);
 const cashflow = z.object({
@@ -11,7 +12,7 @@ const cashflow = z.object({
   club_id: z.string(),
   from: z.string(),
   to: z.string(),
-  cash_flow: z.object({ cash_in: amount, cash_out: amount, prize_cash_out: amount.optional(), dealer_pt_cash_out: amount.refine(value=>value>=0).optional(), bank_in: amount, bank_out: amount, unallocated_bank: amount }),
+  cash_flow: z.object({ cash_in: amount, cash_out: amount, prize_cash_out: amount.optional(), dealer_pt_cash_out: amount.refine(value=>value>=0).optional(), club_expense_cash_out: amount.refine(value=>value>=0).optional(), bank_in: amount, bank_out: amount, unallocated_bank: amount }),
   unmatched_verified_bank: amount,
   entry_allocation: z.object({ prize_delta: amount, fees_delta: amount, unclassified_entries: z.number().int().nonnegative() }),
   closed_shift_variance: amount,
@@ -40,7 +41,7 @@ export default function CashierCashflowPanel({ clubId, range }: { clubId: string
         if (active) setState({ data: null, error: "Không tải được sổ dòng tiền Cashier V1." });
       }
     };
-    const stop = startLiveReportRefresh(load, 30_000);
+    const stop = startLiveReportRefresh(load, FEATURES.clubExpenseCashSource?5_000:30_000);
     return () => { active = false; stop(); };
   }, [client, clubId, range.from, range.to]);
 
@@ -58,6 +59,9 @@ export default function CashierCashflowPanel({ clubId, range }: { clubId: string
             )}
             {state.data.cash_flow.dealer_pt_cash_out !== undefined && (
               <Cell label="Lương dealer PT có chứng từ chi từ két" value={money(state.data.cash_flow.dealer_pt_cash_out)} />
+            )}
+            {state.data.cash_flow.club_expense_cash_out !== undefined && (
+              <Cell label="Chi phí có chứng từ chi từ két" value={money(state.data.cash_flow.club_expense_cash_out)} />
             )}
             <Cell label="Ngân hàng nhận" value={money(state.data.cash_flow.bank_in)} />
             <Cell label="Ngân hàng hoàn đã ghi" value={money(state.data.cash_flow.bank_out)} />

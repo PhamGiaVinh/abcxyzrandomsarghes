@@ -51,3 +51,9 @@ it('does not display an unverifiable linked cash wage as zero',async()=>{
  expect(await screen.findByRole('alert')).toBeVisible();
  expect(screen.queryByText('Lương dealer PT có chứng từ chi từ két')).toBeNull();
 });
+it.each([1000000,null])('requires a verified explicit expense cash outflow %s',async(value)=>{
+ rpc.mockResolvedValue({data:{...response,cash_flow:{...response.cash_flow,club_expense_cash_out:value}},error:null});
+ render(<CashierCashflowPanel clubId="club-test" range={range}/>);
+ if(value===null){expect(await screen.findByRole('alert')).toBeVisible();expect(screen.queryByText('Chi phí có chứng từ chi từ két')).toBeNull();}
+ else{expect(await screen.findByText('Chi phí có chứng từ chi từ két')).toBeVisible();expect(screen.getByText('1.000.000 VND')).toBeVisible();expect(screen.getByText(/không cộng các số này thêm lần nữa/i)).toBeVisible();}
+});
