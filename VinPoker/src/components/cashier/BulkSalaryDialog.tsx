@@ -96,7 +96,7 @@ export function BulkSalaryDialog({
   const selPt = selectedDealers.filter((d) => d.employment_type === "part_time");
   const selFt = selectedDealers.filter((d) => d.employment_type !== "part_time");
   const ptHourly = parseVnd(ptHourlyInput, MAX_INTEGER_RATE_VND);
-  const ftMonthly = parseVnd(ftMonthlyInput, MAX_INTEGER_RATE_VND * WORKING_DAYS_PER_MONTH);
+  const ftMonthly = parseVnd(ftMonthlyInput, MAX_INTEGER_RATE_VND);
   const invalidPt = selPt.length > 0 && ptHourlyInput.trim() !== "" && ptHourly === null;
   const invalidFt = selFt.length > 0 && ftMonthlyInput.trim() !== "" && (
     ftMonthly === null || selFt.some((dealer) => {

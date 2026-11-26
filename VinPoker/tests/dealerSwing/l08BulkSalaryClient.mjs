@@ -125,6 +125,7 @@ try {
   const rows = club => JSON.parse(sql(`SELECT coalesce(json_agg(d ORDER BY d.full_name),'[]') FROM (SELECT ${columns} FROM public.dealers WHERE club_id='${club}') d;`));
   const reset = () => {
     sql(`UPDATE public.dealers SET monthly_salary_vnd=null,base_rate_vnd=null,hourly_rate_vnd=null,deleted_at=null WHERE id IN ('${ids.pt}','${ids.ft}','${ids.other}');
+      UPDATE public.dealers SET standard_hours_per_shift=8 WHERE id='${ids.ft}';
       INSERT INTO public.club_dealer_controls(club_id,user_id) SELECT '${ids.clubA}','${ids.operator}' WHERE NOT EXISTS(SELECT FROM public.club_dealer_controls WHERE club_id='${ids.clubA}' AND user_id='${ids.operator}');
       DELETE FROM l08_client_fixture.salary_audit WHERE dealer_id IN ('${ids.pt}','${ids.ft}','${ids.other}');`);
   };
@@ -224,6 +225,23 @@ try {
   }
   reset();
   {
+    sql(`UPDATE public.dealers SET standard_hours_per_shift=0.01 WHERE id='${ids.ft}';`);
+    const page = await pageFor(768);
+    await page.getByLabel('Lương tháng cho FT',{exact:true}).fill('2147483648');
+    await expect(page.getByRole('button',{name:/Áp lương cho/})).toBeDisabled();
+    await page.getByLabel('Lương tháng cho FT',{exact:true}).fill('558345749');
+    await expect(page.getByRole('button',{name:/Áp lương cho/})).toBeDisabled();
+    assert.equal(changes(ids.ft)+changes(ids.pt),0);
+    await page.getByLabel('Lương tháng cho FT',{exact:true}).fill('558345748');
+    await confirm(page);
+    const actual=rate(ids.ft);
+    assert.equal(actual.monthly_salary_vnd,558345748);
+    assert.equal(actual.base_rate_vnd,21474836);
+    assert.equal(actual.hourly_rate_vnd,2147483646);
+    receipt.cases.push({name:'actual-integer-monthly-and-derived-hour-boundaries',width:768,invalidChanges:0,validMonthly:558345748,validHourly:2147483646}); await page.close();
+  }
+  reset();
+  {
     const page = await pageFor(320); let raced = false;
     await page.route(api+'/**', async route => {
       if (ftPatch(route.request()) && !raced) {
@@ -312,7 +330,7 @@ try {
   const denied = await sdk(ids.owner).from('dealers').update({hourly_rate_vnd:123}).eq('club_id',ids.clubB).eq('id',ids.other).select('id');
   assert.ok(denied.error || denied.data.length===0); assert.equal(changes(ids.other),0);
   receipt.foreignWriteDenied = true;
-  assert.equal(receipt.pageErrors,0); assert.equal(receipt.cases.length,6);
+  assert.equal(receipt.pageErrors,0); assert.equal(receipt.cases.length,7);
   receipt.componentSha256 = createHash('sha256').update(readFileSync('src/components/cashier/BulkSalaryDialog.tsx')).digest('hex');
   receipt.status='passed';
 } catch (error) {

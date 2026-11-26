@@ -67,7 +67,7 @@ it.each(['-100000','1e3','100,000','100.00','2147483648'])('blocks an invalid PT
   expect(mock.update).not.toHaveBeenCalled();
 });
 
-it.each(['-2600000', '1e3', 'lương 2600000', '2.60.000', '2,600,000', '0', '55834574823', '9007199254740993'])('blocks an invalid FT amount even when PT is valid: %s', (value) => {
+it.each(['-2600000', '1e3', 'lương 2600000', '2.60.000', '2,600,000', '0', '2147483648', '55834574823', '9007199254740993'])('blocks an invalid FT amount even when PT is valid: %s', (value) => {
   render(<BulkSalaryDialog dealers={dealers} onDone={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', {name: 'Áp lương hàng loạt'}));
   fireEvent.click(screen.getByRole('button', {name: 'Chọn tất cả đang hiển thị'}));
@@ -94,28 +94,38 @@ it('connects each invalid field to its explanation and clears the error after co
   expect(screen.getByRole('button', {name: /Áp lương cho/})).toBeEnabled();
 });
 
-it('blocks the whole selection when a half-hour FT shift would overflow the derived hourly rate', () => {
-  const halfHourDealers = dealers.map(dealer => ({...dealer, standard_hours_per_shift: 0.5}));
-  render(<BulkSalaryDialog dealers={halfHourDealers} onDone={vi.fn()} />);
+it('blocks a derived hourly overflow for a stored hundredth-hour shift even when monthly VND fits INTEGER', () => {
+  const shortShiftDealers = dealers.map(dealer => ({...dealer, standard_hours_per_shift: 0.01}));
+  render(<BulkSalaryDialog dealers={shortShiftDealers} onDone={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', {name: 'Áp lương hàng loạt'}));
   fireEvent.click(screen.getByRole('button', {name: 'Chọn tất cả đang hiển thị'}));
   fireEvent.change(screen.getByLabelText('Lương giờ cho PT'), {target: {value: '100000'}});
-  fireEvent.change(screen.getByLabelText('Lương tháng cho FT'), {target: {value: '55.834.574.822'}});
+  fireEvent.change(screen.getByLabelText('Lương tháng cho FT'), {target: {value: '558.345.749'}});
   expect(screen.getByRole('button', {name: /Áp lương cho/})).toBeDisabled();
   expect(screen.getByLabelText('Lương tháng cho FT')).toHaveAttribute('aria-invalid', 'true');
   expect(mock.update).not.toHaveBeenCalled();
 });
 
-it('preserves the existing FT rounding at the valid half-hour integer boundary', async () => {
-  mock.rows.get('ft').standard_hours_per_shift = 0.5;
-  const halfHourDealers = dealers.map(dealer => ({...dealer, standard_hours_per_shift: 0.5}));
-  render(<BulkSalaryDialog dealers={halfHourDealers} onDone={vi.fn()} />);
+it('preserves existing FT rounding at the valid stored hundredth-hour boundary', async () => {
+  mock.rows.get('ft').standard_hours_per_shift = 0.01;
+  const shortShiftDealers = dealers.map(dealer => ({...dealer, standard_hours_per_shift: 0.01}));
+  render(<BulkSalaryDialog dealers={shortShiftDealers} onDone={vi.fn()} />);
   fireEvent.click(screen.getByRole('button', {name: 'Áp lương hàng loạt'}));
   fireEvent.click(screen.getByRole('button', {name: 'Chọn tất cả đang hiển thị'}));
-  fireEvent.change(screen.getByLabelText('Lương tháng cho FT'), {target: {value: '27.917.287.417'}});
+  fireEvent.change(screen.getByLabelText('Lương tháng cho FT'), {target: {value: '558.345.748'}});
   fireEvent.click(screen.getByRole('button', {name: 'Áp lương cho 1 dealer'}));
   await act(async () => { fireEvent.click(screen.getByRole('button', {name: 'Áp lương'})); });
-  expect(mock.update).toHaveBeenCalledWith({monthly_salary_vnd: 27917287417, base_rate_vnd: 1073741824, hourly_rate_vnd: 2147483647});
+  expect(mock.update).toHaveBeenCalledWith({monthly_salary_vnd: 558345748, base_rate_vnd: 21474836, hourly_rate_vnd: 2147483646});
+});
+
+it('accepts the stored monthly INTEGER maximum with the unchanged eight-hour formulas', async () => {
+  render(<BulkSalaryDialog dealers={dealers} onDone={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', {name: 'Áp lương hàng loạt'}));
+  fireEvent.click(screen.getByRole('button', {name: 'Chọn tất cả đang hiển thị'}));
+  fireEvent.change(screen.getByLabelText('Lương tháng cho FT'), {target: {value: '2.147.483.647'}});
+  fireEvent.click(screen.getByRole('button', {name: 'Áp lương cho 1 dealer'}));
+  await act(async () => { fireEvent.click(screen.getByRole('button', {name: 'Áp lương'})); });
+  expect(mock.update).toHaveBeenCalledWith({monthly_salary_vnd: 2147483647, base_rate_vnd: 82595525, hourly_rate_vnd: 10324441});
 });
 
 it('leaves a blank selected group unchanged while applying the other valid group', async () => {
