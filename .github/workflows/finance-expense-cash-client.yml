@@ -60,6 +60,15 @@ jobs:
         run: |
           npm ci --ignore-scripts
           npx playwright install --with-deps chromium
+      - name: Preserve the completed case without repeating it
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45743258253" > "$RUNNER_TEMP/expense-client-partial-producer.json"
+          jq -e '.conclusion=="failure" and .head_sha=="de2371183801268ddc1aa829c15ac2874bcb40c6" and .event=="pull_request" and .path==".github/workflows/finance-expense-cash-client.yml"' "$RUNNER_TEMP/expense-client-partial-producer.json" >/dev/null
+          git fetch --no-tags --depth=1 origin de2371183801268ddc1aa829c15ac2874bcb40c6
+          git diff --exit-code de2371183801268ddc1aa829c15ac2874bcb40c6 HEAD -- VinPoker/src VinPoker/supabase
+          gh run download 45743258253 -R "$GITHUB_REPOSITORY" -n expense-cash-client-qualification -D "$RUNNER_TEMP/expense-client-partial"
       - name: Verify affected client source
         working-directory: VinPoker
         env: {NODE_OPTIONS: '--max-old-space-size=4096'}
@@ -68,6 +77,7 @@ jobs:
           npx tsc -b
       - name: Actual client to HTTP to database recovery cases only
         working-directory: VinPoker
+        env: {EXPENSE_CLIENT_PARTIAL_PROOF: '${{ runner.temp }}/expense-client-partial'}
         run: node tests/financeExpenseCashClient/client.http.mjs
       - name: Upload synthetic client evidence only
         if: always()

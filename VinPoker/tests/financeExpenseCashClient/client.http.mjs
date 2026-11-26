@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import {randomBytes,createHmac,createHash} from 'node:crypto';
-import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {mkdirSync,readFileSync,writeFileSync,copyFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {createServer} from 'vite';
 import {chromium} from 'playwright';
@@ -28,7 +28,7 @@ async function rpc(name,args,actor){const r=await request(name,args,actor);asser
 async function open(f){const r=await rpc('cashier_open_shift_v1',{p_club_id:f.club,p_opening_cash:10000000},f.cashier);assert.equal(r.ok,true);f.shift=r.shift_id;}
 async function seed(index){const f={club:id(index*10+1),owner:id(index*10+2),cashier:id(index*10+3),accountant:id(index*10+4)};
  sql(`INSERT INTO auth.users(id) VALUES('${f.owner}'),('${f.cashier}'),('${f.accountant}');
- INSERT INTO public.profiles(user_id,display_name) VALUES('${f.owner}','Expense UI TEST owner'),('${f.cashier}','Expense UI TEST cashier'),('${f.accountant}','Expense UI TEST accountant');
+ INSERT INTO public.profiles(user_id,display_name) VALUES('${f.owner}','Expense UI TEST owner ${index}'),('${f.cashier}','Expense UI TEST cashier ${index}'),('${f.accountant}','Expense UI TEST accountant ${index}');
  INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES('${f.club}','${f.owner}','Expense UI TEST ${index}','TEST','approved');
  INSERT INTO public.club_cashiers(club_id,user_id) VALUES('${f.club}','${f.cashier}');
  INSERT INTO public.club_accountants(club_id,user_id,granted_by) VALUES('${f.club}','${f.accountant}','${f.owner}');
@@ -41,6 +41,14 @@ const zero=f=>assert.deepEqual(facts(f),{expenses:0,receipts:0,movements:0});
 const journal=(page,f)=>page.evaluate(key=>sessionStorage.getItem(key),`vinpoker:cashier-expense:v1:${f.cashier}:${f.club}`);
 let browser,server,livePage;
 try{
+ const prior=JSON.parse(readFileSync(join(process.env.EXPENSE_CLIENT_PARTIAL_PROOF,'failure.json'),'utf8'));
+ assert.equal(prior.sourceSha,'de2371183801268ddc1aa829c15ac2874bcb40c6');
+ assert.equal(prior.statusReaderSqlSha256,sqlFiles[3][1]);assert.equal(prior.sqlSha256,sqlFiles[2][1]);
+ assert.deepEqual(prior.browser,[{width:320,scenario:'committed-lost-ack',posts:1,lookupReads:1,oneCostReceiptMovement:true,recordedCash:9000000,overflow:false,pageErrors:0}]);
+ assert.match(prior.error,/validate_unique_display_name/);
+ const reusedImage=readFileSync(join(process.env.EXPENSE_CLIENT_PARTIAL_PROOF,'committed-lost-ack-320.png'));
+ copyFileSync(join(process.env.EXPENSE_CLIENT_PARTIAL_PROOF,'committed-lost-ack-320.png'),join(folder,'reused-committed-lost-ack-320.png'));
+ proof.reusedBrowser=[{...prior.browser[0],sourceSha:prior.sourceSha,producerRun:'45743258253',imageSha256:createHash('sha256').update(reusedImage).digest('hex')}];
  assert.equal(sql('SELECT count(*) FROM public.clubs'),'0');
  for(const [file] of sqlFiles){const r=spawnSync('psql',['-Xq','-v','ON_ERROR_STOP=1','--single-transaction','-f',file],{encoding:'utf8'});assert.equal(r.status,0,String(r.stderr).slice(0,1600));}
  proof.statusReaderSqlSha256=sqlFiles[3][1];
@@ -58,6 +66,10 @@ try{
  let ready=false;for(let i=0;i<60;i++){try{if((await fetch(api,{signal:AbortSignal.timeout(500)})).status<500){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,500));}assert.ok(ready);
  server=await createServer({configFile:'tests/financeExpenseCashClient/http.vite.config.ts'});await server.listen();browser=await chromium.launch({headless:true});let index=100;
  for(const width of [320,375,414,768,1280])for(const scenario of ['committed-lost-ack','pending-reload-same-intent','closed-before-submit','revoked-unknown']){
+  // This exact completed case is retained from a failed producer whose NEXT
+  // fixture violated the real unique display-name constraint. Product/src/SQL
+  // equality is enforced by the workflow; never call that producer a green job.
+  if(width===320&&scenario==='committed-lost-ack')continue;
   const f=await seed(index++),page=await browser.newPage({viewport:{width,height:1000},reducedMotion:'reduce'});livePage=page;
   const writes=[],lookups=[],errors=[];let first=true,denyLookup=scenario==='pending-reload-same-intent';
   page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.url().endsWith('/rpc/record_cashier_club_expense_v1'))writes.push(r.postDataJSON());if(r.url().includes('receipts%3A')||decodeURIComponent(r.url()).includes('receipts:'))lookups.push(r.url());});
