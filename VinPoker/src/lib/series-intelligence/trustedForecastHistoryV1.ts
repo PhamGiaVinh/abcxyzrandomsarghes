@@ -67,7 +67,7 @@ function exclusion(eventId: string, code: TrustedForecastHistoryExclusionCode): 
   return { eventId, code };
 }
 
-function trustedHistoryEvent(event: SeriesEvent, sourceTimestamp: string, entries: number): SeriesEvent {
+function trustedHistoryEvent(event: SeriesEvent, availableAt: string, entries: number): SeriesEvent {
   return {
     ...event,
     // The native adapter may expose a live/current count. D2B actual truth is the only count used here.
@@ -75,7 +75,7 @@ function trustedHistoryEvent(event: SeriesEvent, sourceTimestamp: string, entrie
     unique_entries: null,
     reentries: null,
     prize_pool_actual: null,
-    outcome_available_at: sourceTimestamp,
+    outcome_available_at: availableAt,
     missingFields: event.missingFields.filter((field) => field !== "total_entries"),
   };
 }
@@ -201,7 +201,9 @@ export function buildTrustedForecastHistoryV1(input: TrustedForecastHistoryInput
       continue;
     }
 
-    events.push(trustedHistoryEvent(event, sourceTimestamp.iso, entriesMetric.value));
+    // A historical fact became usable once both the source event and its capture existed.
+    const availableAt = capturedAt.ms > sourceTimestamp.ms ? capturedAt.iso : sourceTimestamp.iso;
+    events.push(trustedHistoryEvent(event, availableAt, entriesMetric.value));
   }
 
   return freezeDeep({

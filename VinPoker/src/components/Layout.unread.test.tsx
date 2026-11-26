@@ -19,6 +19,11 @@ vi.mock('@/components/LogoFanButton',()=>({LogoFanButton:()=>null}));
 vi.mock('@/components/RegisteredBadge',()=>({RegisteredBadge:({placement}:{placement?:string})=><span data-testid="registration-placement">{placement??'floating'}</span>}));
 import {Layout} from './Layout';
 describe('Layout unread availability',()=>{
+ it.each(['/finance','/cashier','/accountant','/club/admin/finance'])('keeps finance content free of floating consumer controls on %s',route=>{
+  render(<MemoryRouter initialEntries={[route]}><Layout/></MemoryRouter>);
+  expect(screen.queryByRole('button',{name:'Install test'})).toBeNull();
+  expect(screen.queryByTestId('registration-placement')).toBeNull();
+ });
  it.each(['/tournament/test-tour','/tournament/test-tour/'])('keeps the install floater away from fixed tournament actions on %s',(route)=>{
   render(<MemoryRouter initialEntries={[route]}><Layout/></MemoryRouter>);
   expect(screen.queryByRole('button',{name:'Install test'})).toBeNull();

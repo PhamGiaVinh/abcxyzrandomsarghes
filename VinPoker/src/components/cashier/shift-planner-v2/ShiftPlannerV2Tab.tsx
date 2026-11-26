@@ -734,7 +734,7 @@ export default function ShiftPlannerV2Tab({
           <Input type="date" value={workDate} onChange={(e) => requestDateChange(e.target.value)} className="h-9 w-[150px]" />
           {live && (
             <Button variant="outline" size="sm" className="h-9" onClick={() => setEditorOpen(true)}>
-              <SlidersHorizontal className="mr-1.5 h-4 w-4" /> Quản lý ca
+              <SlidersHorizontal className="mr-1.5 h-4 w-4" /> Thêm / quản lý ca
             </Button>
           )}
         </div>

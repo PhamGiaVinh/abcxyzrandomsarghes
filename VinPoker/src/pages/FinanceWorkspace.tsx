@@ -1,47 +1,62 @@
 import type { ReactNode } from "react";
-import { useTranslation } from "react-i18next";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { FEATURES } from "@/lib/featureFlags";
 import { cn } from "@/lib/utils";
+import "./FinanceWorkspace.css";
 
 /** Shared navigation only; each existing page retains its own data and access guards. */
 export default function FinanceWorkspace() {
-  const { isAccountant, isClubOwner, isAdmin, isClubAdmin } = useAuth();
+  const { isAccountant, isClubOwner, isAdmin, isClubAdmin, isCashier, loading, rolesLoading, rolesError } = useAuth();
   const { pathname } = useLocation();
-  const { t } = useTranslation();
   const landing = pathname === "/finance";
 
+  if (landing && rolesError) return <p role="alert" className="p-4">Chưa xác minh được quyền CLB. Vui lòng tải lại trang.</p>;
+  if (landing && !loading && !rolesLoading) {
+    const destination = isClubOwner || isAdmin || isClubAdmin
+      ? "/club/admin/finance"
+      : isAccountant ? "/accountant" : isCashier ? "/cashier" : "/";
+    return <Navigate to={destination} replace />;
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
+    <div className="finance-workspace min-w-0 space-y-5 font-sans">
+      <div className="space-y-2.5">
         {landing ? (
-          <h1 className="font-display text-2xl text-primary">{t("financeWorkspace.title")}</h1>
+          <h1 className="font-display text-2xl text-primary">Quầy &amp; Tài chính</h1>
         ) : (
           <NavLink to="/finance" className="text-sm font-semibold text-primary">
-            {t("financeWorkspace.title")}
+            Quầy &amp; Tài chính
           </NavLink>
         )}
-        <nav aria-label={t("financeWorkspace.title")} className={cn("flex flex-wrap gap-2", landing && "grid sm:grid-cols-3")}>
+        <nav aria-label="Quầy & Tài chính" className={cn("flex gap-1 rounded-xl border border-border/60 bg-muted/30 p-1", landing && "grid sm:grid-cols-3")}>
+          {(isCashier || isClubOwner || isAdmin) && (
+            <FinanceLink to="/cashier" label="Quầy" landing={landing}>
+              Ca thu ngân, buy-in, hoàn tiền và trả thưởng.
+            </FinanceLink>
+          )}
           {(isClubAdmin || isClubOwner) && (
-            <FinanceLink to="/club/admin/finance" label={t("financeWorkspace.overview")} landing={landing}>
-              {t("financeWorkspace.overviewDescription")}
+            <FinanceLink to="/club/admin/finance" label="Báo cáo" landing={landing}>
+              Doanh thu, dòng tiền và công nợ.
             </FinanceLink>
           )}
-          {(isClubOwner || isAdmin) && <FinanceLink to="/club/admin/player-finance" label={t("playerFinance.title")} landing={landing}>{t("playerFinance.navDescription")}</FinanceLink>}
           {(isAccountant || isClubOwner || isAdmin) && (
-            <FinanceLink to="/accountant" label={t("financeWorkspace.payroll")} landing={landing}>
-              {t("financeWorkspace.payrollDescription")}
-            </FinanceLink>
-          )}
-          {(isClubAdmin || isClubOwner) && FEATURES.accountingControl && (
-            <FinanceLink to="/club/admin/accounting-control" label={t("financeWorkspace.reconciliation")} landing={landing}>
-              {t("financeWorkspace.reconciliationDescription")}
+            <FinanceLink to="/accountant" label="Đối soát" landing={landing}>
+              Lương, chi phí và các khoản cần kiểm tra.
             </FinanceLink>
           )}
         </nav>
       </div>
       <Outlet />
+      {(isClubOwner || isAdmin || isClubAdmin) && (
+        <details className="rounded-lg border border-border px-3 py-2 text-sm">
+          <summary className="cursor-pointer text-muted-foreground">Tra cứu chi tiết</summary>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {(isClubOwner || isAdmin) && <NavLink className="text-primary underline" to="/club/admin/player-finance">Giao dịch theo người chơi</NavLink>}
+            {FEATURES.accountingControl && <NavLink className="text-primary underline" to="/club/admin/accounting-control">Các báo cáo đối soát hiện có</NavLink>}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
@@ -51,8 +66,8 @@ function FinanceLink({ to, label, landing, children }: {
 }) {
   return (
     <NavLink to={to} className={({ isActive }) => cn(
-      "rounded-lg border px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-      isActive ? "border-primary/50 bg-primary/10 text-primary" : "border-border bg-card text-foreground hover:border-primary/50",
+      "min-h-11 flex-1 rounded-lg px-3 py-2.5 text-center text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      isActive ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-card/50",
       landing && "p-4",
     )}>
       <span className="font-medium">{label}</span>

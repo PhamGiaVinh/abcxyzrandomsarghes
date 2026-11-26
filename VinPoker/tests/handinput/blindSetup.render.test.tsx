@@ -77,6 +77,17 @@ describe("BlindSetupPanel (engine-mode blind setup phase)", () => {
 // A1 (trackerBlindAutoSeed) — the additive provenance + one-tap props. Absent →
 // byte-identical to today (the flag-OFF operator path never passes them).
 describe("BlindSetupPanel A1 blind auto-seed (additive props)", () => {
+  it("offers one atomic post for frozen BB ante hands and disables individual posts", () => {
+    const html = renderToStaticMarkup(<BlindSetupPanel {...baseProps} atomicBlinds ante={200}
+      lockedAmounts onPostBoth={() => {}} onToggleDeadSb={() => {}} />);
+    expect(html).toContain("Đặt blind và ante");
+    expect(html).toContain("ante tối đa 200");
+    expect(html).toContain("ưu tiên blind khi thiếu chip");
+    expect((html.match(/Chờ xác nhận/g) || []).length).toBe(2);
+    expect(html).not.toContain("Post SB");
+    expect(html).not.toContain("Post BB");
+    expect(html).not.toContain('type="checkbox"');
+  });
   it("without the new props the panel renders no one-tap button and no provenance line", () => {
     const html = renderToStaticMarkup(<BlindSetupPanel {...baseProps} />);
     expect(html).not.toContain("Đăng blind &amp; xác nhận");

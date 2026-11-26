@@ -84,8 +84,8 @@ export function countShadowDecisions(decisions: DecisionLog[]): number {
 }
 
 /**
- * Which snapshot to SCORE against — an event can have several. Prefer the one the post-event decision linked;
- * otherwise the latest PRE-event snapshot (smallest days_before, then newest created_at). The caller must show
+ * Which snapshot to SCORE against — an event can have several. If the decision names a snapshot, score only
+ * against that snapshot. For an unlinked decision, use the latest pre-event snapshot. The caller must show
  * WHICH snapshot was used so the score is never ambiguous.
  */
 export function pickScoringSnapshot(
@@ -93,8 +93,7 @@ export function pickScoringSnapshot(
   postDecision: DecisionLog | null,
 ): ForecastSnapshot | null {
   if (postDecision?.forecast_snapshot_id) {
-    const linked = snapshots.find((s) => s.id === postDecision.forecast_snapshot_id);
-    if (linked) return linked;
+    return snapshots.find((snapshot) => snapshot.id === postDecision.forecast_snapshot_id) ?? null;
   }
   if (snapshots.length === 0) return null;
   const sorted = [...snapshots].sort((a, b) => {

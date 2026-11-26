@@ -133,6 +133,7 @@ export interface ExactRational {
 
 export interface ForecastEvaluationAggregateV1 {
   readonly contractVersion: typeof FORECAST_EVALUATION_CONTRACT_VERSION;
+  readonly clubId: string;
   readonly targetMetric: DecisionTargetMetric;
   readonly horizon: DecisionPacketHorizon;
   readonly engineId: string;
@@ -143,6 +144,8 @@ export interface ForecastEvaluationAggregateV1 {
   readonly sumAbsoluteError: string;
   readonly meanSignedError: ExactRational;
   readonly mae: ExactRational;
+  /** Sum of absolute errors divided by the sum of actual entries. */
+  readonly wape: { readonly numerator: string; readonly denominator: string } | null;
   readonly exactCount: number;
   readonly overCount: number;
   readonly underCount: number;

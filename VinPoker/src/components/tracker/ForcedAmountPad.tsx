@@ -2,10 +2,11 @@
 // Forces manual entry so the seat's end-of-hand stack can't drift. Rendered only
 // while open (ActionDock mounts it conditionally), so its key listener is live only
 // then. Decides nothing about legality — the server is the source of truth.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { formatChips } from './constants';
 import type { ForcedAmountPadProps } from './types';
+import { acceptsTrackerShortcut } from './trackerShortcut';
 
 const NUM = 'font-display tabular-nums';
 const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '000', '0', 'del'] as const;
@@ -14,10 +15,12 @@ export function ForcedAmountPad({
   stack,
   committedThisStreet,
   minTotal,
+  enforceMinimum = false,
   onConfirm,
   onCancel,
 }: ForcedAmountPadProps) {
   const [entered, setEntered] = useState(0);
+  const pad = useRef<HTMLDivElement>(null);
 
   // total = the street total AFTER the action ("raise to"). Chips leaving the
   // stack = total - already-committed. Remaining = stack - that delta.
@@ -28,6 +31,7 @@ export function ForcedAmountPad({
   // BUGFIX: strict < — entering EXACTLY the minimum raise-to (e.g. 400k over a 200k BB)
   // is a LEGAL min-raise and must not trigger the "dưới mức tố tối thiểu" warning.
   const belowMin = valid && minTotal != null && entered < minTotal; // soft typo warning
+  const canConfirm = valid && !(enforceMinimum && belowMin);
 
   const press = (k: string) => {
     setEntered((prev) => {
@@ -38,22 +42,22 @@ export function ForcedAmountPad({
   };
 
   const confirm = () => {
-    if (valid) onConfirm(entered);
+    if (canConfirm) onConfirm(entered);
   };
 
   // Own keyboard while mounted: digits feed the pad, Enter confirms, Esc/Backspace edit.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!acceptsTrackerShortcut(e, pad.current?.parentElement ?? null)) return;
       if (/^[0-9]$/.test(e.key)) {
         press(e.key);
       } else if (e.key === 'Backspace') {
         e.preventDefault();
         press('del');
       } else if (e.key === 'Enter') {
+        if (e.target instanceof Element && e.target.closest('button, a[href]')) return;
         e.preventDefault();
-        if (entered > committedThisStreet && entered - committedThisStreet <= stack) {
-          onConfirm(entered);
-        }
+        if (canConfirm) onConfirm(entered);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         onCancel();
@@ -61,10 +65,10 @@ export function ForcedAmountPad({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [entered, committedThisStreet, stack, onConfirm, onCancel]);
+  }, [entered, canConfirm, onConfirm, onCancel]);
 
   return (
-    <div className="mt-2.5 rounded-xl border-2 border-[hsl(var(--destructive))] bg-[hsl(var(--card))] p-3">
+    <div ref={pad} className="mt-2.5 rounded-xl border-2 border-[hsl(var(--destructive))] bg-[hsl(var(--card))] p-3">
       <div className="mb-2.5 flex items-start justify-between gap-3">
         <div className="max-w-[55%] text-xs text-[hsl(var(--muted-foreground))]">
           Nhập <b className="text-[hsl(var(--destructive))]">TỔNG chip tố tới</b> (raise to — không
@@ -118,7 +122,7 @@ export function ForcedAmountPad({
         </Button>
         <button
           type="button"
-          disabled={!valid}
+          disabled={!canConfirm}
           onClick={confirm}
           className="min-h-[50px] rounded-lg bg-[hsl(var(--primary))] text-base font-bold text-[hsl(var(--primary-foreground))] transition-colors hover:bg-[hsl(var(--primary-glow))] disabled:cursor-not-allowed disabled:bg-[hsl(var(--secondary))] disabled:text-[hsl(var(--muted-foreground))]"
         >

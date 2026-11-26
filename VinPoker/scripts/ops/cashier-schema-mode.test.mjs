@@ -1,11 +1,12 @@
 import test, { after } from 'node:test';
+import './finance-schema-policy.test.mjs';
 import {selectedAudienceMetadata,audienceResourceStats,audiencePoolStats,readAudiencePoolMetrics,reentryServerTiming} from './operations-audience-scope.mjs';
 import http from 'node:http';
 import {ownedAudienceCancellation,audienceClockSignal,audienceScopeSignal,audienceFailure,audienceFileLimits,audienceGatewayConfig,prepareAudienceGatewayTemplate,audienceJoinFailure,audienceSocketDiagnostic,audienceWorkerFailure,audienceServerTiming,observeAudienceHandshake,observeAudienceSubscriptions} from './operations-audience-scope.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, existsSync, cpSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, posix, resolve } from 'node:path';
+import { dirname, join, posix, resolve } from 'node:path';
 import { spawnSync, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { selectCashierSchemaMode, qualifiedHud35 } from './select-cashier-schema-mode.mjs';
@@ -460,7 +461,7 @@ test('historical mode remains default and requires original baseline', () => {
 // Full-history checkout is mandatory in CI; no network or production access.
 const sourceRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const fixtureRoot = mkdtempSync(join(tmpdir(), 'cashier-qualified-tree-'));
-after(() => rmSync(fixtureRoot, { recursive: true, force: true }));
+after(() => { assert.equal(dirname(resolve(fixtureRoot)),resolve(tmpdir()));rmSync(fixtureRoot, { recursive: true, force: true }); });
 const git = (...args) => execFileSync('git', ['-C', fixtureRoot, ...args], { encoding: 'utf8' });
 const sourceGit = (...args) => execFileSync('git', ['-C', sourceRoot, ...args], { encoding: 'utf8' });
 git('init', '--quiet');
@@ -477,7 +478,11 @@ function setBlob(path, bytes, mode = '100644') {
   git('update-index', '--add', '--cacheinfo', `${mode},${oid},${path}`);
 }
 function commitTree(parent) {
-  return git('commit-tree', git('write-tree').trim(), ...(parent ? ['-p', parent] : []), '-m', 'isolated test').trim();
+  // This metadata fixture does not execute the inherited application tree.
+  // Partial clones can omit unrelated opaque blobs through alternates. The
+  // real validator still reads/hashes every required SQL/runtime/proof blob
+  // and rejects missing evidence; no production guard uses --missing-ok.
+  return git('commit-tree', git('write-tree','--missing-ok').trim(), ...(parent ? ['-p', parent] : []), '-m', 'isolated test').trim();
 }
 git('read-tree', baseline);
 for (const path of [policyFile, receiptFile, 'VinPoker/scripts/ops/select-cashier-schema-mode.mjs', '.github/workflows/cashier-tour-real-e2e.yml']) {

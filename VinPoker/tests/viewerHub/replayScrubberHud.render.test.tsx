@@ -164,10 +164,10 @@ describe("ReplayScrubber B1 HUD (additive `hud` prop)", () => {
     expect(container.textContent).not.toContain("Tóm tắt");
   });
 
-  it("hud → BB/POT bar renders with the hand's own blind (300k)", () => {
+  it("hud shows the hand's own blind and an unlabelled chip amount", () => {
     const { getByTestId } = render(<ReplayScrubber hand={hand} onFrame={() => {}} hud />);
     expect(getByTestId("replay-hud-bar").textContent).toContain("300k");
-    expect(getByTestId("replay-hud-bar").textContent).toContain("POT");
+    expect(getByTestId("replay-hud-pot-amount").textContent).toBe("0 BB");
   });
 
   it("hud keeps legacy settlement hidden even at the final frame", () => {
@@ -225,11 +225,16 @@ describe("ReplayScrubber B1 HUD (additive `hud` prop)", () => {
     );
 
     fireEvent.click(view.getByTitle("Phát"));
-    for (let step = 0; step < 4; step += 1) {
-      act(() => vi.advanceTimersByTime(1_000));
-    }
+    // React schedules the next timer only after each frame renders.
+    act(() => vi.advanceTimersByTime(1_000)); // SB
+    act(() => vi.advanceTimersByTime(1_000)); // BB
+    act(() => vi.advanceTimersByTime(350)); // start dealing
+    act(() => vi.advanceTimersByTime(verifiedHand.players.length * 400 + 300)); // all-in
+    act(() => vi.advanceTimersByTime(1_000)); // call and showdown
     expect(onRunoutPresentation.mock.calls.at(-1)?.[0]).toMatchObject({ phase: "hole_hold", visibleBoardCount: 0 });
-    act(() => vi.advanceTimersByTime(650));
+    act(() => vi.advanceTimersByTime(1_499));
+    expect(onRunoutPresentation.mock.calls.at(-1)?.[0]).toMatchObject({ phase: "hole_hold" });
+    act(() => vi.advanceTimersByTime(1));
     expect(onRunoutPresentation.mock.calls.at(-1)?.[0]).toMatchObject({ phase: "flop", visibleBoardCount: 3 });
     act(() => vi.advanceTimersByTime(1_350));
     expect(onRunoutPresentation.mock.calls.at(-1)?.[0]).toMatchObject({ phase: "turn", visibleBoardCount: 4 });

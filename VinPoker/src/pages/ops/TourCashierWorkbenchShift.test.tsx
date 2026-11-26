@@ -298,6 +298,30 @@ describe("closed Cashier shift correction", () => {
     expect(screen.getByRole('button',{name:'Ghi điều chỉnh'})).toBeEnabled();
   });
 
+  it.each(['verified', 'legacy', 'wrong-shift'])('shows only verified prize cash for the closed shift (%s)', async (kind) => {
+    const normal = mock.rpc.getMockImplementation()!;
+    mock.rpc.mockImplementation((name, args) => {
+      if (name !== 'cashier_shift_summary_v1') return normal(name, args);
+      const data = summary(kind === 'wrong-shift' ? 'shift-b' : args.p_shift_id);
+      return Promise.resolve({
+        data: { ...data, totals: { ...data.totals, prize_cash_out: kind === 'legacy' ? undefined : 18000000 } },
+        error: null,
+      });
+    });
+    render(<TourCashierWorkbench />);
+    if (kind === 'wrong-shift') {
+      await screen.findByText(/Không đọc được ca vừa chốt/);
+    } else {
+      await screen.findByText(/Điều chỉnh ghi bổ sung/);
+    }
+    if (kind === 'verified') {
+      expect(screen.getByText(/Thưởng đã chi từ két: 18.000.000 VND/)).toBeInTheDocument();
+      expect(within(screen.getByRole('region', { name: 'Điều chỉnh ca đã chốt' })).getByText('shift-a')).toBeVisible();
+    } else {
+      expect(screen.queryByText(/Thưởng đã chi từ két/)).not.toBeInTheDocument();
+    }
+  });
+
   it('does not replace absent closed-shift counted cash or variance with zero',async()=>{
     mock.closedMoney={counted_cash:null,variance_cash:null};
     render(<TourCashierWorkbench/>);

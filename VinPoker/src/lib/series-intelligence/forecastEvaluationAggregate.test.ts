@@ -45,6 +45,16 @@ describe("D2D-A aggregate forecast evaluation", () => {
     expect(result).toHaveLength(4);
   });
 
+  it("keeps club metrics separate and leaves WAPE unavailable at zero actual entries", async () => {
+    const first = await makeEvaluation(1, 110);
+    const zero = { ...first, clubId: "other-club", actual: "0", absoluteError: "110" };
+    const result = aggregateForecastEvaluationsV1([first, zero]);
+    expect(result).toHaveLength(2);
+    expect(result.find(row => row.clubId === CLUB)?.wape).toEqual({ numerator: "10", denominator: "100" });
+    expect(result.find(row => row.clubId === "other-club")?.wape).toBeNull();
+    expect(aggregateForecastEvaluationsV1([])).toEqual([]);
+  });
+
   it("excludes stale evaluations and keeps no-money output", async () => {
     const result = aggregateForecastEvaluationsV1([await makeEvaluation(1, 100), await makeEvaluation(2, 105, { stale: true })]);
     expect(result[0].n).toBe(1);

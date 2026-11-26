@@ -78,6 +78,7 @@ function toBB(chips: number, bb: number): number | null {
 export function deriveHandBreakdown(
   actions: BreakdownAction[],
   bigBlind: number,
+  formatAmount?: (amount: number) => string,
 ): BreakdownStreet[] {
   const bb = clamp0(bigBlind);
   const sorted = [...(actions || [])].sort(
@@ -101,7 +102,7 @@ export function deriveHandBreakdown(
       action_type: a.action_type,
       action_amount: amt,
       action_order: a.action_order,
-    }, (amount) => formatViewerBBOrUnavailable(amount, bb));
+    }, formatAmount ?? ((amount) => formatViewerBBOrUnavailable(amount, bb)));
 
     const row: BreakdownRow = {
       player_id: a.player_id,

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { SeriesEvent } from "./nativeData";
-import { forecastTurnout, forecastToOverlayFeed, describeFeature, FEED_LOG_SD_FALLBACK, type UpcomingEvent } from "./turnoutForecast";
+import { forecastTurnout, forecastToOverlayFeed, describeFeature, FEED_LOG_SD_FALLBACK, targetWeekdayCode, type UpcomingEvent } from "./turnoutForecast";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -34,6 +34,12 @@ function exactSet(days: number[]): SeriesEvent[] {
 }
 
 const future = (buy_in: number, gtd: number | null = null): UpcomingEvent => ({ event_date: "2026-02-15T19:00:00+07:00", buy_in, gtd });
+
+it("uses the Vietnam weekday just after local midnight for either timestamp representation", () => {
+  const target = future(1000000);
+  expect(targetWeekdayCode({ ...target, event_date: "2026-02-15T00:15:00+07:00" })).toBe("wd0");
+  expect(targetWeekdayCode({ ...target, event_date: "2026-02-14T17:15:00Z" })).toBe("wd0");
+});
 
 describe("forecastTurnout — degrade ladder", () => {
   it("N ≤ 1 → unavailable, no number, note (no NaN)", () => {

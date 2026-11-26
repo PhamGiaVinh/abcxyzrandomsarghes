@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { TvClockScreen } from "@/components/tv/TvClockScreen";
 import { TvChrome } from "@/components/tv/TvChrome";
+import { TvLevelSound } from "@/components/tv/TvLevelSound";
 import { useMockTvData } from "@/lib/tv/mockTvData";
 import { useTournamentTvData } from "@/hooks/useTournamentTvData";
 import { useTournamentRedrawTv } from "@/hooks/useTournamentRedrawTv";
@@ -54,6 +55,7 @@ const TournamentTv = () => {
       wrapperProps={{ "data-tournament-id": tournamentId } as HTMLAttributes<HTMLDivElement>}
       overlay={
         <>
+          <TvLevelSound data={showScreen && !redrawActive ? data : null} />
           {isMock ? (
             <span className="absolute right-[1.5vmin] top-[11vh] rounded border border-amber-500/50 bg-amber-500/15 px-[1.2vmin] py-[0.4vmin] text-[1.6vmin] font-bold uppercase tracking-widest text-amber-400">
               {t("tv.demo")}

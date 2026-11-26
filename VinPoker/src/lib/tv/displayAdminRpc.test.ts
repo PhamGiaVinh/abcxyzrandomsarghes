@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { vi } from "vitest";
-import { displayLabel, isDisplayOnline, listClubDisplays, updateDisplay, type TvDisplayRow } from "./displayAdminRpc";
+import { claimDisplay, displayLabel, isDisplayOnline, listClubDisplays, updateDisplay, type TvDisplayRow } from "./displayAdminRpc";
 
 const { rpc, read } = vi.hoisted(() => ({ rpc: vi.fn(), read: vi.fn() }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { rpc, from: () => {
@@ -89,4 +89,11 @@ describe("displayLabel", () => {
   it("falls back to plain TV when nothing is set", () => {
     expect(displayLabel({ name: null, display_number: null })).toBe("TV");
   });
+});
+
+it("requires a server receipt before confirming TV pairing", async () => {
+  rpc.mockResolvedValueOnce({ data: null, error: null });
+  expect((await claimDisplay("010203", "club-a", "", "")).error).toBeTruthy();
+  rpc.mockResolvedValueOnce({ data: { display_id: "tv-a", display_number: 1 }, error: null });
+  expect(await claimDisplay("010203", "club-a", "", "")).toEqual({ error: null, payloadError: null });
 });

@@ -6,12 +6,13 @@ import { createFloorTableControlV3Client, type FloorTableControlV3Rpc } from "@/
 import type { StandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
 import { MultiDayBaggingPanel } from "@/ops/chip-ops/MultiDayBaggingPanel";
 import { DealerShotClock } from "./DealerShotClock";
+import { ActionShotClock } from "./ActionShotClock";
 import { DealerFloorAlertControls } from "./DealerFloorAlertControls";
 import "./dealerTablet.css";
 
 type CockpitProps = {
   hook: StandaloneHandInput; header: ReactNode; orphan: ReactNode; progress: ReactNode;
-  felt: ReactNode; board: ReactNode; voice: ReactNode; guided: ReactNode; log: ReactNode;
+  felt: ReactNode | ((clock: ReactNode) => ReactNode); board: ReactNode; voice: ReactNode; guided: ReactNode; log: ReactNode;
 };
 export function DealerTabletCockpit(props: CockpitProps) {
   const { hook } = props;
@@ -72,28 +73,41 @@ export function DealerTabletLayout({ hook, header, orphan, progress, felt, board
   const [normal, setNormal] = useState(false);
   const [input, setInput] = useState<"manual" | "voice">("manual");
   const tracker = trackerAllowed && !normal;
-  const clockActive = tracker && hook.handStarted && hook.showActionStep && Boolean(hook.engineActor);
-  const clockBlocked = hook.submitting || hook.actionSyncBlocked || hook.isReadOnly || hook.syncPhase === "sending" || hook.syncPhase === "error" || hook.syncPhase === "uncertain";
   const turnKey = `${hook.handId}:${hook.currentStreet}:${hook.engineActor?.player_id}:${hook.actions.length}`;
+  const clock = tracker && !hook.isReadOnly && hook.handStarted && hook.showActionStep && hook.engineActor && (
+    <ActionShotClock key={turnKey} playerLabel={hook.playerName(hook.engineActor.player_id)} />
+  );
   return <div className="dealer-cockpit">
     <header className="dealer-cockpit-header">{header}</header>
     <nav className="dealer-modebar" aria-label="Chế độ bàn Dealer">
       <span className="text-xs text-zinc-400">Chế độ</span>
       <div className="dealer-segment"><button aria-pressed={!tracker} onClick={() => setNormal(true)}>Thường</button><button disabled={!trackerAllowed} aria-pressed={tracker} onClick={() => setNormal(false)}>Tracker</button></div>
       <span className="dealer-access">{trackerAllowed ? <ShieldCheck size={17} /> : <LockKeyhole size={17} />}{trackerAllowed ? "Floor đã cấp quyền Tracker" : "Tracker cần phiên bàn và quyền Floor hợp lệ"}</span>
-      {tracker && <div className="dealer-segment ml-auto" aria-label="Cách nhập Tracker"><button aria-pressed={input === "manual"} onClick={() => setInput("manual")}>Thủ công</button><button aria-pressed={input === "voice"} onClick={() => setInput("voice")}><Mic size={15} />Voice Assist</button></div>}
+      {tracker && <div role="group" className="dealer-segment ml-auto" aria-label="Cách nhập Tracker">
+        <button type="button" aria-pressed={input === "manual"} onClick={() => setInput("manual")}>Chỉ nhập tay</button>
+        <button type="button" aria-pressed={input === "voice"} onClick={() => setInput("voice")}><Mic size={15} />Mic + tay</button>
+      </div>}
     </nav>
     {tracker && orphan}
     {tracker && floorAlertsEnabled && hook.tournamentTableId && <DealerFloorAlertControls key={`${hook.tournamentId}:${hook.tournamentTableId}`} tournamentId={hook.tournamentId} tournamentTableId={hook.tournamentTableId} handId={hook.handId ?? null} enabled />}
     <div className="dealer-cockpit-grid">
-      <div className="dealer-table-region"><div>{progress}</div><div {...(!tracker ? { inert: "" } : {})}>{felt}</div>{board}<details className="dealer-log"><summary>Nhật ký thao tác</summary>{log}</details></div>
+      <div className="dealer-table-region">
+        <div>{progress}</div>
+        <div {...(!tracker ? { inert: "" } : {})}>{typeof felt === "function" ? felt(clock) : felt}</div>
+        {board}
+        {typeof felt !== "function" && clock && <div className="text-center">
+          <p className="text-xs text-amber-100">Ghế {hook.engineActor!.seat_number} · {hook.playerName(hook.engineActor!.player_id)}</p>
+          {clock}
+        </div>}
+      </div>
       <aside className="dealer-control-region">
-        <DealerShotClock key={`${hook.tournamentTableId}:${tracker}`} turnKey={turnKey} active={clockActive} blocked={tracker && clockBlocked} playerLabel={clockActive ? `Ghế ${hook.engineActor!.seat_number} · ${hook.playerName(hook.engineActor!.player_id)}` : "Dealer điều khiển đồng hồ"} />
         {tracker ? <>
           {input === "voice" && <div className="dealer-voice-region">{voice}</div>}
-          {input === "manual" || !hook.showActionStep ? guided : <details className="dealer-manual-fallback"><summary>Thao tác tay / sửa hand</summary>{guided}</details>}
+          {guided}
           {hook.handStarted && hook.actions.length > 0 && !hook.canUndo && <p className="dealer-undo-notice">Action trước khi tải lại không nằm trong Hoàn tác cục bộ. Dùng Báo Floor để yêu cầu sửa hand; không xóa action mù trên server.</p>}
-        </> : <div className="dealer-normal-note"><h2>Chế độ thường</h2><p>Sử dụng đồng hồ cho bàn. Chọn Tracker khi Floor đã cấp quyền để nhập diễn biến hand.</p></div>}
+        </> : <><DealerShotClock turnKey={turnKey} active={false} playerLabel="Dealer điều khiển đồng hồ" />
+          <div className="dealer-normal-note"><h2>Chế độ thường</h2><p>Sử dụng đồng hồ cho bàn. Chọn Tracker khi Floor đã cấp quyền để nhập diễn biến hand.</p></div></>}
+        {tracker && <details className="dealer-log"><summary>Nhật ký thao tác</summary>{log}</details>}
       </aside>
     </div>
   </div>;
