@@ -287,11 +287,14 @@ for (const snippet of [
 }
 const recoveryJobBoundary = "\n  recover-reviewed-baseline:";
 const operationsRecoveryBoundary = "\n  recover-operations-baseline:";
+const nov19RecoveryBoundary = "\n  recover-nov19-baseline:";
 const captureOnlyWorkflow = schemaCaptureWorkflow.split(recoveryJobBoundary)[0];
 const recoveryOnlyWorkflow = schemaCaptureWorkflow.includes(recoveryJobBoundary)
   ? schemaCaptureWorkflow.split(recoveryJobBoundary).slice(1).join(recoveryJobBoundary).split(operationsRecoveryBoundary)[0] : "";
 const operationsRecoveryWorkflow = schemaCaptureWorkflow.includes(operationsRecoveryBoundary)
-  ? schemaCaptureWorkflow.split(operationsRecoveryBoundary)[1] : "";
+  ? schemaCaptureWorkflow.split(operationsRecoveryBoundary)[1].split(nov19RecoveryBoundary)[0] : "";
+const nov19RecoveryWorkflow = schemaCaptureWorkflow.includes(nov19RecoveryBoundary)
+  ? schemaCaptureWorkflow.split(nov19RecoveryBoundary)[1] : "";
 const secretReferences = (source) => [...new Set(
   [...source.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((match) => match[1]),
 )].sort();
@@ -323,6 +326,22 @@ if (operationsRecoveryWorkflow) {
       || !operationsRecoveryWorkflow.includes("0463831bb9f8f142d585fd51c1b0633963b2161f")
       || /supabase\s+(?:link|db|functions)|secrets\.SUPABASE|vercel\s+(?:deploy|--prod)/i.test(operationsRecoveryWorkflow)) {
     throw new Error("Operations schema recovery has an unexpected credential, provenance or live-access scope");
+  }
+}
+
+if (nov19RecoveryWorkflow) {
+  const expectedSecrets = Array.from({length:34}, (_,index) =>
+    `VINPOKER_NOV19_SCHEMA_RECOVERY_${String(index+1).padStart(2,"0")}`).sort();
+  if (secretReferences(nov19RecoveryWorkflow).join(",") !== expectedSecrets.join(",")
+      || !nov19RecoveryWorkflow.includes("inputs.owner_ack == 'RECOVER_NOV19_SCHEMA_ONLY'")
+      || !nov19RecoveryWorkflow.includes("github.actor == github.repository_owner")
+      || !nov19RecoveryWorkflow.includes("github.triggering_actor == github.repository_owner")
+      || !nov19RecoveryWorkflow.includes("environment: dealer-swing-production-critical")
+      || !nov19RecoveryWorkflow.includes("RECOVERY_PROFILE: nov19")
+      || !nov19RecoveryWorkflow.includes("44484017071")
+      || !nov19RecoveryWorkflow.includes("02c4d6cba8678c9d52feea055fc1f0714082bc77")
+      || /supabase\s+(?:link|db|functions)|secrets\.SUPABASE|vercel\s+(?:deploy|--prod)/i.test(nov19RecoveryWorkflow)) {
+    throw new Error("Nov19 schema recovery has an unexpected credential, provenance or live-access scope");
   }
 }
 

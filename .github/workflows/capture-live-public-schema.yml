@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       owner_ack:
-        description: "CAPTURE_SCHEMA_ONLY for live; RECOVER_REVIEWED_SCHEMA_ONLY or RECOVER_OPERATIONS_SCHEMA_ONLY for exact immutable TEST recovery"
+        description: "CAPTURE_SCHEMA_ONLY for live; RECOVER_REVIEWED_SCHEMA_ONLY, RECOVER_OPERATIONS_SCHEMA_ONLY or RECOVER_NOV19_SCHEMA_ONLY for exact immutable TEST recovery"
         required: true
         type: string
 
@@ -259,5 +259,86 @@ jobs:
         with:
           name: reviewed-operations-schema-provenance
           path: ${{ runner.temp }}/reviewed-operations-schema.provenance.json
+          if-no-files-found: error
+          retention-days: 90
+
+  recover-nov19-baseline:
+    name: Recover immutable Nov19 TEST schema (no live database access)
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.actor == github.repository_owner &&
+      github.triggering_actor == github.repository_owner &&
+      inputs.owner_ack == 'RECOVER_NOV19_SCHEMA_ONLY'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: dealer-swing-production-critical
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Verify exact workflow revision and original Nov19 capture provenance
+        env:
+          TARGET_SHA: ${{ inputs.target_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$TARGET_SHA" = "$GITHUB_SHA"
+          set -euo pipefail
+          [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/44484017071" --jq .conclusion)" = success
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/44484017071" --jq .head_sha)" = 02c4d6cba8678c9d52feea055fc1f0714082bc77
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/44484017071" --jq .event)" = workflow_dispatch
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/44484017071" --jq .path)" = .github/workflows/capture-live-public-schema.yml
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/44484017071" --jq .head_branch)" = main
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/44484017071" --jq .actor.login)" = "$GITHUB_REPOSITORY_OWNER"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version: 22 }
+      - name: Recover privately and require exact Nov19 snapshot checksum
+        env:
+          RECOVERY_PROFILE: nov19
+          BASELINE_01: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_01 }}
+          BASELINE_02: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_02 }}
+          BASELINE_03: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_03 }}
+          BASELINE_04: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_04 }}
+          BASELINE_05: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_05 }}
+          BASELINE_06: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_06 }}
+          BASELINE_07: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_07 }}
+          BASELINE_08: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_08 }}
+          BASELINE_09: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_09 }}
+          BASELINE_10: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_10 }}
+          BASELINE_11: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_11 }}
+          BASELINE_12: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_12 }}
+          BASELINE_13: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_13 }}
+          BASELINE_14: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_14 }}
+          BASELINE_15: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_15 }}
+          BASELINE_16: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_16 }}
+          BASELINE_17: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_17 }}
+          BASELINE_18: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_18 }}
+          BASELINE_19: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_19 }}
+          BASELINE_20: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_20 }}
+          BASELINE_21: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_21 }}
+          BASELINE_22: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_22 }}
+          BASELINE_23: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_23 }}
+          BASELINE_24: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_24 }}
+          BASELINE_25: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_25 }}
+          BASELINE_26: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_26 }}
+          BASELINE_27: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_27 }}
+          BASELINE_28: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_28 }}
+          BASELINE_29: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_29 }}
+          BASELINE_30: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_30 }}
+          BASELINE_31: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_31 }}
+          BASELINE_32: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_32 }}
+          BASELINE_33: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_33 }}
+          BASELINE_34: ${{ secrets.VINPOKER_NOV19_SCHEMA_RECOVERY_34 }}
+        run: node VinPoker/scripts/deploy/recover-reviewed-schema-artifact.mjs
+      - name: Retain exact original Nov19 snapshot for existing runtime tests
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reviewed-nov19-schema
+          path: ${{ runner.temp }}/reviewed-nov19-schema
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload metadata-only Nov19 recovery provenance
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reviewed-nov19-schema-provenance
+          path: ${{ runner.temp }}/reviewed-nov19-schema.provenance.json
           if-no-files-found: error
           retention-days: 90

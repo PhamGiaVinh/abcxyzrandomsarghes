@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, mkdtempSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -66,7 +66,7 @@ test("current-schema clones restore completed PG17 files rather than docker stdo
 });
 
 test("operations baseline recovery is owner-protected, exact, private and isolated from prior baseline", () => {
-  const recovery = schemaCaptureWorkflow.split("\n  recover-operations-baseline:")[1];
+  const recovery = schemaCaptureWorkflow.split("\n  recover-operations-baseline:")[1]?.split("\n  recover-nov19-baseline:")[0];
   assert.ok(recovery,"separate reviewed operations recovery job required");
   assert.match(recovery,/RECOVER_OPERATIONS_SCHEMA_ONLY/);
   assert.match(recovery,/github\.actor == github\.repository_owner/);
@@ -84,6 +84,59 @@ test("operations baseline recovery is owner-protected, exact, private and isolat
   assert.match(original,/name: reviewed-pre-release-schema-provenance/);
   assert.doesNotMatch(recovery,/name: reviewed-pre-release-schema-provenance/);
   assert.doesNotMatch(original,/VINPOKER_OPS_SCHEMA_RECOVERY/);
+});
+
+test("Nov19 recovery uses its own owner gate, exact provenance and private inputs", () => {
+  const recovery = schemaCaptureWorkflow.split("\n  recover-nov19-baseline:")[1];
+  assert.ok(recovery, "Nov19 baseline recovery is required; older snapshots cannot substitute");
+  for (const control of ["github.event_name == 'workflow_dispatch'", "github.actor == github.repository_owner",
+    "github.triggering_actor == github.repository_owner", "inputs.owner_ack == 'RECOVER_NOV19_SCHEMA_ONLY'",
+    "environment: dealer-swing-production-critical", 'test "$TARGET_SHA" = "$GITHUB_SHA"',
+    "44484017071", "02c4d6cba8678c9d52feea055fc1f0714082bc77", "RECOVERY_PROFILE: nov19",
+    "name: reviewed-nov19-schema", "name: reviewed-nov19-schema-provenance", "retention-days: 90"])
+    assert.ok(recovery.includes(control), control);
+  const secrets = [...new Set([...recovery.matchAll(/secrets\.([A-Z0-9_]+)/g)].map(m => m[1]))].sort();
+  assert.deepEqual(secrets, Array.from({length:34}, (_,i) => `VINPOKER_NOV19_SCHEMA_RECOVERY_${String(i+1).padStart(2,"0")}`).sort());
+  assert.doesNotMatch(recovery, /supabase\s+(?:link|db|functions)|secrets\.SUPABASE|vercel\s+(?:deploy|--prod)/i);
+});
+
+test("Nov19 exact private bytes survive recovery with original provenance", {skip: !process.env.NOV19_RECOVERY_TEST_SCHEMA_DIR}, () => {
+  const schema = readFileSync(resolve(process.env.NOV19_RECOVERY_TEST_SCHEMA_DIR, "live-public-schema.sql"));
+  const expected = "e07962ab82bc545c3a552c345796b70f48ec95baf544aeaf190f0eb46c3eed1a";
+  assert.equal(createHash("sha256").update(schema).digest("hex"), expected);
+  const encoded = gzipSync(schema).toString("base64");
+  const chunks = Object.fromEntries(Array.from({length:34}, (_,i) => [`BASELINE_${String(i+1).padStart(2,"0")}`,
+    encoded.slice(Math.floor(i*encoded.length/34), Math.floor((i+1)*encoded.length/34))]));
+  assert.ok(Object.values(chunks).every(chunk => chunk.length <= 32_000), "bounded inputs fit Windows environment and GitHub secret limits");
+  const directory = mkdtempSync(resolve(tmpdir(), "vinpoker-nov19-recovery-test-"));
+  const run = (patch = {}) => spawnSync(process.execPath, [resolve(root,"VinPoker/scripts/deploy/recover-reviewed-schema-artifact.mjs")],
+    {cwd:root, env:{PATH:process.env.PATH, ...chunks, RECOVERY_PROFILE:"nov19", GITHUB_ACTOR:"synthetic-owner",
+      GITHUB_TRIGGERING_ACTOR:"synthetic-owner", GITHUB_REPOSITORY_OWNER:"synthetic-owner",
+      GITHUB_RUN_ID:"synthetic-local-recovery", RUNNER_TEMP:directory, ...patch}, encoding:"utf8"});
+  const child = run();
+  assert.equal(child.status, 0, "exact original private bytes must recover without logging content");
+  assert.equal(readFileSync(resolve(directory,"reviewed-nov19-schema/live-public-schema.sql")).equals(schema), true);
+  assert.deepEqual(JSON.parse(readFileSync(resolve(directory,"reviewed-nov19-schema.provenance.json"),"utf8")), {
+    originalCaptureRun:44484017071, originalCaptureSha:"02c4d6cba8678c9d52feea055fc1f0714082bc77",
+    schemaSha256:expected, schemaOnly:true, recoveryRun:"synthetic-local-recovery"});
+  const altered = gzipSync(Buffer.concat([schema, Buffer.from("\n")])).toString("base64");
+  const alteredChunks = Object.fromEntries(Array.from({length:34}, (_,i) => [`BASELINE_${String(i+1).padStart(2,"0")}`,
+    altered.slice(Math.floor(i*altered.length/34), Math.floor((i+1)*altered.length/34))]));
+  const sameSize = Buffer.from(schema);
+  sameSize[sameSize.length-1] ^= 1;
+  const sameSizeEncoded = gzipSync(sameSize).toString("base64");
+  const wrongChecksumChunks = Object.fromEntries(Array.from({length:34}, (_,i) => [`BASELINE_${String(i+1).padStart(2,"0")}`,
+    sameSizeEncoded.slice(Math.floor(i*sameSizeEncoded.length/34), Math.floor((i+1)*sameSizeEncoded.length/34))]));
+  for (const patch of [{GITHUB_ACTOR:"outsider"}, {GITHUB_TRIGGERING_ACTOR:"outsider"}, {BASELINE_17:""},
+    {BASELINE_34:"!invalid!"}, {RECOVERY_PROFILE:"operations"}, alteredChunks, wrongChecksumChunks]) {
+    const rejectedDirectory = mkdtempSync(resolve(tmpdir(), "vinpoker-nov19-rejected-"));
+    const rejected = run({...patch, RUNNER_TEMP:rejectedDirectory});
+    assert.notEqual(rejected.status, 0);
+    assert.doesNotMatch(rejected.stdout, /EXACT_REVIEWED_TEST_BASELINE_RECOVERED_AND_VALIDATED/);
+    assert.deepEqual(readdirSync(rejectedDirectory), [], "rejected bytes or actor must create no artifacts");
+  }
+  assert.equal(child.stdout.trim(), "EXACT_REVIEWED_TEST_BASELINE_RECOVERED_AND_VALIDATED");
+  assert.equal(child.stderr, "");
 });
 
 test("recovery refuses missing owner, unknown profile and cross-profile bytes before output", () => {
