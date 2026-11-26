@@ -153,8 +153,6 @@ BEGIN
  ELSIF TG_TABLE_NAME='club_expenses' THEN
   IF EXISTS(SELECT FROM public.finance_expense_cash_receipts WHERE expense_id=OLD.id) THEN
    RAISE EXCEPTION 'FINANCE_FUNDED_EXPENSE_IMMUTABLE' USING ERRCODE='23514';END IF;
- ELSIF TG_OP='UPDATE' AND NEW.club_expense_cash_receipt_id IS DISTINCT FROM OLD.club_expense_cash_receipt_id THEN
-  RAISE EXCEPTION 'FINANCE_EXPENSE_CASH_SOURCE_IMMUTABLE' USING ERRCODE='23514';
  END IF;
  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
  RETURN NEW;
@@ -163,8 +161,8 @@ CREATE TRIGGER finance_preserve_expense_cash_receipt BEFORE UPDATE OR DELETE ON 
  FOR EACH ROW EXECUTE FUNCTION floor_private.preserve_expense_cash_facts_v1();
 CREATE TRIGGER finance_preserve_funded_expense BEFORE UPDATE OR DELETE ON public.club_expenses
  FOR EACH ROW EXECUTE FUNCTION floor_private.preserve_expense_cash_facts_v1();
-CREATE TRIGGER finance_preserve_expense_movement_source BEFORE UPDATE ON public.cashier_buyin_movements
- FOR EACH ROW EXECUTE FUNCTION floor_private.preserve_expense_cash_facts_v1();
+-- The exact-pinned canonical cashier_movement_immutable trigger already rejects
+-- every movement UPDATE/DELETE, including this new source column.
 
 CREATE FUNCTION floor_private.verify_expense_cash_movement_v1() RETURNS trigger
  LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$

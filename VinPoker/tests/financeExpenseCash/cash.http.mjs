@@ -29,7 +29,7 @@ async function rpc(name,args,actor){const r=await request(name,args,actor);asser
 const pay=(f,args=f.args,actor=f.cashier)=>request('record_cashier_club_expense_v1',args,actor);
 function facts(f){return read(`SELECT jsonb_build_object('expenses',(SELECT count(*) FROM public.club_expenses WHERE club_id='${f.club}'),'receipts',(SELECT count(*) FROM public.finance_expense_cash_receipts WHERE club_id='${f.club}'),'movements',(SELECT count(*) FROM public.cashier_buyin_movements WHERE club_id='${f.club}'))`);}
 const noFacts=f=>assert.deepEqual(facts(f),{expenses:0,receipts:0,movements:0});
-function attack(query,reason){const r=spawnSync('psql',['-XqAt','-v','ON_ERROR_STOP=1','-c',`BEGIN;${query};ROLLBACK;`],{encoding:'utf8'});assert.notEqual(r.status,0);assert.ok(r.stderr.includes(reason),'expected refusal: '+reason);}
+function attack(query,reason){const r=spawnSync('psql',['-XqAt','-v','ON_ERROR_STOP=1','-c',`BEGIN;${query};ROLLBACK;`],{encoding:'utf8'});assert.notEqual(r.status,0);assert.ok(r.stderr.includes(reason),'expected refusal: '+reason+'; actual: '+r.stderr.slice(0,1000));}
 async function seed(index,enabled=true,opening=10000000){
  const f={club:id(100+index),owner:id(200+index),cashier:id(300+index),accountant:id(400+index),index};
  sql(`INSERT INTO auth.users(id) VALUES('${f.owner}'),('${f.cashier}'),('${f.accountant}');
@@ -93,7 +93,8 @@ try{
  attack(`DELETE FROM public.club_expenses WHERE id='${paid.data.expense_id}'`,'FINANCE_FUNDED_EXPENSE_IMMUTABLE');
  attack(`UPDATE public.finance_expense_cash_receipts SET amount_vnd=2 WHERE request_id='${cash.args.p_request_id}'`,'FINANCE_EXPENSE_CASH_RECEIPT_IMMUTABLE');
  attack(`DELETE FROM public.finance_expense_cash_receipts WHERE request_id='${cash.args.p_request_id}'`,'FINANCE_EXPENSE_CASH_RECEIPT_IMMUTABLE');
- attack(`UPDATE public.cashier_buyin_movements SET club_expense_cash_receipt_id=NULL WHERE id='${movement.id}'`,'FINANCE_EXPENSE_CASH_SOURCE_IMMUTABLE');
+ attack(`UPDATE public.cashier_buyin_movements SET club_expense_cash_receipt_id=NULL WHERE id='${movement.id}'`,'Cashier movements are append-only');
+ assert.deepEqual(read(`SELECT to_jsonb(m) FROM public.cashier_buyin_movements m WHERE id='${movement.id}'`),movement);
  const correction=await rpc('record_club_expense',legacy(cash,'cash-cost-correction','unpaid',null,-200000,paid.data.expense_id),cash.owner);assert.equal(correction.status,'ok');assert.deepEqual(facts(cash),{expenses:2,receipts:1,movements:1});assert.equal(sql(`SELECT to_jsonb(s)::text FROM public.cashier_till_shifts s WHERE id='${cash.shift}'`),frozen);
  proof.cases.push({name:'explicit-source-one-cost-one-payment-one-movement-close-replay-immutable',costInOctober:1000000,costAtPaymentTime:0,cashPaidNow:1000000,expected:closed.expected_cash,variance:0,negativeCostAdjustmentCashEffect:0,exactReplayAndConflicts:true});
  const denied=await seed(3);for(const actor of [cash.cashier,denied.accountant]){const r=await pay(denied,denied.args,actor);assert.equal(r.status,403);assert.equal(r.data.code,'42501');noFacts(denied);}
