@@ -7,6 +7,14 @@ vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc:(...args:unknown[])
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>f.auth}));
 import {useStaffSalaryMonth} from './useStaffSalary';
 const clients:QueryClient[]=[];
+it('retains saved payment metadata from the authoritative report',async()=>{
+ const data=packet();Object.assign(data.rows[0],{status:'paid',paid_at:'2026-11-26T12:00:00Z',
+  payment_method:'bank_transfer',payment_reference:'ORIGINAL-TRANSFER'});
+ f.rpc.mockResolvedValue({data,error:null});const view=mount();
+ await waitFor(()=>expect(view.result.current.isSuccess).toBe(true));
+ expect(view.result.current.data?.lockedRows[0]).toMatchObject({paidAt:'2026-11-26T12:00:00Z',
+  paymentMethod:'bank_transfer',paymentReference:'ORIGINAL-TRANSFER'});
+});
 const packet=(net=1000)=>({club_id:'club-test',period_year:2026,period_month:10,header:{status:'approved'},rows:[{
  id:'run-test',staff_id:'staff-test',full_name:'LOCAL TEST staff',department:'fnb',employment_type:'full_time',worked_days:1,worked_minutes:null,
  gross_vnd:net,manual_bhxh_vnd:0,manual_tax_vnd:0,net_vnd:net,status:'locked'}],total_gross_vnd:net,total_net_vnd:net});
@@ -48,6 +56,29 @@ it.each(['club_id','period_year','period_month'] as const)('rejects a response f
 });
 it('rejects inconsistent totals and duplicate staff rows',async()=>{
  const data=packet();data.rows.push({...data.rows[0],id:'another-run'});data.total_net_vnd=2000;data.total_gross_vnd=2000;
+ f.rpc.mockResolvedValue({data,error:null});const view=mount();
+ await waitFor(()=>expect(view.result.current.isError).toBe(true));expect(view.result.current.data).toBeUndefined();
+});
+const linkedPacket=()=>{
+ const data=packet(5000000);
+ data.rows.push({...data.rows[0],id:'child-test',gross_vnd:200000,net_vnd:200000,worked_days:0,adjusts_id:'run-test'} as typeof data.rows[number]);
+ data.total_net_vnd=5200000;data.total_gross_vnd=5200000;return data;
+};
+it('accepts a verified same-staff FT base and separate linked supplement exactly once',async()=>{
+ f.rpc.mockResolvedValue({data:linkedPacket(),error:null});const view=mount();
+ await waitFor(()=>expect(view.result.current.isSuccess).toBe(true));
+ expect(view.result.current.data?.lockedRows.map(r=>[r.runId,r.adjustsId])).toEqual([['run-test',null],['child-test','run-test']]);
+ expect(view.result.current.data?.totalNetVnd).toBe(5200000);
+});
+it.each(['missing-parent','other-staff','self-link','nested-child','part-time','duplicate-id','conflicting-id'])('rejects invalid supplement linkage: %s',async(kind)=>{
+ const data=linkedPacket(),child=data.rows[1] as typeof data.rows[number]&{adjusts_id:string;run_id?:string};
+ if(kind==='missing-parent')child.adjusts_id='absent';
+ if(kind==='other-staff')child.staff_id='other';
+ if(kind==='self-link')child.adjusts_id=child.id;
+ if(kind==='nested-child')Object.assign(data.rows[0],{adjusts_id:child.id});
+ if(kind==='part-time')child.employment_type='part_time';
+ if(kind==='duplicate-id')child.id=data.rows[0].id;
+ if(kind==='conflicting-id')child.run_id='different-child';
  f.rpc.mockResolvedValue({data,error:null});const view=mount();
  await waitFor(()=>expect(view.result.current.isError).toBe(true));expect(view.result.current.data).toBeUndefined();
 });

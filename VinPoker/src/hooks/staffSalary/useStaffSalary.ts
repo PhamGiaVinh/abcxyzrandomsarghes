@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef } from 'react';
+import { useEffect,useMemo, useRef } from 'react';
 import { z } from 'zod';
 import { sessionReadEpoch } from '@/lib/sessionReadEpoch';
 import { observeTrackerContextRead } from '@/lib/tournament/observeTrackerContextRead';
@@ -26,6 +26,9 @@ const salaryRow = z.object({
   employment_type:z.enum(['full_time','part_time']),worked_days:count.nullable().optional(),worked_minutes:count.nullable().optional(),
   gross_vnd:amount,manual_bhxh_vnd:signedAmount,manual_tax_vnd:signedAmount,net_vnd:amount,
   id:z.string().min(1).optional(),run_id:z.string().min(1).optional(),status:z.enum(['locked','paid']).optional(),already_locked:z.boolean().optional(),
+  adjusts_id:z.string().min(1).nullish(),
+  paid_at:z.string().refine(value=>Number.isFinite(Date.parse(value))).nullish(),
+  payment_method:z.string().nullish(),payment_reference:z.string().nullish(),
 });
 const reportPacket = z.object({
   club_id:z.string().min(1),period_year:z.number().int(),period_month:z.number().int().min(1).max(12),
@@ -38,6 +41,7 @@ const previewPacket = z.object({club_id:z.string().min(1),period_year:z.number()
 
 function mapRow(r: z.infer<typeof salaryRow>, locked: boolean): SalaryRow {
   if (locked ? !(r.id ?? r.run_id) || !r.status : typeof r.already_locked !== 'boolean') throw Error('STAFF_SALARY_ROW_INVALID');
+  if ((r.id && r.run_id && r.id !== r.run_id) || (!locked && r.adjusts_id)) throw Error('STAFF_SALARY_ROW_INVALID');
   return {
     staffId: r.staff_id,
     fullName: r.full_name,
@@ -51,8 +55,28 @@ function mapRow(r: z.infer<typeof salaryRow>, locked: boolean): SalaryRow {
     netVnd: r.net_vnd,
     alreadyLocked: locked ? undefined : r.already_locked,
     runId: locked ? (r.id ?? r.run_id ?? null) : null,
+    adjustsId: locked ? (r.adjusts_id ?? null) : null,
     status: locked ? (r.status ?? null) : null,
+    paidAt: locked ? (r.paid_at ?? null) : null,
+    paymentMethod: locked ? (r.payment_method ?? null) : null,
+    paymentReference: locked ? (r.payment_reference ?? null) : null,
   };
+}
+
+function verifiedLockedRows(rep: z.infer<typeof reportPacket>): SalaryRow[] {
+  const rows=rep.rows.map(r=>mapRow(r,true));
+  const byId=new Map(rows.map(row=>[row.runId,row]));
+  const bases=rows.filter(row=>!row.adjustsId);
+  if(byId.size!==rows.length || new Set(bases.map(row=>row.staffId)).size!==bases.length)throw Error('STAFF_SALARY_ROWS_DUPLICATED');
+  for(const row of rows){
+    if(!row.adjustsId)continue;
+    const base=byId.get(row.adjustsId);
+    if(!base || base.adjustsId || base.runId===row.runId || base.staffId!==row.staffId
+      || base.employmentType!=='full_time' || row.employmentType!=='full_time' || row.netVnd<=0)throw Error('STAFF_SALARY_SUPPLEMENT_LINK_INVALID');
+  }
+  const gross=rows.reduce((sum,row)=>sum+row.grossVnd,0),net=rows.reduce((sum,row)=>sum+row.netVnd,0);
+  if(!Number.isSafeInteger(gross)||!Number.isSafeInteger(net)||gross!==rep.total_gross_vnd||net!==rep.total_net_vnd)throw Error('STAFF_SALARY_TOTALS_INVALID');
+  return rows;
 }
 
 export function useSalaryClubs(source: StaffSalarySource, requested: boolean) {
@@ -61,7 +85,7 @@ export function useSalaryClubs(source: StaffSalarySource, requested: boolean) {
   const enabled=requested&&!authLoading&&(source==='mock'||(!!user?.id&&!!session?.access_token));
   const scope=JSON.stringify([source,user?.id,epoch,authLoading,isAdmin,isClubAdmin,requested]);
   const context=useMemo(()=>({scope}),[scope]),active=useRef(context);active.current=context;
-  const clubsSchema=z.array(z.object({id:z.string().min(1),name:z.string().min(1)}));
+  const clubsSchema=z.array(z.object({id:z.string().min(1),name:z.string().min(1),owner_id:z.string().min(1).nullish()}));
   const clubs=(data:unknown)=>{
     const rows=clubsSchema.parse(data);
     if(new Set(rows.map(c=>c.id)).size!==rows.length)throw Error('STAFF_SALARY_CLUBS_DUPLICATED');
@@ -81,8 +105,8 @@ export function useSalaryClubs(source: StaffSalarySource, requested: boolean) {
       if(source==='mock')return mockSalaryClubs();
       if(!user?.id)throw Error('STAFF_SALARY_AUTH_REQUIRED');
       if(isAdmin||isClubAdmin){
-        return clubs(await read(db.from('clubs').select('id,name').order('name').limit(50)))
-          .map(c=>({id:c.id,name:c.name,role:'admin' as const}));
+        return clubs(await read(db.from('clubs').select('id,name,owner_id').order('name').limit(50)))
+          .map(c=>({id:c.id,name:c.name,role:c.owner_id===user.id?'owner' as const:'admin' as const}));
       }
       const [owned,memberships]=await Promise.all([
         read(db.from('clubs').select('id,name').eq('owner_id',user.id)),
@@ -123,7 +147,7 @@ export function useStaffSalaryMonth(
     enabled,
     staleTime: 20_000,
     retry:false,
-    refetchInterval:5_000,
+    refetchInterval:2_000,
     refetchOnWindowFocus:'always',
     refetchOnReconnect:'always',
     queryFn: async (): Promise<SalaryMonthView> => {
@@ -142,11 +166,7 @@ export function useStaffSalaryMonth(
       const rep=reportPacket.parse(data);
       if(rep.club_id!==clubId||rep.period_year!==year||rep.period_month!==month)throw Error('STAFF_SALARY_SCOPE_INVALID');
       const header=rep.header;
-      const lockedRows=rep.rows.map(r=>mapRow(r,true));
-      if(new Set(lockedRows.map(r=>r.staffId)).size!==lockedRows.length
-        ||new Set(lockedRows.map(r=>r.runId)).size!==lockedRows.length
-        ||lockedRows.reduce((s,r)=>s+r.grossVnd,0)!==rep.total_gross_vnd
-        ||lockedRows.reduce((s,r)=>s+r.netVnd,0)!==rep.total_net_vnd)throw Error('STAFF_SALARY_TOTALS_INVALID');
+      const lockedRows=verifiedLockedRows(rep);
       const frozen=lockedRows.length>0||!!header.id||header.status!=='prepared';
       let standardShifts:number|null=rep.standard_shifts_per_month??null;
 
@@ -206,8 +226,10 @@ export function useSalaryActions(
   const scope=JSON.stringify([source,clubId,year,month,user?.id,epoch,authLoading,isAdmin,isClubAdmin,isClubOwner,isAccountant]);
   const context=useMemo(()=>({scope}),[scope]),active=useRef(context);active.current=context;
   const inFlight=useRef(false);
+  const mounted=useRef(true);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const assertContext=()=>{
-    if(active.current!==context||authLoading||(source==='live'&&(!clubId||!user?.id||!session?.access_token)))throw Error('Phiên bảng lương đã thay đổi. Vui lòng kiểm tra lại.');
+    if(!mounted.current||active.current!==context||authLoading||(source==='live'&&(!clubId||!user?.id||!session?.access_token)))throw Error('Phiên bảng lương đã thay đổi. Vui lòng kiểm tra lại.');
     if(!Number.isInteger(year)||year<1||!Number.isInteger(month)||month<1||month>12)throw Error('Kỳ lương không hợp lệ.');
   };
   const unknown='Chưa xác minh được kết quả thao tác lương. Kiểm tra trạng thái bảng lương trước khi thực hiện tiếp.';
@@ -253,6 +275,7 @@ export function useSalaryActions(
         const response=await observeTrackerContextRead(rpc('get_staff_salary_report',{p_club_id:clubId,p_year:year,p_month:month}));
         assertContext();if(response.error)throw response.error;
         const report=reportPacket.parse(response.data);
+        verifiedLockedRows(report);
         const matches=report.rows.filter(row=>(row.id??row.run_id)===args.p_run_id);
         if(report.club_id!==clubId||report.period_year!==year||report.period_month!==month||report.header.status!=='approved'
           ||matches.length!==1||!['locked','paid'].includes(matches[0].status??''))throw Error('Không xác minh được dòng lương đã duyệt trong CLB và kỳ đang chọn.');
@@ -262,9 +285,16 @@ export function useSalaryActions(
         timer=setTimeout(()=>reject(Error(unknown)),20_000);
       })]);
       assertContext();if(error)throw error;
-      if(data&&typeof data==='object'&&!Array.isArray(data)&&typeof data.error==='string'&&data.error.trim())throw Error(data.detail??data.error);
+      if(data&&typeof data==='object'&&!Array.isArray(data)&&typeof data.error==='string'&&data.error.trim()){
+        if(fn==='mark_staff_salary_paid'&&data.error==='STALE_SALARY_RUN')throw Error('Bản lương đã thay đổi. Bảng lương đang được tải lại; hãy đối chiếu trước khi ghi chi.');
+        throw Error(data.detail??data.error);
+      }
       const verified=receipt(fn,args,data);
-      toast.success(fn==='submit_staff_salary_month'&&verified.status==='approved'?'Bảng lương đã được duyệt.':okMsg);
+      if (fn === "mark_staff_salary_paid" && verified.idempotent === true) {
+        toast.success("Phiếu lương đã được ghi chi trước đó. Hệ thống giữ thông tin chi hiện có.");
+      } else {
+        toast.success(fn === "submit_staff_salary_month" && verified.status === "approved" ? "Bảng lương đã được duyệt." : okMsg);
+      }
       return data;
     }catch(error){throw Object.assign(Error(error instanceof Error?error.message:unknown),{context});}
     finally{clearTimeout(timer);if(ownsFlight){inFlight.current=false;if(active.current===context)void invalidate();}}
@@ -317,11 +347,13 @@ export function useSalaryActions(
 
   const markPaid = useMutation({
     retry:false,
-    mutationFn: async (runId: string) => {
+    mutationFn: async ({ runId, method, reference }: { runId: string; method: "cash" | "bank_transfer"; reference?: string }) => {
       if (guardMock()) return null;
+      const paymentReference = reference?.trim();
+      if (method === "bank_transfer" && !paymentReference) throw Object.assign(Error("Nhập mã tham chiếu chuyển khoản."), { context });
       return run(
         "mark_staff_salary_paid",
-        { p_run_id: runId, p_payment_method: "cash", p_payment_reference: null },
+        { p_run_id: runId, p_payment_method: method, p_payment_reference: method === "bank_transfer" ? paymentReference : null },
         "Đã đánh dấu đã trả.",
       );
     },

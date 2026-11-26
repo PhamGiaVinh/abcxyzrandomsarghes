@@ -1667,6 +1667,7 @@ export const FEATURES = {
    * false to instantly re-hide the whole portal (source objects stay, just unused by the UI).
    */
   staffApp: true,
+  staffFtPayslips: import.meta.env.VITE_STAFF_FT_PAYSLIPS_V1 === "true",
   /**
    * staffSelfSalary — the "Lương của tôi" screen inside the /staff portal (READ-ONLY),
    * parallel to `dealerSelfSalary` for the dealer app. Gates both the bottom-nav "Lương"
@@ -1704,6 +1705,8 @@ export const FEATURES = {
    * PR #844 was meant to ship but never merged). Kill-switch: set false to re-hide.
    */
   staffSalaryChot: true,
+  // New requests/approval UI only. Approved supplement reads/payment remain compatible when OFF.
+  staffSalaryAdjustments: import.meta.env.VITE_STAFF_SALARY_ADJUSTMENTS_V1 === "true",
   /**
    * accountantWorkspace — the full multi-tab "Kế toán" workspace at `/accountant` (Bảng
    * lương NV · Lương dealer · Nhân viên & lương · Sổ chi phí · F&B thu chi · Báo cáo).

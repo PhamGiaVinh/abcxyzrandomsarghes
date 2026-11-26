@@ -1,0 +1,28 @@
+name: Staff FT payment confirmation
+on:
+  pull_request:
+    paths:
+      - 'VinPoker/src/pages/StaffSalaryChot*'
+      - 'VinPoker/src/hooks/staffSalary/**'
+      - 'VinPoker/src/lib/staffSalary/**'
+      - 'VinPoker/src/hooks/staff/useStaffSalary*'
+      - 'VinPoker/src/components/staff-app/salary/StaffSalaryScreen*'
+      - 'VinPoker/src/components/staffSalary/**'
+      - 'VinPoker/src/lib/featureFlags.ts'
+      - '.github/workflows/staff-ft-payment-confirmation.yml'
+permissions:
+  contents: read
+jobs:
+  payment-confirmation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: VinPoker
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm test -- src/pages/StaffSalaryChot.test.tsx src/hooks/staffSalary/useSalaryActions.test.tsx src/hooks/staffSalary/useStaffSalary.read.test.tsx src/hooks/staffSalary/useSalaryAdjustments.test.tsx src/components/staffSalary/StaffSalaryAdjustments.test.tsx src/components/staffSalary/SalaryRunSource.test.tsx src/hooks/staff/useStaffSalary.test.tsx src/components/staff-app/salary/StaffSalaryScreen.test.tsx --maxWorkers=1

@@ -6,6 +6,7 @@ import { useStaffLink } from "@/hooks/staff/useStaffLink";
 import { useStaffSalary } from "@/hooks/staff/useStaffSalary";
 import { StaffNotLinkedScreen } from "../StaffNotLinkedScreen";
 import type { StaffSalaryPaymentView } from "@/types/staffApp";
+import {SalaryRunSource} from '@/components/staffSalary/SalaryRunSource';
 
 function fmtVnd(n?: number | null): string {
   return `${new Intl.NumberFormat("vi-VN").format(Math.round(n ?? 0))}đ`;
@@ -20,16 +21,17 @@ function hoursLabel(minutes?: number | null): string {
 
 function methodMeta(method?: string | null): { icon: typeof Banknote; label: string } {
   if (method === "cash") return { icon: Banknote, label: "tiền mặt" };
-  if (method === "bank") return { icon: Landmark, label: "chuyển khoản" };
+  if (method === "bank" || method === "bank_transfer") return { icon: Landmark, label: "chuyển khoản" };
   return { icon: Wallet, label: method || "khác" };
 }
 
 export function StaffSalaryScreen() {
   const { staff, isStaff, loading } = useStaffLink();
-  const { salary, isLoading, isError, scopeError, refetch, isFetching } = useStaffSalary(staff);
+  const { salary, isLoading, isError, isPaused,scopeError, refetch, isFetching, ftPayslips } = useStaffSalary(staff);
 
   if (loading) return <SalarySkeleton />;
   if (!isStaff || !staff) return <StaffNotLinkedScreen />;
+  if(isPaused)return <Card role="status" className="p-4 text-sm">Mất kết nối · lương sẽ tự cập nhật khi có mạng trở lại.</Card>;
   if (isError || scopeError) return <Card role="alert" className="p-4 space-y-2">
     <h1 className="font-bold">Không xác minh được dữ liệu lương.</h1>
     <p className="text-sm text-muted-foreground">{scopeError ?? 'Không thể kết luận số dư hoặc lịch sử chi trả. Vui lòng tải lại.'}</p>
@@ -74,7 +76,7 @@ export function StaffSalaryScreen() {
       ) : (
         <Card className="p-4 border-border bg-card space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-[12px] text-muted-foreground">Lương tháng này</span>
+            <span className="text-[12px] text-muted-foreground">Mức lương tháng theo cấu hình</span>
             <span className="text-[11px] text-muted-foreground">Trả theo tháng</span>
           </div>
           <div className="text-3xl font-display font-black text-primary">{salary.monthlySalaryVnd == null
@@ -87,9 +89,40 @@ export function StaffSalaryScreen() {
         </Card>
       )}
 
-      <div>
+      {ftPayslips && (!isPartTime || ftPayslips.isError || !!ftPayslips.data?.length || !!ftPayslips.pendingAdjustments?.length) && (
+        <section className="space-y-2" aria-label="Phiếu lương tháng">
+          <h2 className="text-sm font-bold text-foreground">Phiếu lương tháng</h2>
+          {ftPayslips.isPaused ? <p role="status">Mất kết nối · chưa xác minh phiếu lương tháng.</p> : ftPayslips.isError ? (
+            <Card role="alert" className="p-3">
+              <p>Chưa xác minh được phiếu lương tháng.</p>
+              <button type="button" className="underline" onClick={() => void ftPayslips.refetch()}>Tải lại phiếu lương</button>
+            </Card>
+          ) : ftPayslips.isPending ? (
+            <Skeleton className="h-16 rounded-xl" />
+          ) : ftPayslips.data?.length ? (
+            ftPayslips.data.map((slip) => (
+              <Card key={slip.id} className="p-3">
+                <h3 className="font-semibold">{slip.period_month}/{slip.period_year} · {fmtVnd(slip.net_vnd)}{slip.adjusts_id && ' · Bổ sung'}</h3>
+                {slip.adjusts_id && <p className="text-xs text-muted-foreground">Bổ sung cho phiếu gốc cùng kỳ · phiếu gốc giữ nguyên.</p>}
+                <p className="text-sm text-muted-foreground">
+                  {slip.status === "approved" ? "Đã duyệt" : "CLB đã ghi chi"}
+                  {slip.paid_at && ` · ${formatShortDate(slip.paid_at)}`}
+                  {slip.status === "recorded_paid" && ` · ${slip.payment_method ? methodMeta(slip.payment_method).label : "Chưa rõ phương thức"}`}
+                </p>
+                {slip.source_status&&<SalaryRunSource runId={slip.id} baseRunId={slip.adjusts_id??slip.id} staffId={staff.staffId} clubId={staff.clubId} year={slip.period_year} month={slip.period_month} netVnd={slip.net_vnd}/>}
+              </Card>
+            ))
+          ) : <p className="text-sm text-muted-foreground">Chưa có phiếu lương tháng đã duyệt.</p>}
+          {ftPayslips.pendingAdjustments?.map(request=><Card key={request.id} className="p-3 space-y-1">
+            <h3 className="font-semibold">{request.period_month}/{request.period_year} · {fmtVnd(request.amount_vnd)} · Chờ chủ CLB duyệt</h3>
+            <p className="text-xs text-muted-foreground">Đề nghị bổ sung sau checkout · chưa được duyệt hoặc ghi chi.</p>
+          </Card>)}
+        </section>
+      )}
+
+      {(isPartTime || payments.length > 0) && <div>
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-foreground">Đã nhận</h2>
+          <h2 className="text-sm font-bold text-foreground">Khoản chi theo ca đã ghi nhận</h2>
           <span className="inline-flex items-center rounded-full border border-primary/30 bg-primary/15 px-2.5 py-0.5 text-[11px] font-bold text-primary">
             Đã chốt · không đổi
           </span>
@@ -112,7 +145,7 @@ export function StaffSalaryScreen() {
             ))}
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

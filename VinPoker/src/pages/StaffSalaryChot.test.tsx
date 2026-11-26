@@ -1,10 +1,12 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const f=vi.hoisted(()=>({monthRead:vi.fn(),markPaid:vi.fn(),month:{data:undefined as any,isError:true,isLoading:false,isFetching:false,isPaused:false,refetch:vi.fn()},clubsError:false,clubsPaused:false}));
 vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({user:{id:'owner'},loading:false,isClubOwner:true})}));
 vi.mock('@/lib/staffSalary/dataSource',()=>({staffSalarySource:()=> 'live'}));
 vi.mock('@/lib/featureFlags',()=>({FEATURES:{staffSalaryChot:true}}));
+vi.mock('@/components/staffSalary/StaffSalaryAdjustments',()=>({StaffSalaryAdjustments:()=>null}));
+vi.mock('@/components/staffSalary/SalaryRunSource',()=>({SalaryRunSource:()=>null}));
 vi.mock('@/hooks/staffSalary/useStaffSalary',()=>({
  useSalaryClubs:()=>({data:[{id:'club',name:'LOCAL TEST',role:'owner'}],isLoading:false,isPaused:f.clubsPaused,isError:f.clubsError,refetch:vi.fn()}),
  useStaffSalaryMonth:(...args:unknown[])=>{f.monthRead(...args);return f.month;},
@@ -52,4 +54,50 @@ it('does not fall back to a different club for an embedded staff salary view', (
   render(<MemoryRouter><StaffSalaryChot embedded scopedClubId="other-club" /></MemoryRouter>);
   expect(f.monthRead.mock.calls.at(-1)?.[1]).toBeNull();
   expect(screen.queryByRole('button', {name:/Chốt lương/})).toBeNull();
+});
+
+it('requires explicit method and a transfer reference before recording FT payment', () => {
+  const ft = {...pt, runId:'run-ft', fullName:'FT test', employmentType:'full_time'};
+  f.month = {...f.month, isError:false, data:{status:'approved',hasRuns:true,lockedRows:[ft],totalGrossVnd:15792,totalNetVnd:15792}};
+  mount();
+  fireEvent.click(screen.getByRole('button',{name:'Đánh dấu trả'}));
+  const confirm = screen.getByRole('button',{name:'Ghi nhận đã chi'});
+  expect(confirm).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Phương thức'),{target:{value:'bank_transfer'}});
+  expect(confirm).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Mã tham chiếu'),{target:{value:'TEST-REF'}});
+  fireEvent.click(confirm);
+  expect(f.markPaid).toHaveBeenCalledExactlyOnceWith({runId:'run-ft',method:'bank_transfer',reference:'TEST-REF'});
+});
+
+it('shows the original stored payment method and reference after the report reloads', () => {
+  const paid={...pt,runId:'paid-ft',fullName:'FT paid snapshot',employmentType:'full_time',status:'paid',
+    netVnd:5000000,grossVnd:5000000,paidAt:'2026-11-26T12:00:00Z',paymentMethod:'bank_transfer',paymentReference:'ORIGINAL-TRANSFER'};
+  f.month={...f.month,isError:false,data:{status:'approved',hasRuns:true,lockedRows:[paid],totalGrossVnd:5000000,totalNetVnd:5000000}};
+  mount();
+  expect(screen.getByText('Chuyển khoản')).toBeVisible();
+  expect(screen.getByText('ORIGINAL-TRANSFER')).toBeVisible();
+  expect(screen.queryByRole('button',{name:'Đánh dấu trả'})).toBeNull();
+  expect(f.markPaid).not.toHaveBeenCalled();
+});
+
+it('does not guess cash for a legacy paid row without verified payment metadata', () => {
+  const paid={...pt,runId:'legacy-ft',fullName:'FT legacy paid',employmentType:'full_time',status:'paid'};
+  f.month={...f.month,isError:false,data:{status:'approved',hasRuns:true,lockedRows:[paid],totalGrossVnd:15792,totalNetVnd:15792}};
+  mount();
+  expect(screen.getByText('Chưa rõ phương thức')).toBeVisible();
+  expect(screen.queryByText('Tiền mặt')).toBeNull();
+});
+it('counts a base and linked supplement as one person and confirms only the separate supplement',()=>{
+ const base={...pt,staffId:'ft',runId:'base-ft',fullName:'FT linked',employmentType:'full_time',status:'paid',netVnd:5000000,grossVnd:5000000};
+ const child={...base,runId:'child-ft',adjustsId:'base-ft',status:'locked',netVnd:200000,grossVnd:200000};
+ f.month={...f.month,isError:false,data:{status:'approved',hasRuns:true,lockedRows:[base,child],totalGrossVnd:5200000,totalNetVnd:5200000}};
+ mount();expect(screen.getByText('Số nhân viên').parentElement?.parentElement).toHaveTextContent('Số nhân viên1');
+ expect(screen.getByText('Bổ sung lương')).toBeVisible();
+ fireEvent.click(screen.getByRole('button',{name:'Đánh dấu trả'}));
+ const dialog=within(screen.getByRole('dialog'));
+ expect(dialog.getByText(/Phiếu gốc: 5.000.000/)).toBeVisible();
+ fireEvent.change(dialog.getByLabelText('Phương thức'),{target:{value:'cash'}});
+ fireEvent.click(dialog.getByRole('button',{name:'Ghi nhận đã chi'}));
+ expect(f.markPaid).toHaveBeenCalledExactlyOnceWith({runId:'child-ft',method:'cash',reference:undefined});
 });

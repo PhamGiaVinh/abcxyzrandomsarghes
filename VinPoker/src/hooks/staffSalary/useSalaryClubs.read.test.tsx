@@ -44,3 +44,8 @@ it('does not fall back to owner-only success when accountant membership is unava
  f.auth={...f.auth,isAdmin:false};f.read.mockImplementation(table=>Promise.resolve({error:null,data:table==='club_accountants'?null:rows}));
  const v=mount();await waitFor(()=>expect(v.result.current.isError).toBe(true));expect(v.result.current.data).toBeUndefined();
 });
+it('retains actual ownership when a club owner also has the global club_admin role',async()=>{
+ f.auth={...f.auth,isAdmin:false,isClubAdmin:true};f.read.mockResolvedValue({data:[{id:'owned',name:'Owned TEST',owner_id:'owner-a'},{id:'other',name:'Other TEST',owner_id:'someone-else'}],error:null});
+ const h=mount();await waitFor(()=>expect(h.result.current.isSuccess).toBe(true));
+ expect(h.result.current.data).toEqual([{id:'owned',name:'Owned TEST',role:'owner'},{id:'other',name:'Other TEST',role:'admin'}]);
+});
