@@ -2,9 +2,13 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ user: { id: "actor-a" } as { id: string } | null, read: vi.fn(), callbacks: [] as Array<() => void> }));
+const state = vi.hoisted(() => ({ user: { id: "actor-a" } as { id: string } | null, read: vi.fn(), inventoryRead: vi.fn(), callbacks: [] as Array<() => void> }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: state.user }) }));
+vi.mock("@/lib/featureFlags", async importOriginal => ({
+  FEATURES: { ...(await importOriginal<typeof import("@/lib/featureFlags")>()).FEATURES, floorTableControlV3: true },
+}));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: {
+  rpc: (_name: string, args: { p_club_id: string }) => ({ abortSignal: (signal: AbortSignal) => state.inventoryRead(args.p_club_id, signal) }),
   from: () => {
     let ids: string[] = [];
     const query = {
@@ -26,7 +30,7 @@ vi.mock("@/integrations/supabase/client", () => ({ supabase: {
   removeChannel: vi.fn(),
 } }));
 
-import { useCheckedInDealers, useSwingConfigs } from "./useDealerSwing";
+import { useCheckedInDealers, useDealerOperationalTables, useSwingConfigs } from "./useDealerSwing";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -44,6 +48,27 @@ describe("Dealer production read scope", () => {
     state.read.mockReset();
     state.callbacks = [];
     state.read.mockImplementation((ids: string[]) => rows(ids[0]));
+  });
+
+  it("bounds a stalled Swing inventory read and resumes reconciliation after backoff", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    state.inventoryRead.mockReset()
+      .mockImplementationOnce((_clubId: string, signal: AbortSignal) => new Promise(resolve => {
+        signal.addEventListener("abort", () => resolve({ data: null, error: { message: "inventory timed out" } }), { once: true });
+      }))
+      .mockResolvedValue({ data: [], error: null });
+    const hook = renderHook(() => useDealerOperationalTables(["club-a"], true));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(state.inventoryRead).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(hook.result.current.error).toBe("inventory timed out");
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(state.inventoryRead).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(state.inventoryRead).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.error).toBeNull();
+    hook.unmount();
   });
 
   it("reports a config refresh failure without silently replacing known config with defaults", async () => {

@@ -3,31 +3,41 @@ import './trackerTable.css';
 
 // Physical seats: seat 1 is dealer-left, seat 9 dealer-right. No occupied-seat compaction.
 const portraitSeats = { 1: { l: 24, t: 90 }, 2: { l: 16, t: 69 }, 3: { l: 16, t: 33 }, 4: { l: 18, t: 15 }, 5: { l: 50, t: 8 }, 6: { l: 82, t: 15 }, 7: { l: 84, t: 33 }, 8: { l: 84, t: 69 }, 9: { l: 76, t: 90 } };
-const landscapeSeats = { 1: { l: 34, t: 85 }, 2: { l: 12, t: 70 }, 3: { l: 12, t: 31 }, 4: { l: 30, t: 14 }, 5: { l: 50, t: 12 }, 6: { l: 70, t: 14 }, 7: { l: 88, t: 31 }, 8: { l: 88, t: 70 }, 9: { l: 66, t: 85 } };
+const landscapeSeats = {
+  1: { l: 31, t: 88 }, 2: { l: 9, t: 69 }, 3: { l: 9, t: 32 },
+  4: { l: 28, t: 12 }, 5: { l: 50, t: 10 }, 6: { l: 72, t: 12 },
+  7: { l: 91, t: 32 }, 8: { l: 91, t: 69 }, 9: { l: 69, t: 88 },
+};
 export const TRACKER_TABLE_GEOMETRY = {
   portrait: { aspect: '5 / 8', seats: portraitSeats, centerTop: '48%', centerW: '76%', vSize: '0px', maxW: '560px' },
-  landscape: { aspect: '1.9 / 1', seats: landscapeSeats, centerTop: '51%', centerW: '52%', vSize: '0px', maxW: '1200px' },
-};
-export const TRACKER_FELT_STYLE: CSSProperties = {
-  background: 'radial-gradient(ellipse at 50% 42%, transparent, #0009), var(--table-felt, #143d32)',
-  boxShadow: 'inset 0 0 0 7px #0a0d0c, inset 0 0 0 8px var(--table-rail, #a68b4c), inset 0 0 0 13px #111b17, inset 0 0 50px #0008, 0 12px 28px #0005',
+  landscape: { aspect: '1.9 / 1', seats: landscapeSeats, centerTop: '49%', centerW: '52%', vSize: '0px', maxW: '1200px' },
 };
 export function trackerBetPoint(point: { l: number; t: number }, portrait: boolean) {
-  if (!portrait) return { l: point.l + (50 - point.l) * 0.3, t: point.t + (51 - point.t) * 0.3 };
-  if (point.t < 20) return { l: point.l === 50 ? 50 : point.l < 50 ? 33 : 67, t: point.l === 50 ? 24 : 27 };
-  if (point.t < 50) return { l: point.l < 50 ? 32 : 68, t: 36 };
-  if (point.t < 80) return { l: point.l < 50 ? 32 : 68, t: 65 };
+  // Keep the upper and lower bets in the gaps beside their owner's pod.
+  // A radial inset puts the stack directly on the player's name at iPad widths.
+  if (!portrait) {
+    if (point.t < 20) {
+      // The middle top seat has its own centered lane. Move below the name
+      // plate instead of shifting its chips into the neighbouring seat's lane.
+      if (point.l === 50) return { l: 50, t: 31 };
+      return { l: point.l < 50 ? 31 : 69, t: 28 };
+    }
+    if (point.t > 80) return { l: point.l < 50 ? 27 : 73, t: 70 };
+    return { l: point.l < 50 ? 24 : 76, t: point.t < 50 ? 40 : 62 };
+  }
+  if (point.t < 20) return { l: point.l === 50 ? 50 : point.l < 50 ? 36 : 64, t: 24 };
+  if (point.t < 50) return { l: point.l < 50 ? 37 : 63, t: 36 };
+  if (point.t < 80) return { l: point.l < 50 ? 37 : 63, t: 65 };
   return { l: point.l < 50 ? 38 : 62, t: 77 };
 }
 export function trackerTableSizes(portrait: boolean) {
   const board = portrait ? 'clamp(32px,9.6cqi,42px)' : 'clamp(44px,5.2cqi,60px)';
   const hole = portrait ? 'clamp(25.6px,7.68cqi,33.6px)' : 'clamp(35.2px,4.16cqi,48px)';
-  const avatar = portrait ? '32px' : 'clamp(40px,4.8cqi,48px)';
+  const avatar = portrait ? 'clamp(37px,11cqi,53px)' : 'clamp(52px,6.8cqi,79px)';
   return {
     board: { width: board, height: 'auto', aspectRatio: '5 / 7' } as CSSProperties,
     hole: { width: hole, height: 'auto', aspectRatio: '5 / 7' } as CSSProperties,
-    // Cards sit over the avatar; reserve both complete faces with a small gap.
-    pod: { width: `calc(${hole} * 2 + 8px)`, '--tracker-top-height': `calc(${hole} * 1.4)` } as CSSProperties,
+    pod: { '--tracker-avatar-size': avatar, width: portrait ? 'clamp(66px,21cqi,98px)' : 'clamp(90px,13.8cqi,154px)' } as CSSProperties,
     avatar: { width: avatar, height: avatar } as CSSProperties,
   };
 }

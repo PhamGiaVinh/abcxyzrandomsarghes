@@ -39,7 +39,7 @@ export function AccountantFinanceTab({ clubId }: { clubId: string | null }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-muted-foreground">
-          Thu — chi — còn lại của tháng (chỉ xem; kỳ chưa chốt sổ là số tạm tính).
+          Doanh thu — chi phí — còn lại của tháng (chỉ xem; kỳ chưa chốt sổ là số tạm tính).
         </p>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setYM((s0) => shiftYM(s0.year, s0.month, -1))} aria-label="Tháng trước">
@@ -67,10 +67,10 @@ export function AccountantFinanceTab({ clubId }: { clubId: string | null }) {
       ) : s ? (
         <>
           <div className="grid gap-3 sm:grid-cols-3">
-            <BigCard icon={Coins} label="Tổng thu" value={formatVND(s.revenue.total)} tone="text-primary" />
+            <BigCard icon={Coins} label="Doanh thu ghi nhận" value={formatVND(s.revenue.total)} tone="text-primary" />
             <BigCard
               icon={Wallet}
-              label="Tổng chi"
+              label="Chi phí ghi nhận"
               value={formatVND(s.cost.payrollNet + s.cost.fnbCogs + s.cost.compCogs + s.cost.clubExpenses)}
               tone="text-foreground"
             />
@@ -89,7 +89,7 @@ export function AccountantFinanceTab({ clubId }: { clubId: string | null }) {
             <Card className="p-4 border-border bg-card space-y-2">
               <h3 className="text-sm font-bold text-foreground inline-flex items-center gap-1.5">
                 <ReceiptText className="w-4 h-4 text-primary" />
-                Khoản chi
+                Chi phí ghi nhận
               </h3>
               <Line label="Lương (đã lưu, gồm PT)" value={s.cost.payrollNet} />
               <Line label="— trong đó trả PT theo giờ" value={s.cost.ptWagePaid} muted />

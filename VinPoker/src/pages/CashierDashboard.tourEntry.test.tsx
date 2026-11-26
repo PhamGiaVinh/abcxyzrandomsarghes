@@ -248,3 +248,15 @@ describe("Cashier tour entry", () => {
     expect(screen.queryByText(/Phụ trách: Club A/)).not.toBeInTheDocument();
   });
 });
+
+it("keeps secondary cashier tasks collapsed until requested",async()=>{
+ render(<MemoryRouter initialEntries={["/cashier"]}><CashierDashboard/></MemoryRouter>);
+ await screen.findByRole("button",{name:"Buy-in theo tour"});
+ const toggle=screen.getByText("Thêm tác vụ");
+ const detail=toggle.closest("details")!;
+ expect(detail).not.toHaveAttribute("open");
+ expect(detail.textContent).toContain("Đăng ký giải");
+ expect(detail.textContent).toContain("Thành viên");
+ fireEvent.click(toggle);
+ expect(detail).toHaveAttribute("open");
+});

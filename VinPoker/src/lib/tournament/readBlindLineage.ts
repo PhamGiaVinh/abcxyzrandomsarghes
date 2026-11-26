@@ -13,12 +13,15 @@ export interface RecordedBlindLevel {
   small_blind: number;
   big_blind: number;
   ante: number;
+  big_blind_ante_only?: boolean;
+  small_blind_seat?: number | null;
+  big_blind_seat?: number;
 }
 
 /** The level frozen by the server when Start Hand inserted this hand. */
 export async function readHandBlindLevel(handId: string): Promise<RecordedBlindLevel | null> {
   const { data, error } = await supabase.from("tournament_hands")
-    .select("tracker_level_number,tracker_small_blind,tracker_big_blind,tracker_bba")
+    .select("*")
     .eq("id", handId).maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("tracker_hand_blind_snapshot_missing");
@@ -27,6 +30,9 @@ export async function readHandBlindLevel(handId: string): Promise<RecordedBlindL
     tracker_small_blind: number | null;
     tracker_big_blind: number | null;
     tracker_bba: number | null;
+    tracker_big_blind_ante_only?: boolean;
+    tracker_sb_position?: number | null;
+    tracker_bb_position?: number | null;
   };
   if (row.tracker_level_number == null && row.tracker_small_blind == null
     && row.tracker_big_blind == null && row.tracker_bba == null) return null;
@@ -40,11 +46,25 @@ export async function readHandBlindLevel(handId: string): Promise<RecordedBlindL
     || row.tracker_big_blind < row.tracker_small_blind || row.tracker_bba < 0) {
     throw new Error("tracker_hand_blind_snapshot_invalid");
   }
+  if (row.tracker_big_blind_ante_only !== undefined && typeof row.tracker_big_blind_ante_only !== "boolean") {
+    throw new Error("tracker_hand_ante_rule_invalid");
+  }
+  if (row.tracker_big_blind_ante_only && row.tracker_bba !== row.tracker_big_blind) {
+    throw new Error("tracker_hand_ante_rule_invalid");
+  }
+  const validSeat = (seat: unknown): seat is number => typeof seat === "number"
+    && Number.isInteger(seat) && seat >= 1 && seat <= 10;
+  if (row.tracker_big_blind_ante_only && (!validSeat(row.tracker_bb_position)
+    || (row.tracker_sb_position !== null && !validSeat(row.tracker_sb_position)))) {
+    throw new Error("tracker_hand_blind_positions_invalid");
+  }
   return {
     level_number: row.tracker_level_number,
     small_blind: row.tracker_small_blind,
     big_blind: row.tracker_big_blind,
     ante: row.tracker_bba,
+    ...(row.tracker_big_blind_ante_only ? { big_blind_ante_only: true,
+      small_blind_seat: row.tracker_sb_position, big_blind_seat: row.tracker_bb_position } : {}),
   };
 }
 

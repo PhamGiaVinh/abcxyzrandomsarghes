@@ -8,6 +8,10 @@ on:
       - 'VinPoker/src/lib/sessionReadEpoch.ts'
       - 'VinPoker/src/components/accountant/AccountantFinanceTab.tsx'
       - 'VinPoker/src/components/accountant/AccountantFinanceTab.readIntegrity.test.tsx'
+      - 'VinPoker/src/components/Layout.tsx'
+      - 'VinPoker/src/components/Layout.unread.test.tsx'
+      - 'VinPoker/src/pages/FinanceWorkspace*'
+      - 'VinPoker/src/pages/ClubFinanceDashboard*'
       - '.github/workflows/finance-read-integrity.yml'
   workflow_dispatch:
 permissions:
@@ -26,7 +30,7 @@ jobs:
       - run: npm ci --ignore-scripts
         working-directory: VinPoker
       - run: git diff --check
-      - run: npx vitest run src/hooks/useClubFinanceSummary.readIntegrity.test.tsx src/hooks/accountant/useFinanceSummaryRpcOnly.test.tsx src/lib/financeSummaryRead.test.ts src/components/accountant/AccountantFinanceTab.readIntegrity.test.tsx --maxWorkers=1 --minWorkers=1
+      - run: npx vitest run src/hooks/useClubFinanceSummary.readIntegrity.test.tsx src/hooks/accountant/useFinanceSummaryRpcOnly.test.tsx src/lib/financeSummaryRead.test.ts src/components/accountant/AccountantFinanceTab.readIntegrity.test.tsx src/components/Layout.unread.test.tsx src/pages/FinanceWorkspace.test.tsx src/pages/ClubFinanceDashboard.acceptance.test.tsx --maxWorkers=1 --minWorkers=1
         working-directory: VinPoker
       - run: npx tsc --noEmit -p tsconfig.app.json --pretty false
         working-directory: VinPoker

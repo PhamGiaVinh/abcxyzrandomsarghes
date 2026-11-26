@@ -70,7 +70,7 @@ function XCardImageFace({
         alt=""
         aria-hidden="true"
         draggable={false}
-        className="h-full w-full object-contain drop-shadow-[0_3px_6px_rgba(0,0,0,0.45)]"
+        className="h-full w-full object-fill drop-shadow-[0_3px_6px_rgba(0,0,0,0.45)]"
         onError={() => setFailed(true)}
       />
     </div>
@@ -638,8 +638,7 @@ export function TrackerVisualStyles() {
         .tracker-motion-chip {
           position: absolute; left: 50%; top: var(--tm-pot-top, 46%);
           width: clamp(7px, 2cqi, 13px); aspect-ratio: 1; border-radius: 9999px;
-          background: radial-gradient(circle at 35% 30%, #b4ffcc, #00e676 58%, #08753c 100%);
-          box-shadow: 0 0 0 1px rgba(255,255,255,.2), 0 0 10px rgba(0,230,118,.48);
+          display: inline-flex;
           animation-name: tracker-motion-award; animation-fill-mode: both;
           animation-timing-function: cubic-bezier(.22,1,.36,1);
         }
@@ -648,8 +647,7 @@ export function TrackerVisualStyles() {
           width: clamp(8px, 2.2cqi, 15px);
           aspect-ratio: 1;
           border-radius: 9999px;
-          background: radial-gradient(circle at 35% 30%, #fff0a8, #e7a83d 52%, #8b5212 100%);
-          box-shadow: 0 0 0 1px rgba(255,255,255,.24), 0 2px 7px rgba(0,0,0,.56), 0 0 10px rgba(247,182,54,.32);
+          display: inline-flex;
           pointer-events: none;
           animation-fill-mode: both;
           animation-timing-function: cubic-bezier(.22,.82,.28,1);

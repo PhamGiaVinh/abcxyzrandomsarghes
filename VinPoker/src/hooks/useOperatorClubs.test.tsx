@@ -52,6 +52,24 @@ describe("useOperatorClubs auth refresh stability", () => {
     expect(result.current.dealerClubIds).toEqual([]);
   });
 
+  it.each([true, false])('retries the Dealer gateway failure once (recovers: %s)', async recovers => {
+    const normal = h.rpc.getMockImplementation()!;
+    let attempts = 0;
+    h.rpc.mockImplementation(async (name: string) => {
+      if (name !== 'dealer_control_club_ids') return normal(name);
+      attempts++;
+      return attempts === 2 && recovers
+        ? { data: ['club-1'], error: null, status: 200 }
+        : { data: null, error: { message: 'bad gateway' }, status: 502 };
+    });
+    const { result } = renderHook(() => useOperatorClubs());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(attempts).toBe(2);
+    expect(result.current.scopeVerified).toBe(recovers);
+    expect(result.current.dealerClubIds).toEqual(recovers ? ['club-1'] : []);
+    expect(h.clubIn).toHaveBeenCalledTimes(recovers ? 1 : 0);
+  });
+
   it('ends hung scope reads and permits an explicit read retry',async()=>{
     vi.useFakeTimers();const normal=h.rpc.getMockImplementation()!;
     h.rpc.mockImplementation(()=>new Promise(()=>{}));

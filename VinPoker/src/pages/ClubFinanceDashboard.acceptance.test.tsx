@@ -1,13 +1,13 @@
 import {act,cleanup,fireEvent,render,screen,within} from '@testing-library/react';
 import {MemoryRouter} from 'react-router-dom';
 import {afterEach,beforeEach,expect,it,vi} from 'vitest';
-const f=vi.hoisted(()=>({read:vi.fn(),export:vi.fn(),loading:false,admin:false,summary:null as any}));
-vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({isAdmin:f.admin,isClubAdmin:false,isClubOwner:true})}));
+const f=vi.hoisted(()=>({read:vi.fn(),export:vi.fn(),loading:false,rolesLoading:false,admin:false,summary:null as any}));
+vi.mock('@/hooks/useAuth',()=>({useAuth:()=>({isAdmin:f.admin,isClubAdmin:false,isClubOwner:true,rolesLoading:f.rolesLoading})}));
 vi.mock('@/hooks/useClubFinanceSummary',()=>({useClubFinanceSummary:(q:unknown)=>{f.read(q);return{loading:f.loading,error:null,clubs:[],summary:f.summary,reload:vi.fn()};}}));
 vi.mock('@/lib/exportExcel',()=>({exportToExcel:(...args:unknown[])=>f.export(...args)}));
 vi.mock('recharts',()=>({ResponsiveContainer:()=>null,AreaChart:()=>null,Area:()=>null,XAxis:()=>null,YAxis:()=>null,CartesianGrid:()=>null,Tooltip:()=>null,PieChart:()=>null,Pie:()=>null,Cell:()=>null,BarChart:()=>null,Bar:()=>null}));
 import ClubFinanceDashboard from './ClubFinanceDashboard';
-beforeEach(()=>{vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-10-31T17:30:00Z'));f.read.mockReset();f.export.mockReset();f.summary=null;f.loading=false;f.admin=false;});
+beforeEach(()=>{vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(new Date('2026-10-31T17:30:00Z'));f.read.mockReset();f.export.mockReset();f.summary=null;f.loading=false;f.rolesLoading=false;f.admin=false;});
 afterEach(()=>{cleanup();vi.useRealTimers();});
 const mount=()=>render(<MemoryRouter><ClubFinanceDashboard/></MemoryRouter>);
 it.each([0,-500])('does not label an undefined margin as zero when revenue is %s',revenue=>{
@@ -92,3 +92,6 @@ it('labels FT as a current policy estimate and exports it separately from PT and
  const [rows,columns,filename]=f.export.mock.calls[3];expect(screen.getByText(/chỉ gồm dealer chưa được ghi nhận trong kỳ/)).toBeTruthy();expect(columns.find((c:any)=>c.header==='CƠ SỞ DỰ TÍNH').get(rows[0])).toContain('chỉ dealer chưa được ghi nhận trong kỳ');expect(filename).toBe('tai-chinh-clb-du-tinh-dealer-ft-hien-tai');expect(columns.find((c:any)=>c.header==='DEALER FT NET DỰ TÍNH (₫)').get(rows[0])).toBe(413077);expect(columns.find((c:any)=>c.header==='KỲ DỰ TÍNH').get(rows[0])).toBe('2026-11');expect(f.summary.cost.payrollNet).toBe(100000);expect(f.summary.net).toBe(-100000);
 });
 it('marks missing FT policy estimates unavailable rather than exporting a zero',()=>{f.summary=dealerSummary();mount();expect(screen.getByText('Chưa có dữ liệu dự tính dealer FT đã xác minh.')).toBeTruthy();fireEvent.click(screen.getByRole('button',{name:'Xuất Excel'}));expect(f.export).toHaveBeenCalledTimes(2);});
+it('waits for delayed club roles before deciding report access',()=>{
+ f.rolesLoading=true;mount();expect(screen.getByRole('status')).toHaveTextContent('Đang xác minh quyền CLB');
+});

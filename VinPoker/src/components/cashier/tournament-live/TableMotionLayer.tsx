@@ -1,3 +1,5 @@
+import { playPokerLiveSound } from "@/lib/pokerLiveSound";
+import { AwardChips } from "./ChipStack";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { motion } from "framer-motion";
 import type { TableMotionEvent } from "@/lib/tracker-poker/tableMotion";
@@ -12,12 +14,13 @@ interface TableMotionLayerProps {
   potPosition: Point;
   aspectRatio: number;
   speed?: number;
+  dealSound?: boolean;
 }
 
 function motionDuration(event: TableMotionEvent, speed: number): number {
   const safeSpeed = Math.max(0.5, Math.min(8, speed));
   const base = event.kind === "deal_hole"
-    ? event.seatNumbers.length * 70 + 300
+    ? event.seatNumbers.length * 400 + 300
     : event.kind === "showdown_reveal"
       ? event.seatNumbers.length * 45 + 320
       : event.kind === "pot_award"
@@ -49,6 +52,7 @@ export function TableMotionVisual({
   potPosition,
   aspectRatio,
   speed = 1,
+  dealSound = false,
 }: Omit<TableMotionLayerProps, "enabled" | "handKey" | "events"> & { event: TableMotionEvent }) {
   if (event.kind === "deal_hole") {
     return (
@@ -56,11 +60,12 @@ export function TableMotionVisual({
         {[0, 1].flatMap((round) => event.seatNumbers.map((seatNumber, seatIndex) => {
           const target = seatPositions[seatNumber];
           if (!target) return null;
-          const delay = (round * event.seatNumbers.length + seatIndex) * 35;
+          const delay = (round * event.seatNumbers.length + seatIndex) * 200;
           return (
             <span
               key={`${round}-${seatNumber}`}
               className="tracker-motion-card tracker-motion-deal"
+              onAnimationStart={dealSound ? () => playPokerLiveSound("deal_one", { profile: "tracker", bypassStoredMute: true }) : undefined}
               style={{
                 left: `${potPosition.l}%`,
                 top: `${potPosition.t}%`,
@@ -149,7 +154,7 @@ export function TableMotionVisual({
                 ...deltaStyle(potPosition, target, aspectRatio),
                 ...itemTiming(280, awardIndex * 80 + winnerIndex * 35 + chip * 18, speed),
               }}
-            />
+            ><AwardChips column={chip} /></span>
           ));
         }),
       )}
@@ -165,6 +170,7 @@ export function TableMotionLayer({
   potPosition,
   aspectRatio,
   speed = 1,
+  dealSound = false,
 }: TableMotionLayerProps) {
   const [queue, setQueue] = useState<TableMotionEvent[]>([]);
   const [active, setActive] = useState<TableMotionEvent | null>(null);
@@ -212,6 +218,7 @@ export function TableMotionLayer({
     >
       <TableMotionVisual
         event={active}
+        dealSound={dealSound}
         seatPositions={seatPositions}
         potPosition={potPosition}
         aspectRatio={aspectRatio}

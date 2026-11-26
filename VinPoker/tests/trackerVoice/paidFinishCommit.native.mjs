@@ -123,7 +123,7 @@ try{
     if(missingReceipt)return {data:{status:'unavailable'},error:null};
     return {data:JSON.parse(sql(`BEGIN;${service}SELECT public.resolve_tracker_voice_finish_intent_v1('${args.p_actor_user_id}',${quote(args.p_intent)}::jsonb);COMMIT;`)),error:null};
  },from(name){assert.ok(['tournament_hands','hand_players','hand_actions'].includes(name));let columns,where=[],order=[];
-  const query={select:value=>{assert.match(value,/^[a-z_, ]+$/);columns=value;return query;},eq:(k,v)=>{assert.match(k,/^[a-z_]+$/);where.push(k+'='+quote(v));return query;},
+  const query={select:value=>{assert.match(value,/^(\*|[a-z_, ]+)$/);columns=value;return query;},eq:(k,v)=>{assert.match(k,/^[a-z_]+$/);where.push(k+'='+quote(v));return query;},
    order:k=>{assert.match(k,/^[a-z_]+$/);order.push(k);return query;},
    // Hosted Supabase service_role bypasses RLS; the old native fixture role does
    // not. Model that attribute ONLY inside each rolled-back read transaction.

@@ -1,5 +1,6 @@
 import { installOperationalDocument } from "./helpers/opsOperationalDocument";
 import { expect, test, type Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 
 const clubId = "10000000-0000-4000-8000-000000000001";
 const tournamentId = "20000000-0000-4000-8000-000000000001";
@@ -239,6 +240,183 @@ test("Floor V3 table sheet is compact, uses tournament-chip units and exposes fo
   await page.locator('[data-testid="floor-seat-row-9"]').scrollIntoViewIfNeeded();
   await expect(page.locator('[data-testid="floor-seat-row-9"]')).toBeInViewport();
   expect(pageErrors).toEqual([]);
+});
+
+test("Floor submits two consecutive exact busts and opens the empty-table confirmation", async ({ page }) => {
+  test.skip(process.env.VITE_FLOOR_FAST_BUST_V1 !== "preview", "Requires the isolated fast-bust preview flags");
+  await installMockOpsSession(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const native = process.env.FLOOR_BUST_BROWSER_DATABASE === "vinpoker_floor_bust_browser";
+  await page.addInitScript(() => {
+    const fetchRequest = window.fetch.bind(window);
+    window.fetch = async (input, init) => {
+      const response = await fetchRequest(input, init);
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === "http://127.0.0.1:54321/rest/v1/rpc/floor_operator_bust_seat_v1") {
+        const readBody = response.text.bind(response);
+        response.text = async () => {
+          const text = await readBody();
+          performance.mark("floor-bust-body-read");
+          return text;
+        };
+      }
+      return response;
+    };
+  });
+  const query = (sql: string, variables: Record<string, string> = {}) => {
+    return execFileSync("psql", ["-XAtq", "-h", "127.0.0.1", "-p", "5432",
+      "-U", "postgres", "-d", "vinpoker_floor_bust_browser", "-v", "ON_ERROR_STOP=1",
+      ...Object.entries(variables).flatMap(([key, value]) => ["-v", `${key}=${value}`]),
+    ], { input: sql, encoding: "utf8", timeout: 10_000 }).trim();
+  };
+  const authSql = "SET request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001'; SET ROLE authenticated;";
+  let pair: { tour: string; table: string; session: string; seat: string; entry: string }[] | null = null;
+  let activeTour = tournamentId;
+  if (native) {
+    test.setTimeout(240_000);
+    await page.route("http://127.0.0.1:54321/rest/v1/tournaments?**", route => {
+      const object = (route.request().headers().accept ?? "").includes("vnd.pgrst.object");
+      const selected = { ...tournament, id: activeTour };
+      return route.fulfill({ json: object ? selected : [selected] });
+    });
+  }
+  let seats = [1, 2].map(number => ({ seat_number: number, seat_id: `seat-${number}`,
+    seat_entry_id: `entry-${number}`, entry_id: `entry-${number}`, player_id: `player-${number}`,
+    display_name: `Floor fixture player ${number}`, entry_no: 1, chip_count: 0,
+    is_active: true, integrity_status: "valid" }));
+  const submissions: unknown[] = [];
+  await page.route("http://127.0.0.1:54321/rest/v1/rpc/get_floor_tournament_table_roster_v*", route => {
+    if (pair) {
+      if (route.request().postDataJSON().p_tournament_id !== activeTour) return route.fulfill({ json: [] });
+      const roster = JSON.parse(query(`${authSql}
+        SELECT public.get_floor_tournament_table_roster_v7(:'tour'::uuid);`, { tour: activeTour }));
+      for (const table of roster) for (const seat of table.seats) seat.display_name = `Floor fixture player ${seat.seat_number}`;
+      return route.fulfill({ json: roster });
+    }
+    return route.fulfill({ json: [{
+    tournament_id: tournamentId, tournament_table_id: tournamentTableId, game_table_id: gameTableId,
+    table_number: 5, table_name: "Bàn 5", table_session_id: tableSessionId, session_revision: 7 + submissions.length,
+    control_mode: "manual", control_epoch: 1, tournament_table_status: "active", session_closed_at: null,
+    active_dealer_assignment_id: null, seats,
+    }] });
+  });
+  await page.route("http://127.0.0.1:54321/rest/v1/rpc/floor_operator_bust_seat_v1", route => {
+    const body = route.request().postDataJSON();
+    submissions.push(body);
+    if (pair) {
+      expect(body.p_tournament_id).toBe(activeTour);
+      const receipt = query(`${authSql}
+        WITH input AS (SELECT :'body'::jsonb AS b)
+        SELECT public.floor_operator_bust_seat_v1((b->>'p_tournament_id')::uuid,(b->>'p_tournament_table_id')::uuid,
+          (b->>'p_table_session_id')::uuid,(b->>'p_seat_id')::uuid,(b->>'p_expected_player_id')::uuid,
+          (b->>'p_expected_seat_number')::integer,(b->>'p_expected_seat_entry_id')::uuid,
+          (b->>'p_expected_control_epoch')::bigint,(b->>'p_request_id')::uuid,b->>'p_reason') FROM input;`,
+      { body: JSON.stringify(body) });
+      return route.fulfill({ json: JSON.parse(receipt) });
+    }
+    seats = seats.filter(seat => seat.seat_id !== body.p_seat_id);
+    return route.fulfill({ json: { ok: true, outcome: "busted", request_id: body.p_request_id,
+      seat_id: body.p_seat_id, entry_id: body.p_expected_seat_entry_id, table_session_id: tableSessionId,
+      payout_applied: false, revision: 7 + submissions.length } });
+  });
+  if (native) await page.route("http://127.0.0.1:54321/rest/v1/rpc/close_tournament_table_v3", route => {
+    const body = route.request().postDataJSON();
+    expect(body.p_tournament_table_id).toBe(pair?.[0].table);
+    const receipt = query(`${authSql}
+      WITH input AS (SELECT :'body'::jsonb AS b)
+      SELECT public.close_tournament_table_v3((b->>'p_tournament_table_id')::uuid,
+        (b->>'p_expected_revision')::bigint,(b->>'p_request_id')::uuid) FROM input;`,
+    { body: JSON.stringify(body) });
+    return route.fulfill({ json: JSON.parse(receipt) });
+  });
+  const samples: { position: number; clickToReceiptMs: number; receiptToNextActionMs: number;
+    bodyReadToReadyFrameMs: number }[] = [];
+  const runPair = async (warmup: boolean) => {
+    submissions.length = 0;
+    if (native) pair = JSON.parse(query("SELECT fast_bust_test.seed_pair();"));
+    activeTour = pair?.[0].tour ?? tournamentId;
+    const activeSession = pair?.[0].session ?? tableSessionId;
+    await page.goto(`/ops/floor/tournaments/${activeTour}/tables?club=${clubId}`);
+    await page.locator('[data-ops-action="floor.tables.open_roster"]').click();
+    for (const number of [1, 2]) {
+      const row = page.getByTestId(`floor-seat-row-${number}`);
+      await expect(row).toContainText(`Floor fixture player ${number}`);
+      await row.click();
+      await page.getByRole("button", { name: "Loại khỏi giải", exact: true }).click();
+      await page.evaluate(position => {
+        const button = document.querySelector('[data-ops-action="floor.player.bust"]');
+        if (!button) throw new Error("Bust confirmation missing");
+        button.addEventListener("click", () => {
+          const start = `floor-bust-start-${position}`;
+          performance.mark(start);
+          const startTime = performance.getEntriesByName(start)[0].startTime;
+          const selector = position === 1 ? '[data-testid="floor-seat-row-2"]'
+            : '[data-ops-action="floor.tables.open_close_table"]';
+          const observe = () => {
+            const next = document.querySelector<HTMLButtonElement>(selector);
+            const dialog = document.querySelector('[role="alertdialog"][data-state="open"]');
+            const oldSeat = document.querySelector(`[data-testid="floor-seat-row-${position}"]`);
+            if (next && !next.disabled && !dialog && !oldSeat?.textContent?.includes(`Floor fixture player ${position}`)) {
+              performance.mark(`floor-bust-ready-${position}`);
+            } else if (performance.now() - startTime < 5_000) requestAnimationFrame(observe);
+          };
+          requestAnimationFrame(observe);
+        }, { once: true });
+      }, number);
+      const response = page.waitForResponse(reply => new URL(reply.url()).pathname.endsWith("/floor_operator_bust_seat_v1"));
+      const started = performance.now();
+      await page.getByRole("button", { name: "Xác nhận loại", exact: true }).click();
+      expect(await (await response).json()).toMatchObject({ ok: true, payout_applied: false });
+      const received = performance.now();
+      await expect(row).not.toContainText(`Floor fixture player ${number}`);
+      const nextAction = number === 1 ? page.getByTestId("floor-seat-row-2")
+        : page.getByRole("button", { name: "Đóng bàn trống", exact: true });
+      await expect(nextAction).toBeEnabled();
+      const receiptToNextActionMs = performance.now() - received;
+      await page.waitForFunction(position => performance.getEntriesByName(`floor-bust-ready-${position}`).length === 1, number);
+      const bodyReadToReadyFrameMs = await page.evaluate(position => {
+        const start = performance.getEntriesByName(`floor-bust-start-${position}`)[0].startTime;
+        const ready = performance.getEntriesByName(`floor-bust-ready-${position}`)[0].startTime;
+        const bodyRead = performance.getEntriesByName("floor-bust-body-read").find(entry => entry.startTime >= start);
+        if (!bodyRead) throw new Error("Bust response was not read by the browser SDK");
+        return ready - bodyRead.startTime;
+      }, number);
+      expect(bodyReadToReadyFrameMs).toBeGreaterThanOrEqual(0);
+      if (!warmup) samples.push({ position: number, clickToReceiptMs: received - started,
+        receiptToNextActionMs, bodyReadToReadyFrameMs });
+    }
+    expect(submissions).toEqual([1, 2].map(number => expect.objectContaining({
+      p_table_session_id: activeSession, p_seat_id: pair?.[number - 1].seat ?? `seat-${number}`,
+      p_expected_seat_entry_id: pair?.[number - 1].entry ?? `entry-${number}`, p_expected_control_epoch: 1,
+    })));
+    await page.getByRole("button", { name: "Đóng bàn trống", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Đóng bàn trống?" })).toBeVisible();
+    if (pair) {
+      expect(query(`SELECT count(*) FROM public.tournament_entries
+        WHERE tournament_id=:'tour'::uuid AND status='busted' AND current_stack=0;`, { tour: activeTour })).toBe("2");
+      const [closeReply] = await Promise.all([
+        page.waitForResponse(reply => new URL(reply.url()).pathname.endsWith("/close_tournament_table_v3"), { timeout: 5_000 }),
+        page.getByRole("button", { name: "Xác nhận đóng bàn", exact: true }).click({ timeout: 5_000 }),
+      ]);
+      expect(await closeReply.json()).toMatchObject({ ok: true });
+      await expect(page.locator('[data-ops-action="floor.tables.open_roster"]')).toHaveCount(0);
+      expect(query(`SELECT closed_at IS NOT NULL FROM public.table_sessions WHERE id=:'session'::uuid;`,
+        { session: activeSession })).toBe("t");
+    }
+  };
+  const pairs = native ? 22 : 1;
+  for (let i = 0; i < pairs; i++) await runPair(native && i < 2);
+  if (native) {
+    const p95 = (values: number[]) => [...values].sort((a, b) => a - b)[Math.ceil(values.length * 0.95) - 1];
+    const distributions = [1, 2].map(position => {
+      const rows = samples.filter(sample => sample.position === position);
+      expect(rows).toHaveLength(20);
+      return { position, samples: rows.length, clickToReceiptP95Ms: p95(rows.map(row => row.clickToReceiptMs)),
+        receiptToNextActionP95Ms: p95(rows.map(row => row.receiptToNextActionMs)),
+        bodyReadToReadyFrameP95Ms: p95(rows.map(row => row.bodyReadToReadyFrameMs)) };
+    });
+    console.log(JSON.stringify({ kind: "FLOOR_BUST_CHROMIUM_LOCAL_POSTGRES", warmupPairs: 2, distributions, samples, qualification: false }));
+  }
 });
 
 test("Floor mode confirmation sends canonical session fences and displays pending without changing chips", async ({ page }) => {

@@ -477,6 +477,9 @@ export interface BlindLevelSnapshot {
   small_blind: number;
   big_blind: number;
   ante: number;
+  big_blind_ante_only?: boolean;
+  small_blind_seat?: number | null;
+  big_blind_seat?: number;
 }
 
 /** Loose shape of get_tournament_clock's `current_level` (fields optional). */

@@ -45,3 +45,14 @@ it('keeps embedded expenses in the selected club and clears the scope after memb
   expect(f.read.mock.calls.at(-1)?.[1]).toBeNull();
   expect(screen.queryByRole('button', {name:'Ghi chi phí'})).toBeNull();
 });
+it.each([['100000',100000],['100.000',100000],['1.000.000',1000000],['-100.000',-100000]])('submits Vietnamese VND %s accurately',async(input,expected)=>{
+ verified();f.write.mockResolvedValue({status:'ok'});mount();draft();
+ fireEvent.change(screen.getByLabelText('Số tiền'),{target:{value:input}});
+ await act(async()=>fireEvent.submit(screen.getByLabelText('Số tiền').closest('form')!));
+ expect(f.write.mock.calls[0]?.[0].amountVnd).toBe(expected);
+});
+it.each(['1e5','10.00','1.5','9007199254740992'])('rejects ambiguous VND %s',async(input)=>{
+ verified();mount();draft();fireEvent.change(screen.getByLabelText('Số tiền'),{target:{value:input}});
+ await act(async()=>fireEvent.submit(screen.getByLabelText('Số tiền').closest('form')!));
+ expect(f.write).not.toHaveBeenCalled();
+});

@@ -4,7 +4,8 @@ import { useTranslation } from "react-i18next";
 import { PokerCard } from "../PokerVisuals";
 import { supabase } from "@/integrations/supabase/client";
 import { formatTime } from "@/lib/format";
-import { formatViewerChipAndBB, formatViewerChipCompact, formatViewerSignedChipAndBB } from "@/lib/tracker-poker/viewerAmounts";
+import { useViewerAmountUnit } from "@/components/tracker/viewerAmountUnit";
+import { formatViewerAmount, formatViewerChipCompact } from "@/lib/tracker-poker/viewerAmounts";
 import { parsePublicTableHistoryPage } from "./publicTableHistory";
 import type { PublicTableHistoryItem } from "./publicSnapshotTypes";
 import type { ReplayTarget } from "./replayTarget";
@@ -26,6 +27,7 @@ export function TableHistoryPanel({
   onAccessRevoked: () => void;
 }) {
   const { t } = useTranslation();
+  const unit = useViewerAmountUnit();
   const [items, setItems] = useState<PublicTableHistoryItem[]>([]);
   const [nextCursor, setNextCursor] = useState<{ createdAt: string; handId: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -227,7 +229,7 @@ export function TableHistoryPanel({
         return <article key={item.handId} className="rounded-2xl border border-border/55 bg-card/70 p-3 sm:p-4">
           <div className="flex flex-wrap items-center justify-between gap-2"><strong>Hand #{item.handNumber ?? "—"}</strong><span className="text-[11px] text-muted-foreground">{formatTime(item.createdAt)} · {sessionLabel}</span></div>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border/45 bg-background/35 px-3 py-2 text-xs">
-            <span className="tracker-num font-bold text-[hsl(var(--viewer-neon))]">Pot {formatViewerChipAndBB(item.pot, item.bigBlind)}</span>
+            <span className="tracker-num font-bold text-[hsl(var(--viewer-neon))]">Pot {formatViewerAmount(item.pot, item.bigBlind, unit)}</span>
             <span className="text-muted-foreground">{item.smallBlind != null && item.bigBlind != null ? `${formatViewerChipCompact(item.smallBlind)}/${formatViewerChipCompact(item.bigBlind)}` : t("tableHistory.blindUnavailable", "Blind —")}{item.ante != null ? ` · ${t("tableHistory.ante", "Ante")} ${formatViewerChipCompact(item.ante)}` : ""}</span>
           </div>
           {item.result.status === "verified" ? <div className="mt-3 divide-y divide-border/35">
@@ -235,10 +237,10 @@ export function TableHistoryPanel({
               <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-full border border-[hsl(var(--poker-gold)/0.55)] bg-secondary text-xs font-bold" aria-hidden="true">{recipient.avatarUrl ? <img src={recipient.avatarUrl} alt="" loading="lazy" className="h-full w-full object-cover" /> : recipient.name.slice(0, 2).toUpperCase()}</span>
               <span className="min-w-0 flex-[1_1_12rem]"><span className="block break-words text-sm font-bold [overflow-wrap:anywhere]">{recipient.name}</span><span className="text-[10px] text-muted-foreground">{t("tableHistory.received", "Nhận")} {recipient.potKinds.map((kind) => t(`tableHistory.${kind}`, kind === "main" ? "pot chính" : "pot phụ")).join(" + ")}</span></span>
               {recipient.holeCards.length > 0 && <span className="flex shrink-0 gap-1" aria-label={t("tableHistory.publicCards", "Bài đã công khai của {{name}}", { name: recipient.name })}>{recipient.holeCards.map((card, index) => <PokerCard key={`${index}:${card}`} card={card} size="xs" />)}</span>}
-              <span className={`tracker-num ml-auto text-sm font-bold ${recipient.netDelta > 0 ? "text-emerald-400" : recipient.netDelta < 0 ? "text-rose-400" : "text-muted-foreground"}`} aria-label={`${t("tableHistory.net", "Lãi ròng")} ${formatViewerSignedChipAndBB(recipient.netDelta, item.bigBlind)}`}>{formatViewerSignedChipAndBB(recipient.netDelta, item.bigBlind)}</span>
+              <span className={`tracker-num ml-auto text-sm font-bold ${recipient.netDelta > 0 ? "text-emerald-400" : recipient.netDelta < 0 ? "text-rose-400" : "text-muted-foreground"}`} aria-label={`${t("tableHistory.net", "Lãi ròng")} ${((recipient.netDelta > 0 ? "+" : "") + formatViewerAmount(recipient.netDelta, item.bigBlind, unit))}`}>{((recipient.netDelta > 0 ? "+" : "") + formatViewerAmount(recipient.netDelta, item.bigBlind, unit))}</span>
             </div>)}
           </div> : item.result.status === "refunded" ? <p className="mt-3 rounded-lg border border-border/45 bg-background/35 px-3 py-2 text-xs text-muted-foreground">
-            {t("tableHistory.fullRefund", "Đã xác minh: hoàn trả toàn bộ cược chưa được theo.")} {item.result.refund.name} · {formatViewerChipAndBB(item.result.refund.amount, item.bigBlind)}
+            {t("tableHistory.fullRefund", "Đã xác minh: hoàn trả toàn bộ cược chưa được theo.")} {item.result.refund.name} · {formatViewerAmount(item.result.refund.amount, item.bigBlind, unit)}
           </p> : <p className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">{item.result.status === "needs_attention"
             ? t("tableHistory.needsAttention", "Kết quả cần kiểm tra bổ sung; chưa được xác minh")
             : t("tableHistory.pending", "Kết quả đang được kiểm tra")}</p>}

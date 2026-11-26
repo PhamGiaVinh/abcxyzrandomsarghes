@@ -12,9 +12,12 @@ import { toast } from "sonner";
 import { Loader2, Search, Users as UsersIcon, IdCard, Phone, ExternalLink, Coins, ChevronDown, ChevronRight, History } from "lucide-react";
 import { formatVND } from "@/lib/format";
 
+import { ClubPlayerPortrait } from "@/components/players/ClubPlayerPortrait";
+
 type ClubRow = { id: string; name: string };
 
 type MemberHit = {
+  id?: string;
   source: "club_member" | "profile";
   member_card_id?: string;
   full_name?: string;
@@ -197,6 +200,9 @@ export default function UnifiedLookupTab({ clubIds, clubs }: { clubIds: string[]
                   )}
                 </div>
 
+                {h.source === "club_member" && h.id && h.club_id && <ClubPlayerPortrait
+                  key={JSON.stringify([user?.id, h.club_id, h.id])} client={supabase}
+                  target={{ kind: "member", club: h.club_id, member: h.id }} name={h.full_name || "thành viên"} />}
                 {userId && detailErrors[userId] && <p role="alert" className="text-xs text-destructive">{t("cashierLookup.detailsUnavailable")}</p>}
                 {deals.length > 0 && (
                   <div className="border-t pt-2 space-y-1.5">

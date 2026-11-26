@@ -1,5 +1,18 @@
 const MAX_DECIMALS = 2;
 
+export type ViewerAmountUnit = "chips" | "bb";
+
+const chipNumber = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0, useGrouping: true });
+
+export function formatViewerAmount(amount: number | null | undefined, bigBlind: number | null | undefined, unit: ViewerAmountUnit): string {
+  if (amount == null || !Number.isFinite(amount)) return "—";
+  const magnitude = Math.abs(amount);
+  const label = unit === "chips"
+    ? chipNumber.format(magnitude)
+    : formatViewerBB(magnitude, bigBlind ?? 0)?.replace(".", ",");
+  return label ? `${amount < 0 ? "−" : ""}${label}` : "— BB";
+}
+
 function finitePositive(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }

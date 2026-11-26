@@ -3,7 +3,12 @@ import {act,cleanup,fireEvent,render,screen,waitFor} from "@testing-library/reac
 import {afterEach,beforeAll,describe,expect,it,vi} from "vitest";
 import {execFileSync} from "node:child_process";
 import {createPaidJourneyFixture} from "../cashier/paidJourney.fixture.mjs";
-const h=vi.hoisted(()=>{const rpc=vi.fn();return {actor:"",rpc,client:{rpc},success:vi.fn(),error:vi.fn()};});
+import {mapDisplayStateToTvData} from "@/lib/tv/mapDisplayState";
+import type {TvData} from "@/types/tv";
+const h=vi.hoisted(()=>{const rpc=vi.fn();return {actor:"",preview:null as TvData|null,rpc,client:{rpc},success:vi.fn(),error:vi.fn()};});
+// This SQL transport has no hosted realtime channel. Feed the editor the snapshot read by the paired TV.
+vi.mock("@/hooks/useTournamentTvData",()=>({useTournamentTvData:(id:string,{enabled}:{enabled:boolean})=>
+  enabled && h.preview?.tournamentId===id ? {state:"ready",data:h.preview} : {state:"loading",data:null}}));
 vi.mock("@/hooks/useAuth",()=>({useAuth:()=>({user:{id:h.actor}})}));
 vi.mock("@/integrations/supabase/SupabaseClientContext",()=>({useSupabaseClient:()=>h.client}));
 vi.mock("@/lib/featureFlags",()=>({FEATURES:{tvLayoutEditorV1:true}}));
@@ -80,6 +85,8 @@ describe.skipIf(!enabled)('Actual TV editor → authenticated SQL → anonymous 
   expect(sql(`SELECT count(*)||'|'||min(l.revision)||'|'||(SELECT count(*) FROM public.tv_tournament_layout_versions v WHERE v.layout_id=min(l.id::text)::uuid) FROM public.tv_tournament_layouts l WHERE l.tournament_id='${f.tour}';`)).toBe('1|1|1');
   const publicState=JSON.parse(sql(`SET request.jwt.claims='{"role":"anon"}';SET ROLE anon;SELECT public.get_tv_display_state_v4('${token}',true);`));
   expect(publicState.status).toBe('paired');expect(publicState.tournament.id).toBe(f.tour);expect(publicState.display.club_brand_name).toBe('Native TEST broadcast');
+  h.preview=mapDisplayStateToTvData(publicState,publicState.clock.remaining_seconds);
+  expect(h.preview?.tournamentId).toBe(f.tour);
   const fingerprint=()=>sql(`SELECT md5(jsonb_build_object('head',(SELECT jsonb_agg(to_jsonb(l) ORDER BY id) FROM public.tv_tournament_layouts l WHERE tournament_id='${f.tour}'),
    'versions',(SELECT jsonb_agg(to_jsonb(v) ORDER BY v.id) FROM public.tv_tournament_layout_versions v JOIN public.tv_tournament_layouts l ON l.id=v.layout_id WHERE l.tournament_id='${f.tour}'))::text);`);
   const after=fingerprint();first.unmount();h.actor=f.player;h.error.mockClear();h.success.mockClear();h.rpc.mockClear();
@@ -94,6 +101,7 @@ describe.skipIf(!enabled)('Actual TV editor → authenticated SQL → anonymous 
   render(<TvBrandingEditor tournamentId={f.tour}/>);fireEvent.click(screen.getByRole('button',{name:'Edit TV layout'}));
   await waitFor(()=>expect(screen.getByRole('button',{name:'Publish TV layout'})).toBeEnabled());
   fireEvent.change(screen.getByLabelText('Brand name'),{target:{value:'Stale local draft TEST'}});
+  expect(screen.getByRole('heading',{name:publicState.tournament.name})).toBeVisible();
   const canonical=JSON.parse(sql(`SELECT public.get_tv_tournament_branding_v1('${f.tour}');`));
   // Deterministic second-writer interleaving, not two concurrent browser tabs.
   const second=await h.rpc('save_tv_tournament_layout_v1',{p_tournament_id:f.tour,p_expected_revision:canonical.revision,

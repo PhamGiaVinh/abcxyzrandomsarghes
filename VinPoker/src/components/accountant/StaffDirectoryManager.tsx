@@ -183,11 +183,11 @@ function StaffRow({
       ? `${formatVND(staff.hourlyRateVnd ?? 0)}/giờ`
       : `${formatVND(staff.monthlySalaryVnd ?? 0)}/tháng`;
   return (
-    <div className="py-2.5 flex items-center gap-3">
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 py-2.5 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
       <span className="grid place-items-center w-9 h-9 rounded-xl bg-muted text-muted-foreground shrink-0">
         <UserRound className="w-4.5 h-4.5" />
       </span>
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-bold text-foreground truncate">{staff.fullName}</span>
           <Badge variant="outline" className="text-[10px]">
@@ -213,28 +213,30 @@ function StaffRow({
           {staff.phone && <> · {staff.phone}</>}
         </div>
       </div>
-      {!staff.userId && (
-        <>
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={onGenerateCode}
-            disabled={generating}
-          >
-            <KeyRound className="w-3.5 h-3.5 mr-1" />
-            Tạo mã
-          </Button>
-          <Button variant="outline" size="sm" className="shrink-0" onClick={onLink}>
-            <Link2 className="w-3.5 h-3.5 mr-1" />
-            Gán tài khoản
-          </Button>
-        </>
-      )}
-      <Button variant="outline" size="sm" className="shrink-0" onClick={onEdit}>
-        <Pencil className="w-3.5 h-3.5 mr-1" />
-        Sửa
-      </Button>
+      <div className="col-span-2 flex flex-wrap gap-2 sm:col-span-1 sm:justify-end">
+        {!staff.userId && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={onGenerateCode}
+              disabled={generating}
+            >
+              <KeyRound className="w-3.5 h-3.5 mr-1" />
+              Tạo mã
+            </Button>
+            <Button variant="outline" size="sm" className="shrink-0" onClick={onLink}>
+              <Link2 className="w-3.5 h-3.5 mr-1" />
+              Gán tài khoản
+            </Button>
+          </>
+        )}
+        <Button variant="outline" size="sm" className="shrink-0" onClick={onEdit}>
+          <Pencil className="w-3.5 h-3.5 mr-1" />
+          Sửa
+        </Button>
+      </div>
     </div>
   );
 }

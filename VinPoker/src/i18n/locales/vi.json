@@ -1,4 +1,5 @@
 {
+  "trackerPotDetails": "Chi tiết",
   "clubDetailRead": {"error":"Không tải được dữ liệu CLB. Vui lòng thử lại.","retry":"Thử tải lại","loading":"Đang tải dữ liệu CLB…"},
   "rankingReview": {"title":"Floor xác nhận thứ hạng","note":"Chỉ đổi vị trí trong cùng nhóm bust cùng hand. Xác nhận này chưa chốt giải và không ghi nhận trả thưởng.","storage":"Không đọc hoặc lưu được yêu cầu an toàn. Tải lại trang và đối chiếu yêu cầu cũ trước khi tiếp tục.","readError":"Chưa đối chiếu được danh sách thứ hạng. Hãy tải lại trước khi xác nhận.","unknown":"Chưa xác minh kết quả. Yêu cầu gốc được giữ để đối chiếu; không tạo yêu cầu khác.","changed":"Dữ liệu hoặc điều kiện đã thay đổi; yêu cầu này bị từ chối. Hãy kiểm tra thứ hạng mới.","recorded":"Đã ghi nhận xác nhận thứ hạng. Đang tải lại trạng thái chốt.","historical":"Đã đối chiếu yêu cầu cũ, nhưng nguồn đã đổi. Cần kiểm tra và xác nhận lại thứ hạng hiện tại.","loading":"Đang đối chiếu thứ hạng…","pending":"Đang giữ yêu cầu chưa đối chiếu. Không gửi yêu cầu mới.","check":"Đối chiếu yêu cầu đã lưu","retrySame":"Gửi lại đúng yêu cầu đã lưu","reload":"Tải lại thứ hạng","notReady":"Chưa đủ điều kiện xác nhận: cần một người thắng và bằng chứng hand, thứ tự bust đầy đủ.","approved":"Đã có biên nhận xác nhận. Điều kiện chốt giải vẫn được kiểm tra riêng.","up":"Xếp {{name}} cao hơn trong cùng nhóm","down":"Xếp {{name}} thấp hơn trong cùng nhóm","confirm":"Xác nhận thứ tự do Floor chọn","group":"Nhóm bust cùng hand {{group}}","reference":"Mã entry {{reference}}"},
   "publicScheduleRead": { "loading": "Đang tải lịch thi đấu…", "error": "Không tải được lịch thi đấu. Chưa thể xác nhận có lịch hay không. Vui lòng thử lại.", "retry": "Tải lại lịch thi đấu" },
@@ -166,6 +167,8 @@
     "exitToMain": "Về app chính"
   },
   "tv": {
+    "levelSoundOn": "Âm báo đang bật",
+    "levelSoundOff": "Bật âm báo", "testSound": "Thử tiếng", "soundUnavailable": "Chưa bật được âm thanh. Kiểm tra tiếng của tab và thiết bị.",
     "level": "Level",
     "blinds": "Blinds",
     "ante": "Ante",
@@ -198,7 +201,7 @@
     "loadErrorHint": "Hệ thống sẽ tự động thử lại…",
     "offline": "Mất kết nối realtime — đang dùng chế độ dự phòng",
     "pairTitle": "Ghép nối màn hình TV",
-    "pairInstruction": "Nhập mã này trong bảng điều khiển VinPoker (Tournament Live → TV Displays) để gán giải đấu cho TV này",
+    "pairInstruction": "Trên máy điều hành, vào Floor → chọn giải → TV & màn hình (trên điện thoại, chọn Thêm). Nhập 6 số này vào ô Mã ghép nối, bấm Ghép nối rồi bấm Gán giải này bên cạnh tên TV.",
     "pairWaiting": "Đang chờ ghép nối…",
     "pairExpires": "Mã mới sau",
     "pairError": "Không thể kết nối máy chủ — đang thử lại…",
@@ -2076,6 +2079,7 @@
     "detailsUnavailable": "Không tải đủ thông tin deal hoặc lịch sử hồ sơ. Dữ liệu chưa được xác minh; hãy thử lại."
   },
   "financeRead": {
+    "missingEventStart": "Có giải đã phát sinh tiền nhưng thiếu ngày bắt đầu. Hãy xác minh ngày tổ chức của giải để xác định kỳ báo cáo.",
     "forbidden": "Bạn chưa có quyền xem báo cáo tài chính của CLB này.",
     "missingBackend": "Máy chủ chưa có phiên bản báo cáo cần thiết. Không thể xác minh số liệu.",
     "invalid": "Dữ liệu báo cáo không đầy đủ hoặc không hợp lệ. Không thể xác minh số liệu.",
@@ -2091,6 +2095,7 @@
     },
     "selectTournament": "Chọn giải",
     "tvDisplays": {
+      "otherTournament": "Đang phát giải khác",
       "tab": "Màn hình TV",
       "pairTitle": "Ghép nối TV mới",
       "pairHint": "Mở đường dẫn /tv/pair trên TV để lấy mã 6 số, rồi nhập mã vào đây để gán TV cho CLB này.",
@@ -3172,7 +3177,7 @@
       "pot": "Pot",
       "main": "Main",
       "side": "Side {{i}}",
-      "toAct": "chờ",
+      "toAct": "Đến lượt",
       "bet": "Cược {{amount}}",
       "allIn": "ALL IN",
       "folded": "FOLDED",

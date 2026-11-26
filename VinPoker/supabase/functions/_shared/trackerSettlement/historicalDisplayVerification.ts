@@ -11,6 +11,7 @@ import {
   type UncalledRefundV1,
 } from "./outcomeV1.ts";
 import {
+  frozenBigBlindAntePlayerId,
   type SettlementDbAction,
   type SettlementDbHand,
   type SettlementDbPlayer,
@@ -215,7 +216,7 @@ export async function verifyHistoricalDisplaySettlement(
   const board = [...(hand.community_cards ?? [])];
   validateCards(board, players);
   const potActions = normalizeHistoricalPotActions(actions);
-  const contributions = contributionsFromActions(potActions);
+  const contributions = contributionsFromActions(potActions, frozenBigBlindAntePlayerId(hand, players));
   const entryByPlayerId = new Map(players.map((player) => [player.player_id, entryKey(player)]));
   const committedByEntry = new Map(contributions.map((row) => [entryByPlayerId.get(row.player_id)!, row]));
   for (const player of players) {

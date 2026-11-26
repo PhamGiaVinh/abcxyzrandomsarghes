@@ -51,4 +51,11 @@ describe("D2B scoring eligibility", () => {
     expect(truth.resolution.state).toBe("needs_reconciliation");
     expect((await resolveForecastActualScoringPairV1({ packet: await packet(), forecast: forecast(), revisions: [auto, manual] })).blockReasons).toContain("reconciliation_required");
   });
+
+  it.each(["forecastIssuedAt", "asOfTs"] as const)("blocks a malformed forecast %s", async (field) => {
+    const result = await resolveForecastActualScoringPairV1({
+      packet: await packet(), forecast: { ...forecast(), [field]: "invalid" }, revisions: [await actual()],
+    });
+    expect(result).toMatchObject({ eligibility: "blocked", blockReasons: ["outcome_precedes_forecast"] });
+  });
 });
