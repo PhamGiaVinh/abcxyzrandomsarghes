@@ -1,0 +1,61 @@
+name: Expense cash source dependency catalog (not qualification)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/finance-expense-cash.yml'
+      - 'VinPoker/tests/financeExpenseCash/**'
+      - 'VinPoker/supabase/pending-migrations/20261126011530_finance_expense_cash_source_v1.sql'
+permissions: {actions: read, contents: read}
+jobs:
+  dependency-catalog:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env: {POSTGRES_HOST_AUTH_METHOD: trust, POSTGRES_DB: vinpoker_ops_expense_cash_catalog}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -d vinpoker_ops_expense_cash_catalog"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_expense_cash_catalog
+      SOURCE_SHA: '${{ github.event.pull_request.head.sha }}'
+      CAPTURE_RUN: '45651278424'
+      CAPTURE_SHA: 'c9dba24211152ddf5f010a46d0afab118cfbf482'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ github.event.pull_request.head.sha }}', persist-credentials: false}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Restore approved original catalog in empty isolated PostgreSQL
+        working-directory: VinPoker
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CAPTURE_RUN" > "$RUNNER_TEMP/expense-capture.json"
+          jq -e --arg sha "$CAPTURE_SHA" --arg owner "$GITHUB_REPOSITORY_OWNER" '.conclusion=="success" and .head_sha==$sha and .head_branch=="main" and .event=="workflow_dispatch" and .actor.login==$owner and .path==".github/workflows/capture-live-public-schema.yml"' "$RUNNER_TEMP/expense-capture.json" >/dev/null
+          export SCHEMA_ARTIFACT_DIR="$RUNNER_TEMP/expense-schema"
+          gh run download "$CAPTURE_RUN" -R "$GITHUB_REPOSITORY" -n live-public-schema -D "$SCHEMA_ARTIFACT_DIR"
+          node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
+          test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
+          node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Capture exact prerequisite metadata without applying expense cash candidate
+        working-directory: VinPoker
+        run: node tests/financeExpenseCash/dependency-catalog.mjs
+      - name: Upload synthetic catalog only (not expense qualification)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: expense-cash-dependency-catalog
+          path: '${{ runner.temp }}/expense-cash-dependency-catalog.json'
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove runner-local schema
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/expense-schema"
