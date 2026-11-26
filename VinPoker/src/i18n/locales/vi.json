@@ -168,7 +168,7 @@
   },
   "tv": {
     "levelSoundOn": "Âm báo đang bật",
-    "levelSoundOff": "Bật âm báo",
+    "levelSoundOff": "Bật âm báo", "testSound": "Thử tiếng", "soundUnavailable": "Chưa bật được âm thanh. Kiểm tra tiếng của tab và thiết bị.",
     "level": "Level",
     "blinds": "Blinds",
     "ante": "Ante",
