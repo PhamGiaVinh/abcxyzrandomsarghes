@@ -208,6 +208,13 @@ function MetricCard({ icon: Icon, label, value }: { icon: React.ComponentType<{ 
 
 type ExpenseInput=Parameters<ReturnType<typeof useRecordClubExpense>['mutateAsync']>[0];
 
+function parseExpenseAmount(input: string): number | null {
+  const value = input.trim();
+  if (!/^-?(?:\d+|[1-9]\d{0,2}(?:\.\d{3})+)$/.test(value)) return null;
+  const amount = Number(value.replace(/\./g, ""));
+  return Number.isSafeInteger(amount) ? amount : null;
+}
+
 function ExpenseEntryForm({
   disabled,
   pending,
@@ -247,8 +254,8 @@ function ExpenseEntryForm({
         className="space-y-3"
         onSubmit={async(event) => {
           event.preventDefault();
-          const amountVnd = Number(amount);
-          if(disabled||pending||locked.current||!Number.isSafeInteger(amountVnd)||!amountVnd)return;
+          const amountVnd = parseExpenseAmount(amount);
+          if(disabled||pending||locked.current||amountVnd === null||!amountVnd)return;
           locked.current=true;setSubmitting(true);setFormError(null);
           try{await onSubmit({
             category,
@@ -281,7 +288,8 @@ function ExpenseEntryForm({
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1.5">
             <Label htmlFor="expense-amount">Số tiền</Label>
-            <Input id="expense-amount" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="2500000" />
+            <Input id="expense-amount" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="2.500.000" />
+            {parseExpenseAmount(amount) !== null && amount.trim() && <p className="text-xs text-muted-foreground">{formatVND(parseExpenseAmount(amount)!)}</p>}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="expense-date">Ngày</Label>
@@ -318,7 +326,7 @@ function ExpenseEntryForm({
           <Textarea id="expense-description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ví dụ: in poster, mua vật tư..." />
         </div>
 
-        <Button type="submit" className="w-full" disabled={disabled || pending || submitting || !Number.isSafeInteger(Number(amount)) || !Number(amount)}>
+        <Button type="submit" className="w-full" disabled={disabled || pending || submitting || parseExpenseAmount(amount) === null || !parseExpenseAmount(amount)}>
           <Landmark className="w-4 h-4 mr-1.5" />
           {preview ? "Ghi preview" : "Ghi chi phí"}
         </Button>

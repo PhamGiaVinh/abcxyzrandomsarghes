@@ -75,6 +75,7 @@ describe("AccountingControl — flag + role gates", () => {
     renderPage();
     expect(screen.getByText("Tài chính & Đối soát")).toBeInTheDocument();
     expect(screen.getAllByRole("tab")).toHaveLength(11);
+    expect(screen.getByRole("link", { name: "Mở tổng hợp tài chính CLB" })).toHaveAttribute("href", "/club/admin/finance");
   });
 
   it("flag OFF + club owner (not super_admin) → redirected to /club/admin", () => {

@@ -545,6 +545,13 @@ describe("seriesDateWindow (F&B club-level window)", () => {
     expect(w!.clubId).toBe("club-Z");
   });
 
+  it("has no club-level F&B window for a series spanning different clubs", () => {
+    expect(seriesDateWindow([
+      wev("a", "2026-03-07T12:00:00Z", "club-A"),
+      wev("b", "2026-03-08T12:00:00Z", "club-B"),
+    ])).toBeNull();
+  });
+
   it("null when no event has a parseable date", () => {
     expect(seriesDateWindow([wev("a", null), wev("b", "not-a-date")])).toBeNull();
   });

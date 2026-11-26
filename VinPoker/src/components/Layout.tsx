@@ -92,6 +92,7 @@ export const Layout = () => {
   const isViewerFocusRoute = (FEATURES.liveViewerRPTShell && /^\/live\/[^/]+\/?$/.test(location.pathname))
     || /^\/clock\/[^/]+\/?$/.test(location.pathname);
   const isFloorFocusRoute = /^\/floor(?:\/|$)/.test(location.pathname);
+  const isFinanceFocusRoute = /^\/(?:finance|cashier|accountant|club\/admin\/finance)\/?$/.test(location.pathname);
   const isDirectChatRoute = /^\/dm\/[^/]+\/?$/.test(location.pathname);
   const isInlineRegistrationRoute = isDirectChatRoute || /^\/dealer-swing\/?$/.test(location.pathname);
   const isTournamentDetailRoute = /^\/tournament\/[^/]+\/?$/.test(location.pathname);
@@ -429,7 +430,9 @@ export const Layout = () => {
           ? "mx-auto min-w-0 w-full max-w-[1480px] flex-1 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] sm:pl-[max(1.25rem,env(safe-area-inset-left))] sm:pr-[max(1.25rem,env(safe-area-inset-right))] sm:pt-4 lg:pl-[max(1.75rem,env(safe-area-inset-left))] lg:pr-[max(1.75rem,env(safe-area-inset-right))] animate-fade-in"
           : isFloorFocusRoute
             ? "mx-auto min-w-0 w-full max-w-[1600px] flex-1 pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:py-4 animate-fade-in"
-            : "flex-1 mx-auto w-full max-w-[1400px] px-4 md:px-6 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:pb-8 animate-fade-in"}
+            : isFinanceFocusRoute
+              ? "mx-auto min-w-0 w-full max-w-[1200px] flex-1 px-4 py-4 sm:px-6 sm:py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
+              : "flex-1 mx-auto w-full max-w-[1400px] px-4 md:px-6 py-6 pb-[calc(6.5rem+env(safe-area-inset-bottom))] md:pb-8 animate-fade-in"}
       >
         {isInlineRegistrationRoute && <RegisteredBadge placement="inline" />}
         <ErrorBoundary>
@@ -437,9 +440,9 @@ export const Layout = () => {
         </ErrorBoundary>
       </main>
       <DuplicateNameGuard />
-      {!isViewerFocusRoute && !isFloorFocusRoute && !isDirectChatRoute && !isTournamentDetailRoute && <InstallPWAButton />}
+      {!isViewerFocusRoute && !isFloorFocusRoute && !isFinanceFocusRoute && !isDirectChatRoute && !isTournamentDetailRoute && <InstallPWAButton />}
 
-      {!isViewerFocusRoute && !isFloorFocusRoute && (
+      {!isViewerFocusRoute && !isFloorFocusRoute && !isFinanceFocusRoute && (
       <nav className="fixed bottom-0 inset-x-0 z-40 border-t border-border/60 bg-background/95 backdrop-blur-xl md:hidden pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
         {!isInlineRegistrationRoute && <RegisteredBadge />}
         <div className="mx-auto grid h-[68px] max-w-3xl grid-cols-5 items-stretch">

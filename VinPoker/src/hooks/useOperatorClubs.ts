@@ -55,10 +55,15 @@ export function useOperatorClubs() {
     void (async () => {
       try {
         const result=await observeTrackerContextRead((async()=>{
-          const [scopeResult,dealerResult]=await Promise.all([
+          const readDealerScope = () => supabase.rpc("dealer_control_club_ids",{_user_id:userId}).abortSignal(controller.signal);
+          const [scopeResult,initialDealerResult]=await Promise.all([
             supabase.rpc("get_my_floor_operator_scope").abortSignal(controller.signal),
-            supabase.rpc("dealer_control_club_ids",{_user_id:userId}).abortSignal(controller.signal),
+            readDealerScope(),
           ]);
+          if(controller.signal.aborted)throw new Error('operator_scope_read_cancelled');
+          const dealerResult = !scopeResult.error && initialDealerResult.error && initialDealerResult.status === 502
+            ? await readDealerScope()
+            : initialDealerResult;
           if(controller.signal.aborted)throw new Error('operator_scope_read_cancelled');
           if(scopeResult.error||dealerResult.error)throw new Error('Không tải được phạm vi CLB. Vui lòng thử lại.');
           if(!Array.isArray(scopeResult.data)||!Array.isArray(dealerResult.data)

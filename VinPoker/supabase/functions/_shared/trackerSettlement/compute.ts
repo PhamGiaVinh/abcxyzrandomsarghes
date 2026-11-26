@@ -45,6 +45,8 @@ export type SettlementDbHand = {
   tracker_small_blind?: number | null;
   tracker_big_blind?: number | null;
   tracker_bba?: number | null;
+  tracker_big_blind_ante_only?: boolean;
+  tracker_bb_position?: number | null;
   tracker_is_break?: boolean | null;
   tracker_blind_evidence?: unknown;
 };
@@ -70,6 +72,18 @@ export type SettlementDbAction = {
   action_amount: number | null;
   action_order: number;
 };
+
+/** The saved rule and seat determine the ante payer; action edits cannot choose it. */
+export function frozenBigBlindAntePlayerId(hand: SettlementDbHand, players: readonly SettlementDbPlayer[]): string | undefined {
+  if (hand.tracker_big_blind_ante_only !== true) return undefined;
+  const payer = players.filter(player => player.seat_number === hand.tracker_bb_position);
+  if (!Number.isSafeInteger(hand.tracker_big_blind) || (hand.tracker_big_blind ?? 0) <= 0
+    || hand.tracker_bba !== hand.tracker_big_blind || !Number.isSafeInteger(hand.tracker_bb_position)
+    || (hand.tracker_bb_position ?? 0) < 1 || (hand.tracker_bb_position ?? 0) > 10 || payer.length !== 1) {
+    throw new Error("invalid_big_blind_ante_snapshot");
+  }
+  return payer[0].player_id;
+}
 
 export type SettlementLiveStack = {
   player_id: string;
@@ -438,7 +452,7 @@ export async function computeAuthoritativeSettlement(
   validateEditedTargetActions(target, players, actions, board);
 
   const entryKeyByPlayerId = new Map(players.map((player) => [player.player_id, entryKey(player)]));
-  const contributions = contributionsFromActions(actions);
+  const contributions = contributionsFromActions(actions, frozenBigBlindAntePlayerId(target, players));
   const contributionByEntry = new Map(contributions.map((row) => [entryKeyByPlayerId.get(row.player_id)!, row]));
   for (const player of players) {
     const starting = chips(player.starting_stack, `${player.player_id}.starting_stack`);

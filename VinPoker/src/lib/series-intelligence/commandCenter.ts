@@ -341,11 +341,11 @@ const dayEndIso = (d: Date): string => `${financeBusinessToday(d)}T23:59:59.9999
 /**
  * Compute the club + calendar window spanned by the loaded native events, for the club-level F&B read.
  * Returns null when no event has a usable club id + parseable date (never guesses a window). Uses the
- * FIRST event's club id (native mode is single-club). Window = [start of earliest day, end of latest day].
+ * Use the one club represented in the events. The window spans the first through last business day.
  */
 export function seriesDateWindow(events: SeriesEvent[]): SeriesDateWindow | null {
   const clubId = events.find((e) => e.clubId)?.clubId ?? null;
-  if (!clubId) return null;
+  if (!clubId || events.some((event) => event.clubId && event.clubId !== clubId)) return null;
   const dated = events
     .map((e) => (e.event_date ? new Date(e.event_date) : null))
     .filter((d): d is Date => d !== null && !Number.isNaN(d.getTime()));

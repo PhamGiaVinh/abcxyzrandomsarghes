@@ -281,7 +281,7 @@ Deno.serve(async (req) => {
     if (!edit || !expectedEndingStacks) return publicFailure(req, "invalid_hand_correction_intent", 400);
     const service = createClient(url, serviceKey);
     const { data: hands, error: handError } = await service.from("tournament_hands")
-      .select("id,tournament_id,hand_number,table_id,button_seat,community_cards,pot_size,side_pots,status,is_voided,updated_at,created_at,source_revision")
+      .select("*")
       .eq("tournament_id", tournamentId).eq("is_voided", false).order("hand_number").order("id");
     if (handError) throw handError;
     const allHands = (hands ?? []) as SettlementDbHand[];

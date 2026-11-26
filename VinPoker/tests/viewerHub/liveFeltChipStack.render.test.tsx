@@ -1,10 +1,13 @@
 // RPT committed-bet chip STACK on the felt (viewerLayout only): a pointer-events-none
 // layer places a 3-disc pile + amount in front of each betting/all-in seat, toward the
 // pot (collision-guarded). Operator/TV (viewerLayout off) render NO stack → byte-identical.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import {cleanup,render,screen} from '@testing-library/react';
+import {cleanup,fireEvent,render,screen,within} from '@testing-library/react';
 import { LiveFelt, type SeatInfo } from "@/components/cashier/tournament-live/LiveFelt";
+import { TrackerViewerCardProvider } from "@/components/tracker/TrackerCardStyle";
+import { useViewerAmountUnit } from "@/components/tracker/viewerAmountUnit";
+import { computePotBreakdown } from "@/lib/tracker-poker/potEngine";
 
 const noBB = () => null;
 
@@ -36,6 +39,64 @@ const baseProps = {
 const stackCount = (html: string) => (html.match(/z-\[15\]/g) || []).length;
 
 describe("LiveFelt committed-bet chip stack (viewerLayout)", () => {
+  it.each([false, true])("keeps pending blind and ante tiers in one pot, and toggles the whole table (portrait=%s)", (portrait) => {
+    const layers = computePotBreakdown([
+      { player_id: "sb", total_bet: 100, is_folded: false },
+      { player_id: "bb", total_bet: 400, big_blind_ante: 200, is_folded: false },
+      { player_id: "jj", total_bet: 30000, is_folded: false },
+      { player_id: "aq", total_bet: 30000, is_folded: false },
+    ]);
+    expect(layers.pots.length).toBeGreaterThan(1);
+    const onSeatClick = vi.fn();
+    function ReplayFelt() {
+      const unit = useViewerAmountUnit();
+      return <TrackerViewerCardProvider><LiveFelt {...baseProps} viewerLayout compact portrait={portrait}
+        potSize={layers.totalCommitted} potBreakdown={layers} viewerBigBlind={200} viewerAmountsInBB viewerAmountUnit={unit}
+        onSeatClick={onSeatClick}
+        seats={[seat({ player_id: "jj", seat_number: 5, current_bet: 30000, total_committed: 30000, is_all_in: true })]}
+      /></TrackerViewerCardProvider>;
+    }
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      disconnect() {}
+    });
+    try {
+      render(<ReplayFelt />);
+      const center = within(screen.getByTestId("felt-total-pot"));
+      const button = center.getByRole("button");
+      expect(button.textContent).toBe("302,5 BB");
+      const plate = screen.getByRole("button", { name: "P · Chip / BB" });
+      fireEvent.click(plate);
+      expect(button.textContent).toBe("60.500");
+      expect(onSeatClick).not.toHaveBeenCalled();
+      expect(document.querySelector('[data-tracker-bet="5"]')).toHaveTextContent("30.000");
+      expect(window.localStorage.getItem("vinpoker.tracker.amount-unit")).toBe("chips");
+      fireEvent.click(screen.getByRole("button", { name: "P", exact: true }));
+      expect(onSeatClick).toHaveBeenCalledExactlyOnceWith(5);
+      expect(button.textContent).toBe("60.500");
+      fireEvent.click(plate);
+      expect(button.textContent).toBe("302,5 BB");
+      expect(document.querySelector("button button")).toBeNull();
+    } finally {
+      cleanup();
+      window.localStorage.removeItem("vinpoker.tracker.amount-unit");
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([false, true])('centers seat 5 all-in chips below its own avatar (portrait=%s)', portrait => {
+    try {
+      const container=document.createElement('div');
+      container.innerHTML=renderToStaticMarkup(<TrackerViewerCardProvider><LiveFelt {...baseProps} viewerLayout compact portrait={portrait}
+        seats={[seat({player_id:'five',seat_number:5,is_all_in:true,current_bet:30000,total_committed:30000})]}/></TrackerViewerCardProvider>);
+      const pod=container.querySelector<HTMLElement>('[data-tracker-seat="5"]')!;
+      const chips=container.querySelector<HTMLElement>('[data-tracker-bet="5"]')!;
+      expect(chips.style.left).toBe(pod.style.left);
+      expect(parseFloat(chips.style.top)).toBeGreaterThan(parseFloat(pod.style.top));
+      expect(chips).toHaveTextContent('30k');
+    } finally {cleanup();}
+  });
+
   it("renders the felt stack layer ONLY under viewerLayout (none for operator/TV)", () => {
     const s = [seat({ player_id: "a", seat_number: 1, current_bet: 200000 })];
     expect(stackCount(renderToStaticMarkup(<LiveFelt seats={s} {...baseProps} />))).toBe(0);

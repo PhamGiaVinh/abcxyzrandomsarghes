@@ -114,6 +114,12 @@ describe("pickScoringSnapshot", () => {
     const b = snap({ id: "b", days_before: 1 });
     expect(pickScoringSnapshot([a, b], null)?.id).toBe("b");
   });
+
+  it("does not score a different forecast when the linked snapshot is unavailable", () => {
+    const other = snap({ id: "other", days_before: 1 });
+    const post = dec({ forecast_snapshot_id: "missing" });
+    expect(pickScoringSnapshot([other], post)).toBeNull();
+  });
   it("returns null when there are no snapshots", () => {
     expect(pickScoringSnapshot([], null)).toBeNull();
   });

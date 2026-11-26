@@ -6,6 +6,18 @@ const {rpc}=vi.hoisted(()=>({rpc:vi.fn()}));
 vi.mock('@/integrations/supabase/client',()=>({supabase:{rpc}}));
 afterEach(()=>{cleanup();rpc.mockReset();vi.useRealTimers()});
 
+it.each([undefined,false,true])('passes the frozen rule from the exact public hand into replay: %s',async(rule)=>{
+ rpc.mockImplementation(async(name:string)=>({error:null,data:
+  name==='get_public_tournament_table_history_v2'?{access:'public',items:[{
+   handId:'hand',handNumber:1,createdAt:'2026-11-24T06:00:00Z',result:{status:'pending'}
+  }],nextCursor:null}:name==='get_public_tournament_settlement'?null:
+  {id:'hand',handNumber:1,bigBlind:200,smallBlind:100,ante:200,bigBlindAnteOnly:rule,players:[],actions:[]}}));
+ const select=vi.fn();
+ render(<HandSelector tournamentId="tour" tableId="table" spectator selectedHandId={null} onSelectHand={select}/>);
+ await waitFor(()=>expect(select).toHaveBeenCalledTimes(1));
+ expect(select).toHaveBeenCalledWith('hand',expect.objectContaining({big_blind_ante_only:rule===true}));
+});
+
 it('bounds an exact-target lookup outside the list and supports explicit retry',async()=>{
  vi.useFakeTimers();
  let retryReady=false;

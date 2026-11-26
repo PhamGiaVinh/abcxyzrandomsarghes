@@ -3,6 +3,7 @@ import {afterEach,beforeEach,expect,it,vi} from 'vitest';
 import {TournamentLiveView} from './TournamentLiveView';
 
 const publicClock={is_running:false,remaining_seconds:null,current_level:null,small_blind:null,big_blind:null,big_blind_ante:null};
+vi.mock('@/lib/featureFlags',async(importOriginal)=>{const original=await importOriginal<typeof import('@/lib/featureFlags')>();return {...original,FEATURES:{...original.FEATURES,publicSpectatorLastHandHistory:true}};});
 const {rpc,target,auth,signals,liveSignals,events,statuses}=vi.hoisted(()=>({
  statuses:[] as ((status:string)=>void)[],
  liveSignals:[] as AbortSignal[],events:[] as ((event?:unknown)=>void)[],signals:[] as AbortSignal[],rpc:vi.fn(),auth:{user:null,isStaffOps:false,isClubAdmin:false},
@@ -21,13 +22,14 @@ vi.mock('@/lib/publicTableTransport',()=>({readPublicTableRequest:async(_url:str
 vi.mock('@/components/tracker/useTournamentTableAppearance',()=>({useTournamentTableAppearance:()=>({data:undefined})}));
 vi.mock('@/components/td-ai/TdAiAssistantPanel',()=>({TdAiAssistantPanel:()=>null}));
 vi.mock('@/lib/tracker-poker/useTrackerRunoutSounds',()=>({useTrackerRunoutSounds:()=>{}}));
-vi.mock('./LiveFelt',()=>({LiveFelt:({toActId}:{toActId?:string|null})=> <div data-testid="rendered-felt" data-actor={toActId??'none'}>Hand blinds unavailable</div>,formatStack:String,formatActionLabel:String}));
+vi.mock('@/lib/pokerLiveSound',async(importOriginal)=>({...await importOriginal<typeof import('@/lib/pokerLiveSound')>(),playPokerLiveSound:vi.fn(),markPokerSoundGesture:vi.fn()}));
+vi.mock('./LiveFelt',()=>({LiveFelt:({toActId,chipPush}:{toActId?:string|null;chipPush?:{seatNumber:number}|null})=> <div data-testid="rendered-felt" data-chip-seat={chipPush?.seatNumber??'none'} data-actor={toActId??'none'}>Hand blinds unavailable</div>,formatStack:String,formatActionLabel:String}));
 
 // Keep both HandSelector and ReplayScrubber real: the earlier parent tests
 // deliberately mock child completion and cannot cover this async boundary.
 beforeEach(()=>vi.stubGlobal('ResizeObserver',class{observe(){}unobserve(){}disconnect(){}}));
 afterEach(()=>{cleanup();rpc.mockReset();signals.length=0;liveSignals.length=0;events.length=0;statuses.length=0;vi.unstubAllGlobals();});
-it.each(['waiting','closed','inactive'])('opens an explicitly scoped replay on a %s table while the unrelated live catalog is not prepared',async state=>{
+it.each(['waiting','closed','inactive','last_completed'])('opens an explicitly scoped replay on a %s table while the unrelated live catalog is not prepared',async state=>{
  const payload={id:'hand',tableId:'table',handNumber:32,status:'completed',buttonSeat:1,board:[],pot:300,smallBlind:100,bigBlind:200,ante:0,
   players:[{playerId:'p1',seatNumber:1,name:'PLAYER1',startingStack:1000,endingStack:null,holeCards:[]},{playerId:'p2',seatNumber:2,name:'PLAYER2',startingStack:1000,endingStack:null,holeCards:[]}],
   actions:[{id:'sb',playerId:'p1',street:'preflop',actionType:'post_sb',amount:100,order:1},{id:'bb',playerId:'p2',street:'preflop',actionType:'post_bb',amount:200,order:2},{id:'fold',playerId:'p1',street:'preflop',actionType:'fold',amount:0,order:3}]};
@@ -36,13 +38,17 @@ it.each(['waiting','closed','inactive'])('opens an explicitly scoped replay on a
   name==='get_public_tournament_settlement'?null:
   name==='get_public_tournament_table_history_v2'?{access:'public',items:[],nextCursor:null}:
   name==='get_public_tournament_clock_summary'?[{...publicClock,tournament_id:'tour',players_remaining:2,average_stack:1000}]:
-  name==='get_public_tournament_table_live_or_last_hand_v2'?{access:'public',state,tableId:'table',tableSessionId:'session',hand:null}:
+  name==='get_public_tournament_table_live_or_last_hand_v2'?{access:'public',state,tableId:'table',tableSessionId:'session',hand:state==='last_completed'?payload:null}:
   name==='get_public_tournament_viewer_snapshot_v2'?{ok:true,access:'preparing',tournamentId:'tour',sections:{}}:null}));
  // LiveHub supplies a replay target, with no independent live-table override.
  render(<TournamentLiveView tournamentId="tour" spectator initialReplayTarget={target}/>);
  const rail=await screen.findByTestId('replay-action-rail');expect(rail).toBeVisible();
  const slider=screen.getByRole('slider',{name:'Tua lại ván'});expect(slider).toHaveAttribute('aria-valuemax','3');
  fireEvent.click(screen.getByTitle('Tiến 1 bước',{exact:true}));await waitFor(()=>expect(slider).toHaveAttribute('aria-valuenow','1'));
+ if(state==='last_completed'){
+  fireEvent.click(screen.getByTitle('Phát',{exact:true}));
+  await waitFor(()=>expect(screen.getByTestId('rendered-felt')).toHaveAttribute('data-chip-seat','2'),{timeout:2500});
+ }
 });
 it('retains an authoritative access denial on the replay target table',async()=>{
  rpc.mockImplementation(async(name:string)=>({error:null,data:

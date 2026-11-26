@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ClubPlayerPortrait } from "@/components/players/ClubPlayerPortrait";
 import { useTranslation } from "react-i18next";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -313,6 +314,9 @@ const ScopedBookingChat = () => {
         <div className="text-xs text-muted-foreground mt-0.5">
           {t("bookingChat.status")} <span className={chat?.status === "closed" ? "text-muted-foreground" : "text-primary"}>{chat?.status === "closed" ? t("bookingChat.closed") : t("bookingChat.active")}</span>
         </div>
+        {isReceptionist && club.owner_id === user?.id && chat && tournament && <ClubPlayerPortrait
+          client={supabase} name={playerName || "người chơi"}
+          target={{ kind: "booking", tour: tournament.id, chat: chat.id, player: chat.player_id }} />}
         <div className="mt-2 space-y-2 text-xs">
           <p>Chat không xác nhận tiền hoặc ghế. Đăng ký, khoản thu và phiếu được kiểm tra tại Cashier.</p>
           {chat?.payment_confirmed&&<p className="text-muted-foreground">Chat có dấu xác nhận cũ; dấu này không phải bằng chứng thanh toán.</p>}

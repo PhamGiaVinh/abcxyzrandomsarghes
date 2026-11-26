@@ -69,6 +69,7 @@ export function financeText(value: unknown, field: string): string {
 /** Permission denial is explicit; transport/contract errors are not evidence of lost access. */
 export function financeReadErrorKey(error: unknown): string {
   const detail = error && typeof error === 'object' ? error as {code?: string; status?: number; message?: string} : {};
+  if (detail.message === 'finance_report_event_start_unavailable') return 'financeRead.missingEventStart';
   if (detail.code === '42501' || detail.status === 403) return 'financeRead.forbidden';
   if (detail.code === 'PGRST202' || detail.code === '42883') return 'financeRead.missingBackend';
   if (detail.message?.startsWith('FINANCE_SUMMARY_INVALID')) return 'financeRead.invalid';

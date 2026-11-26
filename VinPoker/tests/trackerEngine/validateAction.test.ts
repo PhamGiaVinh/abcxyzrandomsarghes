@@ -10,6 +10,14 @@ const SEEDS: PlayerSeed[] = [
 ];
 const BUTTON = 1;
 
+it('reconciles the frozen BB ante as main-pot money instead of an uncalled wager',()=>{
+  const actions=[['P2','post_sb',100],['P3','post_ante',200],['P3','post_bb',200],['P2','call',100]]
+    .map(([player_id,action_type,action_amount],index)=>({player_id,action_type,action_amount,street:'preflop',action_order:index+1})) as ActionRow[];
+  const pots=[{amount:600,eligible_player_ids:['P2','P3']}];
+  expect(reconcileSidePots(actions,pots,'P3')).toEqual({tampered:false,serverSidePots:pots});
+  expect(reconcileSidePots(actions,pots).tampered).toBe(true);
+});
+
 function streamBuilder() {
   let order = 0;
   const rows: ActionRow[] = [];

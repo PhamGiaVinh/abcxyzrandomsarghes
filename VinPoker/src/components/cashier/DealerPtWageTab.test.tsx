@@ -225,7 +225,7 @@ describe("DealerPtWageTab policy control", () => {
       finalized_at:'2026-10-31T10:00:00+07:00',payment_id:null,statement_hash:'a'.repeat(64)}:{},error:null}));
     render(<DealerPtWageTab clubIds={[club]} clubs={[{id:club,name:'TEST'}]} finalizeStatements/>);
     await act(async()=>vi.advanceTimersByTimeAsync(1));
-    fireEvent.click(screen.getByRole('button',{name:'Chi phiếu PT'}));
+    fireEvent.click(screen.getByRole('button',{name:'Phát lương và tất toán'}));
     fireEvent.change(screen.getByLabelText('Mã tham chiếu chi PT'),{target:{value:'KEEP_LOCAL_TEST'}});
     testState.rpc.mockImplementationOnce(()=>new Promise(()=>{}));
     await act(async()=>vi.advanceTimersByTimeAsync(5000));
