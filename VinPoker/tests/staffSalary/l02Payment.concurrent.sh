@@ -50,3 +50,4 @@ psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.intent.sql
 psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.input.sql
 psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.report.sql
 psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.stale.sql
+psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.ptMonth.sql
