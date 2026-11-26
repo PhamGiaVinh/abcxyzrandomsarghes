@@ -3,6 +3,7 @@ DO $fixture$
 DECLARE
   a constant uuid := '16680000-0000-4000-8000-000000000001';
   b constant uuid := '16680000-0000-4000-8000-000000000002';
+  c constant uuid := '16680000-0000-4000-8000-000000000003';
   club constant uuid := '16680000-0000-4000-8000-000000000011';
   staff constant uuid := '16680000-0000-4000-8000-000000000021';
   obligation constant uuid := '16680000-0000-4000-8000-000000000031';
@@ -11,10 +12,11 @@ DECLARE
   result jsonb;
 BEGIN
   ASSERT current_database() = 'vinpoker_ops_l02';
-  INSERT INTO auth.users(id) VALUES (a),(b);
-  INSERT INTO public.profiles(user_id,display_name) VALUES (a,'L02 owner'),(b,'L02 accountant');
+  INSERT INTO auth.users(id) VALUES (a),(b),(c);
+  INSERT INTO public.profiles(user_id,display_name) VALUES (a,'L02 owner'),(b,'L02 accountant'),(c,'L02 second accountant');
   INSERT INTO public.clubs(id,owner_id,name,region,status) VALUES (club,a,'L02 TEST','TEST','approved');
   INSERT INTO public.club_accountants(club_id,user_id,granted_by) VALUES (club,b,a);
+  INSERT INTO public.club_accountants(club_id,user_id,granted_by) VALUES (club,c,a);
   INSERT INTO public.staff(id,club_id,full_name,department,employment_type,monthly_salary_vnd)
     VALUES(staff,club,'L02 FT','service','full_time',5000000);
   INSERT INTO public.staff_salary_runs(id,club_id,staff_id,period_year,period_month,employment_type,

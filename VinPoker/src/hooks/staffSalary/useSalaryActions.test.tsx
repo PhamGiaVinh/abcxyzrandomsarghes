@@ -92,9 +92,10 @@ it('re-reads an already paid FT run after an unknown payment outcome and a remou
  expect(writes).toBe(1);expect(f.success).toHaveBeenCalledTimes(1);
 });
 
-it('reports an existing FT payout without claiming the newly selected method was saved', async () => {
+it('reports the matching stored FT bank receipt without claiming a second write', async () => {
   f.rpc.mockImplementation((fn) => Promise.resolve({
-    data: fn === 'get_staff_salary_report' ? saved : {status:'paid',run_id:runId,idempotent:true},
+    data: fn === 'get_staff_salary_report' ? saved : {status:'paid',run_id:runId,idempotent:true,
+      payment_method:'bank_transfer',payment_reference:'TEST-REF'},
     error:null,
   }));
   const view = mount();
@@ -105,4 +106,15 @@ it('reports an existing FT payout without claiming the newly selected method was
     p_run_id:runId,p_payment_method:'bank_transfer',p_payment_reference:'TEST-REF',
   });
   expect(f.success).toHaveBeenCalledWith('Phiếu lương đã được ghi chi trước đó. Hệ thống giữ thông tin chi hiện có.');
+});
+
+it('does not announce success when the server reports a stored payment intent conflict', async () => {
+  const detail='Khoản chi hiện có khác phương thức đã chọn.';
+  f.rpc.mockImplementation(fn=>Promise.resolve({data:fn==='get_staff_salary_report'?saved:{
+    error:'PAYMENT_INTENT_CONFLICT',detail,run_id:runId,payment_method:'bank_transfer',payment_reference:'SAVED-REF',
+  },error:null}));
+  const view=mount();
+  await act(async()=>{await expect(view.result.current.markPaid.mutateAsync({runId,method:'cash'})).rejects.toThrow(detail);});
+  expect(f.success).not.toHaveBeenCalled();
+  expect(f.error).toHaveBeenCalledWith(detail);
 });
