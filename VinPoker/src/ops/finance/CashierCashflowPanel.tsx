@@ -11,7 +11,7 @@ const cashflow = z.object({
   club_id: z.string(),
   from: z.string(),
   to: z.string(),
-  cash_flow: z.object({ cash_in: amount, cash_out: amount, prize_cash_out: amount.optional(), bank_in: amount, bank_out: amount, unallocated_bank: amount }),
+  cash_flow: z.object({ cash_in: amount, cash_out: amount, prize_cash_out: amount.optional(), dealer_pt_cash_out: amount.refine(value=>value>=0).optional(), bank_in: amount, bank_out: amount, unallocated_bank: amount }),
   unmatched_verified_bank: amount,
   entry_allocation: z.object({ prize_delta: amount, fees_delta: amount, unclassified_entries: z.number().int().nonnegative() }),
   closed_shift_variance: amount,
@@ -55,6 +55,9 @@ export default function CashierCashflowPanel({ clubId, range }: { clubId: string
             <Cell label="Tiền mặt hoàn" value={money(state.data.cash_flow.cash_out)} />
             {state.data.cash_flow.prize_cash_out !== undefined && (
               <Cell label="Thưởng đã chi từ két" value={money(state.data.cash_flow.prize_cash_out)} />
+            )}
+            {state.data.cash_flow.dealer_pt_cash_out !== undefined && (
+              <Cell label="Lương dealer PT có chứng từ chi từ két" value={money(state.data.cash_flow.dealer_pt_cash_out)} />
             )}
             <Cell label="Ngân hàng nhận" value={money(state.data.cash_flow.bank_in)} />
             <Cell label="Ngân hàng hoàn đã ghi" value={money(state.data.cash_flow.bank_out)} />
