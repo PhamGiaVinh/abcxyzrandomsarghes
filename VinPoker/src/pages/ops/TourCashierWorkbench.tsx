@@ -50,7 +50,7 @@ function isRefund(value: unknown): value is Refund {
 }
 
 type RefundRead = { registrationId: string; loading: boolean; value: Refund | null; error: string | null };
-type ShiftSummary = { ok: boolean; club_id: string; shift_id: string; totals: { cash_in: number; cash_out: number; prize_cash_out?: number; dealer_pt_cash_out?: number; bank_in: number;
+type ShiftSummary = { ok: boolean; club_id: string; shift_id: string; totals: { cash_in: number; cash_out: number; prize_cash_out?: number; dealer_pt_cash_out?: number; club_expense_cash_out?:number; bank_in: number;
   bank_out: number; unallocated_bank: number; cash_adjustments: number } };
 type Issue = { kind: "surplus" | "unmatched"; bank_transaction_id: string; amount: number;
   reference_code: string | null; occurred_at: string | null };
@@ -69,6 +69,7 @@ function isShiftSummary(value: unknown, shiftId: string, clubId: string): value 
     && !!result.totals && typeof result.totals === "object" && !Array.isArray(result.totals)
     && (result.totals.prize_cash_out === undefined || isKnownMoney(result.totals.prize_cash_out))
     && (result.totals.dealer_pt_cash_out === undefined || (Number.isSafeInteger(result.totals.dealer_pt_cash_out) && result.totals.dealer_pt_cash_out>=0))
+    && (result.totals.club_expense_cash_out === undefined || (Number.isSafeInteger(result.totals.club_expense_cash_out) && result.totals.club_expense_cash_out>=0))
     && (["cash_in", "cash_out", "bank_in", "bank_out", "unallocated_bank", "cash_adjustments"] as const)
       .every((key) => isKnownMoney(result.totals?.[key]));
 }
@@ -703,6 +704,9 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
       {shiftSummary.totals.dealer_pt_cash_out !== undefined && (
         <span>Lương dealer PT có chứng từ chi từ két<strong className="block text-sm text-white">{formatMoney(shiftSummary.totals.dealer_pt_cash_out)}</strong></span>
       )}
+      {shiftSummary.totals.club_expense_cash_out !== undefined && (
+        <span>Chi phí có chứng từ chi từ két<strong className="block text-sm text-white">{formatMoney(shiftSummary.totals.club_expense_cash_out)}</strong></span>
+      )}
       <span>Ngân hàng nhận<strong className="block text-sm text-white">{formatMoney(shiftSummary.totals.bank_in)}</strong></span>
       <span>Khoản thừa chưa phân bổ<strong className="block text-sm text-amber-200">{formatMoney(shiftSummary.totals.unallocated_bank)}</strong></span>
       <p className="col-span-full text-[#9fb1a6]">Tiền ngân hàng không cộng vào tiền mặt phải kiểm đếm. Số này chỉ là các khoản trên sổ giao dịch mới của ca.</p>
@@ -723,6 +727,9 @@ function ScopedTourCashierWorkbench({bookingTarget}:{bookingTarget:BookingCashie
       )}
       {closedShiftSummary?.ok && closedShiftSummary.shift_id === closedShift.id && closedShiftSummary.totals.dealer_pt_cash_out !== undefined && (
         <p className="mt-1 text-[#a9baae]">Lương dealer PT có chứng từ chi từ két: {formatMoney(closedShiftSummary.totals.dealer_pt_cash_out)}</p>
+      )}
+      {closedShiftSummary?.ok && closedShiftSummary.shift_id === closedShift.id && closedShiftSummary.totals.club_expense_cash_out !== undefined && (
+        <p className="mt-1 text-[#a9baae]">Chi phí có chứng từ chi từ két: {formatMoney(closedShiftSummary.totals.club_expense_cash_out)}</p>
       )}
       {closedShiftSummary?.ok && closedShiftSummary.shift_id === closedShift.id && <p className="mt-1 text-[#a9baae]">Điều chỉnh ghi bổ sung: {formatMoney(closedShiftSummary.totals.cash_adjustments)}. Không cộng vào doanh thu buy-in.</p>}
       <div className="mt-3 flex flex-wrap items-end gap-2">

@@ -7,6 +7,7 @@ import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContex
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { readMockExpenses, mockRecordExpense, summarize } from "@/lib/clubExpenses/mockExpenses";
+import {cashierExpenseKey} from '@/lib/clubExpenses/cashierExpensePayment';
 import type {
   ClubExpenseRow,
   ClubExpenseSource,
@@ -156,6 +157,8 @@ export function useRecordClubExpense(source: ClubExpenseSource, clubId: string |
       let ownsFlight=false;
       try{
       assertContext();
+      if(source==='live'&&sessionStorage.getItem(cashierExpenseKey(user!.id,clubId!))!==null)
+        throw Error('Có khoản chi từ két chưa xác minh. Mở Chi từ két Cashier để kiểm tra cùng giao dịch.');
       if(inFlight.current)throw Error('Đang xác minh lần ghi trước.');
       const verified=recordInput.parse(input);
       if (source === "mock") return {...mockRecordExpense({ clubId, ...verified } as Parameters<typeof mockRecordExpense>[0]),context};

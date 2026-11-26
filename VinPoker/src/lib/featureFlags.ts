@@ -1695,6 +1695,10 @@ export const FEATURES = {
    * 20261236000000); the entry page + accountant Sổ chi phí tab write to Supabase. Kill-switch: set false.
    */
   clubExpenses: true,
+  /** Explicit new-expense/till path. Requires reviewed PR1813 DB contract,
+   * encrypted backup/restore and owner-gated adoption. Pending recovery remains
+   * reachable when this presentation flag is OFF; it never starts a fresh write. */
+  clubExpenseCashSource: false,
   /**
    * staffSalaryChot — the salary chốt/duyệt workspace (accountant computes + chốt the monthly
    * salary and submits it; the club owner approves/rejects; a run is marked paid only after

@@ -10,6 +10,12 @@ import {useRecordClubExpense} from './useClubExpenses';
 const clients:QueryClient[]=[];
 const input={category:'misc' as const,amountVnd:10000,incurredAt:'2026-10-31T12:00:00+07:00',description:'LOCAL TEST expense',paymentStatus:'unpaid' as const,paymentSource:null};
 const receipt={status:'ok',expense_id:'11111111-1111-4111-8111-111111111111',idempotent:false};
+it('blocks a generic expense while an unresolved Cashier source request exists',async()=>{
+ sessionStorage.setItem('vinpoker:cashier-expense:v1:owner-test:club-test','pending source receipt');
+ f.rpc.mockResolvedValue({data:receipt,error:null});const v=mount();
+ await act(async()=>{await expect(v.result.current.mutateAsync(input)).rejects.toThrow(/két/);});
+ expect(f.rpc).not.toHaveBeenCalled();
+});
 function mount(club='club-test'){const client=new QueryClient({defaultOptions:{mutations:{retry:false}}});clients.push(client);return renderHook(({club:activeClub,from}:{club:string;from:string}={club,from:'2026-10-01'})=>useRecordClubExpense('live',activeClub,from,'2026-11-01'),{initialProps:{club,from:'2026-10-01'},wrapper:({children}:PropsWithChildren)=><QueryClientProvider client={client}>{children}</QueryClientProvider>});}
 beforeEach(()=>{sessionStorage.clear();f.rpc.mockReset();f.success.mockReset();f.error.mockReset();f.auth={user:{id:'owner-test'},session:{access_token:'LOCAL_TEST_A'},loading:false,isClubOwner:true};});
 afterEach(()=>{cleanup();clients.splice(0).forEach(c=>c.clear());vi.useRealTimers();vi.restoreAllMocks();});

@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, ArrowRight, Banknote, CalendarDays, ClipboardList, Landmark, Plus, ReceiptText, WalletCards } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -18,6 +18,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import {cashierExpenseKey} from '@/lib/clubExpenses/cashierExpensePayment';
+import {parseExpenseAmount} from '@/lib/clubExpenses/amount';
+
+const CashierExpenseEntry=lazy(()=>import('@/components/clubExpenses/CashierExpenseEntry'));
 
 function monthBounds(monthKey: string): { from: string; to: string } {
   const [year, month] = monthKey.split("-").map(Number);
@@ -37,7 +41,7 @@ function currentMonthKey(): string {
 }
 
 export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: boolean; scopedClubId?: string } = {}) {
-  const { loading: authLoading, isAdmin, isClubAdmin, isClubOwner, isCashier, isAccountant } = useAuth();
+  const { user, loading: authLoading, isAdmin, isClubAdmin, isClubOwner, isCashier, isAccountant } = useAuth();
   const [searchParams] = useSearchParams();
   const source = clubExpensesSource();
   const preview = source === "mock";
@@ -180,14 +184,14 @@ export default function ClubExpenses({ embedded, scopedClubId }: { embedded?: bo
             </Card>
           </div>
 
-          <ExpenseEntryForm
+          <ExpenseEntryArea key={`${source}:${user?.id??''}:${activeClubId}`} actor={user?.id??''} clubId={activeClubId} live={source==='live'} genericPending={recordExpense.isPending||Boolean(recordExpense.pendingInput)}><ExpenseEntryForm
             key={`${source}:${activeClubId}:${monthKey}:${recordExpense.contextKey}`}
             disabled={!activeClubId||!summary||expensesQuery.isError}
             pending={recordExpense.isPending}
             preview={preview}
             initialInput={recordExpense.pendingInput}
             onSubmit={(input) => recordExpense.mutateAsync(input)}
-          />
+          /></ExpenseEntryArea>
         </div>
       )}
     </div>
@@ -208,11 +212,21 @@ function MetricCard({ icon: Icon, label, value }: { icon: React.ComponentType<{ 
 
 type ExpenseInput=Parameters<ReturnType<typeof useRecordClubExpense>['mutateAsync']>[0];
 
-function parseExpenseAmount(input: string): number | null {
-  const value = input.trim();
-  if (!/^-?(?:\d+|[1-9]\d{0,2}(?:\.\d{3})+)$/.test(value)) return null;
-  const amount = Number(value.replace(/\./g, ""));
-  return Number.isSafeInteger(amount) ? amount : null;
+function ExpenseEntryArea({actor,clubId,live,genericPending,children}:{actor:string;clubId:string;live:boolean;genericPending:boolean;children:React.ReactNode}){
+ let cashPending=false,legacyPending=false,storageError=false;
+ try{if(live&&actor){cashPending=sessionStorage.getItem(cashierExpenseKey(actor,clubId))!==null;legacyPending=sessionStorage.getItem(`vinpoker:expense-record:v1:${actor}:${clubId}`)!==null;}}catch{storageError=true;}
+ const [mode,setMode]=useState<'record'|'cash'>(()=>cashPending||storageError?'cash':'record');
+ const [cashLocked,setCashLocked]=useState(false);
+ const effective=cashPending||storageError?'cash':legacyPending||genericPending?'record':mode;
+ if(!live||!actor||(!FEATURES.clubExpenseCashSource&&!cashPending&&!storageError&&mode==='record'))return <>{children}</>;
+ const locked=cashPending||legacyPending||genericPending||cashLocked||storageError;
+ return <div className="min-w-0 space-y-3">
+  <div role="group" aria-label="Loại thao tác chi phí" className="grid min-w-0 gap-2 sm:grid-cols-2">
+   <Button type="button" variant={effective==='record'?'default':'outline'} className="h-auto min-h-11 whitespace-normal" aria-pressed={effective==='record'} disabled={locked} onClick={()=>setMode('record')}>Ghi nhận chi phí</Button>
+   <Button type="button" variant={effective==='cash'?'default':'outline'} className="h-auto min-h-11 whitespace-normal" aria-pressed={effective==='cash'} disabled={locked||!FEATURES.clubExpenseCashSource} onClick={()=>setMode('cash')}>Chi từ két Cashier</Button>
+  </div>
+  {effective==='cash'?<Suspense fallback={<Card className="p-4 text-sm">Đang mở phiếu chi từ két…</Card>}><CashierExpenseEntry clubId={clubId} allowNew={FEATURES.clubExpenseCashSource} onPendingChange={setCashLocked}/></Suspense>:children}
+ </div>;
 }
 
 function ExpenseEntryForm({
@@ -256,6 +270,7 @@ function ExpenseEntryForm({
           event.preventDefault();
           const amountVnd = parseExpenseAmount(amount);
           if(disabled||pending||locked.current||amountVnd === null||!amountVnd)return;
+          if(FEATURES.clubExpenseCashSource&&paymentStatus==='paid'&&paymentSource==='cash'&&!initialInput){setFormError('Để thực chi tiền mặt, chọn Chi từ két Cashier. Không ghi lại một khoản đã ghi trước đó.');return;}
           locked.current=true;setSubmitting(true);setFormError(null);
           try{await onSubmit({
             category,
@@ -314,8 +329,8 @@ function ExpenseEntryForm({
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Chưa chọn</SelectItem>
-                <SelectItem value="cash">Cash</SelectItem>
-                <SelectItem value="bank">Bank</SelectItem>
+                <SelectItem value="cash" disabled={FEATURES.clubExpenseCashSource&&!initialInput}>Tiền mặt</SelectItem>
+                <SelectItem value="bank">Ngân hàng</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -1,0 +1,94 @@
+name: Expense Cashier client real HTTP qualification
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/finance-expense-cash-client.yml'
+      - 'VinPoker/tests/financeExpenseCashClient/**'
+      - 'VinPoker/src/components/clubExpenses/**'
+      - 'VinPoker/src/lib/clubExpenses/cashierExpensePayment*'
+      - 'VinPoker/supabase/pending-migrations/20261126023026_finance_expense_cash_source_status_v1.sql'
+permissions: {actions: read, contents: read}
+jobs:
+  client-runtime:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env: {POSTGRES_HOST_AUTH_METHOD: trust, POSTGRES_DB: vinpoker_ops_expense_cash_client}
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -d vinpoker_ops_expense_cash_client"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vinpoker_ops_expense_cash_client
+      SOURCE_SHA: '${{ github.event.pull_request.head.sha }}'
+      CAPTURE_RUN: '45651278424'
+      CAPTURE_SHA: 'c9dba24211152ddf5f010a46d0afab118cfbf482'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {ref: '${{ github.event.pull_request.head.sha }}', persist-credentials: false}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: 22}
+      - name: Restore approved schema into empty isolated PostgreSQL
+        working-directory: VinPoker
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CAPTURE_RUN" > "$RUNNER_TEMP/expense-client-capture.json"
+          jq -e --arg sha "$CAPTURE_SHA" --arg owner "$GITHUB_REPOSITORY_OWNER" '.conclusion=="success" and .head_sha==$sha and .head_branch=="main" and .event=="workflow_dispatch" and .actor.login==$owner and .path==".github/workflows/capture-live-public-schema.yml"' "$RUNNER_TEMP/expense-client-capture.json" >/dev/null
+          export SCHEMA_ARTIFACT_DIR="$RUNNER_TEMP/expense-client-schema"
+          gh run download "$CAPTURE_RUN" -R "$GITHUB_REPOSITORY" -n live-public-schema -D "$SCHEMA_ARTIFACT_DIR"
+          node scripts/deploy/validate-live-public-schema-artifact.mjs --artifact-directory "$SCHEMA_ARTIFACT_DIR"
+          export SCHEMA_ARTIFACT_SHA256="$(cut -d ' ' -f1 "$SCHEMA_ARTIFACT_DIR/live-public-schema.sha256")"
+          test "$SCHEMA_ARTIFACT_SHA256" = f81104251d6c79fdae537e0ca2faa7afa2ddc186eafadcb3bd4781276478b7d8
+          node scripts/ops/restore-schema-test-baseline.mjs
+      - name: Verify exact qualified backend producer
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45736731928" > "$RUNNER_TEMP/expense-backend-producer.json"
+          jq -e '.conclusion=="success" and .head_sha=="aca9e00c2fe9a3b0cc1a028bd70c40c4ba48a1e8" and .event=="pull_request" and .path==".github/workflows/finance-expense-cash-runtime.yml"' "$RUNNER_TEMP/expense-backend-producer.json" >/dev/null
+          gh run download 45736731928 -R "$GITHUB_REPOSITORY" -n expense-cash-source-qualification -D "$RUNNER_TEMP/expense-backend-proof"
+          jq -e '.sourceSha=="aca9e00c2fe9a3b0cc1a028bd70c40c4ba48a1e8" and .migrationSha256=="34464adca0c8546bae2e7b81dee1fee43dbd50c2c44dc68be00b5fd0102e92bf" and .actualPostgrest==true and (.cases|length)==5 and (.races|length)==4 and (.faults|length)==5' "$RUNNER_TEMP/expense-backend-proof/verification.json" >/dev/null
+      - name: Install locked dependencies and browser
+        working-directory: VinPoker
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+      - name: Preserve the completed case without repeating it
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/45743258253" > "$RUNNER_TEMP/expense-client-partial-producer.json"
+          jq -e '.conclusion=="failure" and .head_sha=="de2371183801268ddc1aa829c15ac2874bcb40c6" and .event=="pull_request" and .path==".github/workflows/finance-expense-cash-client.yml"' "$RUNNER_TEMP/expense-client-partial-producer.json" >/dev/null
+          git fetch --no-tags --depth=1 origin de2371183801268ddc1aa829c15ac2874bcb40c6
+          git diff --exit-code de2371183801268ddc1aa829c15ac2874bcb40c6 HEAD -- VinPoker/src VinPoker/supabase
+          gh run download 45743258253 -R "$GITHUB_REPOSITORY" -n expense-cash-client-qualification -D "$RUNNER_TEMP/expense-client-partial"
+      - name: Verify affected client source
+        working-directory: VinPoker
+        env: {NODE_OPTIONS: '--max-old-space-size=4096'}
+        run: |
+          npx vitest run src/components/clubExpenses/CashierExpenseEntry.test.tsx src/lib/clubExpenses/cashierExpensePayment.test.ts src/hooks/clubExpenses/useRecordClubExpense.test.tsx src/pages/ClubExpenses.test.tsx src/ops/finance/CashierCashflowPanel.test.tsx src/pages/ops/TourCashierWorkbenchShift.test.tsx
+          npx tsc -b
+      - name: Actual client to HTTP to database recovery cases only
+        working-directory: VinPoker
+        env: {EXPENSE_CLIENT_PARTIAL_PROOF: '${{ runner.temp }}/expense-client-partial'}
+        run: node tests/financeExpenseCashClient/client.http.mjs
+      - name: Upload synthetic client evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: expense-cash-client-qualification
+          path: |
+            ${{ runner.temp }}/expense-cash-client/*.json
+            ${{ runner.temp }}/expense-cash-client/*.png
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove runner-local captured schema
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/expense-client-schema"
