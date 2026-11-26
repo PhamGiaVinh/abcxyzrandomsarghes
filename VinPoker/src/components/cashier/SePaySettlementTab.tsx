@@ -262,7 +262,7 @@ function SettlementSession({ actorId, clubIds, clubId, bankId }: { actorId: stri
                   )}
                 </div>
 
-                {scope === "actionable" && (
+                {scope === "actionable" && r.bt_status === "unmatched" && (
                   <div className="flex md:flex-col gap-2 md:w-40">
                     <Button size="sm" className="flex-1 h-9"
                       disabled={mutationBlocked || r.reg_match_count !== 1 || r.amount == null}

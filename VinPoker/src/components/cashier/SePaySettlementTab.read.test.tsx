@@ -45,6 +45,18 @@ it('does not fall back to a global worklist for an unauthorized club link', () =
  expect(rpc).not.toHaveBeenCalled();
 });
 
+it.each(['matched','ignored'])('keeps an exact %s transfer lookup read-only',async(bt_status)=>{
+ const clubId=ids('club-a') as string,bankId=ids('bank-a') as string;
+ rpc.mockReturnValue(query(Promise.resolve({data:[{bank_transaction_id:bankId,club_id:clubId,
+  created_at:'2026-10-21T00:00:00Z',bt_status,reg_match_count:1,registration_id:ids('reg-a'),
+  amount:100000,reg_total_pay:100000,amount_delta:0,content:'resolved transfer TEST'}],error:null})));
+ render(<SePaySettlementTab clubIds={[clubId]} clubId={clubId} bankId={bankId}/>);
+ await screen.findByText('resolved transfer TEST');
+ expect(screen.queryByRole('button',{name:'Xác nhận'})).not.toBeInTheDocument();
+ expect(screen.queryByRole('button',{name:'Bỏ qua'})).not.toBeInTheDocument();
+ expect(rpc.mock.calls.every(call=>call[0]==='sepay_cashier_settlement_scope_v1')).toBe(true);
+});
+
 it('requires an explicit club or all-clubs choice instead of loading a global list on entry',()=>{
  const clubA=ids('club-a') as string,clubB='00000000-0000-4000-8000-000000000088';
  render(<SePaySettlementTab clubIds={[clubA,clubB]} clubs={[{id:clubA,name:'CLB A'},{id:clubB,name:'CLB B'}]}/>);
@@ -185,7 +197,7 @@ it('does not retain worklist data after logout', async()=>{
 });
 
 it('renders a valid raw worklist row without dispatching a mutation',async()=>{
- rpc.mockReturnValue(query(Promise.resolve({data:[{bank_transaction_id:'bank-a',club_id:'club-a',created_at:'2026-10-21T00:00:00Z',bt_status:'pending',reg_match_count:1,registration_id:'reg-a',amount:100000,reg_total_pay:100000,amount_delta:0,player_display:'TEST Player',tournament_name:'TEST Tour'}],error:null})));
+ rpc.mockReturnValue(query(Promise.resolve({data:[{bank_transaction_id:'bank-a',club_id:'club-a',created_at:'2026-10-21T00:00:00Z',bt_status:'unmatched',reg_match_count:1,registration_id:'reg-a',amount:100000,reg_total_pay:100000,amount_delta:0,player_display:'TEST Player',tournament_name:'TEST Tour'}],error:null})));
  render(<SePaySettlementTab clubIds={[ids('club-a') as string]} allClubs/>);
  await screen.findByText('TEST Player · TEST Tour');
  expect(screen.getByRole('button',{name:'Xác nhận'})).toBeEnabled();
@@ -197,7 +209,7 @@ for(const response of [
  {ok:true,outcome:'manual_confirmed',registration_id:'other-reg',club_id:'club-a',confirm:{ok:true}},
  {ok:true,outcome:'manual_confirmed',registration_id:'reg-a',club_id:'club-a',confirm:{ok:true}},
 ])it(`does not claim seating success from an unverified confirmation ${JSON.stringify(response)}`,async()=>{
- rpc.mockImplementation((name:string,args:Record<string,unknown>)=>query(Promise.resolve(name==='sepay_cashier_settlement_worklist'?{data:[{bank_transaction_id:'bank-a',club_id:'club-a',created_at:'2026-10-21T00:00:00Z',bt_status:'pending',reg_match_count:1,registration_id:'reg-a',amount:100000,reg_total_pay:100000,amount_delta:0,player_display:'TEST Player',tournament_name:'TEST Tour'}],error:null}:{data:envelope(response,args),error:null})));
+ rpc.mockImplementation((name:string,args:Record<string,unknown>)=>query(Promise.resolve(name==='sepay_cashier_settlement_worklist'?{data:[{bank_transaction_id:'bank-a',club_id:'club-a',created_at:'2026-10-21T00:00:00Z',bt_status:'unmatched',reg_match_count:1,registration_id:'reg-a',amount:100000,reg_total_pay:100000,amount_delta:0,player_display:'TEST Player',tournament_name:'TEST Tour'}],error:null}:{data:envelope(response,args),error:null})));
  render(<SePaySettlementTab clubIds={[ids('club-a') as string]} allClubs/>);
  fireEvent.click(await screen.findByRole('button',{name:'Xác nhận'}));
  fireEvent.click(screen.getByRole('button',{name:'Xác nhận khoản chuyển'}));
@@ -206,7 +218,7 @@ for(const response of [
 });
 
 it('accepts the exact current manual-confirm receipt shape',async()=>{
- const row={bank_transaction_id:'bank-a',club_id:'club-a',created_at:'2026-10-21T00:00:00Z',bt_status:'pending',reg_match_count:1,registration_id:'reg-a',amount:100000,reg_total_pay:100000,amount_delta:0};
+ const row={bank_transaction_id:'bank-a',club_id:'club-a',created_at:'2026-10-21T00:00:00Z',bt_status:'unmatched',reg_match_count:1,registration_id:'reg-a',amount:100000,reg_total_pay:100000,amount_delta:0};
  rpc.mockImplementation((name:string,args:Record<string,unknown>)=>query(Promise.resolve({error:null,data:name==='sepay_cashier_settlement_worklist'?[row]:envelope({ok:true,outcome:'manual_confirmed',registration_id:'reg-a',club_id:'club-a',confirm:{ok:true,registration_id:'reg-a',entry_id:'entry-a',seat_id:'seat-a',receipt_id:'receipt-a',table_id:'table-a',seat_number:2}},args)})));
  render(<SePaySettlementTab clubIds={[ids('club-a') as string]} allClubs/>);
  fireEvent.click(await screen.findByRole('button',{name:'Xác nhận'}));
@@ -216,7 +228,7 @@ it('accepts the exact current manual-confirm receipt shape',async()=>{
 
 for(const [response,success] of [[{ok:true,outcome:'unknown'},false],[{ok:true,outcome:'dismissed',club_id:'other-club'},false],[{ok:true,outcome:'dismissed',club_id:'club-a'},true],[{ok:true,already_ignored:true},true]] as const)
  it(`validates ignore outcome ${JSON.stringify(response)}`,async()=>{
-  const row={bank_transaction_id:'bank-a',club_id:'club-a',created_at:'2026-10-21T00:00:00Z',bt_status:'pending',reg_match_count:0,registration_id:null,amount:100000,reg_total_pay:null,amount_delta:null};
+  const row={bank_transaction_id:'bank-a',club_id:'club-a',created_at:'2026-10-21T00:00:00Z',bt_status:'unmatched',reg_match_count:0,registration_id:null,amount:100000,reg_total_pay:null,amount_delta:null};
   rpc.mockImplementation((name:string,args:Record<string,unknown>)=>query(Promise.resolve({data:name==='sepay_cashier_settlement_worklist'?[row]:envelope(response,args),error:null})));
   render(<SePaySettlementTab clubIds={[ids('club-a') as string]} allClubs/>);
   fireEvent.click(await screen.findByRole('button',{name:'Bỏ qua'}));
@@ -399,7 +411,7 @@ class MalformedReadBoundary extends Component<{children:ReactNode},{failed:boole
  render(){return this.state.failed?<p data-testid="unexpected-render-crash">Unexpected render crash</p>:this.props.children;}
 }
 it.each([{content:{invalid:true}},{occurred_at:'not-a-date'},{settlement_created_at:'not-a-date'}])('rejects invalid display fields before rendering or enabling SePay actions: %j',async(invalid)=>{
- const row={bank_transaction_id:'bank-a',club_id:'club-a',created_at:'2026-10-21T00:00:00Z',bt_status:'pending',reg_match_count:1,registration_id:'reg-a',amount:100000,reg_total_pay:100000,amount_delta:0,player_display:'TEST Player',tournament_name:'TEST Tour',...invalid};
+ const row={bank_transaction_id:'bank-a',club_id:'club-a',created_at:'2026-10-21T00:00:00Z',bt_status:'unmatched',reg_match_count:1,registration_id:'reg-a',amount:100000,reg_total_pay:100000,amount_delta:0,player_display:'TEST Player',tournament_name:'TEST Tour',...invalid};
  rpc.mockReturnValue(query(Promise.resolve({data:[row],error:null})));
  render(<MalformedReadBoundary><SePaySettlementTab clubIds={[ids('club-a') as string]} allClubs/></MalformedReadBoundary>);
  await screen.findByRole('alert');expect(screen.getByRole('alert')).toHaveTextContent('Không tải được');

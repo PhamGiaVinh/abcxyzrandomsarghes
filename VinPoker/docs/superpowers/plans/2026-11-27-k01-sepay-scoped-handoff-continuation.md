@@ -15,6 +15,7 @@ kết quả xác nhận. Liên kết và reader không ghi nhận thu, không đ
   bị từ chối. Cờ tắt vẫn giữ đường vào cũ, không tự kích hoạt backend mới.
 - Reader tự kiểm quyền, xác minh CLB theo tài khoản ngân hàng và tenant ghi trên khoản
   chuyển; lọc trước LIMIT. Đọc chính xác khoản đã xử lý không phụ thuộc bucket hiện tại.
+  Giao dịch `matched`/`ignored` chỉ đọc, không hiện nút xác nhận hoặc bỏ qua.
 - Không gửi recovery/retry của journal A trên màn B hoặc khi A không còn trong quyền
   hiện tại. Giữ journal; chỉ cho link trở về A khi danh sách quyền còn chứa A.
 - Khi trang theo CLB đang mở, đọc lại server mỗi 5 giây, không chồng request hoặc kéo
