@@ -1,0 +1,237 @@
+{
+  "schemaVersion": 2,
+  "kind": "EXACT_FINANCE_NEW_SOURCE_CURRENT_RUNTIME_EXCEPTION",
+  "activation": "INACTIVE_UNTIL_REVIEWED_OWNER_APPROVED_PROTECTED_BASE_MERGE",
+  "historicalCoverage": "Historical pre03 upgrade remains unproved. Only exact source with scoped authority, twenty fresh client cases and separate concurrency/recovery evidence can qualify.",
+  "sourceCandidate": "c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0",
+  "baselineBase": "25b0b3d23f62bdad191172d3145fb3d45d0965ea",
+  "migrationScope": [
+    {
+      "status": "M",
+      "path": "VinPoker/supabase/migration-archive/floor-v3-catalog-reconciliation.manifest.json",
+      "headSha256": "af713c6a5995a33377b123ab09954100bd1490bff1f64e422bc9deab17e2abe4",
+      "baseSha256": "a1f7343241ec9153490e9d28e3fe284f892cceaa82b8a7a166996de9ce6acf35"
+    },
+    {
+      "status": "A",
+      "path": "VinPoker/supabase/migrations/20270128000354_finance_expense_scope_idempotency.sql",
+      "headSha256": "4c7615860dba50225a6507f6b2db378f417701a3968bb0063414bdad1ac62632"
+    },
+    {
+      "status": "A",
+      "path": "VinPoker/supabase/pending-migrations/20261126001901_finance_pt_cash_drawer_link_v1.sql",
+      "headSha256": "44106b5d3500dbb9c1b2f4d3a1feecfc6c83f1ff018266e1951f32d8b5eb2dcb"
+    },
+    {
+      "status": "A",
+      "path": "VinPoker/supabase/pending-migrations/20261126011530_finance_expense_cash_source_v1.sql",
+      "headSha256": "34464adca0c8546bae2e7b81dee1fee43dbd50c2c44dc68be00b5fd0102e92bf"
+    },
+    {
+      "status": "A",
+      "path": "VinPoker/supabase/pending-migrations/20261126023026_finance_expense_cash_source_status_v1.sql",
+      "headSha256": "28287f7df15621f00c8e5edd9ebd233d2822eead10af96807bca9fbe0840f914"
+    },
+    {
+      "status": "A",
+      "path": "VinPoker/supabase/pending-migrations/20261126071752_finance_expense_club_authority_v1.sql",
+      "headSha256": "af120dd8ba5cf4ec3aae0700522bb3028915237811a39d591381130841355f46"
+    }
+  ],
+  "runtimePins": [
+    {
+      "path": ".github/workflows/finance-expense-authority.yml",
+      "sha256": "b5fd2b94d659644d9cd8bbf07939ed36ed21d4c7a93c81aae4f5e7daaa276d2a"
+    },
+    {
+      "path": ".github/workflows/finance-expense-cash-client.yml",
+      "sha256": "443ce38f6e65e7cd045278c2f41c3545de7fdf0ea763ae021a63638435fe0ebb"
+    },
+    {
+      "path": ".github/workflows/finance-expense-cash-runtime.yml",
+      "sha256": "7a502eb211cb506ea6fdd8f79e3cd4deb9d413151f9b40c9fd513bd40939081f"
+    },
+    {
+      "path": ".github/workflows/finance-expense-cash.yml",
+      "sha256": "4b6dc564e4df9d0c6c62275454d484e420508177799d1612199a7def30517b9e"
+    },
+    {
+      "path": ".github/workflows/finance-expense-scope.yml",
+      "sha256": "d5a42f9b2048998f3c3258c1cb8d22e6ce0021b8d1635e92e4a17e6f0fe739c8"
+    },
+    {
+      "path": ".github/workflows/finance-pt-cash-drawer.yml",
+      "sha256": "c1489dcdd3cc61cb77a0366a6ff2adbc1a3905b17463ec58aed88be4d160b247"
+    },
+    {
+      "path": "VinPoker/src/components/clubExpenses/CashierExpenseEntry.test.tsx",
+      "sha256": "aca108770105a2565acdcc3025edb1220b223439e1a992eb4a373de535a2c7a1"
+    },
+    {
+      "path": "VinPoker/src/components/clubExpenses/CashierExpenseEntry.tsx",
+      "sha256": "a4f87e7e93d26ad46ea4e7788350bf1faf5ba2b3e37218901b939c665fb98e58"
+    },
+    {
+      "path": "VinPoker/src/hooks/clubExpenses/useClubExpenses.ts",
+      "sha256": "2afca67a5e85eb85e10e8ad57e13c135f5404bd73ebf69c7c626d079dc2afa4e"
+    },
+    {
+      "path": "VinPoker/src/hooks/clubExpenses/useRecordClubExpense.test.tsx",
+      "sha256": "65d947ce63e198bdf86525ad83f86d76f21a78d9afc86628e0b587b70622af8c"
+    },
+    {
+      "path": "VinPoker/src/lib/clubExpenses/amount.ts",
+      "sha256": "90a863fb2af9af74a9f19c349b72b8bd9ac00457f21aa65badd13271339bea8e"
+    },
+    {
+      "path": "VinPoker/src/lib/clubExpenses/cashierExpensePayment.test.ts",
+      "sha256": "dba622767c2bb8f2c8d53c3991cc9b80e4f3d2e05a12212e07aab851155942a5"
+    },
+    {
+      "path": "VinPoker/src/lib/clubExpenses/cashierExpensePayment.ts",
+      "sha256": "17a1384b082d46b9b1a3867dd8203f7ac008157ab768d3e5d78e15705339d9a4"
+    },
+    {
+      "path": "VinPoker/src/lib/featureFlags.ts",
+      "sha256": "fcf1dd66cd9ed740df8a7b85f15e4b932003bb0b7d0f9d05258262a0851b2ba3"
+    },
+    {
+      "path": "VinPoker/src/ops/finance/CashierCashflowPanel.test.tsx",
+      "sha256": "ebac5313c46b16a81158d865876f89d43a2430731b4bf5afdf23e21b53e97517"
+    },
+    {
+      "path": "VinPoker/src/ops/finance/CashierCashflowPanel.tsx",
+      "sha256": "89362b4b8c4eec18a663ceff4371ef7ee174a8978dc8cac044d2a041d20f7adc"
+    },
+    {
+      "path": "VinPoker/src/pages/ClubExpenses.test.tsx",
+      "sha256": "0e56d14fce7b1510c210219de955067eefeab4074e6d0af3ae518891ae7e1b9e"
+    },
+    {
+      "path": "VinPoker/src/pages/ClubExpenses.tsx",
+      "sha256": "8c991456cbd506116a7ab89691e3c9d487ff7457335b4fe83b3f548ea725621b"
+    },
+    {
+      "path": "VinPoker/src/pages/ops/TourCashierWorkbench.tsx",
+      "sha256": "ed2ee75f2445c0bc9b0c575dd54ce4f038c270bffa6c64bba23c239edee28731"
+    },
+    {
+      "path": "VinPoker/src/pages/ops/TourCashierWorkbenchShift.test.tsx",
+      "sha256": "e79b03bc7c396c2ad589248c11c991ede59888623e3154deca487f35e75cc327"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenseAuthority/authority.http.mjs",
+      "sha256": "cd039ac8b6654a618e8998932851e89add89510d3933688942f2edd0a674faaa"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenseCash/cash.http.mjs",
+      "sha256": "ffbaafa7d32757867d3bfcb7162c73d2fd67878d5fe8cedc8954c57c68ec4b00"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenseCash/dependency-catalog.mjs",
+      "sha256": "943909c2aef10386394509c93138bfaefd601bbcbe8a1efcc0865d8dd1c04ccf"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenseCash/prerequisite-contract.json",
+      "sha256": "98bb56586b4f892054dc785a25ae8828936e6031b735c1e6487457fd23f73197"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenseCashClient/README.md",
+      "sha256": "ccea0ded0228e29de068fbff66645679fe7204fd963fba287fbda6540f2ea76f"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenseCashClient/client.http.mjs",
+      "sha256": "e3db0e19c26e1dac2251570ce7533920ce213fc9dfe3b2bd216dd2338db1bd83"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenseCashClient/http.fixture.tsx",
+      "sha256": "368b6d5946021fb0a4fb747eb6e4c406e5c2bcd9cac44aa08683605a778fbb09"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenseCashClient/http.preview.html",
+      "sha256": "470fb660fc72c4c8309fd3d089d6d70d4c4c8cd27411519d8564d1fc705ba87b"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenseCashClient/http.vite.config.ts",
+      "sha256": "7db8eaa78f4b95c33ad29862552a93ded95edbbe263b485390fb00f2f31e4044"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenses/scope.baseline.sql",
+      "sha256": "62ced7e547b94d20539c97a792db0576f1c5ea3a40d6ed0e6b83f5524c4121e6"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenses/scope.candidate.sql",
+      "sha256": "bde1563ffaf09938de9b0324a386c7db6ddc733d663f2ccf461f4cee0a0eb57e"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenses/scope.concurrent.sh",
+      "sha256": "ef58d402c74e5da4d3ebd8a7dc363fb190824645243d9867778e3676716545ed"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenses/scope.http.mjs",
+      "sha256": "868c0f9fe10f7cffa67223f7ef376b14e75574b4be587f070ee850cf253d813c"
+    },
+    {
+      "path": "VinPoker/tests/financeExpenses/scope.seed.sql",
+      "sha256": "8724fae4381024f02f7dd15ab88d204606e37b810a786a46ed173ea8bac2e0f7"
+    },
+    {
+      "path": "VinPoker/tests/financePtCashDrawer/cash.http.mjs",
+      "sha256": "cff93d189210209aa1b58ab9a0e50d667a6771daf19fe28b524066b0de42b2b0"
+    },
+    {
+      "path": "VinPoker/tests/financePtCashDrawer/http.fixture.tsx",
+      "sha256": "83776bc51646a7e64429a4a0fdfc7078d19a2f82429872cfa38ab0708c863c5c"
+    },
+    {
+      "path": "VinPoker/tests/financePtCashDrawer/http.preview.html",
+      "sha256": "470fb660fc72c4c8309fd3d089d6d70d4c4c8cd27411519d8564d1fc705ba87b"
+    },
+    {
+      "path": "VinPoker/tests/financePtCashDrawer/http.vite.config.ts",
+      "sha256": "1358cacdc1d1c0f8137490cf574a150722c9a8e04c3c60af08a06bb8b9c60515"
+    }
+  ],
+  "proof": {
+    "receiptPath": "VinPoker/scripts/ops/fixtures/finance-source-runtime-receipt-20261126.json",
+    "receiptSha256": "5a40c6d8144866707e57e68ddbb8b81028da6cbabfa845e80f369bafb340a260",
+    "actor": "PhamGiaVinh",
+    "attempt": 1,
+    "conclusion": "success",
+    "event": "pull_request",
+    "path": ".github/workflows/finance-expense-cash-client.yml",
+    "run": 45792554430,
+    "sourceSha": "c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0",
+    "workflowId": 431098994
+  },
+  "authorityProof": {
+    "actor": "PhamGiaVinh",
+    "attempt": 1,
+    "conclusion": "success",
+    "event": "pull_request",
+    "path": ".github/workflows/finance-expense-authority.yml",
+    "run": 45792554475,
+    "sourceSha": "c48cdc9bdec22cade6bd9eb0de2424dbde08e8d0",
+    "workflowId": 431296054
+  },
+  "unknownChangeBehavior": "pre03; unknown/missing/modified/renamed/nonregular SQL or runtime and inherited dependency drift remain denied; full current suite and production gates unchanged",
+  "productTree": {
+    "kind": "COMMITTED_PRODUCT_TREE_BOUND_TO_PRODUCER_SOURCE",
+    "prefixes": [
+      ".github/",
+      "VinPoker/"
+    ],
+    "excluded": [
+      ".github/workflows/cashier-tour-real-e2e.yml",
+      "VinPoker/docs/superpowers/plans/2026-11-26-finance-schema-ci-policy.md",
+      "VinPoker/e2e/cashier-tour-real.spec.ts",
+      "VinPoker/scripts/ops/cashier-schema-mode.test.mjs",
+      "VinPoker/scripts/ops/finance-schema-policy.test.mjs",
+      "VinPoker/scripts/ops/finance-source-qualified-scope-20261126.json",
+      "VinPoker/scripts/ops/fixtures/finance-source-runtime-receipt-20261126.json",
+      "VinPoker/scripts/ops/select-cashier-schema-mode.mjs"
+    ],
+    "entries": 7645,
+    "sha256": "3da6a0d3e20ee16d7aa3204a0efe1f04e6c31bd2c6eb1891a8cec912a0db8b08"
+  }
+}
