@@ -21,7 +21,8 @@ const receiptPath=prefix+'fixtures/finance-source-runtime-receipt-20261126.json'
 const trusted=[policyPath,receiptPath,prefix+'select-cashier-schema-mode.mjs',
  prefix+'cashier-hud35-qualified-scope.json',prefix+'fixtures/cashier-ci-hud35-qualified-receipt-20261107.json',
  prefix+'cashier-source342-344-qualified-scope.json',prefix+'fixtures/cashier-source342-344-runtime-receipt.json',
- prefix+'finance-schema-policy.test.mjs',prefix+'cashier-schema-mode.test.mjs','.github/workflows/cashier-tour-real-e2e.yml'];
+ prefix+'finance-schema-policy.test.mjs',prefix+'cashier-schema-mode.test.mjs','.github/workflows/cashier-tour-real-e2e.yml',
+ 'VinPoker/e2e/cashier-tour-real.spec.ts'];
 const policy=JSON.parse(readFileSync(resolve(actualRepo,policyPath),'utf8'));
 git('init','--quiet');git('config','user.name','Local policy fixture');git('config','user.email','policy@test.invalid');
 const sourceObjects=execFileSync('git',['-C',actualRepo,'rev-parse','--git-path','objects']).toString().trim();

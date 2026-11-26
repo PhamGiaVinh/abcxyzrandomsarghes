@@ -2140,7 +2140,14 @@ test('anonymous prepared HUD reads canonical operational history and replay',asy
   };
   phase='felt';await viewer.goto('/live/'+tour+'?tableId='+hand.tournament_table_id+'&tab=hands');
   await openTable();checks.actualTableOpen=true;
-  const seat=viewer.getByRole('button').filter({has:viewer.getByTestId('felt-stack-'+player)});await expect(seat).toBeVisible({timeout:15000});
+  // The nameplate changes Chip/BB; the separate avatar opens the player HUD.
+  // Resolve its accessible name from the actual player's rendered plate rather
+  // than clicking a different control and waiting for an RPC it never sends.
+  const unitPlate=viewer.getByRole('button').filter({has:viewer.getByTestId('felt-stack-'+player)});await expect(unitPlate).toBeVisible({timeout:15000});
+  const plateLabel=await unitPlate.getAttribute('aria-label'),unitSuffix=' · Chip / BB';
+  expect(plateLabel?.endsWith(unitSuffix)).toBe(true);
+  const hudName=plateLabel!.slice(0,-unitSuffix.length);expect(hudName.length).toBeGreaterThan(0);
+  const seat=viewer.getByRole('button',{name:hudName,exact:true});await expect(seat).toBeVisible({timeout:15000});
   const responseFor=(name:string)=>viewer.waitForResponse(response=>{if(!new URL(response.url()).pathname.endsWith('/rest/v1/rpc/'+name))return false;const args=response.request().postDataJSON();return args?.p_tournament_id===tour&&args?.p_player_id===player;},{timeout:10000});
   const summaryResponse=responseFor('get_public_player_hud_summary_v1'),historyResponse=responseFor('get_public_player_hud_history_v1');void summaryResponse.catch(()=>{});void historyResponse.catch(()=>{});
   const firstHudOpen={iteration:0,kind:'first-open' as const,warmup:false,summaryVisibleMs:null as number|null,historyVisibleMs:null as number|null,status:'pending' as 'pending'|'passed'};hudOpenSamples.push(firstHudOpen);

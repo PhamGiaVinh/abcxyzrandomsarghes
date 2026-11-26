@@ -181,7 +181,7 @@
   ],
   "proof": {
     "receiptPath": "VinPoker/scripts/ops/fixtures/finance-source-runtime-receipt-20261126.json",
-    "receiptSha256": "63ce574de51d72c6ac38d838f04be88e4dd65ac27077b09ffdab62514f48ad87",
+    "receiptSha256": "5e8ab4e6e9646b31fbe3dca9e9d190b6e5ff9ffabaedb6c3fbed636d216183d0",
     "run": 45743719060,
     "sourceSha": "e231ba934bbbc7e0608499dc05bb306f1f51f544",
     "workflowId": 431098994,
@@ -201,13 +201,14 @@
     "excluded": [
       ".github/workflows/cashier-tour-real-e2e.yml",
       "VinPoker/docs/superpowers/plans/2026-11-26-finance-schema-ci-policy.md",
+      "VinPoker/e2e/cashier-tour-real.spec.ts",
       "VinPoker/scripts/ops/cashier-schema-mode.test.mjs",
       "VinPoker/scripts/ops/finance-schema-policy.test.mjs",
       "VinPoker/scripts/ops/finance-source-qualified-scope-20261126.json",
       "VinPoker/scripts/ops/fixtures/finance-source-runtime-receipt-20261126.json",
       "VinPoker/scripts/ops/select-cashier-schema-mode.mjs"
     ],
-    "entries": 7642,
-    "sha256": "0153a9507275498fd80dc105a72e3d1c0a02faf72f0ccd976f66f205ee16b438"
+    "entries": 7641,
+    "sha256": "38583e2b58e41eae240eaa3ba1f813094c237c9afe609d59ad01da0c3d1cd2ef"
   }
 }

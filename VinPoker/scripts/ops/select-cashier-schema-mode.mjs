@@ -14,6 +14,7 @@ const financePolicyPath = 'VinPoker/scripts/ops/finance-source-qualified-scope-2
 const financeReceiptPath = 'VinPoker/scripts/ops/fixtures/finance-source-runtime-receipt-20261126.json';
 const financePolicyOwnedPaths = [
   '.github/workflows/cashier-tour-real-e2e.yml',
+  'VinPoker/e2e/cashier-tour-real.spec.ts',
   'VinPoker/scripts/ops/select-cashier-schema-mode.mjs',
   'VinPoker/scripts/ops/cashier-schema-mode.test.mjs',
   'VinPoker/scripts/ops/finance-schema-policy.test.mjs',financePolicyPath,financeReceiptPath,
@@ -196,14 +197,15 @@ export function qualifiedFinanceSources(files, context) {
   // base. A product PR cannot introduce or alter its own admission authority.
   for(const path of [financePolicyPath,financeReceiptPath,selectorPath,policyPath,receiptPath,
     sourcePackagePolicy,sourcePackageReceipt,'.github/workflows/cashier-tour-real-e2e.yml',
-    'VinPoker/scripts/ops/finance-schema-policy.test.mjs','VinPoker/scripts/ops/cashier-schema-mode.test.mjs']) {
+    'VinPoker/scripts/ops/finance-schema-policy.test.mjs','VinPoker/scripts/ops/cashier-schema-mode.test.mjs',
+    'VinPoker/e2e/cashier-tour-real.spec.ts']) {
     assert.ok(blob(head,path).equals(blob(base,path)),`PR changes trusted guard: ${path}`);
   }
   const policy=JSON.parse(blob(base,financePolicyPath));
   assert.equal(policy.schemaVersion,1);
   assert.equal(policy.kind,'EXACT_FINANCE_NEW_SOURCE_CURRENT_RUNTIME_EXCEPTION');
   assert.equal(policy.sourceCandidate,'e231ba934bbbc7e0608499dc05bb306f1f51f544');
-  const receiptHash='63ce574de51d72c6ac38d838f04be88e4dd65ac27077b09ffdab62514f48ad87';
+  const receiptHash='5e8ab4e6e9646b31fbe3dca9e9d190b6e5ff9ffabaedb6c3fbed636d216183d0';
   assert.equal(policy.proof.receiptPath,financeReceiptPath);
   assert.equal(policy.proof.receiptSha256,receiptHash);
   assert.equal(canonicalHash(blob(base,financeReceiptPath)),receiptHash,'Finance receipt drift');
@@ -216,7 +218,7 @@ export function qualifiedFinanceSources(files, context) {
   assert.deepEqual(policy.runtimePins,receipt.runtimePins);
   // Delta equality alone misses dependencies inherited from a newer BASE.
   // Bind the entire application/CI tree to the actual native producer, with
-  // only this separately reviewed policy's seven files excluded.
+  // only this separately reviewed policy/harness package's eight files excluded.
   assert.deepEqual(policy.productTree,receipt.productTree);
   assert.deepEqual(policy.productTree.prefixes,['.github/','VinPoker/']);
   assert.deepEqual(policy.productTree.excluded,financePolicyOwnedPaths);

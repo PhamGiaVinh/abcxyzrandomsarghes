@@ -246,13 +246,14 @@
     "excluded": [
       ".github/workflows/cashier-tour-real-e2e.yml",
       "VinPoker/docs/superpowers/plans/2026-11-26-finance-schema-ci-policy.md",
+      "VinPoker/e2e/cashier-tour-real.spec.ts",
       "VinPoker/scripts/ops/cashier-schema-mode.test.mjs",
       "VinPoker/scripts/ops/finance-schema-policy.test.mjs",
       "VinPoker/scripts/ops/finance-source-qualified-scope-20261126.json",
       "VinPoker/scripts/ops/fixtures/finance-source-runtime-receipt-20261126.json",
       "VinPoker/scripts/ops/select-cashier-schema-mode.mjs"
     ],
-    "entries": 7642,
-    "sha256": "0153a9507275498fd80dc105a72e3d1c0a02faf72f0ccd976f66f205ee16b438"
+    "entries": 7641,
+    "sha256": "38583e2b58e41eae240eaa3ba1f813094c237c9afe609d59ad01da0c3d1cd2ef"
   }
 }
