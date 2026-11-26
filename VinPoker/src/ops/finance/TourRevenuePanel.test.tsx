@@ -37,6 +37,42 @@ it("refreshes on registration events, then removes its subscription on unmount",
   expect(await screen.findByText("100.000 đ")).toBeTruthy();
   view.unmount(); expect(mock.remove).toHaveBeenCalledTimes(1);
 });
+it("refreshes the visible revenue on focus after missing updates in a background tab", async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  render(<TourRevenuePanel clubId="club-a" />);
+  await act(async () => {});
+  expect(screen.getByText("90.000 đ")).toBeTruthy();
+
+  visibility.mockReturnValue("hidden");
+  mock.live.mockResolvedValue(payload("club-a", 120000));
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(mock.live).toHaveBeenCalledTimes(1);
+
+  visibility.mockReturnValue("visible");
+  await act(async () => { window.dispatchEvent(new Event("focus")); });
+  expect(mock.live).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("120.000 đ")).toBeTruthy();
+  expect(screen.queryByText("90.000 đ")).toBeNull();
+});
+it("refreshes on visibility return even if the window never receives focus", async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  render(<TourRevenuePanel clubId="club-a" />);
+  await act(async () => {});
+  expect(screen.getByText("90.000 đ")).toBeTruthy();
+
+  visibility.mockReturnValue("hidden");
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+  expect(mock.live).toHaveBeenCalledTimes(1);
+  mock.live.mockResolvedValue(payload("club-a", 120000));
+
+  visibility.mockReturnValue("visible");
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+  expect(mock.live).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("120.000 đ")).toBeTruthy();
+  expect(screen.queryByText("90.000 đ")).toBeNull();
+});
 it("polls when realtime is unavailable without overlapping requests", async () => {
   vi.useFakeTimers(); let resolve: (value: unknown) => void = () => {};
   mock.live.mockImplementation(() => new Promise(r => { resolve = r; }));
@@ -46,6 +82,33 @@ it("polls when realtime is unavailable without overlapping requests", async () =
   await act(async () => { resolve(payload()); });
   await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
   expect(mock.live).toHaveBeenCalledTimes(2);
+});
+it("refreshes after reconnecting without waiting for the next poll", async () => {
+  vi.useFakeTimers();
+  render(<TourRevenuePanel clubId="club-a" />);
+  await act(async () => {});
+  expect(screen.getByText("90.000 đ")).toBeTruthy();
+
+  mock.live.mockResolvedValue(payload("club-a", 120000));
+  await act(async () => { window.dispatchEvent(new Event("online")); });
+  expect(mock.live).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("120.000 đ")).toBeTruthy();
+});
+it("coalesces reconnect signals received during a pending read into one follow-up", async () => {
+  vi.useFakeTimers();
+  let settle!: (value: ReturnType<typeof payload>) => void;
+  mock.live.mockReturnValueOnce(new Promise(resolve => { settle = resolve; }));
+  mock.live.mockResolvedValue(payload("club-a", 120000));
+  render(<TourRevenuePanel clubId="club-a" />);
+  await act(async () => {
+    window.dispatchEvent(new Event("online"));
+    window.dispatchEvent(new Event("online"));
+  });
+  expect(mock.live).toHaveBeenCalledTimes(1);
+
+  await act(async () => { settle(payload()); });
+  expect(mock.live).toHaveBeenCalledTimes(2);
+  expect(screen.getByText("120.000 đ")).toBeTruthy();
 });
 it("clears failed reads instead of displaying old money as current", async () => {
   render(<TourRevenuePanel clubId="club-a" />); await screen.findByText("90.000 đ");

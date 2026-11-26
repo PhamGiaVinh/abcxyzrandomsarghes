@@ -231,8 +231,9 @@ export interface SidePotReconciliation {
 export function reconcileSidePots(
   actions: ActionRow[],
   clientSidePots: unknown,
+  bigBlindAntePlayerId?: string,
 ): SidePotReconciliation {
-  const breakdown = computePotBreakdown(contributionsFromActions(actions));
+  const breakdown = computePotBreakdown(contributionsFromActions(actions, bigBlindAntePlayerId));
   const serverSidePots = toSidePotsJson(breakdown);
 
   let parsed: unknown = clientSidePots;

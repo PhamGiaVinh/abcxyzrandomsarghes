@@ -80,6 +80,7 @@ it('actual input readers distinguish dependency failure from a verified empty sn
 });
 
 const assignment={table_id:'physical-a',table_session_id:'session-new'};
+const operationalInventory=async()=>[{id:assignment.table_id,table_session_id:assignment.table_session_id}];
 it.each([{data:null,error:{message:'synthetic outage'}},{data:null,error:null}])('reconciliation does not cancel a real lock after failed dealer-state read: %j',async(response)=>{
  const first=source.indexOf('async function reconcileAndAdopt('),last=source.indexOf('// ─── Build solver inputs',first);
  const entry=ts.transpileModule(source.slice(first,last),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
@@ -154,8 +155,8 @@ it.each([
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext},
  }).outputText;
  const rpc=vi.fn(async(name:string)=>name==='count_available_dealers'?response:{data:[],error:'releaseError' in response?{message:'synthetic release outage'}:null});
- const planner=new Function('fetchActiveAssignments','fetchLiveScheduleRows','fetchTournamentInfo','reconcileAndAdopt','markOvertime','buildRotationSupply','console','crypto','SWING_POLICY',`${entry};return passRRotationPlanner;`)(
-  async()=>[{...assignment,attendance_id:'outgoing',swing_due_at:new Date(0).toISOString()}],async()=>[],
+ const planner=new Function('getDealerOperationalTables','fetchActiveAssignments','fetchLiveScheduleRows','fetchTournamentInfo','reconcileAndAdopt','markOvertime','buildRotationSupply','console','crypto','SWING_POLICY',`${entry};return passRRotationPlanner;`)(
+  operationalInventory,async()=>[{...assignment,attendance_id:'outgoing',swing_due_at:new Date(0).toISOString()}],async()=>[],
   async()=>({tournamentInfo:new Map(),rejectedTables:new Map()}),async()=>({adopted:0,cancelled:0}),async()=>0,
   async()=>({status:'query_failed',errorCode:'test_boundary_after_supply'}),{warn:vi.fn(),error:vi.fn()},
   {randomUUID:()=> 'run-test'},{rest:{executeMinRestFloorMinutes:15}},
@@ -223,9 +224,9 @@ it('actual planner rejects invalid mapping before reconciliation, OT or rest wri
   compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext},
  }).outputText;
  const mutation=vi.fn(async()=>({adopted:0,cancelled:0}));
- const planner=new Function('fetchActiveAssignments','fetchLiveScheduleRows','fetchTournamentInfo',
+ const planner=new Function('getDealerOperationalTables','fetchActiveAssignments','fetchLiveScheduleRows','fetchTournamentInfo',
   'reconcileAndAdopt','markOvertime','console','crypto',`${entry};return passRRotationPlanner;`)(
-  async()=>[assignment],async()=>[],read,mutation,mutation,{error:vi.fn()}, {randomUUID:()=> 'run-test'},
+  operationalInventory,async()=>[assignment],async()=>[],read,mutation,mutation,{error:vi.fn()}, {randomUUID:()=> 'run-test'},
  );
  const admin={...client([],[]),rpc:mutation};
  const result=await planner(admin,{clubId:'club-a'});
@@ -302,9 +303,9 @@ it('isolates a legacy row and still admits the valid table to reconciliation',as
  const invalidSchedule={id:'invalid-slot',table_id:'physical-b'};
  // Stop at the inspected boundary; this is not a full solver/commit test.
  const reconcile=vi.fn(async()=>{throw Error('test_boundary_after_reconcile');});
- const planner=new Function('fetchActiveAssignments','fetchLiveScheduleRows','fetchTournamentInfo',
+ const planner=new Function('getDealerOperationalTables','fetchActiveAssignments','fetchLiveScheduleRows','fetchTournamentInfo',
   'reconcileAndAdopt','console','crypto',`${entry};return passRRotationPlanner;`)(
-  async()=>[assignment,invalid],async()=>[goodSchedule,invalidSchedule],read,reconcile,
+  operationalInventory,async()=>[assignment,invalid],async()=>[goodSchedule,invalidSchedule],read,reconcile,
   {error:vi.fn()},{randomUUID:()=> 'run-test'},
  );
  const admin=client();const ctx={clubId:'club-a'};
@@ -326,11 +327,11 @@ it.each(['accepted','rejected','legacy','malformed'] as const)('handles commit r
   {rejected_table_ids:mode==='malformed'?null:rejected?['physical-a']:[]})},error:null}));
  const supply=vi.fn(async(_admin:unknown,_club:string,_options:{excludeAttendanceIds:Set<string>})=>({status:'ok',supply:[]}));
  const announce=vi.fn(async(_admin:unknown,_ctx:unknown,_assignments:unknown[])=>({locked:0,errors:[]}));
- const names=['fetchActiveAssignments','fetchLiveScheduleRows','fetchTournamentInfo','reconcileAndAdopt',
+ const names=['getDealerOperationalTables','fetchActiveAssignments','fetchLiveScheduleRows','fetchTournamentInfo','reconcileAndAdopt',
   'markOvertime','buildRotationSupply','getFeatureTablePoolsByTableWithStatus','getReservedDealerIds',
   'solveRotationPlan','buildSolverTables','announceDueSlots','rowToJson','SWING_POLICY','ANNOUNCE_LEAD_MS',
   'SOLVER_VERSION','console','crypto'];
- const values=[async()=>[assignment,invalid],async()=>[],read,async()=>({adopted:0,cancelled:0}),
+ const values=[operationalInventory,async()=>[assignment,invalid],async()=>[],read,async()=>({adopted:0,cancelled:0}),
   async()=>0,supply,async()=>({status:'ok',pools:new Map()}),async()=>new Set(),
   ()=>({rows:[]}),()=>[],announce,(row:unknown)=>row,{rest:{executeMinRestFloorMinutes:15}},180000,
   'test',{log:vi.fn(),warn:vi.fn(),error:vi.fn()},{randomUUID:()=> 'run-test'}];

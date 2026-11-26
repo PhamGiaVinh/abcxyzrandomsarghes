@@ -271,7 +271,7 @@ describe("HandBreakdown (spectator action breakdown)", () => {
       {player_id:'bb',street:'preflop',action_type:'call',action_amount:19700,action_order:5},
     ]} players={[]} buttonSeat={8} bigBlind={300}/>);
     expect(html).toContain('Cược lũy kế');
-    expect(html).toContain('605.33 BB');
+    expect(html).toContain('605,33 BB');
     expect(html).toContain('chưa trừ cược được hoàn');
     expect(html).not.toContain('>Pot ');
   });

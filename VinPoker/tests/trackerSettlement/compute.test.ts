@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeAuthoritativeSettlement,
   normalizeSettlementSourceRpcResult,
+  frozenBigBlindAntePlayerId,
   type AuthoritativeSettlementInput,
 } from "@settlement/compute.ts";
 
@@ -54,6 +55,31 @@ function hand8Input(): AuthoritativeSettlementInput {
 }
 
 describe("authoritative settlement computation", () => {
+  it('requires a valid frozen BB position and matching ante before using the new rule',()=>{
+    const input=hand8Input();
+    expect(frozenBigBlindAntePlayerId(input.hands[0],input.players)).toBeUndefined();
+    for(const invalid of [{tracker_bb_position:null,tracker_bba:200},{tracker_bb_position:10,tracker_bba:200},
+      {tracker_bb_position:3,tracker_bba:0}]) {
+      expect(()=>frozenBigBlindAntePlayerId({...input.hands[0],tracker_big_blind_ante_only:true,tracker_big_blind:200,...invalid},input.players))
+        .toThrow('invalid_big_blind_ante_snapshot');
+    }
+  });
+  it('recomputes a frozen BB ante hand without returning its ante as an uncalled wager',async()=>{
+    const input=hand8Input();
+    input.hands=[{...hand('hand-8',8),community_cards:[],pot_size:600,
+      tracker_big_blind_ante_only:true,tracker_big_blind:200,tracker_bba:200,tracker_bb_position:3}];
+    input.players=[
+      {hand_id:'hand-8',player_id:'limitless',entry_number:1,seat_number:2,starting_stack:1000,ending_stack:1400,hole_cards:[]},
+      {hand_id:'hand-8',player_id:'kayhan',entry_number:1,seat_number:3,starting_stack:1000,ending_stack:600,hole_cards:[]},
+    ];
+    input.actions=[action('hand-8','sb','limitless','post_sb',100,1),action('hand-8','ante','kayhan','post_ante',200,2),
+      action('hand-8','bb','kayhan','post_bb',200,3),action('hand-8','call','limitless','call',100,4),
+      action('hand-8','fold','kayhan','fold',0,5)];
+    input.liveStacks=[{player_id:'limitless',entry_number:1,chip_count:1400},{player_id:'kayhan',entry_number:1,chip_count:600}];
+    const result=await computeAuthoritativeSettlement(input);
+    expect(result.publicOutcome.pots[0].amount).toBe(600);
+    expect(result.publicOutcome.pots[0].allocations).toEqual([expect.objectContaining({winnerId:'limitless',amount:600})]);
+  });
   it("awards an odd tied chip to the first winner strictly after the button", async () => {
     const input = hand8Input();
     input.hands = [{ ...hand("hand-8", 8), button_seat: 2 }];

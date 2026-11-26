@@ -27,6 +27,9 @@ import {
 } from "@/components/ui/select";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
 import { useOpsCapabilities } from "@/ops/auth/OpsCapabilityProvider";
+import { useOpsAuth } from "@/ops/auth/OpsAuthProvider";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
+import { observeTrackerContextRead } from "@/lib/tournament/observeTrackerContextRead";
 import {
   inviteStatusLabel,
   isOperatorInviteRole,
@@ -45,6 +48,15 @@ type InviteRow = {
 };
 
 export default function OpsClubAccounts() {
+  const auth = useOpsAuth();
+  const capabilities = useOpsCapabilities();
+  if (auth.loading || capabilities.loading) return null;
+  if (!auth.user || capabilities.scopeError || !capabilities.hasOwnerAccess) return <Navigate to="/ops" replace />;
+  const owners = capabilities.scope.filter(row => row.can_owner).map(row => row.club_id).sort();
+  return <OpsClubAccountsSession key={JSON.stringify([auth.user.id, sessionReadEpoch(auth.session), owners])} />;
+}
+
+function OpsClubAccountsSession() {
   const client = useSupabaseClient();
   const capabilities = useOpsCapabilities();
   const ownerClubs = useMemo(
@@ -57,51 +69,66 @@ export default function OpsClubAccounts() {
   const [rows, setRows] = useState<InviteRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const canManageClub = ownerClubs.some(row => row.club_id === clubId);
-  const scopedClubId = canManageClub ? clubId : "";
-  const visibleRows = rows.filter(row => row.club_id === scopedClubId);
-  const currentClub = useRef(scopedClubId);
-  currentClub.current = scopedClubId;
-  const readVersion = useRef(0);
+  const [readError, setReadError] = useState(false);
+  const [reading, setReading] = useState(false);
+  const active = useRef(true);
+  const writing = useRef(false);
+  const readRevision = useRef(0);
+  const currentClub = useRef(clubId);
+  currentClub.current = clubId;
+  useEffect(() => {
+    active.current = true;
+    return () => { active.current = false; readRevision.current += 1; };
+  }, []);
 
   const load = useCallback(async (selectedClubId: string) => {
-    if (selectedClubId !== currentClub.current) return;
-    const version = ++readVersion.current;
-    if (!selectedClubId) return setRows([]);
+    const revision = ++readRevision.current;
+    const current = () => active.current && readRevision.current === revision && currentClub.current === selectedClubId;
+    setRows([]); setReadError(false);
+    if (!selectedClubId) { setReading(false); return; }
+    setReading(true);
+    try {
     // Generated Database types cannot include an unapplied migration. The API
     // boundary is covered by a contract test until types regenerate after apply.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (client.from as any)("club_operator_invites")
+    const { data, error } = await observeTrackerContextRead<{data: InviteRow[] | null; error: unknown}>((client.from as any)("club_operator_invites")
       .select("id,club_id,email_normalized,operator_role,status")
-      .eq("club_id", selectedClubId).order("created_at", { ascending: false });
-    if (version !== readVersion.current || selectedClubId !== currentClub.current) return;
-    if (error) return setMessage("Chưa tải được danh sách lời mời.");
-    setRows(
-      (data ?? []).filter((row: InviteRow) =>
-        isOperatorInviteRole(row.operator_role)
-      ),
-    );
+      .eq("club_id", selectedClubId).order("created_at", { ascending: false }));
+    if (!current()) return;
+    if (error || !Array.isArray(data) || data.some(row => !row || row.club_id !== selectedClubId ||
+      typeof row.id !== 'string' || typeof row.email_normalized !== 'string' ||
+      !isOperatorInviteRole(row.operator_role) || !['pending','active','revoked'].includes(row.status))) throw Error('unverified_invite_scope');
+    setRows(data);
+    } catch {
+      if (current()) { setRows([]); setReadError(true); }
+    } finally { if (current()) setReading(false); }
   }, [client]);
 
   useEffect(() => {
-    if (!canManageClub && ownerClubs.length === 1) setClubId(ownerClubs[0].club_id);
-  }, [canManageClub, ownerClubs]);
+    if (!clubId && ownerClubs.length === 1) setClubId(ownerClubs[0].club_id);
+  }, [clubId, ownerClubs]);
   useEffect(() => {
-    void load(scopedClubId);
-  }, [scopedClubId, load]);
+    void load(clubId);
+  }, [clubId, load]);
   if (capabilities.loading) return null;
   if (!capabilities.hasOwnerAccess) return <Navigate to="/ops" replace />;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!scopedClubId || !email.trim()) {
+    const selectedClubId = clubId;
+    if (writing.current || !ownerClubs.some(row => row.club_id === selectedClubId)) return;
+    if (!clubId || !email.trim()) {
       return setMessage("Chọn CLB và nhập email nhân viên.");
     }
-    setLoading(true);
+    writing.current = true; setLoading(true);
     setMessage(null);
-    const { data, error } = await client.functions.invoke("ops-club-accounts", {
-      body: { action: "invite", club_id: scopedClubId, email, operator_role: role },
-    });
+    let result;
+    try { result = await client.functions.invoke("ops-club-accounts", {
+      body: { action: "invite", club_id: selectedClubId, email, operator_role: role },
+    }); } catch { result = { data: null, error: true }; }
+    if (!active.current || currentClub.current !== selectedClubId) return;
+    const { data, error } = result;
+    writing.current = false;
     setLoading(false);
     if (error || !data?.status) {
       return setMessage(
@@ -116,22 +143,27 @@ export default function OpsClubAccounts() {
         ? "Đã gửi email để nhân viên tự đặt mật khẩu. Quyền hiển thị ở trạng thái chờ xác nhận."
         : "Tài khoản đã xác nhận: đã cấp đúng quyền CLB, không đổi mật khẩu.",
     );
-    await load(clubId);
+    await load(selectedClubId);
   };
 
   const revoke = async (inviteId: string) => {
-    if (!visibleRows.some(row => row.id === inviteId)) return;
-    setLoading(true);
+    const selectedClubId = clubId;
+    if (writing.current || reading || readError || !rows.some(row => row.id === inviteId && row.club_id === selectedClubId && row.status !== 'revoked')) return;
+    writing.current = true; setLoading(true);
     setMessage(null);
-    const { error } = await client.functions.invoke("ops-club-accounts", {
+    let result;
+    try { result = await client.functions.invoke("ops-club-accounts", {
       body: { action: "revoke", invite_id: inviteId },
-    });
+    }); } catch { result = { error: true }; }
+    if (!active.current || currentClub.current !== selectedClubId) return;
+    const { error } = result;
+    writing.current = false;
     setLoading(false);
     if (error) return setMessage("Không thu hồi được quyền. Vui lòng thử lại.");
     setMessage(
-      "Đã thu hồi quyền đã chọn tại CLB này.",
+      "Đã thu hồi quyền đã chọn tại CLB này. Tài khoản Auth không bị xóa.",
     );
-    await load(clubId);
+    await load(selectedClubId);
   };
 
   return (
@@ -167,7 +199,11 @@ export default function OpsClubAccounts() {
           <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="ops-invite-club">CLB</Label>
-              <Select value={clubId} onValueChange={setClubId} disabled={loading}>
+              <Select value={clubId} disabled={loading} onValueChange={value => {
+                if (loading) return;
+                readRevision.current += 1;
+                setRows([]); setMessage(null); setReadError(false); setReading(Boolean(value)); setClubId(value);
+              }}>
                 <SelectTrigger
                   id="ops-invite-club"
                   className="min-h-11 bg-black/20"
@@ -218,7 +254,7 @@ export default function OpsClubAccounts() {
             </div>
             <Button
               type="submit"
-              disabled={loading || !scopedClubId}
+              disabled={loading || !ownerClubs.some(row => row.club_id === clubId)}
               className="min-h-11 sm:col-span-2"
             >
               Gửi lời mời bảo mật
@@ -234,16 +270,18 @@ export default function OpsClubAccounts() {
       <Card className="border-white/10 bg-white/[0.035] text-white">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <ShieldCheck className="h-5 w-5 text-emerald-300" /> Quyền đã cấp
+            <ShieldCheck className="h-5 w-5 text-emerald-300" /> Danh sách lời mời
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {!visibleRows.length && (
+          {reading && <p role="status">Đang tải lời mời của CLB…</p>}
+          {readError && <div role="alert">Chưa tải được danh sách lời mời. <Button variant="outline" onClick={() => void load(clubId)}>Thử lại</Button></div>}
+          {!rows.length && !reading && !readError && (
             <p className="text-sm text-zinc-400">
               Chưa có lời mời nào cho CLB này.
             </p>
           )}
-          {visibleRows.map((row) => (
+          {rows.map((row) => (
             <div
               key={row.id}
               className="flex flex-col gap-3 rounded-xl border border-white/10 bg-black/20 p-3 sm:flex-row sm:items-center sm:justify-between"

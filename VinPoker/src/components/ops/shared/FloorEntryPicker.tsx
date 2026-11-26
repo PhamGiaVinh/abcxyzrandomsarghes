@@ -15,14 +15,19 @@ export function FloorEntryPicker({
   restorableEntries,
   value,
   onChange,
+  availability,
+  onRetry,
 }: {
   seatableEntries: readonly FloorSeatableEntry[];
   restorableEntries: readonly FloorRestorableEntry[];
   value: FloorEntrySelection | null;
   onChange: (value: FloorEntrySelection | null) => void;
+  availability?: Record<PickerGroup, "ready" | "loading" | "failed">;
+  onRetry?: () => void;
 }) {
   const [group, setGroup] = useState<PickerGroup>(value?.kind ?? "seat");
   const [query, setQuery] = useState("");
+  const status = availability?.[group] ?? "ready";
 
   useEffect(() => {
     if (value) setGroup(value.kind);
@@ -50,7 +55,7 @@ export function FloorEntryPicker({
           onClick={() => { setGroup("seat"); setQuery(""); onChange(null); }}
         >
           <UserRoundPlus className="h-4 w-4" aria-hidden="true" />
-          Chưa có ghế <span className="font-mono">{seatableEntries.length}</span>
+          Chưa có ghế <span className="font-mono">{availability && availability.seat !== "ready" ? "—" : seatableEntries.length}</span>
         </button>
         <button
           type="button"
@@ -61,7 +66,7 @@ export function FloorEntryPicker({
           onClick={() => { setGroup("restore"); setQuery(""); onChange(null); }}
         >
           <RotateCcw className="h-4 w-4" aria-hidden="true" />
-          Đã loại <span className="font-mono">{restorableEntries.length}</span>
+          Đã loại <span className="font-mono">{availability && availability.restore !== "ready" ? "—" : restorableEntries.length}</span>
         </button>
       </div>
 
@@ -79,7 +84,13 @@ export function FloorEntryPicker({
       </label>
 
       <div className="max-h-64 space-y-2 overflow-y-auto overscroll-contain pr-1" role="tabpanel">
-        {rows.length === 0 ? (
+        {status === "loading" ? <p role="status">Đang xác minh danh sách người chơi…</p> :
+          status === "failed" ? (
+            <div role="alert">
+              Chưa tải được danh sách người chơi.
+              {onRetry && <button type="button" data-ops-action="floor.tables.refresh" onClick={onRetry}>Thử lại</button>}
+            </div>
+          ) : rows.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
             {query.trim()
               ? "Không tìm thấy người chơi phù hợp."

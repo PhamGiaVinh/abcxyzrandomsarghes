@@ -48,6 +48,7 @@ import {
   type VoiceTranscriptEvent,
 } from "@/lib/trackerVoice";
 import type { StandaloneHandInput } from "@/components/cashier/tournament-live/handinput/useStandaloneHandInput";
+import { DealerVoiceReadout } from "./DealerVoiceReadout";
 
 interface TrackerVoicePanelProps {
   hook: StandaloneHandInput;
@@ -112,6 +113,7 @@ const SPLIT_AMOUNT_CONTINUATION_MS = 4_000;
 type PendingAmountPrefix = {
   event: VoiceTranscriptEvent;
   receivedAt: number;
+  turnKey: string;
 };
 
 function isIncompleteAmountCommand(transcript: string): boolean {
@@ -204,6 +206,9 @@ export function TrackerVoicePanel({
 }: TrackerVoicePanelProps) {
   const providerRef = useRef<RealtimeTranscriptionProvider | null>(providerOverride ?? null);
   const connectionGenerationRef = useRef(0);
+  const manualGeneration = hook.manualActionGenerationRef?.current ?? 0;
+  const previousManualGeneration = useRef(manualGeneration);
+  const [resumeAfterManual, setResumeAfterManual] = useState<number | null>(null);
   const connectionScopeKey = JSON.stringify([hook.tournamentId, hook.tournamentTableId]);
   const connectionScopeRef = useRef(connectionScopeKey);
   if (connectionScopeRef.current !== connectionScopeKey) {
@@ -338,6 +343,27 @@ export function TrackerVoicePanel({
   const voiceActorPlayer = hook.engineActor
     ? hook.players.find((player) => player.player_id === hook.engineActor?.player_id) ?? null
     : hook.actorPlayer;
+  const turnKey = JSON.stringify([hook.handId, hook.currentStreet, hook.workflowState, voiceActorPlayer?.player_id,
+    hook.actions?.at(-1)?.action_order ?? 0]);
+  const turnRef = useRef(turnKey);
+  turnRef.current = turnKey;
+  const partialTurnRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (validationState === "committing" || !proposal?.ok || !("canonicalAction" in proposal)) return;
+    if (proposal.actor.playerId === voiceActorPlayer?.player_id
+      && proposal.expectedActionOrder === (hook.actions?.at(-1)?.action_order ?? 0) + 1
+      && proposal.expectedWorkflowState === hook.workflowState
+      && proposal.expectedStreet === hook.currentStreet) return;
+    ++validationGenerationRef.current;
+    handsFreeActionCommitRef.current = null;
+    setActionCountdownMs(null);
+    setFinalAttempt(null);
+    setProposal(null);
+    setValidatedProposal(null);
+    setValidatedReceipt(null);
+    setValidationState("idle");
+    setValidationError("Lượt đã thay đổi. Hãy đọc lại cho ghế đang hành động.");
+  }, [proposal, validationState, voiceActorPlayer?.player_id, hook.actions, hook.workflowState, hook.currentStreet]);
   const proposalContext = useMemo(
     () => ({
       handId: hook.handId,
@@ -865,6 +891,7 @@ export function TrackerVoicePanel({
 
   useEffect(() => () => {
     ++connectionGenerationRef.current;
+    ++validationGenerationRef.current;
     void providerRef.current?.disconnect();
   }, [connectionScopeKey]);
 
@@ -924,6 +951,7 @@ export function TrackerVoicePanel({
   const connect = async () => {
     const generation = ++connectionGenerationRef.current;
     const isCurrent = () => generation === connectionGenerationRef.current
+      && (hook.manualActionGenerationRef?.current ?? 0) === manualGeneration
       && connectionScopeRef.current === connectionScopeKey;
     statusRef.current = "connecting";
     setStatus("connecting");
@@ -952,11 +980,13 @@ export function TrackerVoicePanel({
     }
     providerRef.current = provider;
     pendingAmountPrefixRef.current = null;
+    partialTurnRef.current = null;
     setAudioLevel(0);
     setStatusMessage(null);
     const acceptFinalEvent = (finalEvent: VoiceTranscriptEvent, receivedAt: number) => {
       if (!isCurrent()) return;
       const eventScope = runtimeScopeRef.current;
+      const eventTurn = turnRef.current;
       setPartial("");
       setProposal(null);
       setProposalProviderEventId(null);
@@ -976,7 +1006,7 @@ export function TrackerVoicePanel({
         return;
       }
       void refreshRuntimeRef.current().then((freshRuntime) => {
-        if (!isCurrent() || runtimeScopeRef.current !== eventScope) return;
+        if (!isCurrent() || runtimeScopeRef.current !== eventScope || eventTurn !== turnRef.current) return;
         if (!freshRuntime) {
           setValidationState("error");
           setValidationError("Không tải lại được trạng thái bàn. Hãy thử nói lại action.");
@@ -1016,9 +1046,18 @@ export function TrackerVoicePanel({
         onTranscript: (event) => {
           if (!isCurrent()) return;
           if (!event.isFinal) {
+            partialTurnRef.current ??= turnRef.current;
             setPartial(looksLikePrivateHoleCardsTranscript(event.transcript)
               ? "Đang nhận diện đề xuất bài tẩy riêng tư..."
               : event.transcript);
+            return;
+          }
+          const beganOnOldTurn = partialTurnRef.current !== null && partialTurnRef.current !== turnRef.current;
+          partialTurnRef.current = null;
+          if (beganOnOldTurn) {
+            pendingAmountPrefixRef.current = null;
+            setPartial("");
+            setValidationError("Lượt đã thay đổi. Hãy đọc lại cho ghế đang hành động.");
             return;
           }
           const receivedAt = performance.now();
@@ -1027,8 +1066,14 @@ export function TrackerVoicePanel({
             ? combineSplitAmountFinal(pendingAmountPrefix, event, receivedAt)
             : null;
           pendingAmountPrefixRef.current = null;
+          if (combinedEvent && pendingAmountPrefix?.turnKey !== turnRef.current) {
+            setPartial("");
+            setFinalTranscript("");
+            setValidationError("Lượt đã thay đổi. Hãy đọc lại cho ghế đang hành động.");
+            return;
+          }
           if (!combinedEvent && isIncompleteAmountCommand(event.transcript)) {
-            pendingAmountPrefixRef.current = { event, receivedAt };
+            pendingAmountPrefixRef.current = { event, receivedAt, turnKey: turnRef.current };
             setPartial("");
             setFinalTranscript(event.transcript);
             setLastFinalProviderEventId(event.providerEventId);
@@ -1084,6 +1129,59 @@ export function TrackerVoicePanel({
       setStatusMessage(error instanceof Error ? error.message : "Không mở được microphone.");
     }
   };
+
+  const connectRef = useRef(connect);
+  connectRef.current = connect;
+  useEffect(() => {
+    if (manualGeneration === previousManualGeneration.current) return;
+    previousManualGeneration.current = manualGeneration;
+    ++validationGenerationRef.current;
+    ++runtimeReadGenerationRef.current;
+    handsFreeActionCommitRef.current = null;
+    cancelPendingActionRef.current = null;
+    pendingAmountPrefixRef.current = null;
+    privateHoleCardsAttemptsRef.current = [];
+    setPrivateHoleCardsAttempts([]);
+    setBufferedEvents([]);
+    setPartial("");
+    setFinalTranscript("");
+    setFinalAttempt(null);
+    setFinishAttempt(null);
+    setProposal(null);
+    setValidatedProposal(null);
+    setValidatedReceipt(null);
+    setActionCountdownMs(null);
+    setValidationState("idle");
+    setValidationError(null);
+    // Only a new capture segment can distinguish a late provider final (even
+    // one without an interim) from speech for the next player.
+    const generation = ++connectionGenerationRef.current;
+    const shouldResume = ["listening", "connecting", "requesting_permission", "preparing_audio", "connected", "audio_running"].includes(statusRef.current)
+      || resumeAfterManual !== null;
+    if (!shouldResume) return;
+    setResumeAfterManual(null);
+    setStatus("connecting");
+    setStatusMessage("Đang chuyển mic sang lượt mới…");
+    void Promise.resolve(providerRef.current?.disconnect()).then(() => {
+      if (generation === connectionGenerationRef.current) setResumeAfterManual(generation);
+    }).catch(() => {
+      if (generation !== connectionGenerationRef.current) return;
+      setStatus("error");
+      setStatusMessage("Chưa dừng được phiên mic cũ. Hãy kết nối lại.");
+    });
+  }, [manualGeneration, resumeAfterManual]);
+
+  useEffect(() => {
+    if (resumeAfterManual === null || hook.submitting) return;
+    setResumeAfterManual(null);
+    if (resumeAfterManual !== connectionGenerationRef.current) return;
+    if (hook.actionSyncBlocked || hook.isReadOnly || !hook.handStarted || !navigator.onLine) {
+      setStatus("paused");
+      setStatusMessage("Mic đã dừng. Kiểm tra trạng thái hand trước khi tiếp tục.");
+      return;
+    }
+    void connectRef.current();
+  }, [resumeAfterManual, hook.submitting, hook.actionSyncBlocked, hook.isReadOnly, hook.handStarted]);
 
   const disconnect = async () => {
     const generation = ++connectionGenerationRef.current;
@@ -1231,7 +1329,8 @@ export function TrackerVoicePanel({
   const confirmAssist = async (): Promise<boolean> => {
     const validationGeneration = validationGenerationRef.current;
     const connectionGeneration = connectionGenerationRef.current;
-    const isCurrent = () => runtimeScopeRef.current === runtimeScopeKey
+    const isCurrent = () => (hook.manualActionGenerationRef?.current ?? 0) === manualGeneration
+      && runtimeScopeRef.current === runtimeScopeKey
       && validationGenerationRef.current === validationGeneration
       && connectionGenerationRef.current === connectionGeneration;
     if (
@@ -1746,6 +1845,7 @@ export function TrackerVoicePanel({
         </div>
       </div>
 
+      {compact && <DealerVoiceReadout statusLabel={statusMessage ?? microphoneStatusLabel} partial={partial} finalTranscript={finalTranscript} />}
       <div className="space-y-3 p-4">
         <details open={compact ? undefined : true} className="dealer-voice-settings">
         {compact && <summary className="cursor-pointer py-2 text-xs text-emerald-100/70">Microphone & chế độ · {microphoneStatusLabel}</summary>}
@@ -1770,7 +1870,7 @@ export function TrackerVoicePanel({
           })}
         </div>
 
-        <div className="flex min-h-11 items-center gap-3 rounded-xl border border-white/8 bg-black/25 px-3">
+        {!compact && <div className="flex min-h-11 items-center gap-3 rounded-xl border border-white/8 bg-black/25 px-3">
           <span className={`h-2.5 w-2.5 rounded-full ${status === "listening" ? "bg-emerald-300 shadow-[0_0_14px_rgba(110,231,183,.8)]" : "bg-zinc-600"}`} />
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium text-zinc-200">{microphoneStatusLabel}</div>
@@ -1780,7 +1880,7 @@ export function TrackerVoicePanel({
             <Headphones className="h-4 w-4" />
             {status === "listening" ? "Mic đang theo dõi" : status === "flushing" ? "Đang flush câu cuối" : "Mic chưa sẵn sàng"}
           </span>
-        </div>
+        </div>}
 
         <div className="rounded-xl border border-white/8 bg-black/20 p-3">
           <div className="flex items-center justify-between gap-3 text-[11px]">
@@ -1837,7 +1937,7 @@ export function TrackerVoicePanel({
           </button>
         </div>
 
-        <div className="rounded-xl border border-white/8 bg-black/20 p-3" aria-label="Fallback hand actions">
+        {!compact && <div className="rounded-xl border border-white/8 bg-black/20 p-3" aria-label="Fallback hand actions">
           <div className="mb-2 flex items-center justify-between gap-3">
             <span className="text-[11px] font-semibold text-zinc-300">Fallback thao tác tay</span>
             <span className="text-[10px] text-zinc-500">Không qua Voice</span>
@@ -1859,7 +1959,7 @@ export function TrackerVoicePanel({
               );
             })}
           </div>
-        </div>
+        </div>}
 
         {providerKind === "mock" && (
           <div className="flex gap-2">
@@ -1912,10 +2012,13 @@ export function TrackerVoicePanel({
         <div className={`dealer-voice-proposal rounded-xl border p-3 ${proposalTone(proposal)}`} aria-live="polite" aria-atomic="true">
           <div className="mb-1 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] opacity-75">
             {proposal?.ok ? <ShieldCheck className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
-            Voice Assist proposal
+            Đề xuất từ mic
           </div>
           <div className="text-sm font-semibold">{proposalLabel}</div>
-          {finalTranscript && <div className="mt-1 text-[11px] opacity-65">“{finalTranscript}”</div>}
+          {proposal?.ok && "canonicalAction" in proposal && (
+            <div className="mt-1 text-xs">Ghế {proposal.actor.seatNumber}{proposal.expectedActionAmount > 0 ? ` · ${proposal.expectedActionAmount.toLocaleString("vi-VN")} chip` : ""}</div>
+          )}
+          {!compact && finalTranscript && <div className="mt-1 text-[11px] opacity-65">“{finalTranscript}”</div>}
           {proposal?.ok && "intentDomain" in proposal && proposal.intentDomain === "board" && (
             <div className="mt-2 space-y-1 text-[11px] opacity-80">
               <div>Board đã lưu: {proposal.persistedBoardCards.join(" ") || "chưa có"}</div>

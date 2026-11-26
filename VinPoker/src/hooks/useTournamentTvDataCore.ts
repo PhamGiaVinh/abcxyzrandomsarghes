@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSupabaseClient } from "@/integrations/supabase/SupabaseClientContext";
+import { observePublicTournament } from "@/components/cashier/tournament-live/viewer-hub/publicTournamentRealtime";
+import { registerPublicTournamentRead } from "@/components/cashier/tournament-live/viewer-hub/publicSnapshotCoordinator";
 import { useLiveClock } from "@/hooks/useLiveClock";
 import { displayedRemaining, type ClockAnchor } from "@/lib/tv/clockAnchor";
 import {
@@ -50,7 +52,7 @@ const ZERO_REPOLL_MAX = 10;
  *
  * The TV never advances levels itself: the countdown is derived from a
  * monotonic drift anchor, clamps at 00:00, and re-anchors on realtime
- * tournaments UPDATE, zero-cross repolls, a 60s safety refetch, and
+ * tournament broadcasts, zero-cross repolls, fallback verification, and
  * visibilitychange. When the realtime channel drops, a 30s polling fallback
  * takes over (mirrors TournamentLiveView).
  */
@@ -292,6 +294,26 @@ export function useTournamentTvDataCore(
   // Realtime re-anchor + conditional polling fallback (TournamentLiveView pattern).
   useEffect(() => {
     if (!enabled || !tournamentId || !hasUser) return;
+    if (FEATURES.publicSpectatorRealtimeV2) {
+      const coordinator = registerPublicTournamentRead(supabase, tournamentId, loadAll);
+      const observation = observePublicTournament(supabase, tournamentId, event => {
+        if (event.reason === "status") {
+          setRealtimeStatus(event.online ? "online" : "offline");
+          return;
+        }
+        if (event.reason === "changed" && event.components.includes("visibility")) {
+          requestSeqRef.current += 1;
+          inFlightRef.current?.controller.abort();
+          inFlightRef.current = null;
+          anchorRef.current = null;
+          setRaw(null);
+          setState("loading");
+        }
+        if (event.components.some(component => component === "clock" || component === "ranking" ||
+          component === "payout" || component === "visibility")) coordinator.request();
+      });
+      return () => { coordinator.stop(); observation.unsubscribe(); };
+    }
     let active = true;
     const channel = supabase
       .channel(`tv:${tournamentId}`)
@@ -321,7 +343,7 @@ export function useTournamentTvDataCore(
 
   // 60s safety refetch (also auto-recovers the error state) + wake-from-standby refetch.
   useEffect(() => {
-    if (!enabled || !tournamentId || !hasUser) return;
+    if (!enabled || !tournamentId || !hasUser || FEATURES.publicSpectatorRealtimeV2) return;
     const id = window.setInterval(() => {
       void loadAll();
     }, SAFETY_REFETCH_MS);

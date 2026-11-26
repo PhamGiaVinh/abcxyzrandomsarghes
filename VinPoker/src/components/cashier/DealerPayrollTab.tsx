@@ -1,3 +1,4 @@
+import { DealerShiftReviewList } from "./DealerShiftReviewList";
 import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from "react";
 import { startLiveReportRefresh } from '@/lib/liveReportRefresh';
 import { supabase } from "@/integrations/supabase/client";
@@ -334,6 +335,7 @@ interface DealerPayrollTabProps {
    * boundary — this is presentation only.
    */
   hideApprovalActions?: boolean;
+  showShiftReviews?: boolean;
 }
 
 export default function DealerPayrollTab(props: DealerPayrollTabProps) {
@@ -344,7 +346,7 @@ export default function DealerPayrollTab(props: DealerPayrollTabProps) {
   return <DealerPayrollScope key={`${user.id}:${sessionReadEpoch(session)}:${[...props.clubIds].sort().join(':')}`} {...props}/>;
 }
 
-function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayrollTabProps) {
+function DealerPayrollScope({ clubIds, clubs, hideApprovalActions, showShiftReviews }: DealerPayrollTabProps) {
   const { user, isAdmin } = useAuth();
   const { scope: operatorScope } = useOperatorClubs();
   const monthOptions = useMemo(() => getMonthYearOptions(), []);
@@ -1139,6 +1141,8 @@ function DealerPayrollScope({ clubIds, clubs, hideApprovalActions }: DealerPayro
   }
   return (
     <div className="min-h-full flex flex-col gap-3">
+      {currentRange && activeClubId && (showShiftReviews || operatorScope.some(row => row.club_id === activeClubId && row.can_owner)) &&
+        <DealerShiftReviewList key={savedReadScope} club={activeClubId} from={currentRange.start} to={currentRange.end} />}
       {/* Toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
         {clubs.length > 1 && (

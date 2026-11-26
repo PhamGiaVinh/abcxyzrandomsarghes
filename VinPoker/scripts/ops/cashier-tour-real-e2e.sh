@@ -31,8 +31,12 @@ if [[ "$source_generation_probe" != 0 && "$source_generation_probe" != 1 ]] ||
    [[ "$source_generation_probe" == 1 && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$prize_close_probe" != 1 || "$reentry_fault_mode" != healthy ) ]]; then
   echo 'Source generation candidate requires isolated current full-source healthy audience mode' >&2;exit 1
 fi
-case "$diagnostic_scope" in none|cashier-payment|dealer-checkin) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
-if [[ "$diagnostic_scope" != none && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$reentry_fault_mode" != healthy || "$redraw_probe" != 0 || "$prize_close_probe" != 1 ) ]]; then
+case "$diagnostic_scope" in none|cashier-payment|dealer-checkin|floor-swing-close|floor-swing-close-staffed) ;; *) echo 'Unknown targeted diagnostic scope' >&2;exit 1;; esac
+if [[ "$diagnostic_scope" == floor-swing-close* && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" != 0 || "$reentry_transport_probe" != 0 || "$correction_undo_probe" != 0 || "$redraw_probe" != 0 || "$prize_close_probe" != 0 ) ]]; then
+  echo 'Floor and Swing close proof requires the isolated current operations schema and Realtime only' >&2
+  exit 1
+fi
+if [[ "$diagnostic_scope" != none && "$diagnostic_scope" != floor-swing-close* && ( "$schema_mode" != current || "$operations_candidate_probe" != 1 || "$realtime_mode" != 1 || "$audience_count" == 0 || "$reentry_transport_probe" != 1 || "$correction_undo_probe" != 1 || "$reentry_fault_mode" != healthy || "$redraw_probe" != 0 || "$prize_close_probe" != 1 ) ]]; then
   echo 'Targeted diagnostics require isolated current full34 healthy source preparation and audience; only unrelated scenario execution is skipped' >&2;exit 1
 fi
 if [[ "$operations_rest_pool" != 10 && "$operations_rest_pool" != 20 ]] ||
@@ -1550,6 +1554,29 @@ CLOCK_BROADCAST_BOOTSTRAP
     echo 'CLOCK_CANDIDATE_PROOF:exact31 migrations;reads/worker/backfill OFF;canonical control plus real HTTP Broadcast flush;clock-only scope'
     exit 0
   fi
+  if [[ "$diagnostic_scope" == floor-swing-close-staffed ]]; then
+    docker exec -i "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres <<'FLOOR_SWING_STAFFED'
+BEGIN;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM public.clubs
+    WHERE id='a2000000-0000-4000-8000-000000000001' AND name='Cashier Edge TEST'
+  ) THEN RAISE EXCEPTION 'owned_floor_swing_fixture_required'; END IF;
+END $$;
+INSERT INTO public.dealers(id,club_id,full_name,status)
+VALUES ('af710000-0000-4000-8000-000000000001','a2000000-0000-4000-8000-000000000001','Floor close TEST dealer','active');
+INSERT INTO public.dealer_attendance(id,dealer_id,shift_id,shift_date,status,check_in_time,current_state)
+VALUES ('af710000-0000-4000-8000-000000000002','af710000-0000-4000-8000-000000000001',
+        'ad300000-0000-4000-8000-000000000001',(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date,
+        'checked_in',now()-interval '10 minutes','available');
+COMMIT;
+FLOOR_SWING_STAFFED
+  fi
+  if [[ "$diagnostic_scope" == floor-swing-close* ]]; then
+    run_browser_proof '' '' 'Floor close reaches an already-open Dealer Swing screen$'
+    finish_candidate_broadcast
+    exit 0
+  fi
   if [[ "$correction_undo_probe" == 1 ]]; then
     node --input-type=module - "$repo_root" >"$test_root/correction-candidate-path" <<'CORRECTION_CANDIDATE_PATH'
 import {pathToFileURL} from 'node:url';
@@ -1606,6 +1633,23 @@ AUDIENCE_OWNED_PREFLIGHT
     install_current_start_schema
     install_current_finish_schema --before-audience
     install_current_action_schema before-audience
+    if [[ "${REQUIRED_SOURCE_PACKAGE:-none}" == cashier1730 ]]; then
+      prerequisite=supabase/migrations/20270128000145_multiday_verified_payment_boundary_v1.sql
+      candidate=supabase/pending-migrations/20261121055644_multiday_prize_cash_drawer_v1.sql
+      [[ "$(git -C "$repo_root" hash-object "$prerequisite")" == e8c827aa6f6c0937286674bbb539bd7c9146df45 ]]
+      [[ "$(git -C "$repo_root" hash-object "$candidate")" == b17840f432f1bd7cc4f95a3500276c1b38591db9 ]]
+      for migration in "$prerequisite" "$candidate"; do
+        docker exec -i "$db_container" psql -Xq -v ON_ERROR_STOP=1 -U postgres -d postgres <"$repo_root/$migration"
+      done
+      [[ "$(docker exec "$db_container" psql -XAt -U postgres -d postgres -c "SELECT EXISTS (
+        SELECT FROM pg_trigger WHERE tgrelid='public.tournament_prize_payments'::regclass
+        AND tgname='cashier_prize_drawer_outflow' AND tgenabled='O'
+        AND tgfoid='private.cashier_record_prize_drawer_outflow_v1()'::regprocedure
+      ) AND EXISTS (SELECT FROM pg_index WHERE indexrelid='public.cashier_movement_prize_payment_unique'::regclass
+        AND indisunique AND indisvalid)")" == t ]]
+      echo 'Cashier #1730 exact migration verified in isolated database before audience and browser suite.'
+      cashier1730_applied=1
+    fi
     current_schema_prepared=1
     if [[ "$audience_count" == 1000 ]]; then
       docker exec "$db_container" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
@@ -1772,6 +1816,10 @@ SCHEMA_FROZEN_RECEIPT
   fi
 fi
 # Validate the fresh46-attendance fixture before the first browser handover.
+if [[ "${REQUIRED_SOURCE_PACKAGE:-none}" == cashier1730 && "${cashier1730_applied:-0}" != 1 ]]; then
+  echo 'Missing required Cashier #1730 migration check in isolated runtime' >&2
+  exit 1
+fi
 # Later checkout stages intentionally make those attendances ineligible.
 if [[ "$schema_mode" == current && "$current_schema_prepared" != 1 ]]; then install_current_replacement_schema; fi
 if [[ "$diagnostic_scope" != none ]]; then
