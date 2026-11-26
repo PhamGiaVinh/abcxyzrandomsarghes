@@ -109,6 +109,7 @@ export const FEATURES = {
    * sepay-reconcile edge fn) are applied live and owner UAT passes.
    */
   sepayReconcile: false,
+  sepayScopedHandoff: import.meta.env.VITE_SEPAY_SCOPED_HANDOFF_V1 === "true",
   /**
    * SePay auto-confirm UI mirror — reserved status indicator for the server-side `SEPAY_AUTO_CONFIRM`
    * env kill-switch. NOT used in v1 (Direction 1 is flag-only; the cashier confirms manually). Keep false.

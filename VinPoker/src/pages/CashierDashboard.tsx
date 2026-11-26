@@ -339,7 +339,7 @@ export default function CashierDashboard() {
           )}
           {section === "sepay_settlement" && (
             showSettlement ? (
-              <SePaySettlementTab clubIds={clubIds} />
+              <SePaySettlementTab clubIds={clubIds} clubs={clubs} clubId={params.get("club")} bankId={params.get("bank")} allClubs={params.get("scope")==="all"} />
             ) : (
               <Card className="p-8 text-center text-sm text-muted-foreground">
                 Tính năng này chưa được mở cho tài khoản của bạn.
