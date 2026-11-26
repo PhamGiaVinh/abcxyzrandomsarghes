@@ -56,3 +56,4 @@ psql -X -v ON_ERROR_STOP=1 -v l02_self_reader=1 -f tests/staffSalary/l02Payment.
 psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.adjustmentBounds.sql
 psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.adjustmentRevision.sql
 psql -X -v ON_ERROR_STOP=1 -f tests/staffSalary/l02Payment.adjustmentLegacy.sql
+bash tests/staffSalary/l02Payment.adjustment.concurrent.sh
