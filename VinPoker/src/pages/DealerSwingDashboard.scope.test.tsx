@@ -3,14 +3,15 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 
-const state = vi.hoisted(() => ({ actorId: "actor-a", ids: ["center", "quads"], v2: true,error:null as string|null,refresh:vi.fn() }));
+const state = vi.hoisted(() => ({ actorId: "actor-a", ids: ["center", "quads"], payrollIds:["quads"],liveAdmin:false, v2: true,error:null as string|null,refresh:vi.fn() }));
 vi.mock("@/hooks/useAuth", () => ({ useAuth: () => ({ user: { id: state.actorId }, loading: false, isAdmin: false, isClubAdmin: false, isClubOwner: false }) }));
 vi.mock("@/hooks/useOperatorClubs", () => ({ useOperatorClubs: () => ({ clubs: [{ id: "center", name: "CenterPoint" }, { id: "quads", name: "Quads" }], clubIds: ["center", "quads"], dealerClubIds: state.ids,error:state.error,scopeVerified:!state.error,refresh:state.refresh }) }));
+vi.mock("@/hooks/useDealerControlClubScope", () => ({ useDealerControlClubScope: () => ({ clubs: state.liveAdmin?[]:[{ id: "center", name: "CenterPoint" }, { id: "quads", name: "Quads" }],dealerClubIds:state.ids,payrollClubIds:state.payrollIds.filter(id=>state.ids.includes(id)),isAdmin:state.liveAdmin,error:state.error,scopeVerified:!state.error,refresh:state.refresh }) }));
 vi.mock("@/lib/featureFlags", () => ({ FEATURES: { dealerShiftPlanner: true, get shiftPlannerV2() { return state.v2; } } }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock("@/components/cashier/DealerSwingTab", () => ({ default: () => <div>Swing</div> }));
-vi.mock("@/components/cashier/DealerPayrollTab", () => ({ default: () => <div>Payroll</div> }));
-vi.mock("@/components/cashier/DealerPayrollTabV2", () => ({ default: () => <div>Payroll V2</div> }));
+vi.mock("@/components/cashier/DealerSwingTab", () => ({ default: ({clubIds,clubs}:{clubIds:string[];clubs:{id:string}[]}) => <div data-testid="swing" data-clubs={clubs.map(c=>c.id).join(',')}>{clubIds.join(',')} Swing</div> }));
+vi.mock("@/components/cashier/DealerPayrollTab", () => ({ default: ({clubIds,clubs}:{clubIds:string[];clubs:{id:string}[]}) => <div data-testid="payroll" data-clubs={clubs.map(c=>c.id).join(',')}>{clubIds.join(',')} Payroll</div> }));
+vi.mock("@/components/cashier/DealerPayrollTabV2", () => ({ default: ({clubIds,clubs}:{clubIds:string[];clubs:{id:string}[]}) => <div data-testid="payroll" data-clubs={clubs.map(c=>c.id).join(',')}>{clubIds.join(',')} Payroll V2</div> }));
 function Planner({ clubIds, clubs }: { clubIds: string[]; clubs: { id: string }[] }) {
   const [draft, setDraft] = useState("");
   return <div data-testid="planner" data-clubs={clubs.map(c => c.id).join(",")}>{clubIds.join(",")}<input aria-label="Draft" value={draft} onChange={e => setDraft(e.target.value)} /></div>;
@@ -24,7 +25,25 @@ function openPlanner() { fireEvent.mouseDown(screen.getByRole("tab", { name: "X�
 function selectClub(id: string) { fireEvent.change(screen.getByRole("combobox", { name: "dealerPlannerScope.club" }), { target: { value: id } }); }
 
 describe("Dealer planner exact club scope", () => {
-  beforeEach(() => { state.actorId = "actor-a"; state.ids = ["center", "quads"]; state.v2 = true;state.error=null;state.refresh.mockClear(); });
+  beforeEach(() => { state.actorId = "actor-a"; state.ids = ["center", "quads"];state.payrollIds=['quads'];state.liveAdmin=false; state.v2 = true;state.error=null;state.refresh.mockClear(); });
+  it('preserves the verified superadmin global payroll path without membership, then removes it on withdrawal',()=>{
+    state.ids=[];state.payrollIds=[];state.liveAdmin=true;const view=render(<Page/>);
+    fireEvent.mouseDown(screen.getByRole('tab',{name:'Bảng lương'}),{button:0,ctrlKey:false});
+    expect(screen.getByTestId('payroll')).toBeVisible();
+    state.liveAdmin=false;view.rerender(<Page/>);
+    expect(screen.queryByTestId('payroll')).toBeNull();expect(screen.getByText('Bạn chưa được phân công CLB nào')).toBeVisible();
+  });
+  it('does not offer Cashier B as a Dealer Control A workspace or grant payroll A',()=>{
+    state.ids=['center'];render(<Page/>);
+    expect(screen.getByTestId('swing')).toHaveAttribute('data-clubs','center');
+    expect(screen.queryByRole('tab',{name:'Bảng lương'})).toBeNull();
+    expect(screen.queryByTestId('payroll')).toBeNull();
+  });
+  it('keeps payroll available when the same Dealer Swing club has independent payroll authority',()=>{
+    state.ids=['center'];state.payrollIds=['center'];render(<Page/>);
+    fireEvent.mouseDown(screen.getByRole('tab',{name:'Bảng lương'}),{button:0,ctrlKey:false});
+    expect(screen.getByTestId('payroll')).toHaveAttribute('data-clubs','center');
+  });
   it('shows unknown scope with retry, not missing assignment or operational content, on a scope read error',()=>{
     state.error='Không tải được phạm vi CLB';state.ids=[];
     render(<Page/>);

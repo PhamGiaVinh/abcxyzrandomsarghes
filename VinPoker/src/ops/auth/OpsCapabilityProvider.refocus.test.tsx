@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   auth: { user: { id: "actor-a" } as { id: string } | null, loading: false, verificationRevision: 1 },
@@ -14,7 +14,10 @@ vi.mock("./opsCapabilityLoader", () => ({
   verifySuperAdminClub: vi.fn(),
 }));
 vi.mock("@/integrations/supabase/SupabaseClientContext", () => {
-  const query = { select: () => query, in: h.metadata };
+  const query = { select: () => query, in: (...args: unknown[]) => {
+    const promise = h.metadata(...args);
+    return Object.assign(promise, { abortSignal: () => promise });
+  } };
   const client = { from: () => query };
   return { useSupabaseClient: () => client };
 });
@@ -41,7 +44,7 @@ function Gate() {
   const c = useOpsCapabilities();
   if (c.loading) return <p>loading</p>;
   if (c.scopeError) return <p>scope-error</p>;
-  return c.hasCashierAccess ? <Draft /> : <p>denied</p>;
+  return c.hasCashierAccess ? <><Draft />{c.hasFloorAccess && <button>Floor TEST action</button>}</> : <p>denied</p>;
 }
 function View() {
   return <OpsCapabilityProvider><Gate /><MetadataProbe /></OpsCapabilityProvider>;
@@ -50,12 +53,85 @@ function MetadataProbe() {
   const c = useOpsCapabilities();
   return <output aria-label="Owned club metadata">{c.clubs.map((club) => club.name).join(",")}</output>;
 }
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe("Ops capability same-actor revalidation", () => {
   beforeEach(() => {
     h.auth = { user: { id: "actor-a" }, loading: false, verificationRevision: 1 };
     h.load.mockReset().mockResolvedValue(allowed);
     h.metadata.mockReset().mockResolvedValue({ data: [{ id: "club-a", name: "Club A" }], error: null });
+  });
+
+  it('removes revoked access without waiting for a refocus', async () => {
+    vi.useFakeTimers();
+    await act(async () => { render(<View />); });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Keep valid Cashier A draft' } });
+    h.load.mockResolvedValue({ ...allowed, scope: [] });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(h.load).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByText('denied')).toBeInTheDocument();
+  });
+
+  it('keeps an unchanged workspace mounted across background verification', async () => {
+    vi.useFakeTimers();
+    await act(async () => { render(<View />); });
+    const draft = screen.getByRole('textbox');
+    fireEvent.change(draft, { target: { value: 'Unchanged draft' } });
+    h.load.mockResolvedValue(structuredClone(allowed));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(h.load).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole('textbox')).toBe(draft);
+    expect(draft).toHaveValue('Unchanged draft');
+    expect(h.metadata).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not overlap active observations or reset a hung read deadline with polling', async () => {
+    vi.useFakeTimers();
+    await act(async () => { render(<View />); });
+    const late = deferred<typeof allowed>(); h.load.mockReturnValue(late.promise);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(h.load).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByText('scope-error')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    await act(async () => { late.resolve(allowed); });
+    expect(screen.getByText('scope-error')).toBeInTheDocument();
+  });
+
+  it('stops background checks after the provider unmounts', async () => {
+    vi.useFakeTimers();
+    let view!: ReturnType<typeof render>;
+    await act(async () => { view = render(<View />); });
+    view.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(15000); });
+    expect(h.load).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes Floor B while preserving the valid Cashier A draft', async () => {
+    vi.useFakeTimers();
+    const floorB = { ...allowed.scope[0], club_id: 'club-b', can_cashier: false, can_floor: true };
+    h.load.mockResolvedValue({ ...allowed, scope: [...allowed.scope, floorB] });
+    h.metadata.mockResolvedValue({ data: [{ id: 'club-a', name: 'Club A' }, { id: 'club-b', name: 'Club B' }], error: null });
+    await act(async () => { render(<View />); });
+    const draft = screen.getByRole('textbox');fireEvent.change(draft, { target: { value: 'Valid Cashier A' } });
+    expect(screen.getByRole('button', { name: 'Floor TEST action' })).toBeInTheDocument();
+    h.load.mockResolvedValue(allowed);h.metadata.mockResolvedValue({ data: [{ id: 'club-a', name: 'Club A' }], error: null });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.queryByRole('button', { name: 'Floor TEST action' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox')).toBe(draft);expect(draft).toHaveValue('Valid Cashier A');
+    expect(screen.getByLabelText('Owned club metadata').textContent).toBe('Club A');
+  });
+
+  it('clears unknown scope on a failed background read and can recover from the next read', async () => {
+    vi.useFakeTimers();await act(async () => { render(<View />); });
+    h.load.mockRejectedValue(new Error('offline'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByText('scope-error')).toBeInTheDocument();expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    h.load.mockResolvedValue(allowed);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByRole('textbox')).toBeInTheDocument();expect(screen.queryByText('scope-error')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Owned club metadata').textContent).toBe('Club A');
   });
 
   it("reloads canonical capabilities on verified refocus without unmounting the draft", async () => {

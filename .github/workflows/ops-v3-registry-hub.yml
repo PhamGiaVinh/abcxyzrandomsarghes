@@ -9,6 +9,11 @@ on:
       - "VinPoker/src/components/ops/OpsHubShell.tsx"
       - "VinPoker/src/components/ops/OpsShell.tsx"
       - "VinPoker/src/ops/**"
+      - "VinPoker/src/hooks/useDealerControlClubScope*"
+      - "VinPoker/src/pages/DealerSwingDashboard*"
+      - "VinPoker/tests/ops/dealerControlInvite.native.sql"
+      - "VinPoker/tests/ops/payrollStorageAuthority*"
+      - "VinPoker/supabase/pending-migrations/20261126234643_payroll_period_table_authority_v1.sql"
       - "VinPoker/scripts/security/check-ops-v3-shell-text.mjs"
       - "VinPoker/e2e/ops-v3-hub.mock.spec.ts"
       - "VinPoker/package.json"
@@ -53,6 +58,12 @@ jobs:
           src/ops/auth/opsSessionValidation.test.ts
           src/ops/registry/opsModuleRegistry.test.ts
           src/ops/registry/opsRegistryRoutes.test.ts
+          src/ops/clubAdmin/clubOperatorInviteModel.test.ts
+          src/ops/pages/OpsClubAccounts.scope.test.tsx
+          src/ops/pages/OpsClubAccounts.dealerControl.test.tsx
+          src/hooks/useDealerControlClubScope.test.tsx
+          src/pages/DealerSwingDashboard.scope.test.tsx
+          tests/ops/clubOperatorInvite.contract.test.ts
           tests/floorProduction/floorDbEdgeContracts.test.ts
           --maxWorkers=1 --minWorkers=1
       - name: Lint targeted Ops V3 source
@@ -71,6 +82,15 @@ jobs:
           src/ops/pages/OpsSelectModule.tsx
           src/ops/pages/OpsAlertsHub.tsx
           src/ops/pages/OpsAccount.tsx
+          src/ops/pages/OpsClubAccounts.tsx
+          src/ops/pages/OpsClubAccounts.scope.test.tsx
+          src/ops/pages/OpsClubAccounts.dealerControl.test.tsx
+          src/hooks/useDealerControlClubScope.ts
+          src/hooks/useDealerControlClubScope.test.tsx
+          src/pages/DealerSwingDashboard.tsx
+          src/pages/DealerSwingDashboard.scope.test.tsx
+          src/ops/clubAdmin/clubOperatorInviteModel.ts
+          src/ops/clubAdmin/clubOperatorInviteModel.test.ts
           src/ops/registry/opsModuleRegistry.ts
           src/ops/registry/opsModuleRegistry.test.ts
           src/ops/registry/opsRegistryRoutes.test.ts
@@ -81,6 +101,9 @@ jobs:
       - name: Type-check Ops V3 registry
         working-directory: VinPoker
         run: npx tsc -p tsconfig.ops-v3-registry.json --pretty false
+      - name: Type-check the operational document and shared project
+        working-directory: VinPoker
+        run: node --max-old-space-size=4096 node_modules/typescript/bin/tsc -b --pretty false
       - name: Build production source
         working-directory: VinPoker
         run: npm run build

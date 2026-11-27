@@ -95,6 +95,20 @@ describe("Ops module runtime registry", () => {
     expect(getAvailableOpsModules(scope([a, b])).map((module) => module.id)).toEqual(["fnb"]);
   });
 
+  it("keeps Dealer Control in one club and Cashier in the other after revocation", () => {
+    const clubA = { ...emptyRow("10000000-0000-4000-8000-000000000001"), can_dealer_control: true };
+    const clubB = { ...emptyRow("10000000-0000-4000-8000-000000000002"), can_cashier: true };
+    const granted = scope([clubA, clubB]);
+    const modules = getAvailableOpsModules(granted).map(module => module.id);
+    expect(modules).toHaveLength(2);
+    expect(modules).toEqual(expect.arrayContaining(["dealer-control", "cashier"]));
+    expect(getModuleClubIds(getOpsModule("dealer-control"), granted.clubs)).toEqual([clubA.club_id]);
+    expect(getModuleClubIds(getOpsModule("cashier"), granted.clubs)).toEqual([clubB.club_id]);
+    const revoked = scope([clubB]);
+    expect(getAvailableOpsModules(revoked).map(module => module.id)).toEqual(["cashier"]);
+    expect(getModuleClubIds(getOpsModule("dealer-control"), revoked.clubs)).toEqual([]);
+  });
+
   it("gives super-admin module visibility without expanding the login club list", () => {
     const available = getAvailableOpsModules(scope([], true));
     expect(available).toHaveLength(OPS_MODULE_REGISTRY.length);

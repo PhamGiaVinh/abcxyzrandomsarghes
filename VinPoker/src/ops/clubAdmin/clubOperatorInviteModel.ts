@@ -1,5 +1,10 @@
-export const operatorInviteRoles = ["floor", "cashier"] as const;
+export const operatorInviteRoles = ["floor", "cashier", "dealer_control"] as const;
 export type OperatorInviteRole = (typeof operatorInviteRoles)[number];
+export const operatorInviteRoleLabel: Record<OperatorInviteRole, string> = {
+  floor: "Floor",
+  cashier: "Cashier",
+  dealer_control: "Dealer Control",
+};
 export function isOperatorInviteRole(
   value: string,
 ): value is OperatorInviteRole {
