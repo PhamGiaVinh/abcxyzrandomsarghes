@@ -1,19 +1,20 @@
 import {act,cleanup,fireEvent,render,screen} from '@testing-library/react';
 import {MemoryRouter} from 'react-router-dom';
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
+import type {ReactNode} from 'react';
 const h=vi.hoisted(()=>({actor:'actor-a',clubs:['club-a','club-b'],reads:new Map<string,Promise<{data:unknown;error:unknown}>>(),invoke:vi.fn()}));
 vi.mock('@/ops/auth/OpsAuthProvider',()=>({useOpsAuth:()=>({user:{id:h.actor},session:null,loading:false})}));
 vi.mock('@/ops/auth/OpsCapabilityProvider',()=>({useOpsCapabilities:()=>({loading:false,scopeError:null,hasOwnerAccess:true,scope:h.clubs.map(club_id=>({club_id,can_owner:true})),clubs:h.clubs.map(id=>({id,name:id}))})}));
 vi.mock('@/integrations/supabase/SupabaseClientContext',()=>({useSupabaseClient:()=>client}));
 vi.mock('@/components/ui/select',()=>({
- Select:({value,onValueChange,children}:any)=><select aria-label="CLB" value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>,
- SelectTrigger:()=>null,SelectValue:()=>null,SelectContent:({children}:any)=><>{children}</>,SelectItem:({value,children}:any)=><option value={value}>{children}</option>,
+ Select:({value,onValueChange,children}:{value:string;onValueChange:(value:string)=>void;children:ReactNode})=><select aria-label="CLB" value={value} onChange={e=>onValueChange(e.target.value)}>{children}</select>,
+ SelectTrigger:()=>null,SelectValue:()=>null,SelectContent:({children}:{children:ReactNode})=><>{children}</>,SelectItem:({value,children}:{value:string;children:ReactNode})=><option value={value}>{children}</option>,
 }));
 const client={functions:{invoke:(...args:unknown[])=>h.invoke(...args)},from:()=>({select:()=>({eq:(_key:string,id:string)=>({order:()=>h.reads.get(id)??Promise.resolve({data:[],error:null})})})})};
 import OpsClubAccounts from './OpsClubAccounts';
 const row=(club:string)=>({id:'invite-'+club,club_id:club,email_normalized:club+'@example.test',operator_role:'floor',status:'pending'});
 const ready=(club:string)=>Promise.resolve({data:[row(club)],error:null});
-const deferred=()=>{let resolve!:(value:any)=>void;const promise=new Promise<any>(r=>{resolve=r;});return {promise,resolve};};
+const deferred=()=>{let resolve!:(value:{data:unknown;error:unknown})=>void;const promise=new Promise<{data:unknown;error:unknown}>(r=>{resolve=r;});return {promise,resolve};};
 const tree=()=> <MemoryRouter><OpsClubAccounts/></MemoryRouter>;
 async function select(club:string){await act(async()=>{fireEvent.change(screen.getAllByRole('combobox')[0],{target:{value:club}});});}
 beforeEach(()=>{h.actor='actor-a';h.clubs=['club-a','club-b'];h.reads.clear();h.invoke.mockReset();h.invoke.mockResolvedValue({data:{status:'INVITED'},error:null});});

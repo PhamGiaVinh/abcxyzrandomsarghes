@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { useOperatorClubs } from "@/hooks/useOperatorClubs";
+import { useDealerControlClubScope } from "@/hooks/useDealerControlClubScope";
+import { sessionReadEpoch } from "@/lib/sessionReadEpoch";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -48,9 +49,10 @@ function DealerPlannerScope({ clubs, v2, autofillEnabled }: {
  * former swing/payroll sections in CashierDashboard so behaviour is unchanged.
  */
 export default function DealerSwingDashboard() {
-  const { user, loading, isAdmin, isClubAdmin, isClubOwner } = useAuth();
+  const { user, session, loading, isClubAdmin, isClubOwner } = useAuth();
   const nav = useNavigate();
-  const { clubs, clubIds, dealerClubIds,error,scopeVerified,refresh } = useOperatorClubs();
+  const epoch=sessionReadEpoch(session);
+  const { clubs, dealerClubIds,payrollClubIds,isAdmin,error,scopeVerified,refresh } = useDealerControlClubScope(user?.id??null,epoch,!loading&&!!user);
   const [tab, setTab] = useState("swing");  // controlled so SwingPanel can deep-link to "payroll" (D1)
 
   useEffect(() => {
@@ -80,8 +82,13 @@ export default function DealerSwingDashboard() {
     );
   }
 
-  const scopedIds = dealerClubIds.length > 0 ? dealerClubIds : clubIds;
+  const scopedIds = dealerClubIds;
   const plannerClubs = clubs.filter(club => scopedIds.includes(club.id));
+  const payrollClubs=clubs.filter(club=>payrollClubIds.includes(club.id));
+  // Preserve the existing global superadmin path when no club is assigned.
+  // This flag comes from the current caller-bound global DTO, not cached Auth.
+  const canPayroll=isAdmin||payrollClubIds.length>0;
+  const workspaceKey=JSON.stringify([user.id,epoch,scopedIds,payrollClubIds,isAdmin]);
 
   // Phase 2B preview gate: while the global flag is OFF, owner / club-admin /
   // super-admin still see the planner tab on this (already control-staff-only) page
@@ -107,27 +114,27 @@ export default function DealerSwingDashboard() {
           <Table2 className="w-3.5 h-3.5" /> DEALER SWING
         </div>
         <div className="text-sm text-muted-foreground">
-          {clubs.length === 0 ? "Toàn quyền (Admin)" : clubs.length === 1 ? clubs[0].name : `${clubs.length} CLB`}
+          {plannerClubs.length === 0 ? "Toàn quyền (Admin)" : plannerClubs.length === 1 ? plannerClubs[0].name : `${plannerClubs.length} CLB`}
         </div>
       </div>
 
-      <Tabs value={tab} onValueChange={setTab} className="w-full">
-        <TabsList className={`grid w-full ${showShiftPlanner ? "grid-cols-3" : "grid-cols-2"} h-auto [&>button]:min-h-11 [&>button]:min-w-0 [&>button]:whitespace-normal [&>button]:px-2 [&>button]:text-xs sm:[&>button]:text-sm [&>button>svg]:shrink-0`}>
+      <Tabs key={workspaceKey} value={tab==='payroll'&&!canPayroll?'swing':tab} onValueChange={setTab} className="w-full">
+        <TabsList className={`grid w-full ${showShiftPlanner ? canPayroll ? "grid-cols-3" : "grid-cols-2" : canPayroll ? "grid-cols-2" : "grid-cols-1"} h-auto [&>button]:min-h-11 [&>button]:min-w-0 [&>button]:whitespace-normal [&>button]:px-2 [&>button]:text-xs sm:[&>button]:text-sm [&>button>svg]:shrink-0`}>
           <TabsTrigger value="swing"><Table2 className="w-4 h-4 mr-1" /> Dealer Swing</TabsTrigger>
-          <TabsTrigger value="payroll"><Calculator className="w-4 h-4 mr-1" /> Bảng lương</TabsTrigger>
+          {canPayroll&&<TabsTrigger value="payroll"><Calculator className="w-4 h-4 mr-1" /> Bảng lương</TabsTrigger>}
           {showShiftPlanner && (
             <TabsTrigger value="shift_planner"><CalendarRange className="w-4 h-4 mr-1" /> Xếp lịch dealer</TabsTrigger>
           )}
         </TabsList>
         <TabsContent value="swing" className="mt-4">
           {/* D1 — the retired inline payroll quick-view now deep-links to the canonical Bảng lương tab. */}
-          <SwingPanel clubIds={scopedIds} clubs={clubs} onOpenPayroll={() => setTab("payroll")} />
+          <SwingPanel clubIds={scopedIds} clubs={plannerClubs} onOpenPayroll={canPayroll?() => setTab("payroll"):undefined} />
         </TabsContent>
-        <TabsContent value="payroll" className="mt-4">
+        {canPayroll&&<TabsContent value="payroll" className="mt-4">
           {showSalaryV2
-            ? <DealerPayrollTabV2 clubIds={scopedIds} clubs={clubs} />
-            : <DealerPayrollTab clubIds={scopedIds} clubs={clubs} />}
-        </TabsContent>
+            ? <DealerPayrollTabV2 clubIds={payrollClubIds} clubs={payrollClubs} />
+            : <DealerPayrollTab clubIds={payrollClubIds} clubs={payrollClubs} />}
+        </TabsContent>}
         {showShiftPlanner && (
           <TabsContent value="shift_planner" className="mt-4">
             {/* V2 = guided 4-step flow (owner-approved redesign); non-preview roles keep V1. */}
